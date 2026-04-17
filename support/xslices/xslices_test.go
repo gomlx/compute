@@ -5,11 +5,10 @@ package xslices
 import (
 	"flag"
 	"fmt"
+	"reflect"
+	"slices"
 	"strconv"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMap(t *testing.T) {
@@ -20,7 +19,9 @@ func TestMap(t *testing.T) {
 	}
 	out := Map(in, func(v int) int32 { return int32(v + 1) })
 	for ii := range count {
-		assert.Equalf(t, int32(ii+1), out[ii], "element %d doesn't match", ii)
+		if out[ii] != int32(ii+1) {
+			t.Errorf("element %d doesn't match: got %v, want %v", ii, out[ii], int32(ii+1))
+		}
 	}
 }
 
@@ -32,27 +33,43 @@ func TestMapParallel(t *testing.T) {
 	}
 	out := MapParallel(in, func(v int) int32 { return int32(v + 1) })
 	for ii := range count {
-		assert.Equalf(t, int32(ii+1), out[ii], "element %d doesn't match", ii)
+		if out[ii] != int32(ii+1) {
+			t.Errorf("element %d doesn't match: got %v, want %v", ii, out[ii], int32(ii+1))
+		}
 	}
 }
 
 func TestAtAndLast(t *testing.T) {
 	slice := []int{0, 1, 2, 3, 4, 5}
-	assert.Equal(t, 5, At(slice, -1))
-	assert.Equal(t, 4, At(slice, -2))
-	assert.Equal(t, 5, Last(slice))
+	if got, want := At(slice, -1), 5; got != want {
+		t.Errorf("At(slice, -1): got %v, want %v", got, want)
+	}
+	if got, want := At(slice, -2), 4; got != want {
+		t.Errorf("At(slice, -2): got %v, want %v", got, want)
+	}
+	if got, want := Last(slice), 5; got != want {
+		t.Errorf("Last(slice): got %v, want %v", got, want)
+	}
 }
 
 func TestPop(t *testing.T) {
 	slice := []int{0, 1, 2, 3, 4, 5}
 	var got int
 	got, slice = Pop(slice)
-	assert.Equal(t, 5, got)
-	assert.Len(t, slice, 5)
+	if got != 5 {
+		t.Errorf("Pop got %v, want %v", got, 5)
+	}
+	if len(slice) != 5 {
+		t.Errorf("Pop slice len got %d, want %d", len(slice), 5)
+	}
 
 	got, slice = Pop(slice)
-	assert.Equal(t, 4, got)
-	assert.Len(t, slice, 4)
+	if got != 4 {
+		t.Errorf("Pop got %v, want %v", got, 4)
+	}
+	if len(slice) != 4 {
+		t.Errorf("Pop slice len got %d, want %d", len(slice), 4)
+	}
 }
 
 type StringerFloat float64
@@ -63,47 +80,88 @@ func (f StringerFloat) String() string {
 
 func TestSliceFlag(t *testing.T) {
 	f1Ptr := Flag("f1", []int{2, 3}, "f1 flag test", strconv.Atoi)
-	assert.Equal(t, []int{2, 3}, *f1Ptr)
-	require.NoError(t, flag.Set("f1", "3,4,5"))
-	assert.Equal(t, []int{3, 4, 5}, *f1Ptr)
+	if !slices.Equal(*f1Ptr, []int{2, 3}) {
+		t.Errorf("Flag f1 initial value: got %v, want %v", *f1Ptr, []int{2, 3})
+	}
+	if err := flag.Set("f1", "3,4,5"); err != nil {
+		t.Fatalf("flag.Set f1 failed: %+v", err)
+	}
+	if !slices.Equal(*f1Ptr, []int{3, 4, 5}) {
+		t.Errorf("Flag f1 after Set: got %v, want %v", *f1Ptr, []int{3, 4, 5})
+	}
 	f1Flag := flag.Lookup("f1")
-	require.NotNil(t, f1Flag)
-	assert.Equal(t, "2,3", f1Flag.DefValue)
+	if f1Flag == nil {
+		t.Fatal("flag.Lookup f1 returned nil")
+	}
+	if f1Flag.DefValue != "2,3" {
+		t.Errorf("Flag f1 DefValue: got %q, want %q", f1Flag.DefValue, "2,3")
+	}
 
 	f2Ptr := Flag("f2", []StringerFloat{2.0, 3.0}, "f2 flag test",
 		func(v string) (StringerFloat, error) {
 			f, err := strconv.ParseFloat(v, 64)
 			return StringerFloat(f), err
 		})
-	assert.Equal(t, []StringerFloat{2, 3}, *f2Ptr)
-	require.NoError(t, flag.Set("f2", "3,4,5"))
-	assert.Equal(t, []StringerFloat{3, 4, 5}, *f2Ptr)
+	if !slices.Equal(*f2Ptr, []StringerFloat{2, 3}) {
+		t.Errorf("Flag f2 initial value: got %v, want %v", *f2Ptr, []StringerFloat{2, 3})
+	}
+	if err := flag.Set("f2", "3,4,5"); err != nil {
+		t.Fatalf("flag.Set f2 failed: %+v", err)
+	}
+	if !slices.Equal(*f2Ptr, []StringerFloat{3, 4, 5}) {
+		t.Errorf("Flag f2 after Set: got %v, want %v", *f2Ptr, []StringerFloat{3, 4, 5})
+	}
 	f2Flag := flag.Lookup("f2")
-	require.NotNil(t, f2Flag)
-	assert.Equal(t, "2.00,3.00", f2Flag.DefValue)
+	if f2Flag == nil {
+		t.Fatal("flag.Lookup f2 returned nil")
+	}
+	if f2Flag.DefValue != "2.00,3.00" {
+		t.Errorf("Flag f2 DefValue: got %q, want %q", f2Flag.DefValue, "2.00,3.00")
+	}
 }
 
 func TestOperations(t *testing.T) {
 	s := []float32{1.0, -3.0, 2.0}
-	assert.Equal(t, float32(2), Max(s))
-	assert.Equal(t, float32(-3), Min(s))
+	if got, want := Max(s), float32(2); got != want {
+		t.Errorf("Max: got %v, want %v", got, want)
+	}
+	if got, want := Min(s), float32(-3); got != want {
+		t.Errorf("Min: got %v, want %v", got, want)
+	}
 
 	SetAt(s, 0, 10)
-	assert.Equal(t, float32(10), s[0])
+	if s[0] != 10 {
+		t.Errorf("SetAt(0, 10): got %v, want %v", s[0], 10)
+	}
 	SetLast(s, 100)
-	assert.Equal(t, float32(100), s[2])
+	if s[2] != 100 {
+		t.Errorf("SetLast(100): got %v, want %v", s[2], 100)
+	}
 
 	FillSlice(s, -7)
-	assert.Equal(t, []float32{-7, -7, -7}, s)
+	if !slices.Equal(s, []float32{-7, -7, -7}) {
+		t.Errorf("FillSlice: got %v, want %v", s, []float32{-7, -7, -7})
+	}
 	FillAnySlice(s, float32(11))
-	assert.Equal(t, []float32{11, 11, 11}, s)
+	if !slices.Equal(s, []float32{11, 11, 11}) {
+		t.Errorf("FillAnySlice: got %v, want %v", s, []float32{11, 11, 11})
+	}
 
 	md := MultidimensionalSliceWithValue(int64(13), 2, 1, 1)
-	assert.Equal(t, [][][]int64{{{13}}, {{13}}}, md)
+	wantMD := [][][]int64{{{13}}, {{13}}}
+	if !reflect.DeepEqual(md, wantMD) {
+		t.Errorf("MultidimensionalSliceWithValue: got %v, want %v", md, wantMD)
+	}
 
 	s2d := Slice2DWithValue(int8(67), 2, 1)
-	assert.Equal(t, [][]int8{{67}, {67}}, s2d)
+	want2d := [][]int8{{67}, {67}}
+	if !reflect.DeepEqual(s2d, want2d) {
+		t.Errorf("Slice2DWithValue: got %v, want %v", s2d, want2d)
+	}
 
 	s3d := Slice3DWithValue(uint8(23), 1, 1, 3)
-	assert.Equal(t, [][][]uint8{{{23, 23, 23}}}, s3d)
+	want3d := [][][]uint8{{{23, 23, 23}}}
+	if !reflect.DeepEqual(s3d, want3d) {
+		t.Errorf("Slice3DWithValue: got %v, want %v", s3d, want3d)
+	}
 }
