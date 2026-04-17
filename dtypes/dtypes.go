@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/gomlx/pkg/support/xslices"
+	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 	"github.com/x448/float16"
 )

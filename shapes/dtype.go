@@ -6,12 +6,19 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/gomlx/compute/dtypes/bfloat16"
-
 	. "github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/gomlx/pkg/support/exceptions"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/pkg/errors"
 	"github.com/x448/float16"
 )
+
+// panicf panics with the formatted description.
+//
+// It is only used for "bugs in the code" -- when parameters don't follow the specifications.
+// In principle, it should never happen -- the same way nil-pointer panics should never happen.
+func panicf(format string, args ...any) {
+	panic(errors.Errorf(format, args...))
+}
 
 // ConvertTo converts any scalar (typically returned by `tensor.Local.Value()`) of the
 // supported dtypes to `T`.
@@ -105,7 +112,7 @@ func UnsafeSliceForDType(dtype DType, unsafePtr unsafe.Pointer, len int) any {
 	case Complex128:
 		return unsafe.Slice((*complex128)(unsafePtr), len)
 	default:
-		exceptions.Panicf("unknown dtype %q (%d) in UnsafeSliceForDType", dtype, dtype)
+		panicf("unknown dtype %q (%d) in UnsafeSliceForDType", dtype, dtype)
 		panic(nil) // Quiet lint warning.
 	}
 }
