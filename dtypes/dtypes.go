@@ -17,9 +17,9 @@ import (
 	"strings"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
-	"github.com/x448/float16"
 )
 
 // panicf panics with the formatted description.
@@ -443,9 +443,9 @@ func (dtype DType) SmallestNonZeroValueForDType() any {
 	case Float64:
 		return math.SmallestNonzeroFloat64
 	case Float16:
-		return float16.Float16(0x0001) // 1p-24, see discussion in https://github.com/x448/float16/pull/46
+		return float16.SmallestNonzero
 	case BFloat16:
-		return bfloat16.SmallestNonzero // 1p-24, see discussion in https://github.com/x448/float16/pull/46
+		return bfloat16.SmallestNonzero
 
 	default:
 		// For invalid dtypes (like complex numbers), return zero.

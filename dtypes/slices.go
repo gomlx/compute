@@ -4,7 +4,7 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/x448/float16"
+	"github.com/gomlx/compute/dtypes/float16"
 )
 
 // UnsafeByteSliceFromAny casts a slice of any of the supported Go types (feed as type any) to a slice of bytes.

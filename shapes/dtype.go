@@ -8,8 +8,8 @@ import (
 
 	. "github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/pkg/errors"
-	"github.com/x448/float16"
 )
 
 // panicf panics with the formatted description.
@@ -33,7 +33,7 @@ func ConvertTo[T NumberNotComplex](value any) T {
 	}
 	if reflect.TypeOf(t) == float16Type {
 		v32 := ConvertTo[float32](value)
-		return T(float16.Fromfloat32(v32))
+		return T(float16.FromFloat32(v32))
 	}
 
 	switch v := value.(type) {
@@ -149,7 +149,7 @@ func CastAsDType(value any, dtype DType) any {
 		}
 		if dtype == Float16 {
 			v32 := valueOf.Convert(float32Type).Interface().(float32)
-			return float16.Fromfloat32(v32)
+			return float16.FromFloat32(v32)
 		}
 		if dtype == BFloat16 {
 			v32 := valueOf.Convert(float32Type).Interface().(float32)
