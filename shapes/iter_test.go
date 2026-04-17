@@ -3,28 +3,37 @@
 package shapes
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
-	"github.com/stretchr/testify/require"
 )
 
 func TestShape_Strides(t *testing.T) {
 	// Test case 1: shape with dimensions [2, 3, 4]
 	shape := Make(dtypes.F32, 2, 3, 4)
 	strides := shape.Strides()
-	require.Equal(t, []int{12, 4, 1}, strides)
+	want := []int{12, 4, 1}
+	if !slices.Equal(strides, want) {
+		t.Errorf("Strides() got %v, want %v", strides, want)
+	}
 
 	// Test case 2: shape with single dimension
 	shape = Make(dtypes.F32, 5)
 	strides = shape.Strides()
-	require.Equal(t, []int{1}, strides)
+	want = []int{1}
+	if !slices.Equal(strides, want) {
+		t.Errorf("Strides() got %v, want %v", strides, want)
+	}
 
 	// Test case 3: shape with dimensions [3, 1, 2]
 	shape = Make(dtypes.F32, 3, 1, 2)
 	strides = shape.Strides()
-	require.Equal(t, []int{2, 2, 1}, strides)
+	want = []int{2, 2, 1}
+	if !slices.Equal(strides, want) {
+		t.Errorf("Strides() got %v, want %v", strides, want)
+	}
 }
 
 func TestShape_Iter(t *testing.T) {
@@ -33,9 +42,14 @@ func TestShape_Iter(t *testing.T) {
 	collect := make([][]int, 0, shape.Size())
 	for flatIdx, indices := range shape.Iter() {
 		collect = append(collect, slices.Clone(indices))
-		require.Equal(t, 0, flatIdx) // There should only be one flatIdx, equal to 0.
+		if flatIdx != 0 {
+			t.Errorf("expected flatIdx 0, got %d", flatIdx)
+		}
 	}
-	require.Equal(t, [][]int{{0, 0, 0, 0}}, collect)
+	want := [][]int{{0, 0, 0, 0}}
+	if !reflect.DeepEqual(collect, want) {
+		t.Errorf("Iter() got %v, want %v", collect, want)
+	}
 
 	// Version 2: all axes are "spatial" (dim > 1)
 	shape = Make(dtypes.F64, 3, 2)
@@ -43,10 +57,12 @@ func TestShape_Iter(t *testing.T) {
 	var counter int
 	for flatIdx, indices := range shape.Iter() {
 		collect = append(collect, slices.Clone(indices))
-		require.Equal(t, counter, flatIdx)
+		if flatIdx != counter {
+			t.Errorf("expected flatIdx %d, got %d", counter, flatIdx)
+		}
 		counter++
 	}
-	want := [][]int{
+	want = [][]int{
 		{0, 0},
 		{0, 1},
 		{1, 0},
@@ -54,7 +70,9 @@ func TestShape_Iter(t *testing.T) {
 		{2, 0},
 		{2, 1},
 	}
-	require.Equal(t, want, collect)
+	if !reflect.DeepEqual(collect, want) {
+		t.Errorf("Iter() got %v, want %v", collect, want)
+	}
 
 	// Version 3: with only 2 spatial axes.
 	shape = Make(dtypes.BF16, 3, 1, 2, 1)
@@ -62,7 +80,9 @@ func TestShape_Iter(t *testing.T) {
 	counter = 0
 	for flatIdx, indices := range shape.Iter() {
 		collect = append(collect, slices.Clone(indices))
-		require.Equal(t, counter, flatIdx)
+		if flatIdx != counter {
+			t.Errorf("expected flatIdx %d, got %d", counter, flatIdx)
+		}
 		counter++
 	}
 	want = [][]int{
@@ -73,7 +93,9 @@ func TestShape_Iter(t *testing.T) {
 		{2, 0, 0, 0},
 		{2, 0, 1, 0},
 	}
-	require.Equal(t, want, collect)
+	if !reflect.DeepEqual(collect, want) {
+		t.Errorf("Iter() got %v, want %v", collect, want)
+	}
 }
 
 func TestShape_IterOnAxes(t *testing.T) {
@@ -90,7 +112,7 @@ func TestShape_IterOnAxes(t *testing.T) {
 		collect = append(collect, slices.Clone(indicesResult))
 		flatIndices = append(flatIndices, flatIdx)
 	}
-	require.Equal(t, [][]int{
+	want := [][]int{
 		{0, 1, 0},
 		{0, 1, 1},
 		{0, 1, 2},
@@ -99,6 +121,12 @@ func TestShape_IterOnAxes(t *testing.T) {
 		{1, 1, 1},
 		{1, 1, 2},
 		{1, 1, 3},
-	}, collect)
-	require.Equal(t, []int{4, 5, 6, 7, 16, 17, 18, 19}, flatIndices)
+	}
+	if !reflect.DeepEqual(collect, want) {
+		t.Errorf("IterOnAxes() collect got %v, want %v", collect, want)
+	}
+	wantFlatIndices := []int{4, 5, 6, 7, 16, 17, 18, 19}
+	if !slices.Equal(flatIndices, wantFlatIndices) {
+		t.Errorf("IterOnAxes() flatIndices got %v, want %v", flatIndices, wantFlatIndices)
+	}
 }
