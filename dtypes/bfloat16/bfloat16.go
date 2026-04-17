@@ -21,8 +21,14 @@ import (
 //   - https://www.reddit.com/r/MachineLearning/comments/193zpyi/d_does_patent_lawsuit_against_googles_tpu_imperil/
 type BFloat16 uint16
 
+// Float32 converts the BFloat16 to a float32.
 func (f BFloat16) Float32() float32 {
 	return math.Float32frombits(uint32(f) << 16)
+}
+
+// Float64 converts the BFloat16 to a float64.
+func (f BFloat16) Float64() float64 {
+	return float64(f.Float32())
 }
 
 // FromFloat32 converts a float32 to a BFloat16.
@@ -30,7 +36,7 @@ func FromFloat32(x float32) BFloat16 {
 	return BFloat16(math.Float32bits(x) >> 16)
 }
 
-// FromFloat64 converts a float32 to a BFloat16.
+// FromFloat64 converts a float64 to a BFloat16.
 func FromFloat64(x float64) BFloat16 {
 	return FromFloat32(float32(x))
 }
@@ -55,6 +61,11 @@ func (f BFloat16) String() string {
 // A sign < 0 returns negative infinity.
 func Inf(sign int) BFloat16 {
 	return FromFloat32(float32(math.Inf(sign)))
+}
+
+// NaN returns a BFloat16 with a NaN value.
+func NaN() BFloat16 {
+	return FromFloat64(math.NaN())
 }
 
 // SmallestNonzero is the smallest nonzero denormal value for bfloat16 (9.1835e-41).
