@@ -18,8 +18,13 @@ func TestFloat16(t *testing.T) {
 
 	// Test NaN
 	f16NaN := NaN()
-	if !math.IsNaN(f16NaN.Float64()) {
-		t.Errorf("FromFloat64(NaN) got %g, want NaN", f16NaN.Float64())
+	if !math.IsNaN(float64(f16NaN.Float32())) {
+		t.Errorf("NaN() got %g, want NaN", f16NaN.Float32())
+	}
+
+	f16FromNaN := FromFloat32(float32(math.NaN()))
+	if !math.IsNaN(float64(f16FromNaN.Float32())) {
+		t.Errorf("FromFloat32(NaN) got %g, want NaN", f16FromNaN.Float32())
 	}
 
 	// Test Bits
