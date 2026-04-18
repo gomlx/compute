@@ -3,12 +3,11 @@
 package shapeinference
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConvGeneralOp(t *testing.T) {
@@ -247,11 +246,20 @@ func TestConvGeneralOp(t *testing.T) {
 				tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations,
 				tc.channelGroupCount, tc.batchGroupCount)
 			if tc.expectedError != "" {
-				require.ErrorContains(t, err, tc.expectedError)
+				if err == nil {
+					t.Fatalf("expected error containing %q, but got no error", tc.expectedError)
+				}
+				if !strings.Contains(err.Error(), tc.expectedError) {
+					t.Errorf("expected error containing %q, but got %q", tc.expectedError, err.Error())
+				}
 				return
 			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.output, output)
+			if err != nil {
+				t.Fatalf("ConvGeneralOp failed: %+v", err)
+			}
+			if !tc.output.Equal(output) {
+				t.Errorf("expected output shape %s, got %s", tc.output, output)
+			}
 		})
 	}
 }
