@@ -20,7 +20,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/gomlx/pkg/support/sets"
+	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
 )
 
