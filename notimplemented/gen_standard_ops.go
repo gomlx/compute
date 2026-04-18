@@ -3,20 +3,20 @@
 package notimplemented
 
 import (
+	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/gomlx/backends"
 )
 
 // Abs returns the Op that represents the output of the corresponding operation.
-func (f Function) Abs(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeAbs)
+func (f Function) Abs(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeAbs)
 }
 
 // Add returns the element-wise sum of the two values.
 // Standard broadcasting rules apply (see documentation).
-func (f Function) Add(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeAdd)
+func (f Function) Add(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeAdd)
 }
 
 // ArgMinMax calculates the "argmin" or "argmax" across an axis of the given input array x.
@@ -31,21 +31,21 @@ func (f Function) Add(lhs backends.Value, rhs backends.Value) (backends.Value, e
 //
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=1, isMin=true) -> {1, 0}  // (it chooses the 0 and the -3)
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=0, isMin=false) -> {0, 1, 0} // (it chooses the 2, 4, and 7)
-func (f Function) ArgMinMax(x backends.Value, axis int, outputDType dtypes.DType, isMin bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeArgMinMax)
+func (f Function) ArgMinMax(x compute.Value, axis int, outputDType dtypes.DType, isMin bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeArgMinMax)
 }
 
 // Atan2 returns element-wise the arc tangent of y/x, using the signs of both arguments to determine
 // the correct quadrant of the result.
 // Standard broadcasting rules apply (see documentation).
-func (f Function) Atan2(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeAtan2)
+func (f Function) Atan2(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeAtan2)
 }
 
 // BitCount returns the number of bits that are set to one.
 // Also known as Population Count ("Popcnt") or Hamming Weight.
-func (f Function) BitCount(operand backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitCount)
+func (f Function) BitCount(operand compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitCount)
 }
 
 // Bitcast performs an elementwise bit-cast operation from a dtype to another dtype.
@@ -62,28 +62,28 @@ func (f Function) BitCount(operand backends.Value) (backends.Value, error) {
 // x.DType().Size() / targetDType.Size().
 //
 // E.g: Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
-func (f Function) Bitcast(x backends.Value, targetDType dtypes.DType) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitcast)
+func (f Function) Bitcast(x compute.Value, targetDType dtypes.DType) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitcast)
 }
 
 // BitwiseAnd returns the element-wise bitwise AND operation.
-func (f Function) BitwiseAnd(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitwiseAnd)
+func (f Function) BitwiseAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitwiseAnd)
 }
 
 // BitwiseNot returns the element-wise bitwise AND operation.
-func (f Function) BitwiseNot(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitwiseNot)
+func (f Function) BitwiseNot(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitwiseNot)
 }
 
 // BitwiseOr returns the element-wise bitwise OR operation.
-func (f Function) BitwiseOr(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitwiseOr)
+func (f Function) BitwiseOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitwiseOr)
 }
 
 // BitwiseXor returns the element-wise bitwise XOR operator.
-func (f Function) BitwiseXor(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBitwiseXor)
+func (f Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBitwiseXor)
 }
 
 // BroadcastInDim broadcasts x to an output with the given shape.
@@ -101,25 +101,25 @@ func (f Function) BitwiseXor(lhs backends.Value, rhs backends.Value) (backends.V
 //     will generate output
 //     {{1 , 1},
 //     {2 , 2}}
-func (f Function) BroadcastInDim(x backends.Value, outputShape shapes.Shape, broadcastAxes []int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBroadcastInDim)
+func (f Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBroadcastInDim)
 }
 
 // Ceil returns the Op that represents the output of the corresponding operation.
-func (f Function) Ceil(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeCeil)
+func (f Function) Ceil(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeCeil)
 }
 
 // Clamp returns the element-wise clamping operation.
 //
 // The values max and min can either be a scalar or have the same shape as x.
-func (f Function) Clamp(min backends.Value, x backends.Value, max backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeClamp)
+func (f Function) Clamp(min compute.Value, x compute.Value, max compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeClamp)
 }
 
 // Clz returns element-wise the "count leading zeros" bits of input node x -- for integer values.
-func (f Function) Clz(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeClz)
+func (f Function) Clz(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeClz)
 }
 
 // Complex returns the complex number taking x0 as the real part and x1 as the imaginary part.
@@ -128,8 +128,8 @@ func (f Function) Clz(x backends.Value) (backends.Value, error) {
 // The output will be either `dtypes.Complex64` or `dtypes.Complex128`, depending on x0 and x1 dtypes.
 // The shapes of `real` or `imaginary` must be the same, or one must be a scalar, in which case
 // the value is broadcast to every other value.
-func (f Function) Complex(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeComplex)
+func (f Function) Complex(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeComplex)
 }
 
 // Concatenate operands on the given axis.
@@ -137,13 +137,13 @@ func (f Function) Complex(lhs backends.Value, rhs backends.Value) (backends.Valu
 // All axes that are not being concatenated must match dimensions, except on the axes being concatenated.
 // It doesn't work with scalars -- use ExpandAxes.
 // If there is only one operand, it is returned and this is a no-op.
-func (f Function) Concatenate(axis int, operands ...backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeConcatenate)
+func (f Function) Concatenate(axis int, operands ...compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConcatenate)
 }
 
 // Conj returns the conjugate of a complex number. E.g: Conj(1+3i) = 1-3i
-func (f Function) Conj(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeConj)
+func (f Function) Conj(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConj)
 }
 
 // ConvGeneral is a generic Convolution operation with support for:
@@ -161,24 +161,24 @@ func (f Function) Conj(x backends.Value) (backends.Value, error) {
 // Note:
 //   - Another common term for "channels" is "features".
 //   - "Kernel" is also commonly called "weights" or "filters".
-func (f Function) ConvGeneral(input backends.Value, kernel backends.Value, axes backends.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeConvGeneral)
+func (f Function) ConvGeneral(input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConvGeneral)
 }
 
 // ConvertDType of x to dtype.
-func (f Function) ConvertDType(x backends.Value, dtype dtypes.DType) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeConvertDType)
+func (f Function) ConvertDType(x compute.Value, dtype dtypes.DType) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConvertDType)
 }
 
 // Cos returns the Op that represents the output of the corresponding operation.
-func (f Function) Cos(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeCos)
+func (f Function) Cos(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeCos)
 }
 
 // Div returns the element-wise division of the two values.
 // Standard broadcasting rules apply (see documentation).
-func (f Function) Div(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeDiv)
+func (f Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDiv)
 }
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
@@ -194,8 +194,8 @@ func (f Function) Div(lhs backends.Value, rhs backends.Value) (backends.Value, e
 // It follows that the resulting dimension number starts with the batch dimension, then the 'lhs'
 // non-contracting/non-batch dimension, and finally the 'rhs' non-contracting/non-batch dimension.
 // It provides the basic means of implementing Einsum.
-func (f Function) DotGeneral(lhs backends.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs backends.Value, rhsContractingAxes []int, rhsBatchAxes []int, config backends.DotGeneralConfig) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeDotGeneral)
+func (f Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDotGeneral)
 }
 
 // DynamicSlice extracts a slice from the operand at the startIndices position and the given sliceSizes.
@@ -209,8 +209,8 @@ func (f Function) DotGeneral(lhs backends.Value, lhsContractingAxes []int, lhsBa
 //	adjustedStartIndices[i] = clamp(0, StartIndices[i], operand.Dimensions[i] - sliceSizes[i])
 //
 // See description in https://openxla.org/xla/operation_semantics#dynamicslice
-func (f Function) DynamicSlice(operand backends.Value, startIndices []backends.Value, sliceDims []int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeDynamicSlice)
+func (f Function) DynamicSlice(operand compute.Value, startIndices []compute.Value, sliceDims []int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicSlice)
 }
 
 // DynamicUpdateSlice updates the operand with the values given in update, at the position given by startIndices.
@@ -225,47 +225,47 @@ func (f Function) DynamicSlice(operand backends.Value, startIndices []backends.V
 // The startIndices are adjusted as follows:
 //
 //	adjustedStartIndices[i] = clamp(0, StartIndices[i], operand.Dimensions[i] - update.Dimensions[i])
-func (f Function) DynamicUpdateSlice(operand backends.Value, update backends.Value, startIndices []backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeDynamicUpdateSlice)
+func (f Function) DynamicUpdateSlice(operand compute.Value, update compute.Value, startIndices []compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicUpdateSlice)
 }
 
 // Equal performs element-wise equality check, returns boolean results with the same dimensions as input.
-func (f Function) Equal(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeEqual)
+func (f Function) Equal(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeEqual)
 }
 
 // EqualTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) EqualTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeEqualTotalOrder)
+func (f Function) EqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeEqualTotalOrder)
 }
 
 // Erf returns the "error function", defined as erf(x) = 2/Pi * \int_{0}^{x}{e^{-t^2}dt}.
-func (f Function) Erf(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeErf)
+func (f Function) Erf(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeErf)
 }
 
 // Exp returns the Op that represents the output of the corresponding operation.
-func (f Function) Exp(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeExp)
+func (f Function) Exp(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeExp)
 }
 
 // Expm1 returns the Op that represents the output of the corresponding operation.
-func (f Function) Expm1(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeExpm1)
+func (f Function) Expm1(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeExpm1)
 }
 
 // FFT calls the XLA FFT operation, which implements {Forward, Inverse} x {Complex, Real} versions.
 // See documentation in https://www.tensorflow.org/xla/operation_semantics.
 // Underlying, CPU FFT is backed by Eigen's TensorFFT, and GPU FFT uses cuFFT.
-func (f Function) FFT(operand backends.Value, fftType backends.FFTType, fftLength []int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFFT)
+func (f Function) FFT(operand compute.Value, fftType compute.FFTType, fftLength []int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFFT)
 }
 
 // Floor returns the Op that represents the output of the corresponding operation.
-func (f Function) Floor(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFloor)
+func (f Function) Floor(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFloor)
 }
 
 // FusedDense performs fused matmul + optional bias + optional activation.
@@ -276,22 +276,22 @@ func (f Function) Floor(x backends.Value) (backends.Value, error) {
 // - x: [batch..., in_features], weight: [in_features, out_features...],
 // - bias: [out_features...] (nil-able).
 // - activation: applied after the matmul+bias; set to ActivationNone for no activation.
-func (f Function) FusedDense(x backends.Value, weight backends.Value, bias backends.Value, activation backends.ActivationType) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedDense)
+func (f Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedDense)
 }
 
 // FusedGelu computes Gaussian Error Linear Unit activation.
 // If exact is true, the exact GELU (using erf) is computed;
 // otherwise the tanh approximation is used.
-func (f Function) FusedGelu(x backends.Value, exact bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedGelu)
+func (f Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedGelu)
 }
 
 // FusedLayerNorm applies layer normalization over specified axes.
 // gamma and beta can be nil if no learned scale/offset.
 // epsilon: numerical stability constant (typically 1e-5).
-func (f Function) FusedLayerNorm(x backends.Value, axes []int, epsilon float64, gamma backends.Value, beta backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedLayerNorm)
+func (f Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedLayerNorm)
 }
 
 // FusedQuantizedDense performs fused dequantization + matmul + optional bias + optional activation.
@@ -314,8 +314,8 @@ func (f Function) FusedLayerNorm(x backends.Value, axes []int, epsilon float64, 
 // Future: inputQuantization, outputQuantization, and biasQuantization parameters may be
 // added to support fully quantized operations where the activations and/or output are
 // also quantized.
-func (f Function) FusedQuantizedDense(x backends.Value, weights backends.Value, bias backends.Value, weightsQuantization *backends.Quantization, activation backends.ActivationType) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedQuantizedDense)
+func (f Function) FusedQuantizedDense(x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedQuantizedDense)
 }
 
 // FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
@@ -345,8 +345,8 @@ func (f Function) FusedQuantizedDense(x backends.Value, weights backends.Value, 
 //   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
 //
 // Output: same shape as query.
-func (f Function) FusedScaledDotProductAttention(query backends.Value, key backends.Value, value backends.Value, mask backends.Value, numHeads int, numKVHeads int, axesLayout backends.AxesLayout, scale float64, causal bool, options *backends.ScaledDotProductAttentionConfig) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedScaledDotProductAttention)
+func (f Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedScaledDotProductAttention)
 }
 
 // FusedSoftmax computes softmax along the specified axis.
@@ -354,8 +354,8 @@ func (f Function) FusedScaledDotProductAttention(query backends.Value, key backe
 // Note: unlike the generic softmax in GoMLX's graph package, the fused
 // softmax only accepts one axis. The axis must be non-negative (the caller
 // normalizes negative indices before calling).
-func (f Function) FusedSoftmax(x backends.Value, axis int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeFusedSoftmax)
+func (f Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedSoftmax)
 }
 
 // Gather is a powerful but cumbersome Gather operation offered by XLA.
@@ -419,160 +419,160 @@ func (f Function) FusedSoftmax(x backends.Value, axis int) (backends.Value, erro
 // Out-of-bound (and negative) indices <i> are adjusted with max(min(<i>, axisDimension-1), 0), meaning they
 // are taken from the border of the axes.
 // TODO: Add batch support: operandBatchingAxes and startIndicesBatchingAxes.
-func (f Function) Gather(operand backends.Value, startIndices backends.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeGather)
+func (f Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeGather)
 }
 
 // GreaterOrEqual performs element-wise comparison, returns boolean results with the same dimensions as input.
-func (f Function) GreaterOrEqual(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeGreaterOrEqual)
+func (f Function) GreaterOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeGreaterOrEqual)
 }
 
 // GreaterOrEqualTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) GreaterOrEqualTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeGreaterOrEqualTotalOrder)
+func (f Function) GreaterOrEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeGreaterOrEqualTotalOrder)
 }
 
 // GreaterThan performs element-wise comparison, returns boolean results with the same dimensions as input.
-func (f Function) GreaterThan(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeGreaterThan)
+func (f Function) GreaterThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeGreaterThan)
 }
 
 // GreaterThanTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) GreaterThanTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeGreaterThanTotalOrder)
+func (f Function) GreaterThanTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeGreaterThanTotalOrder)
 }
 
 // Imag returns the imaginary part of a complex number. It returns 0 if the x is a float number.
-func (f Function) Imag(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeImag)
+func (f Function) Imag(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeImag)
 }
 
 // Iota creates a constant of the given shape with increasing numbers (starting from 0)
 // on the given axis. So Iota([2,2], 1) returns [[0 1][0 1]], while Iota([2,2], 0)
 // returns [[0 0][1 1]].
-func (f Function) Iota(shape shapes.Shape, iotaAxis int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeIota)
+func (f Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeIota)
 }
 
 // IsFinite tests whether each element of operand is finite, i.e., if it is not positive nor negative infinity, and it is not NaN.
 // It returns the same shape as the input, but with boolean values where each element is true if and only if
 // the corresponding input element is finite.
-func (f Function) IsFinite(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeIsFinite)
+func (f Function) IsFinite(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeIsFinite)
 }
 
 // IsNaN tests whether each element of operand is NaN, i.e., if it is not a finite number.
-func (f Function) IsNaN(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeIsNaN)
+func (f Function) IsNaN(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeIsNaN)
 }
 
 // LessOrEqual performs element-wise comparison, returns boolean results with the same dimensions as input.
-func (f Function) LessOrEqual(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLessOrEqual)
+func (f Function) LessOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLessOrEqual)
 }
 
 // LessOrEqualTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) LessOrEqualTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLessOrEqualTotalOrder)
+func (f Function) LessOrEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLessOrEqualTotalOrder)
 }
 
 // LessThan performs element-wise comparison, returns boolean results with the same dimensions as input.
-func (f Function) LessThan(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLessThan)
+func (f Function) LessThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLessThan)
 }
 
 // LessThanTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) LessThanTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLessThanTotalOrder)
+func (f Function) LessThanTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLessThanTotalOrder)
 }
 
 // Log returns the Op that represents the output of the corresponding operation.
-func (f Function) Log(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLog)
+func (f Function) Log(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLog)
 }
 
 // Log1p returns the expression log(x+1).
-func (f Function) Log1p(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLog1p)
+func (f Function) Log1p(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLog1p)
 }
 
 // LogicalAnd returns the element-wise logical AND operation.
-func (f Function) LogicalAnd(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLogicalAnd)
+func (f Function) LogicalAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLogicalAnd)
 }
 
 // LogicalNot returns the Op that represents the output of the corresponding operation.
-func (f Function) LogicalNot(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLogicalNot)
+func (f Function) LogicalNot(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLogicalNot)
 }
 
 // LogicalOr returns the element-wise logical OR operation.
-func (f Function) LogicalOr(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLogicalOr)
+func (f Function) LogicalOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLogicalOr)
 }
 
 // LogicalXor returns the element-wise logical XOR operator.
-func (f Function) LogicalXor(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLogicalXor)
+func (f Function) LogicalXor(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLogicalXor)
 }
 
 // Logistic returns the element-wise expression 1/(1+exp(-x)). Also known as the Sigmoid function.
-func (f Function) Logistic(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeLogistic)
+func (f Function) Logistic(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeLogistic)
 }
 
 // Max returns the element-wise highest value among the two.
-func (f Function) Max(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeMax)
+func (f Function) Max(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeMax)
 }
 
 // Min returns the element-wise smallest value among the two.
-func (f Function) Min(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeMin)
+func (f Function) Min(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeMin)
 }
 
 // Mul returns the element-wise multiplication of the two values.
 // Standard broadcasting rules apply (see documentation).
-func (f Function) Mul(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeMul)
+func (f Function) Mul(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeMul)
 }
 
 // Neg returns the Op that represents the output of the corresponding operation.
-func (f Function) Neg(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeNeg)
+func (f Function) Neg(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeNeg)
 }
 
 // NotEqual performs element-wise inequality check, returns boolean results with the same dimensions as input.
-func (f Function) NotEqual(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeNotEqual)
+func (f Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeNotEqual)
 }
 
 // NotEqualTotalOrder returns the element-wise operation.
 // Standard broadcasting rules apply (see documentation).
 // The "TotalOrder" version of the operation enforces `-NaN < -Inf < -Finite < -0 < +0 < +Finite < +Inf < +NaN`.
-func (f Function) NotEqualTotalOrder(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeNotEqualTotalOrder)
+func (f Function) NotEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeNotEqualTotalOrder)
 }
 
 // Pad injects padding on the start, end, or interior (in between each element) of the given operand.
 // There must be at most `operand.Rank()` axesConfig values. Missing PadAxis are assumed to be zeros,
 // that is, no padding for those axes.
-func (f Function) Pad(x backends.Value, fillValue backends.Value, axesConfig ...backends.PadAxis) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypePad)
+func (f Function) Pad(x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypePad)
 }
 
 // Pow returns the Op that represents the output of the corresponding operation.
-func (f Function) Pow(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypePow)
+func (f Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypePow)
 }
 
 // QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
@@ -592,13 +592,13 @@ func (f Function) Pow(lhs backends.Value, rhs backends.Value) (backends.Value, e
 // Output: float32 tensor with shape [batch..., K] where K = (bytesPerRow / bytesPerBlock) * valuesPerBlock.
 //
 //	For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
-func (f Function) QuantizedEmbeddingLookup(data backends.Value, indices backends.Value, dataQuantization *backends.Quantization) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeQuantizedEmbeddingLookup)
+func (f Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeQuantizedEmbeddingLookup)
 }
 
 // Real return the real part of a complex number. It returns x if the x is a float number.
-func (f Function) Real(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReal)
+func (f Function) Real(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReal)
 }
 
 // ReduceBitwiseAnd reduces x over the axes selected, performing a BitwiseAnd on the slices reduced.
@@ -606,8 +606,8 @@ func (f Function) Real(x backends.Value) (backends.Value, error) {
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceBitwiseAnd(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceBitwiseAnd)
+func (f Function) ReduceBitwiseAnd(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceBitwiseAnd)
 }
 
 // ReduceBitwiseOr reduces x over the axes selected, performing a BitwiseOr on the slices reduced.
@@ -615,8 +615,8 @@ func (f Function) ReduceBitwiseAnd(x backends.Value, axes ...int) (backends.Valu
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceBitwiseOr(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceBitwiseOr)
+func (f Function) ReduceBitwiseOr(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceBitwiseOr)
 }
 
 // ReduceBitwiseXor reduces x over the axes selected, performing a BitwiseXor on the slices reduced.
@@ -624,8 +624,8 @@ func (f Function) ReduceBitwiseOr(x backends.Value, axes ...int) (backends.Value
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceBitwiseXor(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceBitwiseXor)
+func (f Function) ReduceBitwiseXor(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceBitwiseXor)
 }
 
 // ReduceLogicalAnd reduces x over the axes selected, performing a LogicalAnd on the slices reduced.
@@ -633,8 +633,8 @@ func (f Function) ReduceBitwiseXor(x backends.Value, axes ...int) (backends.Valu
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceLogicalAnd(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceLogicalAnd)
+func (f Function) ReduceLogicalAnd(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceLogicalAnd)
 }
 
 // ReduceLogicalOr reduces x over the axes selected, performing a LogicalOr on the slices reduced.
@@ -642,8 +642,8 @@ func (f Function) ReduceLogicalAnd(x backends.Value, axes ...int) (backends.Valu
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceLogicalOr(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceLogicalOr)
+func (f Function) ReduceLogicalOr(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceLogicalOr)
 }
 
 // ReduceLogicalXor reduces x over the axes selected, performing a LogicalXor on the slices reduced.
@@ -651,8 +651,8 @@ func (f Function) ReduceLogicalOr(x backends.Value, axes ...int) (backends.Value
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceLogicalXor(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceLogicalXor)
+func (f Function) ReduceLogicalXor(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceLogicalXor)
 }
 
 // ReduceMax reduces x over the axes selected, taking the Max value of the slices reduced.
@@ -660,8 +660,8 @@ func (f Function) ReduceLogicalXor(x backends.Value, axes ...int) (backends.Valu
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceMax(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceMax)
+func (f Function) ReduceMax(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceMax)
 }
 
 // ReduceMin reduces x over the axes selected, taking the Min value of the slices reduced.
@@ -669,8 +669,8 @@ func (f Function) ReduceMax(x backends.Value, axes ...int) (backends.Value, erro
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceMin(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceMin)
+func (f Function) ReduceMin(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceMin)
 }
 
 // ReduceProduct reduces x over the axes selected, taking the product of the slices reduced.
@@ -678,8 +678,8 @@ func (f Function) ReduceMin(x backends.Value, axes ...int) (backends.Value, erro
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceProduct(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceProduct)
+func (f Function) ReduceProduct(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceProduct)
 }
 
 // ReduceSum reduces x over the axes selected, taking the sum of the slices reduced.
@@ -687,93 +687,93 @@ func (f Function) ReduceProduct(x backends.Value, axes ...int) (backends.Value, 
 // The returned result rank is decreased by len(axes).
 //
 // If no axes are given, it reduces the full array.
-func (f Function) ReduceSum(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceSum)
+func (f Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceSum)
 }
 
 // Rem returns the remainder operation, also known as modulo (or Mod for short).
 // Notice despite the name XLA implements Mod not IEEE754 Remainder operation.
-func (f Function) Rem(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeRem)
+func (f Function) Rem(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeRem)
 }
 
 // Reshape reshapes x to the new dimensions.
 // Total size cannot change, it's just a "reinterpretation" of the same flat data.
 // The dtype remains the same, see ConvertDType to actually convert the values.
-func (f Function) Reshape(x backends.Value, dimensions ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReshape)
+func (f Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReshape)
 }
 
 // Reverse returns x with the values for the given dimensions reversed, that is,
 // the value indexed at `i` will be swapped with the value at indexed `(dimension_size - 1 - i)`.
 // The shape remains the same.
-func (f Function) Reverse(x backends.Value, axes ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReverse)
+func (f Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReverse)
 }
 
 // Round returns the Op that represents the output of the corresponding operation.
 // This operation rounds to the nearest even.
-func (f Function) Round(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeRound)
+func (f Function) Round(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeRound)
 }
 
 // Rsqrt returns the element-wise reciprocal of square root operation 1/sqrt(x).
-func (f Function) Rsqrt(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeRsqrt)
+func (f Function) Rsqrt(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeRsqrt)
 }
 
 // ScatterMax scatter values from updates pointed by scatterIndices to operand, by taking the Max.
-func (f Function) ScatterMax(operand backends.Value, scatterIndices backends.Value, updates backends.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeScatterMax)
+func (f Function) ScatterMax(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeScatterMax)
 }
 
 // ScatterMin scatter values from updates pointed by scatterIndices to operand, by taking the Min.
-func (f Function) ScatterMin(operand backends.Value, scatterIndices backends.Value, updates backends.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeScatterMin)
+func (f Function) ScatterMin(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeScatterMin)
 }
 
 // ScatterSum values from updates pointed by scatterIndices to operand.
-func (f Function) ScatterSum(operand backends.Value, scatterIndices backends.Value, updates backends.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeScatterSum)
+func (f Function) ScatterSum(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeScatterSum)
 }
 
 // SelectAndScatterMax runs windows (similar to ReduceWindow) over the operand, selects values to update the output (like ScatterAdd)
 // It selects the values in the window such that it works as reverse for a PoolMax operation.
 // See details in https://openxla.org/xla/operation_semantics#selectandscatter
-func (f Function) SelectAndScatterMax(operand backends.Value, source backends.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSelectAndScatterMax)
+func (f Function) SelectAndScatterMax(operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSelectAndScatterMax)
 }
 
 // SelectAndScatterMin runs windows (similar to ReduceWindow) over the operand, selects values to update the output (like ScatterAdd)
 // It selects the values in the window such that it works as reverse for a PoolMin operation.
 // See details in https://openxla.org/xla/operation_semantics#selectandscatter
-func (f Function) SelectAndScatterMin(operand backends.Value, source backends.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSelectAndScatterMin)
+func (f Function) SelectAndScatterMin(operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSelectAndScatterMin)
 }
 
 // ShiftLeft n bits. It implicitly preserves the sign bit if there is no overflow. So ShiftLeft(-1, 1) = -2.
-func (f Function) ShiftLeft(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeShiftLeft)
+func (f Function) ShiftLeft(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeShiftLeft)
 }
 
 // ShiftRightArithmetic shifts right by n bits, preserving the sign bit. So ShiftRight(-2, 1) = -1.
-func (f Function) ShiftRightArithmetic(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeShiftRightArithmetic)
+func (f Function) ShiftRightArithmetic(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeShiftRightArithmetic)
 }
 
 // ShiftRightLogical shifts right by n bits, destroying the sign bit.
-func (f Function) ShiftRightLogical(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeShiftRightLogical)
+func (f Function) ShiftRightLogical(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeShiftRightLogical)
 }
 
 // Sign returns element-wise +1, +/-0 or -1 depending on the sign of x. It returns NaN if the input is NaN.
-func (f Function) Sign(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSign)
+func (f Function) Sign(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSign)
 }
 
 // Sin returns the Op that represents the output of the corresponding operation.
-func (f Function) Sin(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSin)
+func (f Function) Sin(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSin)
 }
 
 // Slice extracts a subarray from the input array.
@@ -785,31 +785,31 @@ func (f Function) Sin(x backends.Value) (backends.Value, error) {
 //
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={4}, strides=nil) -> {2, 3}
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
-func (f Function) Slice(x backends.Value, starts []int, limits []int, strides []int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSlice)
+func (f Function) Slice(x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSlice)
 }
 
 // Sqrt returns the Op that represents the output of the corresponding operation.
-func (f Function) Sqrt(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSqrt)
+func (f Function) Sqrt(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSqrt)
 }
 
 // Sub returns the element-wise subtraction of the two values.
 // Standard broadcasting rules apply (see documentation).
-func (f Function) Sub(lhs backends.Value, rhs backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSub)
+func (f Function) Sub(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSub)
 }
 
 // Tanh returns the Op that represents the output of the corresponding operation.
-func (f Function) Tanh(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeTanh)
+func (f Function) Tanh(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeTanh)
 }
 
 // Transpose axes of x.
 // There should be one value in permutations for each axis in x.
 // The output will have: output.Shape.Dimension[ii] = x.Shape.Dimension[permutations[i]].
-func (f Function) Transpose(x backends.Value, permutation ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeTranspose)
+func (f Function) Transpose(x compute.Value, permutation ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeTranspose)
 }
 
 // Where takes element-wise values from onTrue or onFalse depending on the value of the condition (must be boolean).
@@ -817,6 +817,6 @@ func (f Function) Transpose(x backends.Value, permutation ...int) (backends.Valu
 // The condition must be boolean, and onTrue and onFalse must have the same dtype.
 //
 // If either condition, onTrue or onFalse is a scalar, it will be broadcasted to the shape of the other operands.
-func (f Function) Where(condition backends.Value, onTrue backends.Value, onFalse backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeWhere)
+func (f Function) Where(condition compute.Value, onTrue compute.Value, onFalse compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeWhere)
 }

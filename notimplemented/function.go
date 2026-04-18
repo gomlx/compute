@@ -3,24 +3,24 @@
 package notimplemented
 
 import (
+	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/gomlx/backends"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
 
-// Function implements backends.Function and returns NotImplementedError for every operation.
+// Function implements compute.Function and returns NotImplementedError for every operation.
 type Function struct {
 	// ErrFn is called to generate the error returned, if not nil.
 	// Otherwise NotImplementedError is returned directly.
-	ErrFn func(op backends.OpType) error
+	ErrFn func(op compute.OpType) error
 }
 
-var _ backends.Function = Function{}
+var _ compute.Function = Function{}
 
 // baseErrFn returns the error corresponding to the op.
 // It falls back to Function.ErrFn if it is defined.
-func (f Function) baseErrFn(op backends.OpType) error {
+func (f Function) baseErrFn(op compute.OpType) error {
 	if f.ErrFn == nil {
 		klog.Errorf("NotImplementedError without ErrFn for op %s, please open an issue for a ErrFn to be set", op)
 		return NotImplementedError
@@ -29,81 +29,81 @@ func (f Function) baseErrFn(op backends.OpType) error {
 }
 
 func (f Function) Name() string {
-	return backends.MainName
+	return compute.MainName
 }
 
-func (f Function) Parent() backends.Function {
+func (f Function) Parent() compute.Function {
 	return nil
 }
 
-func (f Function) Closure() (backends.Function, error) {
-	return nil, f.baseErrFn(backends.OpTypeInvalid)
+func (f Function) Closure() (compute.Function, error) {
+	return nil, f.baseErrFn(compute.OpTypeInvalid)
 }
 
-func (f Function) Parameter(name string, shape shapes.Shape, spec *backends.ShardingSpec) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeParameter)
+func (f Function) Parameter(name string, shape shapes.Shape, spec *compute.ShardingSpec) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeParameter)
 }
 
-func (f Function) Constant(flat any, dims ...int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeConstant)
+func (f Function) Constant(flat any, dims ...int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConstant)
 }
 
-func (f Function) Return(outputs []backends.Value, shardings []*backends.ShardingSpec) error {
+func (f Function) Return(outputs []compute.Value, shardings []*compute.ShardingSpec) error {
 	return errors.Wrapf(NotImplementedError, "in Return()")
 }
 
-func (f Function) Call(target backends.Function, inputs ...backends.Value) ([]backends.Value, error) {
+func (f Function) Call(target compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
 	return nil, errors.Wrapf(NotImplementedError, "in Call()")
 }
 
-func (f Function) Identity(x backends.Value) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeIdentity)
+func (f Function) Identity(x compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeIdentity)
 }
 
-func (f Function) ReduceWindow(x backends.Value, reductionType backends.ReduceOpType,
-	windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeReduceWindow)
+func (f Function) ReduceWindow(x compute.Value, reductionType compute.ReduceOpType,
+	windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeReduceWindow)
 }
 
-func (f Function) RNGBitGenerator(state backends.Value, shape shapes.Shape) (newState, values backends.Value, err error) {
-	return nil, nil, f.baseErrFn(backends.OpTypeRNGBitGenerator)
+func (f Function) RNGBitGenerator(state compute.Value, shape shapes.Shape) (newState, values compute.Value, err error) {
+	return nil, nil, f.baseErrFn(compute.OpTypeRNGBitGenerator)
 }
 
-func (f Function) BatchNormForInference(operand, scale, offset, mean, variance backends.Value, epsilon float32, axis int) (
-	backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeBatchNormForInference)
+func (f Function) BatchNormForInference(operand, scale, offset, mean, variance compute.Value, epsilon float32, axis int) (
+	compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeBatchNormForInference)
 }
 
-func (f Function) BatchNormForTraining(operand, scale, offset backends.Value, epsilon float32, axis int) (
-	normalized, batchMean, batchVariance backends.Value, err error) {
-	return nil, nil, nil, f.baseErrFn(backends.OpTypeBatchNormForTraining)
+func (f Function) BatchNormForTraining(operand, scale, offset compute.Value, epsilon float32, axis int) (
+	normalized, batchMean, batchVariance compute.Value, err error) {
+	return nil, nil, nil, f.baseErrFn(compute.OpTypeBatchNormForTraining)
 }
 
-func (f Function) BatchNormGradient(operand, scale, mean, variance, gradOutput backends.Value, epsilon float32, axis int) (
-	gradOperand, gradScale, gradOffset backends.Value, err error) {
-	return nil, nil, nil, f.baseErrFn(backends.OpTypeBatchNormGradient)
+func (f Function) BatchNormGradient(operand, scale, mean, variance, gradOutput compute.Value, epsilon float32, axis int) (
+	gradOperand, gradScale, gradOffset compute.Value, err error) {
+	return nil, nil, nil, f.baseErrFn(compute.OpTypeBatchNormGradient)
 }
 
-func (f Function) AllReduce(inputs []backends.Value, reduceOp backends.ReduceOpType, replicaGroups [][]int) (
-	[]backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeAllReduce)
+func (f Function) AllReduce(inputs []compute.Value, reduceOp compute.ReduceOpType, replicaGroups [][]int) (
+	[]compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeAllReduce)
 }
 
-func (f Function) FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV backends.Value, queryDim, keyValueDim int) (query, key, value backends.Value, err error) {
-	return nil, nil, nil, f.baseErrFn(backends.OpTypeFusedAttentionQKVProjection)
+func (f Function) FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV compute.Value, queryDim, keyValueDim int) (query, key, value compute.Value, err error) {
+	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedAttentionQKVProjection)
 }
 
-func (f Function) Sort(comparator backends.Function, axis int, isStable bool, inputs ...backends.Value) (
-	[]backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeSort)
+func (f Function) Sort(comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) (
+	[]compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeSort)
 }
 
-func (f Function) While(cond, body backends.Function, initialState ...backends.Value) (
-	[]backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeWhile)
+func (f Function) While(cond, body compute.Function, initialState ...compute.Value) (
+	[]compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeWhile)
 }
 
-func (f Function) If(pred backends.Value, trueBranch, falseBranch backends.Function) (
-	[]backends.Value, error) {
-	return nil, f.baseErrFn(backends.OpTypeIf)
+func (f Function) If(pred compute.Value, trueBranch, falseBranch compute.Function) (
+	[]compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeIf)
 }
