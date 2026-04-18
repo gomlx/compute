@@ -56,7 +56,7 @@ import (
 	"strings"
 
 	"github.com/gomlx/compute/support/xslices"
-	"github.com/gomlx/gomlx/pkg/support/exceptions"
+	"github.com/pkg/errors"
 )
 
 // DeviceNum represents which device holds a buffer or should execute a computation.
@@ -219,7 +219,9 @@ func splitConfig(config string) (string, string) {
 // "<backend_configuration>" is backend-specific (e.g.: for xla backend, it is the PJRT plugin name).
 func NewWithConfig(config string) (Backend, error) {
 	if len(registeredConstructors) == 0 {
-		exceptions.Panicf(`no registered backends for GoMLX -- maybe import the default ones (XLA and SimpleGo) with import _ "github.com/gomlx/gomlx/backends/default"?`)
+		panic(errors.Errorf(
+			"no registered compute.Backend (github.com/gomlx/compute) implementations -- maybe import the default " +
+				"ones (\"xla\" and \"go\") with import _ \"github.com/gomlx/gomlx/backends/default\"?"))
 	}
 	var backendName, backendConfig string
 	if config == "" {
@@ -229,7 +231,7 @@ func NewWithConfig(config string) (Backend, error) {
 	}
 	constructor, found := registeredConstructors[backendName]
 	if !found {
-		exceptions.Panicf("can't find backend %q for configuration %q given, backends available: \"%s\"",
+		panic(errors.Errorf("can't find backend %q for configuration %q given, backends available: \"%s\"",
 			backendName, config, strings.Join(List(), "\", \""))
 	}
 	return constructor(backendConfig)
