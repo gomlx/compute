@@ -232,7 +232,7 @@ func NewWithConfig(config string) (Backend, error) {
 	constructor, found := registeredConstructors[backendName]
 	if !found {
 		panic(errors.Errorf("can't find backend %q for configuration %q given, backends available: \"%s\"",
-			backendName, config, strings.Join(List(), "\", \""))
+			backendName, config, strings.Join(List(), "\", \"")))
 	}
 	return constructor(backendConfig)
 }
