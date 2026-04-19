@@ -15,7 +15,9 @@ The `compute.Backend` API is currently implemented by:
 - Package `xla`: provides an [XLA (PJRT)](https://openxla.org/) based implementation, the same used by Jax and TensorFlow. It uses CGO (it's a C++ library), but it supports GPUs and TPUs, as well as a fast CPU, proper JIT compilation. Limited to static shapes though.
 - The project [go-darwinml](https://github.com/gomlx/go-darwinml/) is an **experimental** support to Apple's CoreML, with accelerate for GPU (Metal) and CPU (arm64).
 
-## Using a backend
+## Using the `compute.Backend` interface
+
+
 
 ## Roadmap
 
