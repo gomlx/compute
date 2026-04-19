@@ -7,7 +7,7 @@ import ( //alt:base
 	_ "github.com/gomlx/compute/dtypes/float16"  //alt:base
 ) //alt:base
 //alt:bf16 import	"github.com/gomlx/compute/dtypes/bfloat16"
-//alt:f16 import	"github.com/x448/float16"
+//alt:f16 import	"github.com/gomlx/compute/dtypes/float16"
 
 // execDotGeneralSmallMatMul* executes matrix multiplication without transpose.
 //

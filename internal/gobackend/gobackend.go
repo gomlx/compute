@@ -20,10 +20,10 @@ import (
 )
 
 // Generates some trivial functions (binary and unary operators) automatically.
-//go:generate go run ../../internal/cmd/simplego_generator
+//go:generate go run ../../internal/cmd/gobackend_generator
 
 // Registers the various generics function instances.
-//go:generate go run ../../internal/cmd/simplego_dispatcher
+//go:generate go run ../../internal/cmd/gobackend_dispatcher
 
 // BackendName to be used in GOMLX_BACKEND to specify this backend.
 const BackendName = "go"

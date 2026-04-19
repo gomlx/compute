@@ -8,7 +8,7 @@ package gobackend
 
 //alt:base import (
 //alt:base _ "github.com/gomlx/compute/dtypes/bfloat16"
-//alt:base _ "github.com/x448/float16"
+//alt:base _ "github.com/gomlx/compute/dtypes/float16"
 //alt:base )
 //alt:bf16  import	"github.com/gomlx/compute/dtypes/bfloat16"
 import "github.com/gomlx/compute/dtypes/float16" //alt:f16

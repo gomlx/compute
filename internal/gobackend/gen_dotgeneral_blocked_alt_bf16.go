@@ -8,10 +8,10 @@ package gobackend
 
 //alt:base import (
 //alt:base "github.com/gomlx/compute/dtypes/bfloat16"
-//alt:base "github.com/x448/float16"
+//alt:base "github.com/gomlx/compute/dtypes/float16"
 //alt:base )
 import "github.com/gomlx/compute/dtypes/bfloat16" //alt:bf16
-//alt:f16  import	"github.com/x448/float16"
+//alt:f16  import	"github.com/gomlx/compute/dtypes/float16"
 
 // dgCopyOutputBlockToFlat* copies the blocked output to a flat output, removing the padding.
 // The base version works for cases where the blockSource and output have the same dtype.
