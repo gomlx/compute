@@ -143,7 +143,7 @@ type Builder struct {
 
 var _ compute.Builder = Builder{}
 
-//go:generate go run ../../internal/cmd/notimplemented_generator
+//go:generate go run ../internal/cmd/notimplemented_generator
 
 func (b Builder) Name() string {
 	return "Dummy \"not implemented\" backend, please override this method"
