@@ -11,8 +11,8 @@ package main
 import (
 	"flag"
 
-	"github.com/gomlx/compute/internal/backendparser"
 	"github.com/gomlx/compute/internal/must"
+	"github.com/gomlx/compute/support/backendparser"
 	"k8s.io/klog/v2"
 )
 

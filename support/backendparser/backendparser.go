@@ -1,5 +1,9 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
+// Package backendparser parses the compute interfaces (Backend, Builder, Function, etc.) and enumerate
+// their methods.
+//
+// This is useful to generate code that works with these interfaces.
 package backendparser
 
 import (
@@ -11,8 +15,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/internal/exceptions"
+	"github.com/gomlx/compute/internal/must"
 )
 
 // Method represents a single method from the backends.Builder or backends.Function interface

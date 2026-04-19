@@ -12,8 +12,8 @@ import (
 
 	"fmt"
 
-	"github.com/gomlx/compute/internal/backendparser"
 	"github.com/gomlx/compute/internal/must"
+	"github.com/gomlx/compute/support/backendparser"
 	"github.com/gomlx/compute/support/sets"
 	"k8s.io/klog/v2"
 )
