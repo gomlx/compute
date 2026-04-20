@@ -5,6 +5,7 @@ package testutil
 import (
 	"reflect"
 
+	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 )
@@ -50,4 +51,54 @@ func ToFlatAndShape(v any) (any, shapes.Shape) {
 func FlattenSlice(v any) any {
 	flat, _ := ToFlatAndShape(v)
 	return flat
+}
+
+// ToBuffer converts a nested slice of any into a buffer for the given backend.
+func ToBuffer(backend compute.Backend, v any) (compute.Buffer, error) {
+	flat, shape := ToFlatAndShape(v)
+	return backend.BufferFromFlatData(0, flat, shape)
+}
+
+// FromBuffer converts a [compute.Buffer] into a nested slice of the corresponding Go type.
+func FromBuffer(backend compute.Backend, buf compute.Buffer) (any, error) {
+	flat, err := backend.BufferData(buf)
+	if err != nil {
+		return nil, err
+	}
+	shape, err := backend.BufferShape(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	if shape.Rank() == 0 {
+		return reflect.ValueOf(flat).Index(0).Interface(), nil
+	}
+
+	flatVal := reflect.ValueOf(flat)
+	sliceTypes := make([]reflect.Type, shape.Rank())
+	currType := flatVal.Type().Elem()
+	for i := shape.Rank() - 1; i >= 0; i-- {
+		currType = reflect.SliceOf(currType)
+		sliceTypes[i] = currType
+	}
+
+	flatIdx := 0
+	var build func(dimIdx int) reflect.Value
+	build = func(dimIdx int) reflect.Value {
+		if dimIdx == shape.Rank()-1 {
+			dimSize := shape.Dimensions[dimIdx]
+			slice := flatVal.Slice(flatIdx, flatIdx+dimSize)
+			flatIdx += dimSize
+			return slice
+		}
+
+		dimSize := shape.Dimensions[dimIdx]
+		slice := reflect.MakeSlice(sliceTypes[dimIdx], dimSize, dimSize)
+		for i := 0; i < dimSize; i++ {
+			slice.Index(i).Set(build(dimIdx + 1))
+		}
+		return slice
+	}
+
+	return build(0).Interface(), nil
 }
