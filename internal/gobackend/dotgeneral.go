@@ -15,6 +15,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/highway"
 	"github.com/gomlx/compute/internal/gobackend/packgemm"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
@@ -187,9 +188,9 @@ func (f *Function) DotGeneral(
 
 	// Find sizes of the normalized operands ([batchSize, crossSize, contractSize]).
 	var lhsCrossDims, rhsCrossDims []int
-	params.batchSize, params.lhsCrossSize, params.contractingSize, lhsCrossDims = dgFindSizes(
+	params.batchSize, params.lhsCrossSize, params.contractingSize, lhsCrossDims = support.DotGeneralFindSizes(
 		lhs.shape, lhsContractingAxes, lhsBatchAxes)
-	_, params.rhsCrossSize, _, rhsCrossDims = dgFindSizes(rhs.shape, rhsContractingAxes, rhsBatchAxes)
+	_, params.rhsCrossSize, _, rhsCrossDims = support.DotGeneralFindSizes(rhs.shape, rhsContractingAxes, rhsBatchAxes)
 
 	// Check that all sizes are positive
 	if params.batchSize <= 0 || params.lhsCrossSize <= 0 || params.contractingSize <= 0 || params.rhsCrossSize <= 0 {
@@ -262,39 +263,6 @@ func (f *Function) DotGeneral(
 		}
 	}
 	return result, nil
-}
-
-// dgFindSizes finds the combined sizes of the 3 types of axes that mather:
-// batch, cross, and contracting dimensions for a DotGeneral operation
-func dgFindSizes(shape shapes.Shape, contractingAxes, batchAxes []int) (
-	batchSize, crossSize, contractingSize int, crossDims []int) {
-	rank := shape.Rank()
-	axesTypes := make([]int, rank)
-
-	// Mark axes types: 1 for contracting, 2 for batch
-	for _, axis := range contractingAxes {
-		axesTypes[axis] = 1
-	}
-	for _, axis := range batchAxes {
-		axesTypes[axis] = 2
-	}
-
-	// Calculate sizes by multiplying dimensions according to the axis type.
-	batchSize, crossSize, contractingSize = 1, 1, 1
-	crossDims = make([]int, 0, rank-len(contractingAxes)-len(batchAxes))
-	for axis, axisType := range axesTypes {
-		dim := shape.Dimensions[axis]
-		switch axisType {
-		case 0: // Cross axes (unmarked)
-			crossSize *= dim
-			crossDims = append(crossDims, dim)
-		case 1: // Contracting axes
-			contractingSize *= dim
-		case 2: // Batch axes
-			batchSize *= dim
-		}
-	}
-	return
 }
 
 // dotGeneralExecutionPath indicates which execution strategy to use for DotGeneral.

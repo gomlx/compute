@@ -14,6 +14,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/packgemm"
 	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
@@ -32,7 +33,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		sourceShape := shapes.Make(dtype, 2, 1, 3)
 		contractingAxes := []int{1}
 		batchAxes := []int{2, 0}
-		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
+		batchSize, crossSize, contractingSize, crossDims := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
 		if batchSize != 6 {
 			t.Fatalf("Expected batchSize 6, got %d", batchSize)
 		}
@@ -120,7 +121,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		sourceShape := shapes.Make(dtype, 2, 3, 4, 5)
 		contractingAxes := []int{1, 2}
 		batchAxes := []int{0}
-		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
+		batchSize, crossSize, contractingSize, crossDims := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
 		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
@@ -224,7 +225,7 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		sourceShape := shapes.Make(dtype, 2, 1, 3)
 		contractingAxes := []int{1}
 		batchAxes := []int{2, 0}
-		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
+		batchSize, crossSize, contractingSize, crossDims := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
 		if batchSize != 6 {
 			t.Fatalf("Expected batchSize 6, got %d", batchSize)
 		}
@@ -278,7 +279,7 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		sourceShape := shapes.Make(dtype, 2, 3, 4, 5)
 		contractingAxes := []int{1, 2}
 		batchAxes := []int{0}
-		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
+		batchSize, crossSize, contractingSize, crossDims := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
 		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
@@ -348,7 +349,7 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		sourceShape := shapes.Make(dtype, 2, 3, 4, 5)
 		contractingAxes := []int{2, 3}
 		batchAxes := []int{0}
-		batchSize, crossSize, contractingSize, _ := dgFindSizes(sourceShape, contractingAxes, batchAxes)
+		batchSize, crossSize, contractingSize, _ := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
 		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
