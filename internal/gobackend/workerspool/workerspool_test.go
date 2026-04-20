@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gomlx/compute/internal/testutil"
-	"github.com/gomlx/gomlx/pkg/support/xsync"
+	"github.com/gomlx/compute/internal/xsync"
 )
 
 func TestPool_Saturate(t *testing.T) {
