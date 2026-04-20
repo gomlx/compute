@@ -54,6 +54,11 @@ func (f Float16) Float32() float32 {
 	return math.Float32frombits(sign | exp32 | mantissa32)
 }
 
+// Float64 converts the Float16 to a float64.
+func (f Float16) Float64() float64 {
+	return float64(f.Float32())
+}
+
 // FromFloat32 converts a float32 to a Float16.
 func FromFloat32(x float32) Float16 {
 	bits := math.Float32bits(x)
