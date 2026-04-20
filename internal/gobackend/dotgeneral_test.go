@@ -16,7 +16,6 @@ import (
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
 	"github.com/gomlx/compute/support/xslices"
-	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
@@ -460,13 +459,13 @@ func TestDotGeneral_Exec(t *testing.T) {
 		t.Run(execPath.String(), func(t *testing.T) {
 			t.Run("Float32", func(t *testing.T) {
 				// Larger example, with multiple axes.
-				y0 := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.DotGeneral(lhs, []int{1}, []int{3, 0}, rhs, []int{1}, []int{0, 2})
-				},
-					tensors.FromFlatDataAndDimensions(xslices.Iota(float32(1), 2*3*1*5), 2, 3, 1, 5),
-					tensors.FromFlatDataAndDimensions(xslices.Iota(float32(1), 5*3*2*4), 5, 3, 2, 4),
-				)
-				fmt.Printf("\ty0=%s\n", y0)
+				y0, _ := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+					// We construct the input constants directly inside the compute.Function since we don't have
+					// nested slice generators handy.
+					lhs, _ := f.Constant(xslices.Iota(float32(1), 2*3*1*5), 2, 3, 1, 5)
+					rhs, _ := f.Constant(xslices.Iota(float32(1), 5*3*2*4), 5, 3, 2, 4)
+					return f.DotGeneral(lhs, []int{1}, []int{3, 0}, rhs, []int{1}, []int{0, 2}, compute.DotGeneralConfig{})
+				})
 				want := [][][][]float32{
 					{
 						{{242, 260, 278, 296}},
@@ -484,40 +483,51 @@ func TestDotGeneral_Exec(t *testing.T) {
 						{{3230, 3260, 3290, 3320}},
 						{{8255, 8330, 8405, 8480}},
 					}}
-				if ok, diff := testutil.IsEqual(want, y0.Value()); !ok {
+				if ok, diff := testutil.IsEqual(want, y0); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
 
 			// Axis transposition example:
 			t.Run("AxisTransposition", func(t *testing.T) {
-				y1 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-					lhs := graph.MulScalar(graph.OnePlus(graph.IotaFull(g, shapes.Make(F32, 2, 1, 3))), 1)
-					rhs := graph.Ones(g, shapes.Make(F32, 1, 3, 2))
-					return graph.DotGeneral(lhs, []int{1}, []int{2, 0}, rhs, []int{0}, []int{1, 2})
+				lhs := [][][]float32{{{1, 2, 3}}, {{4, 5, 6}}}
+				rhs := [][][]float32{{{1, 1}, {1, 1}, {1, 1}}}
+				y1, err := testutil.Exec1(backend, []any{lhs, rhs}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.DotGeneral(params[0], []int{1}, []int{2, 0}, params[1], []int{0}, []int{1, 2}, compute.DotGeneralConfig{})
 				})
-				fmt.Printf("\ty1=%s\n", y1)
-				if err := y1.Shape().Check(F32, 3, 2); err != nil {
-					t.Fatalf("Shape check failed: %+v", err)
+				if err != nil {
+					t.Fatalf("testutil.Exec1 failed: %v", err)
 				}
 				want1 := [][]float32{{1, 4}, {2, 5}, {3, 6}}
-				if ok, diff := testutil.IsEqual(want1, y1.Value()); !ok {
+				if ok, diff := testutil.IsEqual(want1, y1); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
 
 			// A very large example: expected value computed using XLA.
 			t.Run("VeryLarge", func(t *testing.T) {
-				y3 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-					lhs := graph.MulScalar(graph.OnePlus(graph.IotaFull(g, shapes.Make(dtypes.F64, 16, 13, 384))), 1e-5)
-					rhs := graph.Ones(g, shapes.Make(dtypes.F64, 384, 1536))
-					out := graph.DotGeneral(
+				y3, err := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+					lhsShape := shapes.Make(dtypes.Float64, 16, 13, 384)
+					lhsFlat := make([]float64, lhsShape.Size())
+					for i := range lhsFlat {
+						lhsFlat[i] = (float64(i) + 1.0) * 1e-5
+					}
+					lhs, _ := f.Constant(lhsFlat, 16, 13, 384)
+					rhsShape := shapes.Make(dtypes.Float64, 384, 1536)
+					rhsFlat := make([]float64, rhsShape.Size())
+					for i := range rhsFlat {
+						rhsFlat[i] = 1.0
+					}
+					rhs, _ := f.Constant(rhsFlat, 384, 1536)
+					out, _ := f.DotGeneral(
 						lhs, []int{2}, nil,
-						rhs, []int{0}, nil)
-					return graph.Gather(out, graph.Const(g, [][]int32{{0, 0, 0}}))
+						rhs, []int{0}, nil, compute.DotGeneralConfig{})
+					return f.Slice(out, []int{0, 0, 0}, []int{1, 1, 1}, []int{1, 1, 1})
 				})
-				fmt.Printf("\ty3=%s\n", y3)
-				if ok, diff := testutil.IsInDelta(tensors.MustCopyFlatData[float64](y3)[0], 0.7392, 1e-4); !ok {
+				if err != nil {
+					t.Fatalf("testutil.Exec1 failed: %v", err)
+				}
+				if ok, diff := testutil.IsInDelta(y3.([][][]float64)[0][0][0], 0.7392, 1e-4); !ok {
 					t.Fatalf("Result not within delta 1e-4:\n%s", diff)
 				}
 			})
@@ -526,39 +536,31 @@ func TestDotGeneral_Exec(t *testing.T) {
 			t.Run("BFloat16-with-f32-acc", func(t *testing.T) {
 				// The defautl accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
 				bf16 := bfloat16.FromFloat32
-				y2, err := graph.ExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-				},
+				y2, err := testutil.Exec1(backend, []any{
 					[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
 					[][]bfloat16.BFloat16{{bf16(10)}, {bf16(11)}, {bf16(12)}},
-				)
+				}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32})
+				})
 				if err != nil {
 					t.Fatalf("%s failed with an error: %+v", t.Name(), err)
 				}
-				fmt.Printf("\ty2=%s\n", y2)
-				if err := y2.Shape().Check(dtypes.BFloat16, 1, 1); err != nil {
-					t.Fatalf("Shape check failed: %+v", err)
-				}
-				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32()); !ok {
+				if ok, diff := testutil.IsEqual(float32(10+22+36), y2.([][]bfloat16.BFloat16)[0][0].Float32()); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
 			t.Run("BFloat16-no-acc-dtype", func(t *testing.T) {
 				bf16 := bfloat16.FromFloat32
-				y2, err := graph.ExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.Dot(lhs, rhs).WithAccumulatorDType(dtypes.BF16).General([]int{1}, []int{}, []int{0}, []int{})
-				},
+				y2, err := testutil.Exec1(backend, []any{
 					[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
 					[][]bfloat16.BFloat16{{bf16(10)}, {bf16(11)}, {bf16(12)}},
-				)
+				}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{AccumulatorDType: dtypes.BFloat16})
+				})
 				if err != nil {
 					t.Fatalf("%s failed with an error: %+v", t.Name(), err)
 				}
-				fmt.Printf("\ty2=%s\n", y2)
-				if err := y2.Shape().Check(dtypes.BFloat16, 1, 1); err != nil {
-					t.Fatalf("Shape check failed: %+v", err)
-				}
-				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32()); !ok {
+				if ok, diff := testutil.IsEqual(float32(10+22+36), y2.([][]bfloat16.BFloat16)[0][0].Float32()); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
@@ -566,17 +568,16 @@ func TestDotGeneral_Exec(t *testing.T) {
 			// Float16 example.
 			t.Run("Float16", func(t *testing.T) {
 				f16 := float16.FromFloat32
-				y2 := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-				},
+				y2, err := testutil.Exec1(backend, []any{
 					[][]float16.Float16{{f16(1), f16(2), f16(3)}},
 					[][]float16.Float16{{f16(10)}, {f16(11)}, {f16(12)}},
-				)
-				fmt.Printf("\ty2=%s\n", y2)
-				if err := y2.Shape().Check(dtypes.Float16, 1, 1); err != nil {
-					t.Fatalf("Shape check failed: %+v", err)
+				}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+				})
+				if err != nil {
+					t.Fatalf("testutil.Exec1 failed: %v", err)
 				}
-				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[float16.Float16](y2)[0].Float32()); !ok {
+				if ok, diff := testutil.IsEqual(float32(10+22+36), y2.([][]float16.Float16)[0][0].Float32()); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
@@ -602,17 +603,27 @@ func TestDotGeneral_Exec(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed: %+v", err)
 				}
-				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
-				exec := graph.MustNewExec(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
-				})
-				got, err := exec.Exec1(lhs, rhs)
+
+				builder := backend.Builder("LLM_1-parallel-requests")
+				mainFn := builder.Main()
+				p0, _ := mainFn.Parameter("lhs", lhs.Shape(), nil)
+				p1, _ := mainFn.Parameter("rhs", rhs.Shape(), nil)
+				out, _ := mainFn.DotGeneral(p0, []int{2}, []int{0}, p1, []int{2}, []int{0}, compute.DotGeneralConfig{})
+				mainFn.Return([]compute.Value{out}, nil)
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Compile failed: %v", err)
+				}
+
+				bufLhs, _ := testutil.ToBuffer(backend, lhs.Value())
+				bufRhs, _ := testutil.ToBuffer(backend, rhs.Value())
+				bufGot, err := exec.Execute([]compute.Buffer{bufLhs, bufRhs}, nil, 0)
 				if err != nil {
 					t.Fatalf("unexpected error: %+v", err)
 				}
-				fmt.Printf("\tgot=%s\n", got.Shape())
-				fmt.Printf("\twant=%s\n", want.Shape())
-				if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
+				gotRaw, _ := testutil.FromBuffer(backend, bufGot[0])
+
+				if ok, diff := testutil.IsInDelta(want.Value(), gotRaw, 1e-4); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 
@@ -626,14 +637,16 @@ func TestDotGeneral_Exec(t *testing.T) {
 							errChan <- err
 						}()
 						const numRepeats = 1000
-						var got []*tensors.Tensor
 						for range numRepeats {
-							got, err = exec.Exec(lhs, rhs)
-							if err != nil {
+							bufGotC, errC := exec.Execute([]compute.Buffer{bufLhs, bufRhs}, nil, 0)
+							if errC != nil {
+								err = errC
 								return
 							}
-							if !got[0].InDelta(want, 1e-3) {
-								err = errors.Errorf("got=%s, want=%s", got[0], want)
+							gotRawC, _ := testutil.FromBuffer(backend, bufGotC[0])
+							if ok, _ := testutil.IsInDelta(want.Value(), gotRawC, 1e-3); !ok {
+								err = errors.Errorf("got result diff from want")
+								return
 							}
 						}
 					}(runnerIdx)
@@ -668,12 +681,14 @@ func TestDotGeneral_Exec(t *testing.T) {
 					t.Fatalf("Failed: %+v", err)
 				}
 				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
-				got := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					return graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
-				}, lhs, rhs)
-				fmt.Printf("\tgot=%s\n", got.Shape())
+				gotRaw, err := testutil.Exec1(backend, []any{lhs.Value(), rhs.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.DotGeneral(params[0], []int{2}, []int{0}, params[1], []int{2}, []int{0}, compute.DotGeneralConfig{})
+				})
+				if err != nil {
+					t.Fatalf("testutil.Exec1 failed: %v", err)
+				}
 				fmt.Printf("\twant=%s\n", want.Shape())
-				if ok, diff := testutil.IsInDelta(want, got, 1e-3); !ok {
+				if ok, diff := testutil.IsInDelta(want.Value(), gotRaw, 1e-3); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
@@ -692,16 +707,18 @@ func TestDotGeneral_Exec(t *testing.T) {
 					t.Fatalf("Failed: %+v", err)
 				}
 				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
-				got := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
-					lhs = graph.ConvertDType(lhs, dtypes.BFloat16)
-					rhs = graph.ConvertDType(rhs, dtypes.BFloat16)
-					output := graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
-					return graph.ConvertDType(output, dtypes.F32)
-				}, lhs, rhs)
-				fmt.Printf("\t- got=%s\n", got.Shape())
+				gotRaw, err := testutil.Exec1(backend, []any{lhs.Value(), rhs.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					l, _ := f.ConvertDType(params[0], dtypes.BFloat16)
+					r, _ := f.ConvertDType(params[1], dtypes.BFloat16)
+					output, _ := f.DotGeneral(l, []int{2}, []int{0}, r, []int{2}, []int{0}, compute.DotGeneralConfig{})
+					return f.ConvertDType(output, dtypes.F32)
+				})
+				if err != nil {
+					t.Fatalf("testutil.Exec1 failed: %v", err)
+				}
 				fmt.Printf("\t- want=%s\n", want.Shape())
 				// Much larger delta, since BFloat16 loses precision.
-				if ok, diff := testutil.IsInDelta(want, got, 1e-1); !ok {
+				if ok, diff := testutil.IsInDelta(want.Value(), gotRaw, 1e-1); !ok {
 					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 				}
 			})
@@ -724,92 +741,87 @@ func TestDotGeneral_ConfigDTypes(t *testing.T) {
 
 	t.Run("AccumulatorDType", func(t *testing.T) {
 		// Compile and execute
-		exec := graph.MustNewExec(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
+		result, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			// Define config with AccumulatorDType = Float32
-			return graph.Dot(lhs, rhs).
-				WithAccumulatorDType(dtypes.Float32).
-				General([]int{1}, nil, []int{0}, nil)
+			return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32})
 		})
-		result := exec.MustExec(lhsTensor, rhsTensor)[0]
-
-		// Verify output DType:
-		if result.DType() != dtypes.Float16 {
-			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.Float16)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
 		}
 
 		// Expected value is calculated with Float32 precision
 		want := float16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
-		got := tensors.MustCopyFlatData[float16.Float16](result)
-		if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+		gotFlat := testutil.FlattenSlice(result)
+		if ok, diff := testutil.IsInDelta(want, gotFlat, 1e-2); !ok {
 			t.Fatalf("Result not within delta 1e-2:\n%s", diff)
 		}
 	})
 
 	t.Run("OutputDType", func(t *testing.T) {
 		// Compile and execute
-		exec := graph.MustNewExec(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
+		result, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			// Define config with OutputDType = Float32
-			return graph.Dot(lhs, rhs).
-				WithOutputDType(dtypes.Float32).
-				General([]int{1}, nil, []int{0}, nil)
+			return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{OutputDType: dtypes.Float32})
 		})
-		result := exec.MustExec(lhsTensor, rhsTensor)[0]
-
-		// Verify output DType and value
-		if result.DType() != dtypes.Float32 {
-			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.Float32)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
 		}
 
 		// Recompute expected values using Float16 for intermediate results (default behavior without AccumulatorDType)
 		// and then convert to Float32 at the end.
 		want := []float32{1*7 + 2*9 + 3*11, 1*8 + 2*10 + 3*12, 4*7 + 5*9 + 6*11, 4*8 + 5*10 + 6*12}
-		if ok, diff := testutil.IsInDelta(want, tensors.MustCopyFlatData[float32](result), 1e-2); !ok {
+		gotFlat := testutil.FlattenSlice(result)
+		if ok, diff := testutil.IsInDelta(want, gotFlat, 1e-2); !ok {
 			t.Fatalf("Result not within delta 1e-2: (-want +got):\n%s", diff)
 		}
 	})
 
 	t.Run("AccumulatorAndOutputDType", func(t *testing.T) {
 		// Compile and execute
-		exec := graph.MustNewExec(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
+		result, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			// Define config with AccumulatorDType = Float32 and OutputDType = BFloat16
-			return graph.Dot(lhs, rhs).
-				WithAccumulatorDType(dtypes.Float32).
-				WithOutputDType(dtypes.BFloat16).
-				General([]int{1}, nil, []int{0}, nil)
+			return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32, OutputDType: dtypes.BFloat16})
 		})
-		result := exec.MustExec(lhsTensor, rhsTensor)[0]
-
-		// Verify output DType and value (should be computed in Float32, then converted to BFloat16)
-		if result.DType() != dtypes.BFloat16 {
-			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.BFloat16)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
 		}
 		// Expected value from Float32 computation, then converted to BFloat16
 		want := bfloat16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
-		got := tensors.MustCopyFlatData[bfloat16.BFloat16](result)
-		if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+		gotFlat := testutil.FlattenSlice(result)
+		if ok, diff := testutil.IsInDelta(want, gotFlat, 1e-2); !ok {
 			t.Fatalf("Result not within delta 1e-2:\n%s", diff)
 		}
 	})
 }
 
 func TestDotGeneral_Dot(t *testing.T) {
-	exec := graph.MustNewExec(backend, graph.DotProduct)
-
-	y0 := exec.MustExec([]float32{1, 2, 3}, []float32{10, 11, 12})[0]
-	fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual(float32(1*10+2*11+3*12), y0.Value()); !ok {
+	y0, err := testutil.Exec1(backend, []any{[]float32{1, 2, 3}, []float32{10, 11, 12}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.DotGeneral(params[0], []int{0}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{})
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
+	if ok, diff := testutil.IsEqual(float32(1*10+2*11+3*12), y0); !ok {
 		t.Errorf("Unexpected result (-want +got):\n%s", diff)
 	}
 
-	y1 := exec.MustExec([][]float32{{1, 2, 3}, {2, 4, 6}}, []float32{10, 11, 12})[0]
-	fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual([]float32{1*10 + 2*11 + 3*12, 2*10 + 4*11 + 6*12}, y1.Value()); !ok {
+	y1, err := testutil.Exec1(backend, []any{[][]float32{{1, 2, 3}, {2, 4, 6}}, []float32{10, 11, 12}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{})
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
+	if ok, diff := testutil.IsEqual([]float32{1*10 + 2*11 + 3*12, 2*10 + 4*11 + 6*12}, y1); !ok {
 		t.Errorf("Unexpected result (-want +got):\n%s", diff)
 	}
 
-	y2 := exec.MustExec([][]float32{{1, 2, 3}, {2, 4, 6}}, [][]float32{{10}, {11}, {12}})[0]
-	fmt.Printf("\ty2=%s\n", y2.GoStr())
-	if ok, diff := testutil.IsEqual([][]float32{{1*10 + 2*11 + 3*12}, {2*10 + 4*11 + 6*12}}, y2.Value()); !ok {
+	y2, err := testutil.Exec1(backend, []any{[][]float32{{1, 2, 3}, {2, 4, 6}}, [][]float32{{10}, {11}, {12}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{})
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
+	if ok, diff := testutil.IsEqual([][]float32{{1*10 + 2*11 + 3*12}, {2*10 + 4*11 + 6*12}}, y2); !ok {
 		t.Errorf("Unexpected result (-want +got):\n%s", diff)
 	}
 }
@@ -963,23 +975,29 @@ func TestDotGeneral_PreBlockedCorrectness(t *testing.T) {
 
 	// First, compute with normalized path (no pre-blocking)
 	goBackend.dotGeneralForceExecutionPath = normalizedPath
-	want := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-		return graph.DotGeneral(lhs, []int{1}, nil, rhs, []int{0}, nil)
-	}, lhs, rhs)
-	fmt.Printf("\t- want: %s\n", want)
+	wantRaw, err := testutil.Exec1(goBackend, []any{lhs.Value(), rhs.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{})
+	})
+	if err != nil {
+		t.Fatalf("testutil.Exec1 failed: %v", err)
+	}
 
 	// Now compute with blocked path (which may use pre-blocking for constant RHS)
 	goBackend.dotGeneralForceExecutionPath = blockedPath
-	got := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-		return graph.DotGeneral(lhs, []int{1}, nil, rhs, []int{0}, nil)
-	}, lhs, rhs)
-	fmt.Printf("\t- got: %s\n", got)
+	gotRaw, err := testutil.Exec1(goBackend, []any{lhs.Value(), rhs.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{})
+	})
+	if err != nil {
+		t.Fatalf("testutil.Exec1 failed: %v", err)
+	}
 
 	// Reset to default (auto-select)
 	goBackend.dotGeneralForceExecutionPath = autoSelectPath
 
 	// Compare results
-	if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
+	wantFlat := testutil.FlattenSlice(wantRaw).([]float32)
+	gotFlat := testutil.FlattenSlice(gotRaw).([]float32)
+	if ok, diff := testutil.IsInDelta(wantFlat, gotFlat, 1e-4); !ok {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 }
@@ -1308,18 +1326,26 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 
 			// Compute with auto-select (may use SmallMatMul)
 			goBackend.dotGeneralForceExecutionPath = autoSelectPath
-			resultAuto := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-				return graph.DotGeneral(lhs, tc.lhsContr, tc.lhsBatch, rhs, tc.rhsContr, tc.rhsBatch)
-			}, lhsTensor, rhsTensor)
+			resultAutoRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], tc.lhsContr, tc.lhsBatch, params[1], tc.rhsContr, tc.rhsBatch, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
 
 			// Compute with forced checkPath (uses normalized path, not SmallMatMul)
 			goBackend.dotGeneralForceExecutionPath = checkPath
-			resultNormalized := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-				return graph.DotGeneral(lhs, tc.lhsContr, tc.lhsBatch, rhs, tc.rhsContr, tc.rhsBatch)
-			}, lhsTensor, rhsTensor)
+			resultNormalizedRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], tc.lhsContr, tc.lhsBatch, params[1], tc.rhsContr, tc.rhsBatch, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
 
 			// Compare results
-			if ok, diff := testutil.IsInDelta(resultNormalized, resultAuto, 1e-3); !ok {
+			autoFlat := testutil.FlattenSlice(resultAutoRaw).([]float32)
+			normFlat := testutil.FlattenSlice(resultNormalizedRaw).([]float32)
+			if ok, diff := testutil.IsInDelta(normFlat, autoFlat, 1e-3); !ok {
 				t.Errorf("Results not within 1e-3 tolerance, -want +got:\n%s", diff)
 			}
 		})
@@ -1342,22 +1368,25 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 
 		// Force SmallMatMul path
 		goBackend.dotGeneralForceExecutionPath = smallMatMulPath
-		resultSmallMatMul := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-		}, lhsTensor, rhsTensor)
+		resultSmallMatMulRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+		})
+		if err != nil {
+			t.Fatalf("testutil.Exec1 failed: %v", err)
+		}
 
 		// Use normalized path as reference
 		goBackend.dotGeneralForceExecutionPath = normalizedPath
-		resultNormalized := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-		}, lhsTensor, rhsTensor)
-
-		if !resultSmallMatMul.Shape().Equal(resultNormalized.Shape()) {
-			t.Fatalf("Shapes should match: got %s, want %s", resultSmallMatMul.Shape(), resultNormalized.Shape())
+		resultNormalizedRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+		})
+		if err != nil {
+			t.Fatalf("testutil.Exec1 failed: %v", err)
 		}
+
 		// BFloat16 has limited precision, allow 1% relative error
-		smallMatMulData := tensors.MustCopyFlatData[bfloat16.BFloat16](resultSmallMatMul)
-		normalizedData := tensors.MustCopyFlatData[bfloat16.BFloat16](resultNormalized)
+		smallMatMulData := testutil.FlattenSlice(resultSmallMatMulRaw).([]bfloat16.BFloat16)
+		normalizedData := testutil.FlattenSlice(resultNormalizedRaw).([]bfloat16.BFloat16)
 		for i := range smallMatMulData {
 			if ok, diff := testutil.IsInDelta(smallMatMulData[i].Float32(), normalizedData[i].Float32(), 0.01); !ok {
 				t.Fatalf("Mismatch at index %d: %s", i, diff)
@@ -1381,22 +1410,25 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 
 		// Force SmallMatMul path
 		goBackend.dotGeneralForceExecutionPath = smallMatMulPath
-		resultSmallMatMul := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-		}, lhsTensor, rhsTensor)
+		resultSmallMatMulRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+		})
+		if err != nil {
+			t.Fatalf("testutil.Exec1 failed: %v", err)
+		}
 
 		// Use normalized path as reference
 		goBackend.dotGeneralForceExecutionPath = normalizedPath
-		resultNormalized := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
-			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
-		}, lhsTensor, rhsTensor)
-
-		if !resultSmallMatMul.Shape().Equal(resultNormalized.Shape()) {
-			t.Fatalf("Shapes should match: got %s, want %s", resultSmallMatMul.Shape(), resultNormalized.Shape())
+		resultNormalizedRaw, err := testutil.Exec1(goBackend, []any{lhsTensor.Value(), rhsTensor.Value()}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+		})
+		if err != nil {
+			t.Fatalf("testutil.Exec1 failed: %v", err)
 		}
+
 		// Float16 has better precision than BFloat16, allow 0.1% relative error
-		smallMatMulData := tensors.MustCopyFlatData[float16.Float16](resultSmallMatMul)
-		normalizedData := tensors.MustCopyFlatData[float16.Float16](resultNormalized)
+		smallMatMulData := testutil.FlattenSlice(resultSmallMatMulRaw).([]float16.Float16)
+		normalizedData := testutil.FlattenSlice(resultNormalizedRaw).([]float16.Float16)
 		for i := range smallMatMulData {
 			if ok, diff := testutil.IsInDelta(smallMatMulData[i].Float32(), normalizedData[i].Float32(), 0.001); !ok {
 				t.Fatalf("Mismatch at index %d: %s", i, diff)
