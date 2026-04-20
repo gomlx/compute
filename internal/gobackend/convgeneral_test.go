@@ -9,8 +9,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/gomlx/pkg/core/graph"
-	"github.com/gomlx/gomlx/pkg/core/tensors"
 )
 
 // Aliases
@@ -264,32 +262,49 @@ func TestConvGeneral(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// The result should be the same for the all dtypes:
 			for _, dtype := range []dtypes.DType{dtypes.Float32, dtypes.BFloat16, dtypes.Float64, dtypes.Int32, dtypes.Uint64} {
-				output, err := graph.ExecOnce(backend, func(g *graph.Graph) *graph.Node {
-					tc.input.DType = dtype
-					input := graph.IotaFull(g, tc.input)
-					tc.kernel.DType = dtype
-					kernel := graph.IotaFull(g, tc.kernel)
-					output := graph.ConvGeneral(input, kernel, tc.axes,
-						tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations,
-						tc.channelGroupCount, tc.batchGroupCount)
+				tc.input.DType = dtype
+				tc.kernel.DType = dtype
 
+				buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					flatInputShape := shapes.Make(tc.input.DType, tc.input.Size())
+					flatInputIota, err := f.Iota(flatInputShape, 0)
+					if err != nil {
+						return nil, err
+					}
+					input, err := f.Reshape(flatInputIota, tc.input.Dimensions...)
+					if err != nil {
+						return nil, err
+					}
+
+					flatKernelShape := shapes.Make(tc.kernel.DType, tc.kernel.Size())
+					flatKernelIota, err := f.Iota(flatKernelShape, 0)
+					if err != nil {
+						return nil, err
+					}
+					kernel, err := f.Reshape(flatKernelIota, tc.kernel.Dimensions...)
+					if err != nil {
+						return nil, err
+					}
+
+					output, err := f.ConvGeneral(input, kernel, tc.axes, tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations, tc.channelGroupCount, tc.batchGroupCount)
+					if err != nil {
+						return nil, err
+					}
 					// We convert the result to float64 to make it easy to check.
-					return graph.ConvertDType(output, dtypes.Float64)
-				})
-				if err != nil {
-					t.Fatalf("Failed to execute graph: %+v", err)
+					return f.ConvertDType(output, dtypes.Float64)
 				}
+
+				outputBuf := testBackendMultiInput(t, nil, nil, buildFn)
+
 				if dtype != dtypes.BFloat16 {
-					outputValue := output.Value()
-					if ok, diff := testutil.IsEqual(tc.want, outputValue); !ok {
-						t.Fatalf("Output mismatch for test case %q, got %s, wanted %#v:\n%s", tc.name, output.GoStr(), tc.want, diff)
+					outputValue := outputBuf.flat
+					if ok, diff := testutil.IsEqual(testutil.FlattenSlice(tc.want), outputValue); !ok {
+						t.Fatalf("Output mismatch for test case %q, got %v, wanted %#v:\n%s", tc.name, outputValue, tc.want, diff)
 					}
 				} else {
-					wantT := tensors.FromAnyValue(tc.want)
 					// BFloat16 precision is too small to hold the exact values.
-					if !wantT.InDelta(output, 100.0) {
-						t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %s\n\twanted %#v", tc.name, dtype,
-							output.GoStr(), tc.want)
+					if ok, diff := testutil.IsInDelta(testutil.FlattenSlice(tc.want), outputBuf.flat, 100.0); !ok {
+						t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %v\n\twanted %#v\n\tdiff: %s", tc.name, dtype, outputBuf.flat, tc.want, diff)
 					}
 				}
 			}
