@@ -87,7 +87,7 @@ func execFusedQuantizedDenseGGML(backend *Backend, node *Node, inputs []*Buffer,
 		return nil, err
 	}
 
-	fusedDenseApplyActivation[float32](backend, out, data.activation)
+	fusedDenseApplyActivation(backend, out, data.activation)
 	return output, nil
 }
 
