@@ -5,8 +5,10 @@ package testutil
 import (
 	"fmt"
 	"math"
-	"testing"
 
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -25,49 +27,46 @@ func Must1[T any](value T, err error) T {
 	return value
 }
 
-// messageFromArgs converts a variadic message and arguments slice to a
-// formatted string. This allows the user to write optional messages in tests
-// in the same style as t.Errorf.
-func printMsgAndArgs(msgAndArgs ...any) string {
-	if len(msgAndArgs) == 0 {
-		return ""
-	}
-	format, ok := msgAndArgs[0].(string)
-	if !ok {
-		return fmt.Sprintf("[[INVALID MSG AND ARGS FORMAT:%v]]", msgAndArgs)
-	}
-	return fmt.Sprintf(format, msgAndArgs[1:]...)
-}
-
 func withinDeltaBase[T ~float32 | ~float64](a, b T, delta float64) bool {
 	return math.Abs(float64(a-b)) < delta
 }
 
-func checkWithinDelta(a, b any, delta float64) (bool, string) {
-	opts := []cmp.Option{
-		cmp.Comparer(withinDeltaBase[float32]),
-		cmp.Comparer(withinDeltaBase[float64]),
+type halfFloat interface {
+	float16.Float16 | bfloat16.BFloat16
+	Float64() float64
+}
+
+func withinDeltaHalfPrecision[T halfFloat](a, b T, delta float64) bool {
+	return withinDeltaBase(a.Float64(), b.Float64(), delta)
+}
+
+// IsInDelta reports if want and got are equal within a given absolute delta.
+// If they are not equal, it returns the diff using the format "-want +got").
+func IsInDelta(want, got any, delta float64) (ok bool, diff string) {
+	if tA, okA := want.(*tensors.Tensor); okA {
+		// Special case tensors:
+		tB, okB := got.(*tensors.Tensor)
+		if !okB {
+			return false, fmt.Sprintf("values have different types: %T and %T", want, got)
+		}
+		tA.ConstFlatData(func(tAFlat any) {
+			tB.ConstFlatData(func(tBFlat any) {
+				ok, diff = IsInDelta(tAFlat, tBFlat, delta)
+			})
+		})
+		return ok, diff
 	}
-	if cmp.Equal(a, b, opts...) {
+
+	opts := []cmp.Option{
+		cmp.Comparer(func(a, b float32) bool { return withinDeltaBase(a, b, delta) }),
+		cmp.Comparer(func(a, b float64) bool { return withinDeltaBase(a, b, delta) }),
+		cmp.Comparer(func(a, b float16.Float16) bool { return withinDeltaHalfPrecision(a, b, delta) }),
+		cmp.Comparer(func(a, b bfloat16.BFloat16) bool { return withinDeltaHalfPrecision(a, b, delta) }),
+	}
+	if cmp.Equal(want, got, opts...) {
 		return true, ""
 	}
-	return false, cmp.Diff(a, b, opts...)
-}
-
-// WithinDelta reports a test error if a and b are not equal within a given absolute delta.
-func WithinDelta(t *testing.T, a, b any, delta float64, msgAndArgs ...any) {
-	t.Helper()
-	if isEqual, diff := checkWithinDelta(a, b, delta); !isEqual {
-		t.Errorf("%sdelta %g mismatch:\n%s", printMsgAndArgs(msgAndArgs...), delta, diff)
-	}
-}
-
-// MustWithinDelta reports a fatal test error if a and b are not equal within a given absolute delta.
-func MustWithinDelta(t *testing.T, a, b any, delta float64, msgAndArgs ...any) {
-	t.Helper()
-	if isEqual, diff := checkWithinDelta(a, b, delta); !isEqual {
-		t.Fatalf("%sdelta %g mismatch:\n%s", printMsgAndArgs(msgAndArgs...), delta, diff)
-	}
+	return false, cmp.Diff(want, got, opts...)
 }
 
 func withinRelativeDeltaBase[T ~float32 | ~float64](a, b T, relDelta float64) bool {
@@ -76,29 +75,69 @@ func withinRelativeDeltaBase[T ~float32 | ~float64](a, b T, relDelta float64) bo
 	return delta/mean < relDelta
 }
 
-func checkWithinRelativeDelta(a, b any, relDelta float64) (bool, string) {
-	opts := []cmp.Option{
-		cmp.Comparer(withinRelativeDeltaBase[float32]),
-		cmp.Comparer(withinRelativeDeltaBase[float64]),
+func withinRelativeDeltaHalfPrecision[T halfFloat](a, b T, relDelta float64) bool {
+	return withinRelativeDeltaBase(a.Float64(), b.Float64(), relDelta)
+}
+
+// IsInRelativeDelta reports if want and got are equal within a given relative delta.
+// If they are not equal, it returns the diff using the format "-want +got").
+func IsInRelativeDelta(want, got any, relDelta float64) (ok bool, diff string) {
+	if tA, okA := want.(*tensors.Tensor); okA {
+		// Special case tensors:
+		tB, okB := got.(*tensors.Tensor)
+		if !okB {
+			return false, fmt.Sprintf("values have different types: %T and %T", want, got)
+		}
+		tA.ConstFlatData(func(tAFlat any) {
+			tB.ConstFlatData(func(tBFlat any) {
+				ok, diff = IsInRelativeDelta(tAFlat, tBFlat, relDelta)
+			})
+		})
+		return ok, diff
 	}
-	if cmp.Equal(a, b, opts...) {
+
+	opts := []cmp.Option{
+		cmp.Comparer(func(a, b float32) bool { return withinRelativeDeltaBase(a, b, relDelta) }),
+		cmp.Comparer(func(a, b float64) bool { return withinRelativeDeltaBase(a, b, relDelta) }),
+		cmp.Comparer(func(a, b float16.Float16) bool { return withinRelativeDeltaHalfPrecision(a, b, relDelta) }),
+		cmp.Comparer(func(a, b bfloat16.BFloat16) bool { return withinRelativeDeltaHalfPrecision(a, b, relDelta) }),
+	}
+	if cmp.Equal(want, got, opts...) {
 		return true, ""
 	}
-	return false, cmp.Diff(a, b, opts...)
+	return false, cmp.Diff(want, got, opts...)
 }
 
-// WithinRelativeDelta reports a test error if a and b are not equal within a given relative delta.
-func WithinRelativeDelta(t *testing.T, a, b any, relDelta float64, msgAndArgs ...any) {
-	t.Helper()
-	if isEqual, diff := checkWithinRelativeDelta(a, b, relDelta); !isEqual {
-		t.Errorf("%srelative delta %g mismatch:\n%s", printMsgAndArgs(msgAndArgs...), relDelta, diff)
-	}
+// Try whether f panics, and also returns the panic value.
+func Try(f func()) (panicked bool, reason any) {
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+			reason = r
+		}
+	}()
+	f()
+	return
 }
 
-// MustWithinRelativeDelta reports a fatal test error if a and b are not equal within a given relative delta.
-func MustWithinRelativeDelta(t *testing.T, a, b any, relDelta float64, msgAndArgs ...any) {
-	t.Helper()
-	if isEqual, diff := checkWithinRelativeDelta(a, b, relDelta); !isEqual {
-		t.Fatalf("%srelative delta %g mismatch:\n%s", printMsgAndArgs(msgAndArgs...), relDelta, diff)
+// IsEqual returns whether want and got are equal using go-cmp.
+// If they are not equal, it returns the diff using the format "-want +got").
+func IsEqual(want, got any) (ok bool, diff string) {
+	if tA, ok := want.(*tensors.Tensor); ok {
+		tB, ok := got.(*tensors.Tensor)
+		if !ok {
+			return false, fmt.Sprintf("values have different types: %T and %T", want, got)
+		}
+		tA.ConstFlatData(func(tAFlat any) {
+			tB.ConstFlatData(func(tBFlat any) {
+				ok, diff = IsEqual(tAFlat, tBFlat)
+			})
+		})
+		return ok, diff
 	}
+
+	if cmp.Equal(want, got) {
+		return true, ""
+	}
+	return false, cmp.Diff(want, got)
 }

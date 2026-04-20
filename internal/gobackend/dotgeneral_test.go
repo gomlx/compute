@@ -4,7 +4,6 @@ package gobackend
 
 import (
 	"fmt"
-	"math"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -13,13 +12,12 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/highway"
 	"github.com/gomlx/compute/internal/gobackend/packgemm"
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"k8s.io/klog/v2"
 )
 
@@ -35,14 +33,24 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		contractingAxes := []int{1}
 		batchAxes := []int{2, 0}
 		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
-		require.Equal(t, 6, batchSize)
-		require.Equal(t, 1, crossSize)
-		require.Equal(t, 1, contractingSize)
-		require.Len(t, crossDims, 0)
+		if batchSize != 6 {
+			t.Fatalf("Expected batchSize 6, got %d", batchSize)
+		}
+		if crossSize != 1 {
+			t.Fatalf("Expected crossSize 1, got %d", crossSize)
+		}
+		if contractingSize != 1 {
+			t.Fatalf("Expected contractingSize 1, got %d", contractingSize)
+		}
+		if len(crossDims) != 0 {
+			t.Fatalf("Expected crossDims length 0, got %d", len(crossDims))
+		}
 
 		// Create the source buffer.
 		sourceAny, sourceFlatAny, err := backend.NewSharedBuffer(0, sourceShape)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		source := sourceAny.(*Buffer)
 		sourceFlat := sourceFlatAny.([]float64)
 		for i := range sourceFlat {
@@ -56,8 +64,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		outShape := dgCreateBlockedShape(dtype, batchSize, crossSize, contractingSize, blockLog2Dim)
 		// outShape = [6 1 1 2 2]
 		fmt.Printf("\toutShape=%s, size=%d\n", outShape, outShape.Size())
-		require.Equal(
-			t,
+		if ok, diff := testutil.IsEqual(
 			[]int{
 				batchSize,
 				(crossSize + blockDim - 1) / blockDim,
@@ -66,9 +73,13 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 				blockDim,
 			},
 			outShape.Dimensions,
-		)
+		); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 		outBlocks, err := be.getBuffer(dtype, outShape.Size())
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		outBlocks.shape = outShape
 		outBlocks.Zeros()
 		tmpAny, tmpErr := dotGeneralFlatToBlockDTypeMap.Get(dtype)
@@ -99,7 +110,9 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 			3, 0, 0, 0,
 			6, 0, 0, 0,
 		}
-		require.Equal(t, want, outFlat)
+		if ok, diff := testutil.IsEqual(want, outFlat); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 	}
 
 	{ // Test #2
@@ -108,14 +121,24 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		contractingAxes := []int{1, 2}
 		batchAxes := []int{0}
 		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
-		require.Equal(t, 2, batchSize)
-		require.Equal(t, 5, crossSize)
-		require.Equal(t, 12, contractingSize)
-		require.Equal(t, []int{5}, crossDims)
+		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(5, crossSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(12, contractingSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual([]int{5}, crossDims); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 
 		// Create the source buffer.
 		sourceAny, sourceFlatAny, err := backend.NewSharedBuffer(0, sourceShape)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		source := sourceAny.(*Buffer)
 		sourceFlat := sourceFlatAny.([]float32)
 		for i := range sourceFlat {
@@ -129,8 +152,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		outShape := dgCreateBlockedShape(dtype, batchSize, crossSize, contractingSize, blockLog2Dim)
 		// outShape = [2 2 3 4 4]
 		fmt.Printf("\toutShape=%s, size=%d\n", outShape, outShape.Size())
-		require.Equal(
-			t,
+		if ok, diff := testutil.IsEqual(
 			[]int{
 				batchSize,
 				(crossSize + blockDim - 1) / blockDim,
@@ -139,9 +161,13 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 				blockDim,
 			},
 			outShape.Dimensions,
-		)
+		); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 		outBlocks, err := be.getBuffer(dtype, outShape.Size())
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		outBlocks.shape = outShape
 		outBlocks.Zeros()
 		tmpAny, tmpErr := dotGeneralFlatToBlockDTypeMap.Get(dtype)
@@ -181,7 +207,9 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 			86, 91, 96, 82, 87, 92, 97, 83, 88, 93, 98, 84, 89, 94, 99, 101, 106, 111, 116, 102, 107, 112, 117, 103, 108, 113, 118, 104, 109, 114, 119, 65, 70, 75, 80,
 			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 85, 90, 95, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 105, 110, 115, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		}
-		require.Equal(t, want, outFlat)
+		if ok, diff := testutil.IsEqual(want, outFlat); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 	}
 }
 
@@ -197,14 +225,24 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		contractingAxes := []int{1}
 		batchAxes := []int{2, 0}
 		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
-		require.Equal(t, 6, batchSize)
-		require.Equal(t, 1, crossSize)
-		require.Equal(t, 1, contractingSize)
-		require.Len(t, crossDims, 0)
+		if batchSize != 6 {
+			t.Fatalf("Expected batchSize 6, got %d", batchSize)
+		}
+		if crossSize != 1 {
+			t.Fatalf("Expected crossSize 1, got %d", crossSize)
+		}
+		if contractingSize != 1 {
+			t.Fatalf("Expected contractingSize 1, got %d", contractingSize)
+		}
+		if len(crossDims) != 0 {
+			t.Fatalf("Expected crossDims length 0, got %d", len(crossDims))
+		}
 
 		// Create the source buffer.
 		sourceIf, sourceFlatAny, err := backend.NewSharedBuffer(0, sourceShape)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		source := sourceIf.(*Buffer)
 		sourceFlat := sourceFlatAny.([]float64)
 		for i := range sourceFlat {
@@ -224,9 +262,15 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 			crossSize,
 			contractingSize,
 		)
-		require.NotNil(t, output)
-		require.NoError(t, output.shape.Check(dtype, batchSize, crossSize, contractingSize))
-		require.Equal(t, []float64{1, 4, 2, 5, 3, 6}, output.flat.([]float64))
+		if output == nil {
+			t.Fatalf("Expected non-nil value")
+		}
+		if err := output.shape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
+			t.Fatalf("Check failed: %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float64{1, 4, 2, 5, 3, 6}, output.flat.([]float64)); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 	}
 
 	{ // Test #2: cross/contracting axes are inverted.
@@ -235,14 +279,24 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		contractingAxes := []int{1, 2}
 		batchAxes := []int{0}
 		batchSize, crossSize, contractingSize, crossDims := dgFindSizes(sourceShape, contractingAxes, batchAxes)
-		require.Equal(t, 2, batchSize)
-		require.Equal(t, 5, crossSize)
-		require.Equal(t, 12, contractingSize)
-		require.Equal(t, []int{5}, crossDims)
+		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(5, crossSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(12, contractingSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual([]int{5}, crossDims); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 
 		// Create the source buffer.
 		sourceIf, sourceFlatAny, err := backend.NewSharedBuffer(0, sourceShape)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		source := sourceIf.(*Buffer)
 		sourceFlat := sourceFlatAny.([]float32)
 		for i := range sourceFlat {
@@ -262,8 +316,12 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 			crossSize,
 			contractingSize,
 		)
-		require.NotNil(t, output)
-		require.NoError(t, output.shape.Check(dtype, batchSize, crossSize, contractingSize))
+		if output == nil {
+			t.Fatalf("Expected non-nil value")
+		}
+		if err := output.shape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
+			t.Fatalf("Check failed: %+v", err)
+		}
 
 		want := []float32{
 			// Batch example 1:
@@ -280,7 +338,9 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 			64, 69, 74, 79, 84, 89, 94, 99, 104, 109, 114, 119,
 			65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120,
 		}
-		require.Equal(t, want, output.flat.([]float32))
+		if ok, diff := testutil.IsEqual(want, output.flat.([]float32)); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 	}
 
 	{ // Test #3: order preserved. There should be no transposition, and the output should be nil.
@@ -289,11 +349,19 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		contractingAxes := []int{2, 3}
 		batchAxes := []int{0}
 		batchSize, crossSize, contractingSize, _ := dgFindSizes(sourceShape, contractingAxes, batchAxes)
-		require.Equal(t, 2, batchSize)
-		require.Equal(t, 3, crossSize)
-		require.Equal(t, 20, contractingSize)
+		if ok, diff := testutil.IsEqual(2, batchSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(3, crossSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual(20, contractingSize); !ok {
+			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		}
 		sourceIf, _, err := backend.NewSharedBuffer(0, sourceShape)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed: %+v", err)
+		}
 		source := sourceIf.(*Buffer)
 		tmpAny, tmpErr := dotGeneralNormalizeShapeDTypeMap.Get(dtype)
 		if tmpErr != nil {
@@ -309,7 +377,9 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 			crossSize,
 			contractingSize,
 		)
-		require.Nil(t, output)
+		if output != nil {
+			t.Fatalf("Expected nil value, got %+v", output)
+		}
 
 		// If we invert the contracting axes, we need the transposition, and normalizeFn must handle it.
 		contractingAxes = []int{3, 2}
@@ -322,8 +392,12 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 			crossSize,
 			contractingSize,
 		)
-		require.NotNil(t, output)
-		require.NoError(t, output.shape.Check(dtype, batchSize, crossSize, contractingSize))
+		if output == nil {
+			t.Fatalf("Expected non-nil value")
+		}
+		if err := output.shape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
+			t.Fatalf("Check failed: %+v", err)
+		}
 	}
 }
 
@@ -333,51 +407,28 @@ func TestDotGeneral_Shape(t *testing.T) {
 	builder := backend.Builder("DotGeneral Test").(*Builder)
 	mainFn := builder.Main().(*Function)
 	lhs, err := mainFn.Parameter("lhs", S(F32, 2, 3, 4, 5), nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 	rhs, err := mainFn.Parameter("rhs", S(F32, 5, 1, 2, 3), nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 	gotOp, err := mainFn.DotGeneral(
 		lhs, []int{1}, []int{3, 0},
 		rhs, []int{3}, []int{0, 2},
 		compute.DotGeneralConfig{},
 	)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 	got := gotOp.(*Node)
 	// Batch dims: 5 , 2
 	// Contracting dims: 3
 	// Cross dims: 4 (lhs) and 1 (rhs)
 	fmt.Printf("\tdotgeneral.shape=%s\n", got.shape)
-	assert.NoError(t, got.shape.Check(F32, 5, 2, 4, 1))
-}
-
-func requireSameTensorsFloat32(t *testing.T, want, got *tensors.Tensor, delta float64) {
-	// Make sure shapes are the same.
-	require.True(t, got.Shape().Equal(want.Shape()))
-	flatIdx := 0
-	gotFlat := tensors.MustCopyFlatData[float32](got)
-	wantFlat := tensors.MustCopyFlatData[float32](want)
-	var mismatches int
-	for indices := range got.Shape().Iter() {
-		gotValue := gotFlat[flatIdx]
-		wantValue := wantFlat[flatIdx]
-		if math.Abs(float64(gotValue)-float64(wantValue)) > delta {
-			if mismatches < 3 {
-				fmt.Printf(
-					"\tIndex %v (flatIdx=%d) has a mismatch: got %f, want %f\n",
-					indices,
-					flatIdx,
-					gotValue,
-					wantValue,
-				)
-			} else if mismatches == 4 {
-				fmt.Printf("\t...\n")
-			}
-			mismatches++
-		}
-		flatIdx++
-	}
-	if mismatches > 0 {
-		t.Fatalf("Found %d mismatches in tensors", mismatches)
+	if err := got.shape.Check(F32, 5, 2, 4, 1); err != nil {
+		t.Errorf("Unexpected error: %+v", err)
 	}
 }
 
@@ -432,7 +483,9 @@ func TestDotGeneral_Exec(t *testing.T) {
 						{{3230, 3260, 3290, 3320}},
 						{{8255, 8330, 8405, 8480}},
 					}}
-				require.Equal(t, want, y0.Value())
+				if ok, diff := testutil.IsEqual(want, y0.Value()); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 
 			// Axis transposition example:
@@ -443,9 +496,13 @@ func TestDotGeneral_Exec(t *testing.T) {
 					return graph.DotGeneral(lhs, []int{1}, []int{2, 0}, rhs, []int{0}, []int{1, 2})
 				})
 				fmt.Printf("\ty1=%s\n", y1)
-				require.NoError(t, y1.Shape().Check(F32, 3, 2))
+				if err := y1.Shape().Check(F32, 3, 2); err != nil {
+					t.Fatalf("Shape check failed: %+v", err)
+				}
 				want1 := [][]float32{{1, 4}, {2, 5}, {3, 6}}
-				require.Equal(t, want1, y1.Value())
+				if ok, diff := testutil.IsEqual(want1, y1.Value()); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 
 			// A very large example: expected value computed using XLA.
@@ -459,7 +516,9 @@ func TestDotGeneral_Exec(t *testing.T) {
 					return graph.Gather(out, graph.Const(g, [][]int32{{0, 0, 0}}))
 				})
 				fmt.Printf("\ty3=%s\n", y3)
-				require.InDelta(t, 0.7392, tensors.MustCopyFlatData[float64](y3)[0], 1e-4)
+				if ok, diff := testutil.IsInDelta(tensors.MustCopyFlatData[float64](y3)[0], 0.7392, 1e-4); !ok {
+					t.Fatalf("Result not within delta 1e-4:\n%s", diff)
+				}
 			})
 
 			// BFloat16 examples.
@@ -476,8 +535,12 @@ func TestDotGeneral_Exec(t *testing.T) {
 					t.Fatalf("%s failed with an error: %+v", t.Name(), err)
 				}
 				fmt.Printf("\ty2=%s\n", y2)
-				require.NoError(t, y2.Shape().Check(dtypes.BFloat16, 1, 1))
-				require.Equal(t, float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32())
+				if err := y2.Shape().Check(dtypes.BFloat16, 1, 1); err != nil {
+					t.Fatalf("Shape check failed: %+v", err)
+				}
+				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32()); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 			t.Run("BFloat16-no-acc-dtype", func(t *testing.T) {
 				bf16 := bfloat16.FromFloat32
@@ -491,8 +554,12 @@ func TestDotGeneral_Exec(t *testing.T) {
 					t.Fatalf("%s failed with an error: %+v", t.Name(), err)
 				}
 				fmt.Printf("\ty2=%s\n", y2)
-				require.NoError(t, y2.Shape().Check(dtypes.BFloat16, 1, 1))
-				require.Equal(t, float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32())
+				if err := y2.Shape().Check(dtypes.BFloat16, 1, 1); err != nil {
+					t.Fatalf("Shape check failed: %+v", err)
+				}
+				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[bfloat16.BFloat16](y2)[0].Float32()); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 
 			// Float16 example.
@@ -505,8 +572,12 @@ func TestDotGeneral_Exec(t *testing.T) {
 					[][]float16.Float16{{f16(10)}, {f16(11)}, {f16(12)}},
 				)
 				fmt.Printf("\ty2=%s\n", y2)
-				require.NoError(t, y2.Shape().Check(dtypes.Float16, 1, 1))
-				require.Equal(t, float32(10+22+36), tensors.MustCopyFlatData[float16.Float16](y2)[0].Float32())
+				if err := y2.Shape().Check(dtypes.Float16, 1, 1); err != nil {
+					t.Fatalf("Shape check failed: %+v", err)
+				}
+				if ok, diff := testutil.IsEqual(float32(10+22+36), tensors.MustCopyFlatData[float16.Float16](y2)[0].Float32()); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 
 			// Do not run the larger tests if running -test.short: they will break Github
@@ -519,19 +590,30 @@ func TestDotGeneral_Exec(t *testing.T) {
 			// From DotGeneral parameters taken from LLM models that not working during development:
 			t.Run("LLM_1-parallel-requests", func(t *testing.T) {
 				lhs, err := tensors.Load("dotgeneral_test_lhs.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				rhs, err := tensors.Load("dotgeneral_test_rhs.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				want, err := tensors.Load("dotgeneral_test_out.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
 				exec := graph.MustNewExec(backend, func(lhs, rhs *graph.Node) *graph.Node {
 					return graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
 				})
-				got := exec.MustExec(lhs, rhs)[0]
-				requireSameTensorsFloat32(t, want, got, 1e-3)
+				got, err := exec.Exec1(lhs, rhs)
+				if err != nil {
+					t.Fatalf("unexpected error: %+v", err)
+				}
 				fmt.Printf("\tgot=%s\n", got.Shape())
 				fmt.Printf("\twant=%s\n", want.Shape())
+				if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 
 				// Run 8 workers in parallel to see if concurrency is a problem:
 				const numConcurrent = 16
@@ -567,33 +649,47 @@ func TestDotGeneral_Exec(t *testing.T) {
 					}
 				}
 				if firstError != nil {
-					require.NoError(t, firstError)
+					t.Fatalf("Error while running in parallel: %+v", firstError)
 				}
 			})
 
 			t.Run("LLM_2", func(t *testing.T) {
 				lhs, err := tensors.Load("dotgeneral_test_lhs_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				rhs, err := tensors.Load("dotgeneral_test_rhs_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				want, err := tensors.Load("dotgeneral_test_out_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
 				got := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
 					return graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
 				}, lhs, rhs)
 				fmt.Printf("\tgot=%s\n", got.Shape())
 				fmt.Printf("\twant=%s\n", want.Shape())
-				requireSameTensorsFloat32(t, want, got, 1e-3)
+				if ok, diff := testutil.IsInDelta(want, got, 1e-3); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 
 			t.Run("LLM_2_bfloat16", func(t *testing.T) {
 				lhs, err := tensors.Load("dotgeneral_test_lhs_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				rhs, err := tensors.Load("dotgeneral_test_rhs_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				want, err := tensors.Load("dotgeneral_test_out_2.bin")
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed: %+v", err)
+				}
 				fmt.Printf("\tlhs=%s, rhs=%s\n", lhs.Shape(), rhs.Shape())
 				got := graph.MustExecOnce(backend, func(lhs, rhs *graph.Node) *graph.Node {
 					lhs = graph.ConvertDType(lhs, dtypes.BFloat16)
@@ -601,10 +697,12 @@ func TestDotGeneral_Exec(t *testing.T) {
 					output := graph.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{2}, []int{0})
 					return graph.ConvertDType(output, dtypes.F32)
 				}, lhs, rhs)
-				fmt.Printf("\tgot=%s\n", got.Shape())
-				fmt.Printf("\twant=%s\n", want.Shape())
+				fmt.Printf("\t- got=%s\n", got.Shape())
+				fmt.Printf("\t- want=%s\n", want.Shape())
 				// Much larger delta, since BFloat16 loses precision.
-				requireSameTensorsFloat32(t, want, got, 1e-1)
+				if ok, diff := testutil.IsInDelta(want, got, 1e-1); !ok {
+					t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+				}
 			})
 		})
 	}
@@ -618,10 +716,8 @@ func TestDotGeneral_ConfigDTypes(t *testing.T) {
 	}
 
 	// Define common input shapes and values
-	F16 := dtypes.Float16
-	f16 := float16.FromFloat32
-	lhsData := []float16.Float16{f16(1), f16(2), f16(3), f16(4), f16(5), f16(6)}
-	rhsData := []float16.Float16{f16(7), f16(8), f16(9), f16(10), f16(11), f16(12)}
+	lhsData := float16.FromFloat32s(1, 2, 3, 4, 5, 6)
+	rhsData := float16.FromFloat32s(7, 8, 9, 10, 11, 12)
 	lhsTensor := tensors.FromFlatDataAndDimensions(lhsData, 2, 3)
 	rhsTensor := tensors.FromFlatDataAndDimensions(rhsData, 3, 2)
 
@@ -635,14 +731,17 @@ func TestDotGeneral_ConfigDTypes(t *testing.T) {
 		})
 		result := exec.MustExec(lhsTensor, rhsTensor)[0]
 
-		// Verify output DType and value (should be as if computed in Float32)
-		require.Equal(t, F16, result.Shape().DType, "Got %s, wanted %s", result.Shape().DType, F16) // Output should still be Float16
-		// Expected value is calculated with Float32 precision
-		expectedFloat32 := []float32{1*7 + 2*9 + 3*11, 1*8 + 2*10 + 3*12, 4*7 + 5*9 + 6*11, 4*8 + 5*10 + 6*12}
+		// Verify output DType:
+		if result.DType() != dtypes.Float16 {
+			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.Float16)
+		}
 
-		gotFlat := tensors.MustCopyFlatData[float16.Float16](result)
-		gotFloat32 := xslices.Map(gotFlat, func(f float16.Float16) float32 { return f.Float32() })
-		require.InDeltaSlice(t, expectedFloat32, gotFloat32, 1e-2)
+		// Expected value is calculated with Float32 precision
+		want := float16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
+		got := tensors.MustCopyFlatData[float16.Float16](result)
+		if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+			t.Fatalf("Result not within delta 1e-2:\n%s", diff)
+		}
 	})
 
 	t.Run("OutputDType", func(t *testing.T) {
@@ -656,17 +755,16 @@ func TestDotGeneral_ConfigDTypes(t *testing.T) {
 		result := exec.MustExec(lhsTensor, rhsTensor)[0]
 
 		// Verify output DType and value
-		require.Equal(t, dtypes.Float32, result.Shape().DType) // Output should be Float32
+		if result.DType() != dtypes.Float32 {
+			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.Float32)
+		}
 
 		// Recompute expected values using Float16 for intermediate results (default behavior without AccumulatorDType)
 		// and then convert to Float32 at the end.
-		val00 := f16(1).Float32()*f16(7).Float32() + f16(2).Float32()*f16(9).Float32() + f16(3).Float32()*f16(11).Float32()
-		val01 := f16(1).Float32()*f16(8).Float32() + f16(2).Float32()*f16(10).Float32() + f16(3).Float32()*f16(12).Float32()
-		val10 := f16(4).Float32()*f16(7).Float32() + f16(5).Float32()*f16(9).Float32() + f16(6).Float32()*f16(11).Float32()
-		val11 := f16(4).Float32()*f16(8).Float32() + f16(5).Float32()*f16(10).Float32() + f16(6).Float32()*f16(12).Float32()
-
-		expectedConvertedFloat32 := []float32{val00, val01, val10, val11}
-		require.InDeltaSlice(t, expectedConvertedFloat32, tensors.MustCopyFlatData[float32](result), 1e-2)
+		want := []float32{1*7 + 2*9 + 3*11, 1*8 + 2*10 + 3*12, 4*7 + 5*9 + 6*11, 4*8 + 5*10 + 6*12}
+		if ok, diff := testutil.IsInDelta(want, tensors.MustCopyFlatData[float32](result), 1e-2); !ok {
+			t.Fatalf("Result not within delta 1e-2: (-want +got):\n%s", diff)
+		}
 	})
 
 	t.Run("AccumulatorAndOutputDType", func(t *testing.T) {
@@ -681,13 +779,15 @@ func TestDotGeneral_ConfigDTypes(t *testing.T) {
 		result := exec.MustExec(lhsTensor, rhsTensor)[0]
 
 		// Verify output DType and value (should be computed in Float32, then converted to BFloat16)
-		require.Equal(t, dtypes.BFloat16, result.Shape().DType) // Output should be BFloat16
+		if result.DType() != dtypes.BFloat16 {
+			t.Fatalf("Unexpected result DType: got %s, wanted %s", result.DType(), dtypes.BFloat16)
+		}
 		// Expected value from Float32 computation, then converted to BFloat16
-		expectedFloat32 := []float32{1*7 + 2*9 + 3*11, 1*8 + 2*10 + 3*12, 4*7 + 5*9 + 6*11, 4*8 + 5*10 + 6*12}
-
-		gotFlat := tensors.MustCopyFlatData[bfloat16.BFloat16](result)
-		gotFloat32 := xslices.Map(gotFlat, func(f bfloat16.BFloat16) float32 { return f.Float32() })
-		require.InDeltaSlice(t, expectedFloat32, gotFloat32, 1e-2)
+		want := bfloat16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
+		got := tensors.MustCopyFlatData[bfloat16.BFloat16](result)
+		if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+			t.Fatalf("Result not within delta 1e-2:\n%s", diff)
+		}
 	})
 }
 
@@ -696,15 +796,21 @@ func TestDotGeneral_Dot(t *testing.T) {
 
 	y0 := exec.MustExec([]float32{1, 2, 3}, []float32{10, 11, 12})[0]
 	fmt.Printf("\ty0=%s\n", y0.GoStr())
-	assert.Equal(t, float32(10+22+36), y0.Value())
+	if ok, diff := testutil.IsEqual(float32(1*10+2*11+3*12), y0.Value()); !ok {
+		t.Errorf("Unexpected result (-want +got):\n%s", diff)
+	}
 
 	y1 := exec.MustExec([][]float32{{1, 2, 3}, {2, 4, 6}}, []float32{10, 11, 12})[0]
 	fmt.Printf("\ty1=%s\n", y1.GoStr())
-	assert.Equal(t, []float32{10 + 22 + 36, 20 + 44 + 72}, y1.Value())
+	if ok, diff := testutil.IsEqual([]float32{1*10 + 2*11 + 3*12, 2*10 + 4*11 + 6*12}, y1.Value()); !ok {
+		t.Errorf("Unexpected result (-want +got):\n%s", diff)
+	}
 
 	y2 := exec.MustExec([][]float32{{1, 2, 3}, {2, 4, 6}}, [][]float32{{10}, {11}, {12}})[0]
 	fmt.Printf("\ty2=%s\n", y2.GoStr())
-	assert.Equal(t, [][]float32{{10 + 22 + 36}, {20 + 44 + 72}}, y2.Value())
+	if ok, diff := testutil.IsEqual([][]float32{{1*10 + 2*11 + 3*12}, {2*10 + 4*11 + 6*12}}, y2.Value()); !ok {
+		t.Errorf("Unexpected result (-want +got):\n%s", diff)
+	}
 }
 
 // TestBlockForDotGeneral_Deduplication tests that the same weight matrix
@@ -722,7 +828,9 @@ func TestBlockForDotGeneral_Deduplication(t *testing.T) {
 	K, N := 128, 256
 	weightsShape := shapes.Make(dtypes.Float32, K, N) // [K, N]
 	weights, err := mainFn.Parameter("weights", weightsShape, nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 	weightsNode := weights.(*Node)
 
 	// Get blocked input twice - should return the same node due to deduplication
@@ -731,14 +839,18 @@ func TestBlockForDotGeneral_Deduplication(t *testing.T) {
 	blocked2 := mainFn.blockForDotGeneral(weightsNode, []int{0}, []int{}, 1, N, K)
 
 	// Should be the exact same node (pointer equality)
-	assert.Same(t, blocked1, blocked2, "Deduplication should return the same blocked node")
+	if blocked1 != blocked2 {
+		t.Fatalf("Deduplication should return the same blocked node: %s", "Deduplication should return the same blocked node")
+	}
 
 	// Verify the blocked shape is correct
 	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtypes.Float32]
 	expectedCrossBlocks := (N + blockDim - 1) / blockDim
 	expectedContractBlocks := (K + blockDim - 1) / blockDim
-	assert.Equal(t, []int{1, expectedCrossBlocks, expectedContractBlocks, blockDim, blockDim},
-		blocked1.shape.Dimensions)
+	if ok, diff := testutil.IsEqual([]int{1, expectedCrossBlocks, expectedContractBlocks, blockDim, blockDim},
+		blocked1.shape.Dimensions); !ok {
+		t.Fatalf("Unexpected blocked shape dimensions:\n%s", diff)
+	}
 
 	builder.Finalize()
 }
@@ -759,7 +871,9 @@ func TestBlockForDotGeneral_Execution(t *testing.T) {
 	// Create source buffer
 	sourceShape := shapes.Make(dtype, K, N)
 	sourceAny, sourceFlatAny, err := goBackend.NewSharedBuffer(0, sourceShape)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 	source := sourceAny.(*Buffer)
 	sourceFlat := sourceFlatAny.([]float32)
 
@@ -791,14 +905,20 @@ func TestBlockForDotGeneral_Execution(t *testing.T) {
 
 	// Execute the blocking operation
 	output, err := execBlockForDotGeneral(goBackend, node, []*Buffer{source}, nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Unexpected error: %+v", err)
+	}
 
 	// Verify output shape
-	assert.Equal(t, blockedShape, output.shape)
+	if ok, diff := testutil.IsEqual(blockedShape, output.shape); !ok {
+		t.Errorf("Unexpected result (-want +got):\n%s", diff)
+	}
 
 	// Verify output has correct size
 	expectedSize := 1 * 1 * 1 * blockDim * blockDim // [1, 1, 1, 4, 4]
-	assert.Equal(t, expectedSize, len(output.flat.([]float32)))
+	if len(output.flat.([]float32)) != expectedSize {
+		t.Fatalf("Unexpected output size: got %d, wanted %d", len(output.flat.([]float32)), expectedSize)
+	}
 
 	// The blocked output should preserve all the values (just reorganized)
 	outputFlat := output.flat.([]float32)
@@ -810,7 +930,9 @@ func TestBlockForDotGeneral_Execution(t *testing.T) {
 	for _, v := range outputFlat {
 		outputSum += v
 	}
-	assert.Equal(t, inputSum, outputSum, "Sum of values should be preserved after blocking")
+	if inputSum != outputSum {
+		t.Errorf("Sum of values should be preserved after blocking: want %f, got %f", inputSum, outputSum)
+	}
 }
 
 // TestDotGeneral_PreBlockedCorrectness tests that DotGeneral with pre-blocked
@@ -840,24 +962,25 @@ func TestDotGeneral_PreBlockedCorrectness(t *testing.T) {
 
 	// First, compute with normalized path (no pre-blocking)
 	goBackend.dotGeneralForceExecutionPath = normalizedPath
-	wantResult := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
+	want := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
 		return graph.DotGeneral(lhs, []int{1}, nil, rhs, []int{0}, nil)
 	}, lhs, rhs)
-	fmt.Printf("WantResult: %s\n", wantResult)
+	fmt.Printf("\t- want: %s\n", want)
 
 	// Now compute with blocked path (which may use pre-blocking for constant RHS)
 	goBackend.dotGeneralForceExecutionPath = blockedPath
-	gotResult := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
+	got := graph.MustExecOnce(goBackend, func(lhs, rhs *graph.Node) *graph.Node {
 		return graph.DotGeneral(lhs, []int{1}, nil, rhs, []int{0}, nil)
 	}, lhs, rhs)
-	fmt.Printf("GotResult: %s\n", gotResult)
+	fmt.Printf("\t- got: %s\n", got)
 
 	// Reset to default (auto-select)
 	goBackend.dotGeneralForceExecutionPath = autoSelectPath
 
 	// Compare results
-	require.True(t, gotResult.Shape().Equal(wantResult.Shape()))
-	requireSameTensorsFloat32(t, wantResult, gotResult, 1e-4)
+	if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
+		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+	}
 }
 
 // TestBlockForDotGeneralData_Equal tests the Equal method for deduplication.
@@ -934,7 +1057,9 @@ func TestBlockForDotGeneralData_Equal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := base.EqualNodeData(tt.other)
-			assert.Equal(t, tt.want, got)
+			if ok, diff := testutil.IsEqual(tt.want, got); !ok {
+				t.Errorf("Unexpected result (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -973,7 +1098,9 @@ func TestIsMatMulOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := isMatMulOrder(tc.lhsShape, tc.lhsContractingAxes, tc.lhsBatchAxes,
 				tc.rhsShape, tc.rhsContractingAxes, tc.rhsBatchAxes)
-			assert.Equal(t, tc.want, got)
+			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+				t.Errorf("Unexpected result (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
@@ -1044,9 +1171,10 @@ func TestDgUseSmallMatMul(t *testing.T) {
 				}
 
 				got := dgUseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params)
-				assert.Equal(t, tc.want, got,
-					"dgCanUseSmallMatMul with batch=%d, M=%d, N=%d, K=%d",
-					tc.batchSize, tc.lhsCrossSize, tc.rhsCrossSize, tc.contractingSize)
+				if got != tc.want {
+					t.Errorf("dgCanUseSmallMatMul with batch=%d, M=%d, N=%d, K=%d: got %v, want %v",
+						tc.batchSize, tc.lhsCrossSize, tc.rhsCrossSize, tc.contractingSize, got, tc.want)
+				}
 			})
 		}
 	})
@@ -1081,8 +1209,10 @@ func TestDgUseSmallMatMul(t *testing.T) {
 		for _, dtype := range supportedDTypes {
 			lhs := shapes.Make(dtype, 4, 8)
 			rhs := shapes.Make(dtype, 8, 6)
-			assert.True(t, dgUseSmallMatMul(dtype, lhs, rhs, params),
-				"Should use SmallMatMul for %s", dtype)
+			if !dgUseSmallMatMul(dtype, lhs, rhs, params) {
+				t.Errorf("Expected smallMatMul for dtype=%s, lhs=%s, rhs=%s, params=%+v",
+					dtype, lhs.Shape(), rhs.Shape(), params)
+			}
 		}
 
 		// Non-numeric dtypes should be rejected
@@ -1094,8 +1224,10 @@ func TestDgUseSmallMatMul(t *testing.T) {
 		for _, dtype := range unsupportedDTypes {
 			lhs := shapes.Make(dtype, 4, 8)
 			rhs := shapes.Make(dtype, 8, 6)
-			assert.False(t, dgUseSmallMatMul(dtype, lhs, rhs, params),
-				"Should not use SmallMatMul for %s", dtype)
+			if dgUseSmallMatMul(dtype, lhs, rhs, params) {
+				t.Errorf("Expected not to use SmallMatMul for dtype=%s, lhs=%s, rhs=%s, params=%+v",
+					dtype, lhs.Shape(), rhs.Shape(), params)
+			}
 		}
 	})
 
@@ -1115,8 +1247,10 @@ func TestDgUseSmallMatMul(t *testing.T) {
 			contractingSize:    8,
 		}
 
-		assert.False(t, dgUseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params),
-			"Should not use SmallMatMul with non-matmul axis order")
+		if dgUseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params) {
+			t.Errorf("Expected not to use SmallMatMul for dtype=%s, lhs=%s, rhs=%s, params=%+v",
+				dtypes.Float32, lhsShape, rhsShape, params)
+		}
 	})
 }
 
@@ -1184,9 +1318,9 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 			}, lhsTensor, rhsTensor)
 
 			// Compare results
-			require.True(t, resultAuto.Shape().Equal(resultNormalized.Shape()),
-				"Shapes should match")
-			requireSameTensorsFloat32(t, resultNormalized, resultAuto, 1e-3)
+			if ok, diff := testutil.IsInDelta(resultNormalized, resultAuto, 1e-3); !ok {
+				t.Errorf("Results not within 1e-3 tolerance, -want +got:\n%s", diff)
+			}
 		})
 	}
 
@@ -1217,13 +1351,16 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
 		}, lhsTensor, rhsTensor)
 
-		require.True(t, resultSmallMatMul.Shape().Equal(resultNormalized.Shape()), "Shapes should match")
+		if !resultSmallMatMul.Shape().Equal(resultNormalized.Shape()) {
+			t.Fatalf("Shapes should match: got %s, want %s", resultSmallMatMul.Shape(), resultNormalized.Shape())
+		}
 		// BFloat16 has limited precision, allow 1% relative error
 		smallMatMulData := tensors.MustCopyFlatData[bfloat16.BFloat16](resultSmallMatMul)
 		normalizedData := tensors.MustCopyFlatData[bfloat16.BFloat16](resultNormalized)
 		for i := range smallMatMulData {
-			require.InDelta(t, normalizedData[i].Float32(), smallMatMulData[i].Float32(), 0.01,
-				"Mismatch at index %d", i)
+			if ok, diff := testutil.IsInDelta(smallMatMulData[i].Float32(), normalizedData[i].Float32(), 0.01); !ok {
+				t.Fatalf("Mismatch at index %d: %s", i, diff)
+			}
 		}
 	})
 
@@ -1253,13 +1390,16 @@ func TestSmallMatMulCorrectness(t *testing.T) {
 			return graph.DotGeneral(lhs, []int{1}, []int{}, rhs, []int{0}, []int{})
 		}, lhsTensor, rhsTensor)
 
-		require.True(t, resultSmallMatMul.Shape().Equal(resultNormalized.Shape()), "Shapes should match")
+		if !resultSmallMatMul.Shape().Equal(resultNormalized.Shape()) {
+			t.Fatalf("Shapes should match: got %s, want %s", resultSmallMatMul.Shape(), resultNormalized.Shape())
+		}
 		// Float16 has better precision than BFloat16, allow 0.1% relative error
 		smallMatMulData := tensors.MustCopyFlatData[float16.Float16](resultSmallMatMul)
 		normalizedData := tensors.MustCopyFlatData[float16.Float16](resultNormalized)
 		for i := range smallMatMulData {
-			require.InDelta(t, normalizedData[i].Float32(), smallMatMulData[i].Float32(), 0.001,
-				"Mismatch at index %d", i)
+			if ok, diff := testutil.IsInDelta(smallMatMulData[i].Float32(), normalizedData[i].Float32(), 0.001); !ok {
+				t.Fatalf("Mismatch at index %d: %s", i, diff)
+			}
 		}
 	})
 }

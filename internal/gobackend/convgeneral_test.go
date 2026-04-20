@@ -7,10 +7,10 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/gomlx/pkg/core/graph"
 	"github.com/gomlx/gomlx/pkg/core/tensors"
-	"github.com/stretchr/testify/require"
 )
 
 // Aliases
@@ -276,10 +276,14 @@ func TestConvGeneral(t *testing.T) {
 					// We convert the result to float64 to make it easy to check.
 					return graph.ConvertDType(output, dtypes.Float64)
 				})
-				require.NoError(t, err)
+				if err != nil {
+					t.Fatalf("Failed to execute graph: %+v", err)
+				}
 				if dtype != dtypes.BFloat16 {
 					outputValue := output.Value()
-					require.Equal(t, tc.want, outputValue, "Output mismatch for test case %q, got %s, wanted %#v", tc.name, output.GoStr(), tc.want)
+					if ok, diff := testutil.IsEqual(tc.want, outputValue); !ok {
+						t.Fatalf("Output mismatch for test case %q, got %s, wanted %#v:\n%s", tc.name, output.GoStr(), tc.want, diff)
+					}
 				} else {
 					wantT := tensors.FromAnyValue(tc.want)
 					// BFloat16 precision is too small to hold the exact values.

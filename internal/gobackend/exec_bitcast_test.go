@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
@@ -16,7 +15,9 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 	// Byte 0xF0 = low nibble 0, high nibble 15.
 	// Byte 0x87 = low nibble 7, high nibble 8.
 	backend, err := New("")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create backend: %+v", err)
+	}
 	defer backend.Finalize()
 
 	srcData := []uint8{0xF0, 0x87}
@@ -28,18 +29,26 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 	// Not owned: should copy bytes without unpacking.
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
-	require.NoError(t, err)
-	assert.Equal(t, dstShape, result.shape)
+	if err != nil {
+		t.Fatalf("execBitcast failed: %+v", err)
+	}
+	if !result.shape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	}
 
 	// Raw bytes should be identical to source.
 	resultData := result.flat.([]byte)
-	assert.Equal(t, []byte(srcData), resultData)
+	if ok, diff := testutil.IsEqual([]byte(srcData), resultData); !ok {
+		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 	// Bitcast uint8[2] → Int4[4]: raw bytes stay the same.
 	backend, err := New("")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create backend: %+v", err)
+	}
 	defer backend.Finalize()
 
 	srcData := []uint8{0xF0, 0x87}
@@ -50,12 +59,18 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 	node := &Node{shape: dstShape}
 
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
-	require.NoError(t, err)
-	assert.Equal(t, dstShape, result.shape)
+	if err != nil {
+		t.Fatalf("execBitcast failed: %+v", err)
+	}
+	if !result.shape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	}
 
 	// Raw bytes should be identical — Bitcast doesn't unpack.
 	resultData := result.flat.([]byte)
-	assert.Equal(t, []byte(srcData), resultData)
+	if ok, diff := testutil.IsEqual([]byte(srcData), resultData); !ok {
+		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
@@ -68,17 +83,27 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 	node := &Node{shape: dstShape}
 
 	result, err := execBitcast(nil, node, []*Buffer{srcBuf}, []bool{true})
-	require.NoError(t, err)
-	assert.Equal(t, dstShape, result.shape)
+	if err != nil {
+		t.Fatalf("execBitcast failed: %+v", err)
+	}
+	if !result.shape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	}
 	// Should be the exact same buffer (reused).
-	assert.Same(t, srcBuf, result)
-	assert.Equal(t, []byte(srcData), result.flat.([]byte))
+	if result != srcBuf {
+		t.Errorf("Expected buffer reuse, but got different buffer")
+	}
+	if ok, diff := testutil.IsEqual([]byte(srcData), result.flat.([]byte)); !ok {
+		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 	// Same bit-width, different Go type: should copy bytes.
 	backend, err := New("")
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create backend: %+v", err)
+	}
 	defer backend.Finalize()
 
 	srcData := []uint8{0xFF, 0x80, 0x01}
@@ -89,12 +114,22 @@ func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 	node := &Node{shape: dstShape}
 
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
-	require.NoError(t, err)
-	assert.Equal(t, dstShape, result.shape)
+	if err != nil {
+		t.Fatalf("execBitcast failed: %+v", err)
+	}
+	if !result.shape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	}
 
 	// Verify byte-level identity.
 	resultData := result.flat.([]int8)
-	assert.Equal(t, int8(-1), resultData[0])   // 0xFF
-	assert.Equal(t, int8(-128), resultData[1]) // 0x80
-	assert.Equal(t, int8(1), resultData[2])    // 0x01
+	if resultData[0] != int8(-1) {
+		t.Errorf("Expected resultData[0] to be -1, got %d", resultData[0])
+	}
+	if resultData[1] != int8(-128) {
+		t.Errorf("Expected resultData[1] to be -128, got %d", resultData[1])
+	}
+	if resultData[2] != int8(1) {
+		t.Errorf("Expected resultData[2] to be 1, got %d", resultData[2])
+	}
 }

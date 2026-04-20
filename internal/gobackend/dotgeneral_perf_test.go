@@ -25,7 +25,6 @@ import (
 	"github.com/gomlx/gomlx/pkg/support/humanize"
 	"github.com/gomlx/gomlx/ui/commandline"
 	"github.com/muesli/termenv"
-	"github.com/stretchr/testify/require"
 
 	_ "github.com/gomlx/gomlx/backends/xla" // We also want xla backend included for tests.
 )
@@ -279,9 +278,13 @@ func TestDotGeneral_PerformanceTable(t *testing.T) {
 
 			// Create and initialize input Buffers
 			lhsBuffer, lhsFlatAny, err := backend.NewSharedBuffer(0, lhsShape)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("Failed to create shared buffer (LHS): %+v", err)
+			}
 			rhsBuffer, rhsFlatAny, err := backend.NewSharedBuffer(0, rhsShape)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("Failed to create shared buffer (RHS): %+v", err)
+			}
 			switch dtype {
 			case dtypes.Float32:
 				lhsFlatF32 := lhsFlatAny.([]float32)

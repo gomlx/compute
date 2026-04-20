@@ -8,13 +8,14 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // tolerance for floating point comparison.
-const fusedTestTol = 1e-6
+const fusedTestTolerance = 1e-6
 
 func TestFusedSoftmax(t *testing.T) {
 	t.Run("1D", func(t *testing.T) {
@@ -28,9 +29,8 @@ func TestFusedSoftmax(t *testing.T) {
 		got := result.flat.([]float32)
 		// Known-correct softmax([1,2,3,4]).
 		want := []float32{0.0320586, 0.0871443, 0.2368828, 0.6439143}
-		require.Len(t, got, len(want))
-		for i := range got {
-			assert.InDelta(t, want[i], got[i], fusedTestTol, "index %d", i)
+		if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
 		}
 
 		// Softmax output should sum to 1.
@@ -38,7 +38,9 @@ func TestFusedSoftmax(t *testing.T) {
 		for _, v := range got {
 			sum += v
 		}
-		assert.InDelta(t, 1.0, sum, fusedTestTol)
+		if ok, diff := testutil.IsInDelta(float32(1.0), sum, fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
 	})
 
 	t.Run("2D", func(t *testing.T) {
@@ -52,11 +54,19 @@ func TestFusedSoftmax(t *testing.T) {
 
 		got := result.flat.([]float32)
 		// Each row should sum to 1.
-		assert.InDelta(t, 1.0, got[0]+got[1]+got[2], fusedTestTol)
-		assert.InDelta(t, 1.0, got[3]+got[4]+got[5], fusedTestTol)
+		if ok, diff := testutil.IsInDelta(float32(1.0), got[0]+got[1]+got[2], fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
+		if ok, diff := testutil.IsInDelta(float32(1.0), got[3]+got[4]+got[5], fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
 		// Values within each row should be monotonically increasing.
-		assert.Less(t, got[0], got[1])
-		assert.Less(t, got[1], got[2])
+		if got[0] > got[1] {
+			t.Errorf("Results not monotonically increasing: got[0]=%f, got[1]=%f\n", got[0], got[1])
+		}
+		if got[1] > got[2] {
+			t.Errorf("Results not monotonically increasing: got[1]=%f, got[2]=%f\n", got[1], got[2])
+		}
 	})
 
 	t.Run("Axis0", func(t *testing.T) {
@@ -70,9 +80,9 @@ func TestFusedSoftmax(t *testing.T) {
 
 		got := result.flat.([]float32)
 		// Each column should sum to 1.
-		assert.InDelta(t, 1.0, got[0]+got[3], fusedTestTol) // col 0
-		assert.InDelta(t, 1.0, got[1]+got[4], fusedTestTol) // col 1
-		assert.InDelta(t, 1.0, got[2]+got[5], fusedTestTol) // col 2
+		assert.InDelta(t, 1.0, got[0]+got[3], fusedTestTolerance) // col 0
+		assert.InDelta(t, 1.0, got[1]+got[4], fusedTestTolerance) // col 1
+		assert.InDelta(t, 1.0, got[2]+got[5], fusedTestTolerance) // col 2
 	})
 
 	t.Run("NegativeAxis", func(t *testing.T) {
@@ -102,7 +112,7 @@ func TestFusedSoftmax(t *testing.T) {
 		for _, v := range got {
 			sum += v
 		}
-		assert.InDelta(t, 1.0, sum, fusedTestTol)
+		assert.InDelta(t, 1.0, sum, fusedTestTolerance)
 		// Values should be monotonically increasing.
 		assert.Less(t, got[0], got[1])
 		assert.Less(t, got[1], got[2])
@@ -126,7 +136,7 @@ func TestFusedSoftmax(t *testing.T) {
 			assert.False(t, math.IsNaN(float64(v)), "softmax produced NaN")
 			assert.False(t, math.IsInf(float64(v), 0), "softmax produced Inf")
 		}
-		assert.InDelta(t, 1.0, sum, fusedTestTol)
+		assert.InDelta(t, 1.0, sum, fusedTestTolerance)
 	})
 
 	t.Run("3D", func(t *testing.T) {
@@ -148,7 +158,7 @@ func TestFusedSoftmax(t *testing.T) {
 		for group := range 4 {
 			base := group * 3
 			sum := got[base] + got[base+1] + got[base+2]
-			assert.InDelta(t, 1.0, sum, fusedTestTol, "group %d", group)
+			assert.InDelta(t, 1.0, sum, fusedTestTolerance, "group %d", group)
 		}
 	})
 }
@@ -173,7 +183,7 @@ func TestFusedGelu(t *testing.T) {
 		1.9544997,   // gelu(2)
 	}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTol, "index %d: gelu(%v)", i, input[i])
+		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d: gelu(%v)", i, input[i])
 	}
 }
 
@@ -189,7 +199,7 @@ func TestFusedGelu_Float64(t *testing.T) {
 	// Known-correct GELU values.
 	want := []float64{-0.15865525393145702, 0.0, 0.8413447460685429}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTol, "gelu(%v)", input[i])
+		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "gelu(%v)", input[i])
 	}
 }
 
@@ -207,7 +217,7 @@ func TestFusedGelu_Approximate(t *testing.T) {
 	for i, x := range input {
 		inner := sqrt2ByPi * (x + 0.044715*x*x*x)
 		want := x * 0.5 * (1.0 + float32(math.Tanh(float64(inner))))
-		assert.InDelta(t, want, got[i], fusedTestTol, "index %d: geluApprox(%v)", i, x)
+		assert.InDelta(t, want, got[i], fusedTestTolerance, "index %d: geluApprox(%v)", i, x)
 	}
 
 	// Check that approximate differs from exact for non-zero inputs.
@@ -317,7 +327,7 @@ func TestFusedDense(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{11, 22, 33, 46, 14, 25, 36, 55}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTol, "index %d", i)
+		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
 	}
 }
 
@@ -343,7 +353,7 @@ func TestFusedDense_NoBias(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{6, 12}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTol, "index %d", i)
+		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
 	}
 }
 
@@ -370,7 +380,7 @@ func TestFusedDense_Relu(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{0, 1} // ReLU clamps negative to 0.
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTol, "index %d", i)
+		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
 	}
 }
 
@@ -393,8 +403,8 @@ func TestFusedDense_Gelu(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Known-correct: gelu(1) ≈ 0.8413447, gelu(0) = 0.
-	assert.InDelta(t, 0.8413447, got[0], fusedTestTol)
-	assert.InDelta(t, 0.0, got[1], fusedTestTol)
+	assert.InDelta(t, 0.8413447, got[0], fusedTestTolerance)
+	assert.InDelta(t, 0.0, got[1], fusedTestTolerance)
 }
 
 func TestFusedDense_Silu(t *testing.T) {
@@ -416,7 +426,7 @@ func TestFusedDense_Silu(t *testing.T) {
 
 	got := result.flat.([]float32)
 	want := float32(2.0 / (1.0 + math.Exp(-2.0)))
-	assert.InDelta(t, want, got[0], fusedTestTol)
+	assert.InDelta(t, want, got[0], fusedTestTolerance)
 }
 
 func TestFusedDense_Tanh(t *testing.T) {
@@ -438,7 +448,7 @@ func TestFusedDense_Tanh(t *testing.T) {
 
 	got := result.flat.([]float32)
 	want := float32(math.Tanh(1.0))
-	assert.InDelta(t, want, got[0], fusedTestTol)
+	assert.InDelta(t, want, got[0], fusedTestTolerance)
 }
 
 // ---- FusedScaledDotProductAttention tests ----
@@ -517,9 +527,9 @@ func testFusedScaledDotProductAttention_Causal(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Position 0 can only see position 0 → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 	// Position 1 can see both → softmax([1, 1]) = [0.5, 0.5] → output = 0.5*10+0.5*20 = 15
-	assert.InDelta(t, 15.0, got[1], fusedTestTol)
+	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
 }
 
 func testFusedScaledDotProductAttention_MultiHead(t *testing.T) {
@@ -543,8 +553,8 @@ func testFusedScaledDotProductAttention_MultiHead(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// With kvLen=1, attention is just V itself (softmax of single element = 1).
-	assert.InDelta(t, 100.0, got[0], fusedTestTol) // head 0
-	assert.InDelta(t, 200.0, got[1], fusedTestTol) // head 1
+	assert.InDelta(t, 100.0, got[0], fusedTestTolerance) // head 0
+	assert.InDelta(t, 200.0, got[1], fusedTestTolerance) // head 1
 }
 
 func testFusedScaledDotProductAttention_GQA(t *testing.T) {
@@ -568,8 +578,8 @@ func testFusedScaledDotProductAttention_GQA(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Both heads attend to the same single KV → output = V = 42 for both.
-	assert.InDelta(t, 42.0, got[0], fusedTestTol)
-	assert.InDelta(t, 42.0, got[1], fusedTestTol)
+	assert.InDelta(t, 42.0, got[0], fusedTestTolerance)
+	assert.InDelta(t, 42.0, got[1], fusedTestTolerance)
 }
 
 func testFusedScaledDotProductAttention_WithAdditiveMask(t *testing.T) {
@@ -595,7 +605,7 @@ func testFusedScaledDotProductAttention_WithAdditiveMask(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 }
 
 func testFusedScaledDotProductAttention_WithBooleanMask(t *testing.T) {
@@ -623,7 +633,7 @@ func testFusedScaledDotProductAttention_WithBooleanMask(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 }
 
 // ---- BSHD layout tests ----
@@ -650,9 +660,9 @@ func testFusedScaledDotProductAttention_BSHD_Causal(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Position 0 can only see position 0 → output = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 	// Position 1 can see both → softmax([1, 1]) = [0.5, 0.5] → output = 15
-	assert.InDelta(t, 15.0, got[1], fusedTestTol)
+	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
 }
 
 func testFusedScaledDotProductAttention_BSHD_MultiHead(t *testing.T) {
@@ -678,8 +688,8 @@ func testFusedScaledDotProductAttention_BSHD_MultiHead(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// With kvLen=1, attention is just V itself.
-	assert.InDelta(t, 100.0, got[0], fusedTestTol) // head 0
-	assert.InDelta(t, 200.0, got[1], fusedTestTol) // head 1
+	assert.InDelta(t, 100.0, got[0], fusedTestTolerance) // head 0
+	assert.InDelta(t, 200.0, got[1], fusedTestTolerance) // head 1
 }
 
 func testFusedScaledDotProductAttention_BSHD_MultiSeq(t *testing.T) {
@@ -727,7 +737,7 @@ func testFusedScaledDotProductAttention_BSHD_MultiSeq(t *testing.T) {
 
 	bshdOut := bshdResult.flat.([]float32)
 	for i := range bshdOut {
-		assert.InDelta(t, bhsdTransposed[i], bshdOut[i], fusedTestTol, "index %d", i)
+		assert.InDelta(t, bhsdTransposed[i], bshdOut[i], fusedTestTolerance, "index %d", i)
 	}
 }
 
@@ -760,7 +770,7 @@ func testFusedScaledDotProductAttention_BSHD_WithAdditiveMask4D(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 }
 
 func testFusedScaledDotProductAttention_BSHD_WithBooleanMask4D(t *testing.T) {
@@ -788,7 +798,7 @@ func testFusedScaledDotProductAttention_BSHD_WithBooleanMask4D(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
 }
 
 // ---- FusedScaledDotProductAttention with QuantizedMatmuls config tests ----
@@ -848,8 +858,8 @@ func testFusedSDPA_QuantizedMatmuls_Causal(t *testing.T) {
 	)
 
 	got := result.flat.([]float32)
-	assert.InDelta(t, 10.0, got[0], fusedTestTol)
-	assert.InDelta(t, 15.0, got[1], fusedTestTol)
+	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
 }
 
 // ---- FusedAttentionQKVProjection tests ----
@@ -935,12 +945,12 @@ func testFusedAttentionQKVProjection_Identity(t *testing.T) {
 	vGot := results[2].flat.([]float32)
 
 	// Q = x @ wQ^T + biasQ = [1+10, 2+20] = [11, 22]
-	assert.InDelta(t, 11.0, qGot[0], fusedTestTol)
-	assert.InDelta(t, 22.0, qGot[1], fusedTestTol)
+	assert.InDelta(t, 11.0, qGot[0], fusedTestTolerance)
+	assert.InDelta(t, 22.0, qGot[1], fusedTestTolerance)
 	// K = x @ wK^T + biasK = [3+100] = [103]
-	assert.InDelta(t, 103.0, kGot[0], fusedTestTol)
+	assert.InDelta(t, 103.0, kGot[0], fusedTestTolerance)
 	// V = x @ wV^T + biasV = [6+1000] = [1006]
-	assert.InDelta(t, 1006.0, vGot[0], fusedTestTol)
+	assert.InDelta(t, 1006.0, vGot[0], fusedTestTolerance)
 }
 
 func testFusedAttentionQKVProjection_NoBias(t *testing.T) {
@@ -975,19 +985,19 @@ func testFusedAttentionQKVProjection_NoBias(t *testing.T) {
 	// Q = [1*1+0*2, 1*3+0*4] = [1, 3]
 	// K = [1*5+0*6] = [5]
 	// V = [1*7+0*8] = [7]
-	assert.InDelta(t, 1.0, qGot[0], fusedTestTol)
-	assert.InDelta(t, 3.0, qGot[1], fusedTestTol)
-	assert.InDelta(t, 5.0, kGot[0], fusedTestTol)
-	assert.InDelta(t, 7.0, vGot[0], fusedTestTol)
+	assert.InDelta(t, 1.0, qGot[0], fusedTestTolerance)
+	assert.InDelta(t, 3.0, qGot[1], fusedTestTolerance)
+	assert.InDelta(t, 5.0, kGot[0], fusedTestTolerance)
+	assert.InDelta(t, 7.0, vGot[0], fusedTestTolerance)
 
 	// Batch 1: x=[0,1]
 	// Q = [0*1+1*2, 0*3+1*4] = [2, 4]
 	// K = [0*5+1*6] = [6]
 	// V = [0*7+1*8] = [8]
-	assert.InDelta(t, 2.0, qGot[2], fusedTestTol)
-	assert.InDelta(t, 4.0, qGot[3], fusedTestTol)
-	assert.InDelta(t, 6.0, kGot[1], fusedTestTol)
-	assert.InDelta(t, 8.0, vGot[1], fusedTestTol)
+	assert.InDelta(t, 2.0, qGot[2], fusedTestTolerance)
+	assert.InDelta(t, 4.0, qGot[3], fusedTestTolerance)
+	assert.InDelta(t, 6.0, kGot[1], fusedTestTolerance)
+	assert.InDelta(t, 8.0, vGot[1], fusedTestTolerance)
 }
 
 func testFusedAttentionQKVProjection_EqualDims(t *testing.T) {
@@ -1018,10 +1028,10 @@ func testFusedAttentionQKVProjection_EqualDims(t *testing.T) {
 
 	// x=[1,1]
 	// Q = [1, 1], K = [2, 2], V = [3, 3]
-	assert.InDelta(t, 1.0, qGot[0], fusedTestTol)
-	assert.InDelta(t, 1.0, qGot[1], fusedTestTol)
-	assert.InDelta(t, 2.0, kGot[0], fusedTestTol)
-	assert.InDelta(t, 2.0, kGot[1], fusedTestTol)
-	assert.InDelta(t, 3.0, vGot[0], fusedTestTol)
-	assert.InDelta(t, 3.0, vGot[1], fusedTestTol)
+	assert.InDelta(t, 1.0, qGot[0], fusedTestTolerance)
+	assert.InDelta(t, 1.0, qGot[1], fusedTestTolerance)
+	assert.InDelta(t, 2.0, kGot[0], fusedTestTolerance)
+	assert.InDelta(t, 2.0, kGot[1], fusedTestTolerance)
+	assert.InDelta(t, 3.0, vGot[0], fusedTestTolerance)
+	assert.InDelta(t, 3.0, vGot[1], fusedTestTolerance)
 }

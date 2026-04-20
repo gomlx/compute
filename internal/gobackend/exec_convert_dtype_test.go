@@ -8,7 +8,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/gomlx/pkg/core/graph"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestConvertPackedInt4ToInt8(t *testing.T) {
@@ -24,16 +23,24 @@ func TestConvertPackedInt4ToInt8(t *testing.T) {
 
 	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int4, dtypes.Int8)
 	if tmpErr != nil {
-		panic(tmpErr)
+		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
 	convertFn := tmpAny.(convertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.flat.([]int8)
-	assert.Equal(t, int8(0), result[0])
-	assert.Equal(t, int8(-1), result[1])
-	assert.Equal(t, int8(7), result[2])
-	assert.Equal(t, int8(-8), result[3])
+	if result[0] != int8(0) {
+		t.Errorf("Expected result[0] to be 0, got %d", result[0])
+	}
+	if result[1] != int8(-1) {
+		t.Errorf("Expected result[1] to be -1, got %d", result[1])
+	}
+	if result[2] != int8(7) {
+		t.Errorf("Expected result[2] to be 7, got %d", result[2])
+	}
+	if result[3] != int8(-8) {
+		t.Errorf("Expected result[3] to be -8, got %d", result[3])
+	}
 }
 
 func TestConvertPackedUint4ToUint8(t *testing.T) {
@@ -49,16 +56,24 @@ func TestConvertPackedUint4ToUint8(t *testing.T) {
 
 	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Uint4, dtypes.Uint8)
 	if tmpErr != nil {
-		panic(tmpErr)
+		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
 	convertFn := tmpAny.(convertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.flat.([]uint8)
-	assert.Equal(t, uint8(0), result[0])
-	assert.Equal(t, uint8(15), result[1])
-	assert.Equal(t, uint8(7), result[2])
-	assert.Equal(t, uint8(8), result[3])
+	if result[0] != uint8(0) {
+		t.Errorf("Expected result[0] to be 0, got %d", result[0])
+	}
+	if result[1] != uint8(15) {
+		t.Errorf("Expected result[1] to be 15, got %d", result[1])
+	}
+	if result[2] != uint8(7) {
+		t.Errorf("Expected result[2] to be 7, got %d", result[2])
+	}
+	if result[3] != uint8(8) {
+		t.Errorf("Expected result[3] to be 8, got %d", result[3])
+	}
 }
 
 func TestConvertPackedInt4ToFloat32(t *testing.T) {
@@ -72,16 +87,24 @@ func TestConvertPackedInt4ToFloat32(t *testing.T) {
 
 	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int4, dtypes.Float32)
 	if tmpErr != nil {
-		panic(tmpErr)
+		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
 	convertFn := tmpAny.(convertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.flat.([]float32)
-	assert.Equal(t, float32(0), result[0])
-	assert.Equal(t, float32(-1), result[1])
-	assert.Equal(t, float32(7), result[2])
-	assert.Equal(t, float32(-8), result[3])
+	if result[0] != float32(0) {
+		t.Errorf("Expected result[0] to be 0, got %f", result[0])
+	}
+	if result[1] != float32(-1) {
+		t.Errorf("Expected result[1] to be -1, got %f", result[1])
+	}
+	if result[2] != float32(7) {
+		t.Errorf("Expected result[2] to be 7, got %f", result[2])
+	}
+	if result[3] != float32(-8) {
+		t.Errorf("Expected result[3] to be -8, got %f", result[3])
+	}
 }
 
 func TestConvertPackedInt2ToInt8(t *testing.T) {
@@ -96,16 +119,24 @@ func TestConvertPackedInt2ToInt8(t *testing.T) {
 
 	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int2, dtypes.Int8)
 	if tmpErr != nil {
-		panic(tmpErr)
+		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
 	convertFn := tmpAny.(convertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.flat.([]int8)
-	assert.Equal(t, int8(0), result[0])
-	assert.Equal(t, int8(1), result[1])
-	assert.Equal(t, int8(-2), result[2])
-	assert.Equal(t, int8(-1), result[3])
+	if result[0] != int8(0) {
+		t.Errorf("Expected result[0] to be 0, got %d", result[0])
+	}
+	if result[1] != int8(1) {
+		t.Errorf("Expected result[1] to be 1, got %d", result[1])
+	}
+	if result[2] != int8(-2) {
+		t.Errorf("Expected result[2] to be -2, got %d", result[2])
+	}
+	if result[3] != int8(-1) {
+		t.Errorf("Expected result[3] to be -1, got %d", result[3])
+	}
 }
 
 func TestConvertPackedUint2ToUint8(t *testing.T) {
@@ -120,16 +151,24 @@ func TestConvertPackedUint2ToUint8(t *testing.T) {
 
 	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Uint2, dtypes.Uint8)
 	if tmpErr != nil {
-		panic(tmpErr)
+		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
 	convertFn := tmpAny.(convertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.flat.([]uint8)
-	assert.Equal(t, uint8(0), result[0])
-	assert.Equal(t, uint8(1), result[1])
-	assert.Equal(t, uint8(2), result[2])
-	assert.Equal(t, uint8(3), result[3])
+	if result[0] != uint8(0) {
+		t.Errorf("Expected result[0] to be 0, got %d", result[0])
+	}
+	if result[1] != uint8(1) {
+		t.Errorf("Expected result[1] to be 1, got %d", result[1])
+	}
+	if result[2] != uint8(2) {
+		t.Errorf("Expected result[2] to be 2, got %d", result[2])
+	}
+	if result[3] != uint8(3) {
+		t.Errorf("Expected result[3] to be 3, got %d", result[3])
+	}
 }
 
 func TestExecSpecialOps_ConvertDType(t *testing.T) {
@@ -138,33 +177,44 @@ func TestExecSpecialOps_ConvertDType(t *testing.T) {
 		return graph.ConvertDType(x, dtypes.Float32)
 	}, int32(42))
 	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	assert.Equal(t, float32(42.0), y0.Value())
+	if val := y0.Value(); val != float32(42.0) {
+		t.Errorf("Expected y0 value to be 42.0, got %v", val)
+	}
 
 	// Test float32 to bfloat16
 	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
 		return graph.ConvertDType(x, dtypes.BFloat16)
 	}, float32(3.14))
 	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	assert.Equal(t, bf16(3.14), y1.Value())
+	if val := y1.Value(); val != bf16(3.14) {
+		t.Errorf("Expected y1 value to be bf16(3.14), got %v", val)
+	}
 
 	// Test bfloat16 to int32
 	y2 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
 		return graph.ConvertDType(x, dtypes.Int32)
 	}, bf16(7.8))
 	// fmt.Printf("\ty2=%s\n", y2.GoStr())
-	assert.Equal(t, int32(7), y2.Value())
+	if val := y2.Value(); val != int32(7) {
+		t.Errorf("Expected y2 value to be 7, got %v", val)
+	}
 
 	// Test bool to int32
 	y3 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
 		return graph.ConvertDType(x, dtypes.Int32)
 	}, true)
 	// fmt.Printf("\ty3=%s\n", y3.GoStr())
-	assert.Equal(t, int32(1), y3.Value())
+	if val := y3.Value(); val != int32(1) {
+		t.Errorf("Expected y3 value to be 1, got %v", val)
+	}
 
 	// Test float32 to bool
 	y4 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
 		return graph.ConvertDType(x, dtypes.Bool)
 	}, float32(1.0))
 	// fmt.Printf("\ty4=%s\n", y4.GoStr())
-	assert.Equal(t, true, y4.Value())
+	if val := y4.Value(); val != true {
+		t.Errorf("Expected y4 value to be true, got %v", val)
+	}
 }
+
