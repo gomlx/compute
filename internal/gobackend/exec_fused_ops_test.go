@@ -3,6 +3,7 @@
 package gobackend
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -10,8 +11,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // tolerance for floating point comparison.
@@ -80,9 +79,15 @@ func TestFusedSoftmax(t *testing.T) {
 
 		got := result.flat.([]float32)
 		// Each column should sum to 1.
-		assert.InDelta(t, 1.0, got[0]+got[3], fusedTestTolerance) // col 0
-		assert.InDelta(t, 1.0, got[1]+got[4], fusedTestTolerance) // col 1
-		assert.InDelta(t, 1.0, got[2]+got[5], fusedTestTolerance) // col 2
+		if ok, diff := testutil.IsInDelta(float32(1.0), got[0]+got[3], fusedTestTolerance); !ok {
+			t.Errorf("col 0: result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
+		if ok, diff := testutil.IsInDelta(float32(1.0), got[1]+got[4], fusedTestTolerance); !ok {
+			t.Errorf("col 1: result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
+		if ok, diff := testutil.IsInDelta(float32(1.0), got[2]+got[5], fusedTestTolerance); !ok {
+			t.Errorf("col 2: result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
 	})
 
 	t.Run("NegativeAxis", func(t *testing.T) {
@@ -93,10 +98,14 @@ func TestFusedSoftmax(t *testing.T) {
 		mainFn := builder.Main()
 
 		param, err := mainFn.Parameter("x", shape, nil)
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
 
 		_, err = mainFn.FusedSoftmax(param, -1)
-		assert.Error(t, err, "FusedSoftmax should reject negative axis")
+		if err == nil {
+			t.Errorf("FusedSoftmax should reject negative axis")
+		}
 	})
 
 	t.Run("Float64", func(t *testing.T) {
@@ -112,10 +121,16 @@ func TestFusedSoftmax(t *testing.T) {
 		for _, v := range got {
 			sum += v
 		}
-		assert.InDelta(t, 1.0, sum, fusedTestTolerance)
+		if ok, diff := testutil.IsInDelta(1.0, sum, fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
 		// Values should be monotonically increasing.
-		assert.Less(t, got[0], got[1])
-		assert.Less(t, got[1], got[2])
+		if !(got[0] < got[1]) {
+			t.Errorf("Expected got[0] < got[1], got %v and %v", got[0], got[1])
+		}
+		if !(got[1] < got[2]) {
+			t.Errorf("Expected got[1] < got[2], got %v and %v", got[1], got[2])
+		}
 	})
 
 	t.Run("LargeValues", func(t *testing.T) {
@@ -131,12 +146,18 @@ func TestFusedSoftmax(t *testing.T) {
 
 		// Should still sum to 1 and not overflow.
 		var sum float32
-		for _, v := range got {
+		for i, v := range got {
 			sum += v
-			assert.False(t, math.IsNaN(float64(v)), "softmax produced NaN")
-			assert.False(t, math.IsInf(float64(v), 0), "softmax produced Inf")
+			if math.IsNaN(float64(v)) {
+				t.Errorf("index %d: softmax produced NaN", i)
+			}
+			if math.IsInf(float64(v), 0) {
+				t.Errorf("index %d: softmax produced Inf", i)
+			}
 		}
-		assert.InDelta(t, 1.0, sum, fusedTestTolerance)
+		if ok, diff := testutil.IsInDelta(float32(1.0), sum, fusedTestTolerance); !ok {
+			t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
+		}
 	})
 
 	t.Run("3D", func(t *testing.T) {
@@ -158,7 +179,9 @@ func TestFusedSoftmax(t *testing.T) {
 		for group := range 4 {
 			base := group * 3
 			sum := got[base] + got[base+1] + got[base+2]
-			assert.InDelta(t, 1.0, sum, fusedTestTolerance, "group %d", group)
+			if ok, diff := testutil.IsInDelta(float32(1.0), sum, fusedTestTolerance); !ok {
+				t.Errorf("group %d: result not within delta %f:\n%s", group, fusedTestTolerance, diff)
+			}
 		}
 	})
 }
@@ -183,7 +206,9 @@ func TestFusedGelu(t *testing.T) {
 		1.9544997,   // gelu(2)
 	}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d: gelu(%v)", i, input[i])
+		if ok, diff := testutil.IsInDelta(want[i], got[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: gelu(%v) not within delta %f:\n%s", i, input[i], fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -199,7 +224,9 @@ func TestFusedGelu_Float64(t *testing.T) {
 	// Known-correct GELU values.
 	want := []float64{-0.15865525393145702, 0.0, 0.8413447460685429}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "gelu(%v)", input[i])
+		if ok, diff := testutil.IsInDelta(want[i], got[i], fusedTestTolerance); !ok {
+			t.Errorf("gelu(%v) not within delta %f:\n%s", input[i], fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -217,7 +244,9 @@ func TestFusedGelu_Approximate(t *testing.T) {
 	for i, x := range input {
 		inner := sqrt2ByPi * (x + 0.044715*x*x*x)
 		want := x * 0.5 * (1.0 + float32(math.Tanh(float64(inner))))
-		assert.InDelta(t, want, got[i], fusedTestTolerance, "index %d: geluApprox(%v)", i, x)
+		if ok, diff := testutil.IsInDelta(want, got[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: geluApprox(%v) not within delta %f:\n%s", i, x, fusedTestTolerance, diff)
+		}
 	}
 
 	// Check that approximate differs from exact for non-zero inputs.
@@ -231,7 +260,9 @@ func TestFusedGelu_Approximate(t *testing.T) {
 			differCount++
 		}
 	}
-	assert.Greater(t, differCount, 0, "approximate and exact GELU should differ for non-zero inputs")
+	if differCount <= 0 {
+		t.Errorf("approximate and exact GELU should differ for non-zero inputs")
+	}
 }
 
 func TestFusedLayerNorm_Simple(t *testing.T) {
@@ -253,7 +284,9 @@ func TestFusedLayerNorm_Simple(t *testing.T) {
 			sum += got[row*4+i]
 		}
 		mean := sum / 4.0
-		assert.InDelta(t, 0.0, mean, 1e-5, "row %d mean", row)
+		if ok, diff := testutil.IsInDelta(float32(0.0), mean, 1e-5); !ok {
+			t.Errorf("row %d mean not within delta %f:\n%s", row, 1e-5, diff)
+		}
 
 		var varSum float32
 		for i := range 4 {
@@ -261,7 +294,9 @@ func TestFusedLayerNorm_Simple(t *testing.T) {
 			varSum += diff * diff
 		}
 		variance := varSum / 4.0
-		assert.InDelta(t, 1.0, variance, 1e-3, "row %d variance", row)
+		if ok, diff := testutil.IsInDelta(float32(1.0), variance, 1e-3); !ok {
+			t.Errorf("row %d variance not within delta %f:\n%s", row, 1e-3, diff)
+		}
 	}
 }
 
@@ -295,7 +330,9 @@ func TestFusedLayerNorm_WithGammaBeta(t *testing.T) {
 	for i, x := range input {
 		normalized := (x - meanVal) * invStd
 		want := normalized*gamma[i] + beta[i]
-		assert.InDelta(t, want, got[i], 1e-4, "index %d", i)
+		if ok, diff := testutil.IsInDelta(want, got[i], 1e-4); !ok {
+			t.Errorf("index %d: result not within delta %f:\n%s", i, 1e-4, diff)
+		}
 	}
 }
 
@@ -327,7 +364,9 @@ func TestFusedDense(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{11, 22, 33, 46, 14, 25, 36, 55}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
+		if ok, diff := testutil.IsInDelta(want[i], got[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: result not within delta %f:\n%s", i, fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -353,7 +392,9 @@ func TestFusedDense_NoBias(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{6, 12}
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
+		if ok, diff := testutil.IsInDelta(want[i], got[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: result not within delta %f:\n%s", i, fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -380,7 +421,9 @@ func TestFusedDense_Relu(t *testing.T) {
 	got := result.flat.([]float32)
 	want := []float32{0, 1} // ReLU clamps negative to 0.
 	for i := range got {
-		assert.InDelta(t, want[i], got[i], fusedTestTolerance, "index %d", i)
+		if ok, diff := testutil.IsInDelta(want[i], got[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: result not within delta %f:\n%s", i, fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -403,8 +446,12 @@ func TestFusedDense_Gelu(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Known-correct: gelu(1) ≈ 0.8413447, gelu(0) = 0.
-	assert.InDelta(t, 0.8413447, got[0], fusedTestTolerance)
-	assert.InDelta(t, 0.0, got[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(0.8413447), got[0], fusedTestTolerance); !ok {
+		t.Errorf("got[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(0.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("got[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func TestFusedDense_Silu(t *testing.T) {
@@ -426,7 +473,9 @@ func TestFusedDense_Silu(t *testing.T) {
 
 	got := result.flat.([]float32)
 	want := float32(2.0 / (1.0 + math.Exp(-2.0)))
-	assert.InDelta(t, want, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(want, got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func TestFusedDense_Tanh(t *testing.T) {
@@ -448,7 +497,9 @@ func TestFusedDense_Tanh(t *testing.T) {
 
 	got := result.flat.([]float32)
 	want := float32(math.Tanh(1.0))
-	assert.InDelta(t, want, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(want, got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 // ---- FusedScaledDotProductAttention tests ----
@@ -495,14 +546,22 @@ func testFusedScaledDotProductAttention_SingleHead(t *testing.T) {
 	// softmax([scale, 0]) = [exp(scale)/(exp(scale)+1), 1/(exp(scale)+1)]
 	// Output row 0 = softmax_weights @ V
 	// Similarly for row 1.
-	require.Len(t, got, 4)
-	for _, val := range got {
-		assert.False(t, math.IsNaN(float64(val)), "output contains NaN")
+	if len(got) != 4 {
+		t.Fatalf("expected length 4, got %d", len(got))
+	}
+	for i, val := range got {
+		if math.IsNaN(float64(val)) {
+			t.Errorf("index %d: output contains NaN", i)
+		}
 	}
 	// Output should be a weighted avg of V rows, so between min and max of V.
 	for i := range got {
-		assert.GreaterOrEqual(t, got[i], float32(10.0)-1e-3)
-		assert.LessOrEqual(t, got[i], float32(40.0)+1e-3)
+		if !(got[i] >= float32(10.0)-1e-3) {
+			t.Errorf("index %d: expected got[i] >= 10.0-1e-3, got %v", i, got[i])
+		}
+		if !(got[i] <= float32(40.0)+1e-3) {
+			t.Errorf("index %d: expected got[i] <= 40.0+1e-3, got %v", i, got[i])
+		}
 	}
 }
 
@@ -527,9 +586,13 @@ func testFusedScaledDotProductAttention_Causal(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Position 0 can only see position 0 → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("got[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 	// Position 1 can see both → softmax([1, 1]) = [0.5, 0.5] → output = 0.5*10+0.5*20 = 15
-	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(15.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("got[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_MultiHead(t *testing.T) {
@@ -553,8 +616,12 @@ func testFusedScaledDotProductAttention_MultiHead(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// With kvLen=1, attention is just V itself (softmax of single element = 1).
-	assert.InDelta(t, 100.0, got[0], fusedTestTolerance) // head 0
-	assert.InDelta(t, 200.0, got[1], fusedTestTolerance) // head 1
+	if ok, diff := testutil.IsInDelta(float32(100.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("head 0: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(200.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("head 1: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_GQA(t *testing.T) {
@@ -578,8 +645,12 @@ func testFusedScaledDotProductAttention_GQA(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Both heads attend to the same single KV → output = V = 42 for both.
-	assert.InDelta(t, 42.0, got[0], fusedTestTolerance)
-	assert.InDelta(t, 42.0, got[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(42.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("got[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(42.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("got[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_WithAdditiveMask(t *testing.T) {
@@ -605,7 +676,9 @@ func testFusedScaledDotProductAttention_WithAdditiveMask(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_WithBooleanMask(t *testing.T) {
@@ -633,7 +706,9 @@ func testFusedScaledDotProductAttention_WithBooleanMask(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 // ---- BSHD layout tests ----
@@ -660,9 +735,13 @@ func testFusedScaledDotProductAttention_BSHD_Causal(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Position 0 can only see position 0 → output = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("got[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 	// Position 1 can see both → softmax([1, 1]) = [0.5, 0.5] → output = 15
-	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(15.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("got[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_BSHD_MultiHead(t *testing.T) {
@@ -688,8 +767,12 @@ func testFusedScaledDotProductAttention_BSHD_MultiHead(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// With kvLen=1, attention is just V itself.
-	assert.InDelta(t, 100.0, got[0], fusedTestTolerance) // head 0
-	assert.InDelta(t, 200.0, got[1], fusedTestTolerance) // head 1
+	if ok, diff := testutil.IsInDelta(float32(100.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("head 0: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(200.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("head 1: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_BSHD_MultiSeq(t *testing.T) {
@@ -737,7 +820,9 @@ func testFusedScaledDotProductAttention_BSHD_MultiSeq(t *testing.T) {
 
 	bshdOut := bshdResult.flat.([]float32)
 	for i := range bshdOut {
-		assert.InDelta(t, bhsdTransposed[i], bshdOut[i], fusedTestTolerance, "index %d", i)
+		if ok, diff := testutil.IsInDelta(bhsdTransposed[i], bshdOut[i], fusedTestTolerance); !ok {
+			t.Errorf("index %d: result not within delta %f:\n%s", i, fusedTestTolerance, diff)
+		}
 	}
 }
 
@@ -770,7 +855,9 @@ func testFusedScaledDotProductAttention_BSHD_WithAdditiveMask4D(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedScaledDotProductAttention_BSHD_WithBooleanMask4D(t *testing.T) {
@@ -798,7 +885,9 @@ func testFusedScaledDotProductAttention_BSHD_WithBooleanMask4D(t *testing.T) {
 
 	got := result.flat.([]float32)
 	// Only first position visible → output = V[0] = 10
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 // ---- FusedScaledDotProductAttention with QuantizedMatmuls config tests ----
@@ -830,13 +919,21 @@ func testFusedSDPA_QuantizedMatmuls_SingleHead(t *testing.T) {
 	)
 
 	got := result.flat.([]float32)
-	require.Len(t, got, 4)
-	for _, val := range got {
-		assert.False(t, math.IsNaN(float64(val)), "output contains NaN")
+	if len(got) != 4 {
+		t.Fatalf("expected length 4, got %d", len(got))
+	}
+	for i, val := range got {
+		if math.IsNaN(float64(val)) {
+			t.Errorf("index %d: output contains NaN", i)
+		}
 	}
 	for i := range got {
-		assert.GreaterOrEqual(t, got[i], float32(10.0)-1e-3)
-		assert.LessOrEqual(t, got[i], float32(40.0)+1e-3)
+		if !(got[i] >= float32(10.0)-1e-3) {
+			t.Errorf("index %d: expected got[i] >= 10.0-1e-3, got %v", i, got[i])
+		}
+		if !(got[i] <= float32(40.0)+1e-3) {
+			t.Errorf("index %d: expected got[i] <= 40.0+1e-3, got %v", i, got[i])
+		}
 	}
 }
 
@@ -858,8 +955,12 @@ func testFusedSDPA_QuantizedMatmuls_Causal(t *testing.T) {
 	)
 
 	got := result.flat.([]float32)
-	assert.InDelta(t, 10.0, got[0], fusedTestTolerance)
-	assert.InDelta(t, 15.0, got[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(10.0), got[0], fusedTestTolerance); !ok {
+		t.Errorf("got[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(15.0), got[1], fusedTestTolerance); !ok {
+		t.Errorf("got[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 // ---- FusedAttentionQKVProjection tests ----
@@ -881,30 +982,44 @@ func execFusedOpMultiOutput3(t *testing.T, inputShapes []shapes.Shape, inputData
 
 	params := make([]compute.Value, len(inputShapes))
 	for i, s := range inputShapes {
-		p, err := mainFn.Parameter("x"+string(rune('0'+i)), s, nil)
-		require.NoError(t, err)
+		p, err := mainFn.Parameter(fmt.Sprintf("x%d", i), s, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
 		params[i] = p
 	}
 
 	o0, o1, o2, err := buildFn(mainFn, params)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
 
 	err = mainFn.Return([]compute.Value{o0, o1, o2}, nil)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
 
 	exec, err := builder.Compile()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
 
 	inputBufs := make([]compute.Buffer, len(inputDatas))
 	for i, data := range inputDatas {
 		buf, err := backend.BufferFromFlatData(0, data, inputShapes[i])
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
 		inputBufs[i] = buf
 	}
 
 	outputs, err := exec.Execute(inputBufs, nil, 0)
-	require.NoError(t, err)
-	require.Len(t, outputs, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %+v", err)
+	}
+	if len(outputs) != 3 {
+		t.Fatalf("expected length 3, got %d", len(outputs))
+	}
 	return [3]*Buffer{outputs[0].(*Buffer), outputs[1].(*Buffer), outputs[2].(*Buffer)}
 }
 
@@ -945,12 +1060,17 @@ func testFusedAttentionQKVProjection_Identity(t *testing.T) {
 	vGot := results[2].flat.([]float32)
 
 	// Q = x @ wQ^T + biasQ = [1+10, 2+20] = [11, 22]
-	assert.InDelta(t, 11.0, qGot[0], fusedTestTolerance)
-	assert.InDelta(t, 22.0, qGot[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta([]float32{11.0, 22}, qGot, fusedTestTolerance); !ok {
+		t.Errorf("qGot: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 	// K = x @ wK^T + biasK = [3+100] = [103]
-	assert.InDelta(t, 103.0, kGot[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta([]float32{103.0}, kGot, fusedTestTolerance); !ok {
+		t.Errorf("kGot: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 	// V = x @ wV^T + biasV = [6+1000] = [1006]
-	assert.InDelta(t, 1006.0, vGot[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta([]float32{1006.0}, vGot, fusedTestTolerance); !ok {
+		t.Errorf("vGot: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedAttentionQKVProjection_NoBias(t *testing.T) {
@@ -985,19 +1105,35 @@ func testFusedAttentionQKVProjection_NoBias(t *testing.T) {
 	// Q = [1*1+0*2, 1*3+0*4] = [1, 3]
 	// K = [1*5+0*6] = [5]
 	// V = [1*7+0*8] = [7]
-	assert.InDelta(t, 1.0, qGot[0], fusedTestTolerance)
-	assert.InDelta(t, 3.0, qGot[1], fusedTestTolerance)
-	assert.InDelta(t, 5.0, kGot[0], fusedTestTolerance)
-	assert.InDelta(t, 7.0, vGot[0], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(1.0), qGot[0], fusedTestTolerance); !ok {
+		t.Errorf("Batch 0 Q[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(3.0), qGot[1], fusedTestTolerance); !ok {
+		t.Errorf("Batch 0 Q[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(5.0), kGot[0], fusedTestTolerance); !ok {
+		t.Errorf("Batch 0 K[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(7.0), vGot[0], fusedTestTolerance); !ok {
+		t.Errorf("Batch 0 V[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 
 	// Batch 1: x=[0,1]
 	// Q = [0*1+1*2, 0*3+1*4] = [2, 4]
 	// K = [0*5+1*6] = [6]
 	// V = [0*7+1*8] = [8]
-	assert.InDelta(t, 2.0, qGot[2], fusedTestTolerance)
-	assert.InDelta(t, 4.0, qGot[3], fusedTestTolerance)
-	assert.InDelta(t, 6.0, kGot[1], fusedTestTolerance)
-	assert.InDelta(t, 8.0, vGot[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(2.0), qGot[2], fusedTestTolerance); !ok {
+		t.Errorf("Batch 1 Q[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(4.0), qGot[3], fusedTestTolerance); !ok {
+		t.Errorf("Batch 1 Q[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(6.0), kGot[1], fusedTestTolerance); !ok {
+		t.Errorf("Batch 1 K[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(8.0), vGot[1], fusedTestTolerance); !ok {
+		t.Errorf("Batch 1 V[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
 
 func testFusedAttentionQKVProjection_EqualDims(t *testing.T) {
@@ -1028,10 +1164,22 @@ func testFusedAttentionQKVProjection_EqualDims(t *testing.T) {
 
 	// x=[1,1]
 	// Q = [1, 1], K = [2, 2], V = [3, 3]
-	assert.InDelta(t, 1.0, qGot[0], fusedTestTolerance)
-	assert.InDelta(t, 1.0, qGot[1], fusedTestTolerance)
-	assert.InDelta(t, 2.0, kGot[0], fusedTestTolerance)
-	assert.InDelta(t, 2.0, kGot[1], fusedTestTolerance)
-	assert.InDelta(t, 3.0, vGot[0], fusedTestTolerance)
-	assert.InDelta(t, 3.0, vGot[1], fusedTestTolerance)
+	if ok, diff := testutil.IsInDelta(float32(1.0), qGot[0], fusedTestTolerance); !ok {
+		t.Errorf("Q[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(1.0), qGot[1], fusedTestTolerance); !ok {
+		t.Errorf("Q[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(2.0), kGot[0], fusedTestTolerance); !ok {
+		t.Errorf("K[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(2.0), kGot[1], fusedTestTolerance); !ok {
+		t.Errorf("K[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(3.0), vGot[0], fusedTestTolerance); !ok {
+		t.Errorf("V[0]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
+	if ok, diff := testutil.IsInDelta(float32(3.0), vGot[1], fusedTestTolerance); !ok {
+		t.Errorf("V[1]: result not within delta %f:\n%s", fusedTestTolerance, diff)
+	}
 }
