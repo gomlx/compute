@@ -25,8 +25,7 @@ const MainName = "main"
 //  1. Not implement standard operations by returning an error -- this restricts what type of models it can support.
 //     See Backend.Capabilities and package github.com/gomlx/compute/notimplemented.
 //  2. Support specialized operations beyond those defined in this interface -- this requires
-//     careful interface casting by the caller (in package github.com/gomlx/gomlx/pkg/core/graph) and
-//     fallback to backends that don't support these specialized ops.
+//     careful interface casting by the caller.
 type Builder interface {
 	// Name of the computation being built.
 	Name() string
