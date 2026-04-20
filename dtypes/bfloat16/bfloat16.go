@@ -41,6 +41,15 @@ func FromFloat64(x float64) BFloat16 {
 	return FromFloat32(float32(x))
 }
 
+// FromFloat32s converts a variadic list of float32s to a []BFloat16.
+func FromFloat32s(values ...float32) []BFloat16 {
+	out := make([]BFloat16, len(values))
+	for i, v := range values {
+		out[i] = FromFloat32(v)
+	}
+	return out
+}
+
 // FromBits convert an uint16 to a BFloat16.
 func FromBits(uint16 uint16) BFloat16 {
 	return BFloat16(uint16)
