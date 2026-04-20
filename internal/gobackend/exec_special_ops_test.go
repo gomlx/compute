@@ -3,7 +3,6 @@
 package gobackend
 
 import (
-	"fmt"
 	"math"
 	"reflect"
 	"slices"
@@ -17,9 +16,8 @@ import (
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
-	"github.com/gomlx/gomlx/pkg/core/graph"
-	"github.com/gomlx/gomlx/pkg/core/tensors"
 )
+
 
 var (
 	// Shortcuts:
@@ -36,54 +34,67 @@ var (
 )
 
 func TestExecSpecialOps_Identity(t *testing.T) {
-	exec := graph.MustNewExec(backend, graph.Identity)
-	y0 := exec.MustExec(bfloat16.FromFloat32(7))[0]
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(7), y0.Value()); !ok {
+	y0, err := testutil.Exec1(backend, []any{bfloat16.FromFloat32(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) { return f.Identity(params[0]) })
+	if err != nil {
+		t.Errorf("Identity failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(7), y0); !ok {
 		t.Errorf("Identity mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_Where(t *testing.T) {
-	exec := graph.MustNewExec(backend, graph.Where)
+	buildWhere := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.Where(params[0], params[1], params[2])
+	}
 
 	// All scalars.
-	y0 := exec.MustExec(true, bfloat16.FromFloat32(7), bfloat16.FromFloat32(11))[0]
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(7), y0.Value()); !ok {
+	y0, err := testutil.Exec1(backend, []any{true, bfloat16.FromFloat32(7), bfloat16.FromFloat32(11)}, buildWhere)
+	if err != nil {
+		t.Fatalf("Where (scalar) failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(7), y0); !ok {
 		t.Errorf("Where (scalar) mismatch:\n%s", diff)
 	}
 
 	// Scalar cond, non-scalar values.
-	y1 := exec.MustExec(false, []uint8{1, 2}, []uint8{11, 12})[0]
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual([]uint8{11, 12}, y1.Value()); !ok {
+	y1, err := testutil.Exec1(backend, []any{false, []uint8{1, 2}, []uint8{11, 12}}, buildWhere)
+	if err != nil {
+		t.Fatalf("Where (scalar cond) failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual([]uint8{11, 12}, y1); !ok {
 		t.Errorf("Where (scalar cond) mismatch:\n%s", diff)
 	}
 
 	// Non-scalar cond, scalar values.
-	y2 := exec.MustExec([]bool{true, false}, int32(1), int32(0))[0]
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
-	if ok, diff := testutil.IsEqual([]int32{1, 0}, y2.Value()); !ok {
+	y2, err := testutil.Exec1(backend, []any{[]bool{true, false}, int32(1), int32(0)}, buildWhere)
+	if err != nil {
+		t.Fatalf("Where (non-scalar cond) failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual([]int32{1, 0}, y2); !ok {
 		t.Errorf("Where (non-scalar cond) mismatch:\n%s", diff)
 	}
 
 	// Non-scalar cond and values.
-	y3 := exec.MustExec([]bool{false, true, true}, []float32{1, 2, 3}, []float32{101, 102, 103})[0]
-	// fmt.Printf("\ty3=%s\n", y3.GoStr())
-	if ok, diff := testutil.IsEqual([]float32{101, 2, 3}, y3.Value()); !ok {
+	y3, err := testutil.Exec1(backend, []any{[]bool{false, true, true}, []float32{1, 2, 3}, []float32{101, 102, 103}}, buildWhere)
+	if err != nil {
+		t.Fatalf("Where (non-scalar cond and values) failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual([]float32{101, 2, 3}, y3); !ok {
 		t.Errorf("Where (non-scalar cond and values) mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_Reshape(t *testing.T) {
-	exec := graph.MustNewExec(backend, func(x *graph.Node) *graph.Node { return graph.Reshape(x, 2, 2) })
-
-	// Reshape scalar to array.
-	y0 := exec.MustExec([]int32{42, 0, 1, 2})[0]
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if err := y0.Shape().Check(dtypes.Int32, 2, 2); err != nil {
-		t.Errorf("Reshape result shape check failed: %+v", err)
+	// Reshape array to matrix.
+	y0, err := testutil.Exec1(backend, []any{[]int32{42, 0, 1, 2}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		return f.Reshape(params[0], 2, 2)
+	})
+	if err != nil {
+		t.Fatalf("Reshape failed: %v", err)
+	}
+	if ok, diff := testutil.IsEqual([][]int32{{42, 0}, {1, 2}}, y0); !ok {
+		t.Errorf("Reshape mismatch:\n%s", diff)
 	}
 }
 
@@ -92,108 +103,91 @@ func TestExecSpecialOps_Reshape(t *testing.T) {
 // =================================================================================================================
 
 func TestExecSpecialOps_Reduce(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceMin(x, -1)
-	}, [][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
+	if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0); !ok {
 		t.Errorf("ReduceMin mismatch:\n%s", diff)
 	}
 
-	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceMax(x, -1)
-	}, []float64{-1e8, -1e6, -1e16})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual(-1.0e6, y1.Value()); !ok {
+	y1, _ := testutil.Exec1(backend, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+	if ok, diff := testutil.IsEqual(-1.0e6, y1); !ok {
 		t.Errorf("ReduceMax mismatch:\n%s", diff)
 	}
 
-	input2 := tensors.FromFlatDataAndDimensions(xslices.Iota[uint32](0, 32), 2, 2, 2, 2, 2)
-	// fmt.Printf("\tinput2=%s\n", input2.GoStr())
-	y2 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceSum(x, 1, 3)
-	}, input2)
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
+	input2Data := make([][][][][]uint32, 2)
+	idx := uint32(0)
+	for i0 := range input2Data {
+		input2Data[i0] = make([][][][]uint32, 2)
+		for i1 := range input2Data[i0] {
+			input2Data[i0][i1] = make([][][]uint32, 2)
+			for i2 := range input2Data[i0][i1] {
+				input2Data[i0][i1][i2] = make([][]uint32, 2)
+				for i3 := range input2Data[i0][i1][i2] {
+					input2Data[i0][i1][i2][i3] = make([]uint32, 2)
+					for i4 := range input2Data[i0][i1][i2][i3] {
+						input2Data[i0][i1][i2][i3][i4] = idx
+						idx++
+					}
+				}
+			}
+		}
+	}
+	y2, _ := testutil.Exec1(backend, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ReduceSum(p[0], 1, 3)
+	})
 	want2 := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
-	if ok, diff := testutil.IsEqual(want2, y2.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want2, y2); !ok {
 		t.Errorf("ReduceSum mismatch:\n%s", diff)
 	}
 
-	y3 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceMultiply(x, 0)
-	}, []float32{-1e-2, 1e5, -1e-3})
-	// fmt.Printf("\ty3=%s\n", y3.GoStr())
-	if ok, diff := testutil.IsEqual(float32(1), y3.Value()); !ok {
+	y3, _ := testutil.Exec1(backend, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
+	if ok, diff := testutil.IsEqual(float32(1), y3); !ok {
 		t.Errorf("ReduceMultiply mismatch:\n%s", diff)
 	}
 
-	y4 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceMin(x, 0)
-	}, []bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)})
-	// fmt.Printf("\ty4=%s\n", y4.GoStr())
-	if ok, diff := testutil.IsEqual(bf16(-17), y4.Value()); !ok {
+	y4, _ := testutil.Exec1(backend, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
+	if ok, diff := testutil.IsEqual(bf16(-17), y4); !ok {
 		t.Errorf("ReduceMin (bf16) mismatch:\n%s", diff)
 	}
 
 	// Test full reduction to scalar if no axes are given.
-	y5 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceSum(x)
-	},
-		[][]bfloat16.BFloat16{{bf16(-11), bf16(-17)}, {bf16(8), bf16(21)}})
-	// fmt.Printf("\ty5=%s\n", y5.GoStr())
-	if ok, diff := testutil.IsEqual(bf16(1), y5.Value()); !ok {
+	y5, _ := testutil.Exec1(backend, []any{[][]bfloat16.BFloat16{{bf16(-11), bf16(-17)}, {bf16(8), bf16(21)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceSum(p[0], 0, 1) })
+	if ok, diff := testutil.IsEqual(bf16(1), y5); !ok {
 		t.Errorf("Full reduction mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_ReduceBitwise(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceBitwiseAnd(x, -1)
-	}, []int32{7, 3, 2})
-	// fmt.Printf("\tReduceBitwiseAnd: y0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual(int32(2), y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[]int32{7, 3, 2}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceBitwiseAnd(p[0], 0) })
+	if ok, diff := testutil.IsEqual(int32(2), y0); !ok {
 		t.Errorf("ReduceBitwiseAnd mismatch:\n%s", diff)
 	}
 
-	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceBitwiseOr(x)
-	}, [][]uint8{{3}, {12}, {17}})
-	// fmt.Printf("\tReduceBitwiseOr: y1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual(uint8(31), y1.Value()); !ok {
+	y1, _ := testutil.Exec1(backend, []any{[][]uint8{{3}, {12}, {17}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ReduceBitwiseOr(p[0], 0, 1)
+	})
+	if ok, diff := testutil.IsEqual(uint8(31), y1); !ok {
 		t.Errorf("ReduceBitwiseOr mismatch:\n%s", diff)
 	}
 
-	y2 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceBitwiseXor(x, 0)
-	}, [][]int64{{3}, {12}, {17}})
-	fmt.Printf("\tReduceBitwiseXor: y2=%s\n", y2.GoStr())
-	if ok, diff := testutil.IsEqual([]int64{30}, y2.Value()); !ok {
+	y2, _ := testutil.Exec1(backend, []any{[][]int64{{3}, {12}, {17}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceBitwiseXor(p[0], 0) })
+	if ok, diff := testutil.IsEqual([]int64{30}, y2); !ok {
 		t.Errorf("ReduceBitwiseXor mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_ReduceLogical(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceLogicalAnd(x, -1)
-	}, [][]bool{{true, false}, {true, true}})
-	// fmt.Printf("\tReduceLogicalAnd: y0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual([]bool{false, true}, y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[][]bool{{true, false}, {true, true}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalAnd(p[0], 1) })
+	if ok, diff := testutil.IsEqual([]bool{false, true}, y0); !ok {
 		t.Errorf("ReduceLogicalAnd mismatch:\n%s", diff)
 	}
 
-	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceLogicalOr(x, 0)
-	}, [][]bool{{true, false}, {false, false}})
-	// fmt.Printf("\tReduceLogicalOr: y1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual([]bool{true, false}, y1.Value()); !ok {
+	y1, _ := testutil.Exec1(backend, []any{[][]bool{{true, false}, {false, false}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalOr(p[0], 0) })
+	if ok, diff := testutil.IsEqual([]bool{true, false}, y1); !ok {
 		t.Errorf("ReduceLogicalOr mismatch:\n%s", diff)
 	}
 
-	y2 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ReduceLogicalXor(x, -1)
-	}, [][]bool{{true, false}, {true, true}})
-	// fmt.Printf("\tReduceLogicalXor: y2=%s\n", y2.GoStr())
-	if ok, diff := testutil.IsEqual([]bool{true, false}, y2.Value()); !ok {
+	y2, _ := testutil.Exec1(backend, []any{[][]bool{{true, false}, {true, true}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalXor(p[0], 1) })
+	if ok, diff := testutil.IsEqual([]bool{true, false}, y2); !ok {
 		t.Errorf("ReduceLogicalXor mismatch:\n%s", diff)
 	}
 }
@@ -223,83 +217,72 @@ func TestExecSpecialOps_transposeIterator(t *testing.T) {
 }
 
 func TestExecSpecialOps_Transpose(t *testing.T) {
-	operand := tensors.FromFlatDataAndDimensions(xslices.Iota(float32(0), 24), 2, 3, 4)
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.TransposeAllAxes(x, 2, 0, 1)
-	}, operand)
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if err := y0.Shape().Check(dtypes.Float32, 4, 2, 3); err != nil {
-		t.Errorf("Transpose result shape check failed: %+v", err)
+	operandFlat := xslices.Iota(float32(0), 24)
+	// We construct a nested slice from operandFlat.
+	operandNested := make([][][]float32, 2)
+	idx := 0
+	for i := range operandNested {
+		operandNested[i] = make([][]float32, 3)
+		for j := range operandNested[i] {
+			operandNested[i][j] = make([]float32, 4)
+			for k := range operandNested[i][j] {
+				operandNested[i][j][k] = operandFlat[idx]
+				idx++
+			}
+		}
 	}
+	y0, _ := testutil.Exec1(backend, []any{operandNested}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Transpose(p[0], 2, 0, 1)
+	})
 	want := [][][]float32{
 		{{0, 4, 8}, {12, 16, 20}},
 		{{1, 5, 9}, {13, 17, 21}},
 		{{2, 6, 10}, {14, 18, 22}},
 		{{3, 7, 11}, {15, 19, 23}}}
-	if ok, diff := testutil.IsEqual(want, y0.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want, y0); !ok {
 		t.Fatalf("Transpose result mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_Iota(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		return graph.Iota(g, shapes.Make(dtypes.Int8, 2, 3), 1)
+	y0, _ := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+		return f.Iota(shapes.Make(dtypes.Int8, 2, 3), 1)
 	})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if err := y0.Shape().Check(dtypes.Int8, 2, 3); err != nil {
-		t.Errorf("Iota y0 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual([][]int8{{0, 1, 2}, {0, 1, 2}}, y0.Value()); !ok {
+	if ok, diff := testutil.IsEqual([][]int8{{0, 1, 2}, {0, 1, 2}}, y0); !ok {
 		t.Fatalf("Iota y0 mismatch:\n%s", diff)
 	}
 
-	y1 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		return graph.Iota(g, shapes.Make(dtypes.BFloat16, 2, 3), 0)
+	y1, _ := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+		return f.Iota(shapes.Make(dtypes.BFloat16, 2, 3), 0)
 	})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if err := y1.Shape().Check(dtypes.BFloat16, 2, 3); err != nil {
-		t.Errorf("Iota y1 shape check failed: %+v", err)
-	}
 	bf16 := bfloat16.FromFloat32
-	if ok, diff := testutil.IsEqual([][]bfloat16.BFloat16{{bf16(0), bf16(0), bf16(0)}, {bf16(1), bf16(1), bf16(1)}}, y1.Value()); !ok {
+	if ok, diff := testutil.IsEqual([][]bfloat16.BFloat16{{bf16(0), bf16(0), bf16(0)}, {bf16(1), bf16(1), bf16(1)}}, y1); !ok {
 		t.Fatalf("Iota y1 mismatch:\n%s", diff)
 	}
 
 }
 
 func TestExecSpecialOps_Broadcast(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.BroadcastPrefix(x, 2, 3)
-	}, []int8{1, 3})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if err := y0.Shape().Check(dtypes.Int8, 2, 3, 2); err != nil {
-		t.Errorf("Broadcast shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[]int8{1, 3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.BroadcastInDim(p[0], shapes.Make(dtypes.Int8, 2, 3, 2), []int{2})
+	})
+	if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0); !ok {
 		t.Fatalf("Broadcast result mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_BroadcastInDim(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ExpandAndBroadcast(x, []int{2, 3, 2}, []int{0})
-	}, [][]int8{{1, 3}})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if err := y0.Shape().Check(dtypes.Int8, 2, 3, 2); err != nil {
-		t.Errorf("BroadcastInDim y0 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[][]int8{{1, 3}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.BroadcastInDim(p[0], shapes.Make(dtypes.Int8, 2, 3, 2), []int{0, 2})
+	})
+	if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0); !ok {
 		t.Errorf("BroadcastInDim y0 result mismatch:\n%s", diff)
 	}
 
-	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ExpandAndBroadcast(x, []int{2}, []int{0})
-	}, bf16(42))
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if err := y1.Shape().Check(dtypes.BFloat16, 2); err != nil {
-		t.Errorf("BroadcastInDim y1 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual([]bfloat16.BFloat16{bf16(42), bf16(42)}, y1.Value()); !ok {
+	y1, _ := testutil.Exec1(backend, []any{bf16(42)}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.BroadcastInDim(p[0], shapes.Make(dtypes.BFloat16, 2), []int{})
+	})
+	if ok, diff := testutil.IsEqual([]bfloat16.BFloat16{bf16(42), bf16(42)}, y1); !ok {
 		t.Errorf("BroadcastInDim y1 result mismatch:\n%s", diff)
 	}
 }
@@ -347,249 +330,195 @@ func TestExecSpecialOps_gatherIterator(t *testing.T) {
 }
 
 func TestExecSpecialOps_Gather(t *testing.T) {
-	y0 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.IotaFull(g, shapes.Make(dtypes.F32, 4, 3, 2, 2))
-		startIndices := graph.Const(g, [][][]int{{{0, 1}, {0, 1}, {0, 1}}, {{0, 0}, {0, 0}, {1, 1}}, {{0, 0}, {1, 1}, {0, 0}}})
+	buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		operand, err := f.Iota(shapes.Make(dtypes.F32, 4*3*2*2), 0)
+		if err != nil {
+			return nil, err
+		}
+		operand, err = f.Reshape(operand, 4, 3, 2, 2)
+		if err != nil {
+			return nil, err
+		}
+		startIndices := params[0]
 		startVectorAxis := 1
-		// fmt.Printf("\tstartIndices.shape=%s, startVectorAxis=%d\n", startIndices.Shape(), startVectorAxis)
 		offsetOutputAxes := []int{1, 3}
 		collapsedSliceAxes := []int{0, 2}
 		startIndexMap := []int{0, 2, 3}
 		sliceSizes := []int{1, 3, 1, 1}
-		return graph.BackendGather(operand, startIndices, startVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, false)
-	})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
+		return f.Gather(operand, startIndices, startVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, false)
+	}
+	y0, _ := testutil.Exec1(backend, []any{[][][]int32{{{0, 1}, {0, 1}, {0, 1}}, {{0, 0}, {0, 0}, {1, 1}}, {{0, 0}, {1, 1}, {0, 0}}}}, buildFn)
 	want := [][][][]float32{
 		{{{0}, {15}}, {{4}, {19}}, {{8}, {23}}},
 		{{{1}, {1}}, {{5}, {5}}, {{9}, {9}}},
 		{{{2}, {2}}, {{6}, {6}}, {{10}, {10}}}}
-	if ok, diff := testutil.IsEqual(want, y0.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want, y0); !ok {
 		t.Fatalf("Gather mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_Concatenate(t *testing.T) {
 	// Test Case 1: Concatenating vectors (rank 1) along axis 0
-	y1 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		in1 := graph.Const(g, []float32{1, 2, 3})
-		in2 := graph.Const(g, []float32{4, 5})
-		return graph.Concatenate([]*graph.Node{in1, in2}, 0)
+	y1, _ := testutil.Exec1(backend, []any{[]float32{1, 2, 3}, []float32{4, 5}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Concatenate(0, p[0], p[1])
 	})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
 	want1 := []float32{1, 2, 3, 4, 5}
-	if err := y1.Shape().Check(dtypes.Float32, 5); err != nil {
-		t.Fatalf("Concatenate y1 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want1, y1.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want1, y1); !ok {
 		t.Fatalf("Concatenate y1 mismatch:\n%s", diff)
 	}
 
 	// Test Case 2: Concatenating matrices (rank 2) along axis 0
-	y2 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		in1 := graph.Const(g, [][]int8{{1, 2}, {3, 4}})
-		in2 := graph.Const(g, [][]int8{{5, 6}})
-		return graph.Concatenate([]*graph.Node{in1, in2}, 0)
+	y2, _ := testutil.Exec1(backend, []any{[][]int8{{1, 2}, {3, 4}}, [][]int8{{5, 6}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Concatenate(0, p[0], p[1])
 	})
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
 	want2 := [][]int8{{1, 2}, {3, 4}, {5, 6}}
-	if err := y2.Shape().Check(dtypes.Int8, 3, 2); err != nil {
-		t.Fatalf("Concatenate y2 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want2, y2.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want2, y2); !ok {
 		t.Fatalf("Concatenate y2 mismatch:\n%s", diff)
 	}
 
 	// Test Case 3: Concatenating matrices (rank 2) along axis 1
-	y3 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		in1 := graph.Const(g, [][]bfloat16.BFloat16{{bf16(1)}, {bf16(2)}})
-		in2 := graph.Const(g, [][]bfloat16.BFloat16{{bf16(3), bf16(4)}, {bf16(5), bf16(6)}})
-		in3 := graph.Const(g, [][]bfloat16.BFloat16{{bf16(7)}, {bf16(8)}})
-		return graph.Concatenate([]*graph.Node{in1, in2, in3}, 1)
+	y3, _ := testutil.Exec1(backend, []any{[][]bfloat16.BFloat16{{bf16(1)}, {bf16(2)}}, [][]bfloat16.BFloat16{{bf16(3), bf16(4)}, {bf16(5), bf16(6)}}, [][]bfloat16.BFloat16{{bf16(7)}, {bf16(8)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Concatenate(1, p[0], p[1], p[2])
 	})
-	// fmt.Printf("\ty3=%s\n", y3.GoStr())
 	want3 := [][]bfloat16.BFloat16{{bf16(1), bf16(3), bf16(4), bf16(7)}, {bf16(2), bf16(5), bf16(6), bf16(8)}}
-	if err := y3.Shape().Check(dtypes.BFloat16, 2, 4); err != nil {
-		t.Fatalf("Concatenate y3 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want3, y3.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want3, y3); !ok {
 		t.Fatalf("Concatenate y3 mismatch:\n%s", diff)
 	}
 
 	// Test Case 4: Concatenating rank 3 tensors along axis 1
-	y4 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		in1 := graph.Const(g, [][][]int32{{{1, 2}}, {{3, 4}}})                    // Shape (2, 1, 2)
-		in2 := graph.Const(g, [][][]int32{{{5, 6}, {7, 8}}, {{9, 10}, {11, 12}}}) // Shape (2, 2, 2)
-		return graph.Concatenate([]*graph.Node{in1, in2}, 1)
+	y4, _ := testutil.Exec1(backend, []any{[][][]int32{{{1, 2}}, {{3, 4}}}, [][][]int32{{{5, 6}, {7, 8}}, {{9, 10}, {11, 12}}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Concatenate(1, p[0], p[1])
 	})
-	// fmt.Printf("\ty4=%s\n", y4.GoStr())
-	want4 := [][][]int32{{{1, 2}, {5, 6}, {7, 8}}, {{3, 4}, {9, 10}, {11, 12}}} // Shape (2, 3, 2)
-	if err := y4.Shape().Check(dtypes.Int32, 2, 3, 2); err != nil {
-		t.Fatalf("Concatenate y4 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want4, y4.Value()); !ok {
+	want4 := [][][]int32{{{1, 2}, {5, 6}, {7, 8}}, {{3, 4}, {9, 10}, {11, 12}}}
+	if ok, diff := testutil.IsEqual(want4, y4); !ok {
 		t.Fatalf("Concatenate y4 mismatch:\n%s", diff)
 	}
 
 	// Test Case 5: Concatenating rank 3 tensors along axis 2
-	y5 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		in1 := graph.Const(g, [][][]float64{{{1, 2}}, {{3, 4}}}) // Shape (2, 1, 2)
-		in2 := graph.Const(g, [][][]float64{{{5}}, {{6}}})       // Shape (2, 1, 1)
-		return graph.Concatenate([]*graph.Node{in1, in2}, 2)
+	y5, _ := testutil.Exec1(backend, []any{[][][]float64{{{1, 2}}, {{3, 4}}}, [][][]float64{{{5}}, {{6}}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.Concatenate(2, p[0], p[1])
 	})
-	// fmt.Printf("\ty5=%s\n", y5.GoStr())
-	want5 := [][][]float64{{{1, 2, 5}}, {{3, 4, 6}}} // Shape (2, 1, 3)
-	if err := y5.Shape().Check(dtypes.Float64, 2, 1, 3); err != nil {
-		t.Fatalf("Concatenate y5 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want5, y5.Value()); !ok {
+	want5 := [][][]float64{{{1, 2, 5}}, {{3, 4, 6}}}
+	if ok, diff := testutil.IsEqual(want5, y5); !ok {
 		t.Fatalf("Concatenate y5 mismatch:\n%s", diff)
 	}
 }
 
 func TestExecSpecialOps_Scatter(t *testing.T) {
 	// Case 0: Typical scatter, except updates window is the first axis (usually it's the last)
-	y0 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Zeros(g, MS(F32, 2, 2, 5))
-		indices := graph.Const(g, [][]uint8{{0, 1}, {1, 0}})
-		// updates: we use an unconventional update window in axis 0, and the batch axis 1.
-		updates := graph.OnePlus(graph.IotaFull(g, MS(F32, 5, 2)))
+	operandData0 := make([][][]float32, 2)
+	for i := range operandData0 {
+		operandData0[i] = make([][]float32, 2)
+		for j := range operandData0[i] {
+			operandData0[i][j] = make([]float32, 5)
+		}
+	}
+	indicesData := [][]uint8{{0, 1}, {1, 0}}
+	updatesData0 := [][]float32{{1, 2}, {3, 4}, {5, 6}, {7, 8}, {9, 10}}
 
+	y0, _ := testutil.Exec1(backend, []any{operandData0, indicesData, updatesData0}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		indexVectorAxis := 1
 		updateWindowAxes := []int{0}
 		insertedWindowAxes := []int{0, 1}
 		scatterAxesToOperandAxes := []int{0, 1}
-		return graph.BackendScatterMax(operand, indices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
+		return f.ScatterMax(p[0], p[1], p[2], indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
 	})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	want := [][][]float32{{{0, 0, 0, 0, 0}, {1, 3, 5, 7, 9}}, {{2, 4, 6, 8, 10}, {0, 0, 0, 0, 0}}}
-	if ok, diff := testutil.IsEqual(want, y0.Value()); !ok {
+	want0 := [][][]float32{{{0, 0, 0, 0, 0}, {1, 3, 5, 7, 9}}, {{2, 4, 6, 8, 10}, {0, 0, 0, 0, 0}}}
+	if ok, diff := testutil.IsEqual(want0, y0); !ok {
 		t.Errorf("ScatterMax mismatch:\n%s", diff)
 	}
 
 	// Case 1: operand axes shuffled; Operand initialized with ones instead.
-	y1 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Ones(g, MS(F32, 2, 5, 2))
-		indices := graph.Const(g, [][]uint8{{0, 1}, {1, 0}})
-		// updates: we use an unconventional update window in axis 0, and the batch axis 1.
-		updates := graph.OnePlus(graph.IotaFull(g, MS(F32, 5, 2)))
+	operandData1 := make([][][]float32, 2)
+	for i := range operandData1 {
+		operandData1[i] = make([][]float32, 5)
+		for j := range operandData1[i] {
+			operandData1[i][j] = []float32{1, 1}
+		}
+	}
+	y1, _ := testutil.Exec1(backend, []any{operandData1, indicesData, updatesData0}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		indexVectorAxis := 1
 		updateWindowAxes := []int{0}
 		insertedWindowAxes := []int{0, 2}
 		scatterAxesToOperandAxes := []int{0, 2}
-		return graph.BackendScatterSum(operand, indices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
+		return f.ScatterSum(p[0], p[1], p[2], indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
 	})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	want = [][][]float32{{{1, 2}, {1, 4}, {1, 6}, {1, 8}, {1, 10}}, {{3, 1}, {5, 1}, {7, 1}, {9, 1}, {11, 1}}}
-	if ok, diff := testutil.IsEqual(want, y1.Value()); !ok {
+	want1 := [][][]float32{{{1, 2}, {1, 4}, {1, 6}, {1, 8}, {1, 10}}, {{3, 1}, {5, 1}, {7, 1}, {9, 1}, {11, 1}}}
+	if ok, diff := testutil.IsEqual(want1, y1); !ok {
 		t.Errorf("ScatterSum mismatch:\n%s", diff)
 	}
 
 	// Case 2: multi-dimension updates.
-	y2 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Ones(g, MS(dtypes.BFloat16, 2, 3, 2))
-		indices := graph.Const(g, [][]uint8{{0, 1}, {1, 0}})
-		updates := graph.AddScalar(graph.IotaFull(g, MS(dtypes.BFloat16, 2, 2, 2)), -4)
+	operandData2 := make([][][]bfloat16.BFloat16, 2)
+	for i := range operandData2 {
+		operandData2[i] = make([][]bfloat16.BFloat16, 3)
+		for j := range operandData2[i] {
+			operandData2[i][j] = []bfloat16.BFloat16{bf16(1), bf16(1)}
+		}
+	}
+	updatesData2 := [][][]bfloat16.BFloat16{
+		{{bf16(-4), bf16(-3)}, {bf16(-2), bf16(-1)}},
+		{{bf16(0), bf16(1)}, {bf16(2), bf16(3)}},
+	}
+	y2, _ := testutil.Exec1(backend, []any{operandData2, indicesData, updatesData2}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		indexVectorAxis := 1
 		updateWindowAxes := []int{1, 2}
 		insertedWindowAxes := []int{0}
 		scatterAxesToOperandAxes := []int{0, 1}
-		return graph.BackendScatterMin(operand, indices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
+		return f.ScatterMin(p[0], p[1], p[2], indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
 	})
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
 	want2 := [][][]bfloat16.BFloat16{{{bf16(1), bf16(1)}, {bf16(-4), bf16(-3)}, {bf16(-2), bf16(-1)}}, {{bf16(0), bf16(1)}, {bf16(1), bf16(1)}, {bf16(1), bf16(1)}}}
-	if ok, diff := testutil.IsEqual(want2, y2.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want2, y2); !ok {
 		t.Errorf("ScatterMin mismatch:\n%s", diff)
 	}
 }
 
-func rawSlice(operand *graph.Node, starts []int, limits []int, strides []int) *graph.Node {
-	rank := operand.Shape().Rank()
-	axisSpecs := make([]graph.SliceAxisSpec, rank)
-	for axis := range rank {
-		axisSpecs[axis] = graph.SliceAxisSpec{
-			Start:       starts[axis],
-			End:         limits[axis],
-			StrideValue: strides[axis],
-		}
-	}
-	return graph.Slice(operand, axisSpecs...)
-}
-
 func TestExecSpecialOps_Slice(t *testing.T) {
 	// Test Case 1: Simple 1D slice
-	y1 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Const(g, []int64{0, 1, 2, 3, 4}) // Shape [5]
+	y1, _ := testutil.Exec1(backend, []any{[]int64{0, 1, 2, 3, 4}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		starts := []int{1}
-		limits := []int{4} // Exclusive limit: indices 1, 2, 3
+		limits := []int{4}
 		strides := []int{1}
-		// graph.Slice uses inclusive limits by default? Let's use SliceWithStride for clarity matching XLA Slice.
-		// Assuming rawSlice maps to the backend op.
-		// If graph.Slice takes end indices (inclusive) or sizes, adjust accordingly.
-		return rawSlice(operand, starts, limits, strides)
+		return f.Slice(p[0], starts, limits, strides)
 	})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
 	want1 := []int64{1, 2, 3}
-	if err := y1.Shape().Check(dtypes.Int64, 3); err != nil {
-		t.Fatalf("Slice y1 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want1, y1.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want1, y1); !ok {
 		t.Fatalf("Slice y1 mismatch:\n%s", diff)
 	}
 
 	// Test Case 2: 2D slice with stride > 1
-	y2 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Const(g, [][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}) // Shape [3, 3]
+	y2, _ := testutil.Exec1(backend, []any{[][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		starts := []int{0, 0}
-		limits := []int{3, 3} // Exclusive limits for indices 0, 1, 2 in both axes
+		limits := []int{3, 3}
 		strides := []int{2, 2}
-		// Output shape: ceil((3-0)/2)=2, ceil((3-0)/2)=2 => [2, 2]
-		// Values from indices: [0,0], [0,2], [2,0], [2,2]
-		return rawSlice(operand, starts, limits, strides)
+		return f.Slice(p[0], starts, limits, strides)
 	})
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
 	want2 := [][]int32{{0, 2}, {6, 8}}
-	if err := y2.Shape().Check(dtypes.Int32, 2, 2); err != nil {
-		t.Fatalf("Slice y2 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want2, y2.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want2, y2); !ok {
 		t.Fatalf("Slice y2 mismatch:\n%s", diff)
 	}
 
 	// Test Case 3: Slice resulting in a rank-2 tensor with size 1x1
-	y3 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Const(g, [][]int64{{0, 1}, {2, 3}}) // Shape [2, 2]
+	y3, _ := testutil.Exec1(backend, []any{[][]int64{{0, 1}, {2, 3}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		starts := []int{1, 1}
-		limits := []int{2, 2} // Exclusive limits for index 1 in both axes
+		limits := []int{2, 2}
 		strides := []int{1, 1}
-		// Output shape: ceil((2-1)/1)=1, ceil((2-1)/1)=1 => [1, 1]
-		// Value from index: [1, 1]
-		return rawSlice(operand, starts, limits, strides)
+		return f.Slice(p[0], starts, limits, strides)
 	})
-	// fmt.Printf("\ty3=%s\n", y3.GoStr())
-	want3 := [][]int64{{3}} // Assuming int is int64
-	if err := y3.Shape().Check(dtypes.Int64, 1, 1); err != nil {
-		t.Fatalf("Slice y3 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want3, y3.Value()); !ok {
+	want3 := [][]int64{{3}}
+	if ok, diff := testutil.IsEqual(want3, y3); !ok {
 		t.Fatalf("Slice y3 mismatch:\n%s", diff)
 	}
 
 	// Test Case 4: Slice with bfloat16 and stride > 1
-	y4 := graph.MustExecOnce(backend, func(g *graph.Graph) *graph.Node {
-		operand := graph.Const(g, []bfloat16.BFloat16{bf16(0), bf16(1), bf16(2), bf16(3)}) // Shape [4]
+	y4, _ := testutil.Exec1(backend, []any{[]bfloat16.BFloat16{bf16(0), bf16(1), bf16(2), bf16(3)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 		starts := []int{1}
-		limits := []int{4} // Exclusive limit: indices 1, 2, 3
+		limits := []int{4}
 		strides := []int{2}
-		// Output shape: ceil((4-1)/2)=ceil(1.5)=2 => [2]
-		// Values from indices: 1, 3
-		return rawSlice(operand, starts, limits, strides)
+		return f.Slice(p[0], starts, limits, strides)
 	})
-	// fmt.Printf("\ty4=%s\n", y4.GoStr())
 	want4 := []bfloat16.BFloat16{bf16(1), bf16(3)}
-	if err := y4.Shape().Check(dtypes.BFloat16, 2); err != nil {
-		t.Fatalf("Slice y4 shape check failed: %+v", err)
-	}
-	if ok, diff := testutil.IsEqual(want4, y4.Value()); !ok {
+	if ok, diff := testutil.IsEqual(want4, y4); !ok {
 		t.Fatalf("Slice y4 mismatch:\n%s", diff)
 	}
 }
@@ -613,52 +542,45 @@ func computeHistogram(values []float64, numBins int) []int {
 }
 
 func TestExecSpecialOps_RNGBitsGenerator(t *testing.T) {
-	const numSamples = 1000
-	const numBins = 10
-	const tolerance = 0.6 // Allow 60% deviation from the expected frequency
+	numSamples := 1000000
+	numBins := 10
+	tolerance := 0.05 // 5% deviation from expected counts
 
 	testCases := []struct {
 		dtype dtypes.DType
 		name  string
 	}{
-		{dtypes.Float32, "float32"},
-		{dtypes.Float64, "float64"},
-		{dtypes.BFloat16, "bfloat16"},
+		{dtypes.Uint32, "uint32"},
+		{dtypes.Uint64, "uint64"},
 	}
 
-	state, err := graph.RNGState()
-	if err != nil {
-		t.Fatalf("graph.RNGState failed: %+v", err)
-	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			shape := shapes.Make(tc.dtype, numSamples)
-			outputs := graph.MustExecOnceN(backend, func(state *graph.Node) []*graph.Node {
-				var values *graph.Node
-				state, values = graph.RandomUniform(state, shape)
-				return []*graph.Node{state, values}
-			}, state)
-			// fmt.Printf("\toutput.shape=%s\n", shape)
-			state = outputs[0]
-			y := outputs[1]
+			y, err := testutil.Exec1(backend, []any{[]uint64{0, 0, 0}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				_, values, err := f.RNGBitGenerator(params[0], shape)
+				return values, err
+			})
+			if err != nil {
+				t.Fatalf("RNGBitGenerator failed: %v", err)
+			}
 
-			// Convert all values to float64 for histogram computation
+			// Convert all values to float64 in [0, 1) for histogram computation
 			values := make([]float64, numSamples)
 			switch tc.dtype {
-			case dtypes.Float32:
-				for i, v := range y.Value().([]float32) {
-					values[i] = float64(v)
+			case dtypes.Uint32:
+				maxVal := float64(math.MaxUint32)
+				for i, v := range y.([]uint32) {
+					values[i] = float64(v) / maxVal
 				}
-			case dtypes.Float64:
-				values = y.Value().([]float64)
-			case dtypes.BFloat16:
-				for i, v := range y.Value().([]bfloat16.BFloat16) {
-					values[i] = float64(v.Float32())
+			case dtypes.Uint64:
+				maxVal := float64(math.MaxUint64)
+				for i, v := range y.([]uint64) {
+					values[i] = float64(v) / maxVal
 				}
 			}
 
 			hist := computeHistogram(values, numBins)
-			// fmt.Printf("\tshape=%s, hist=%v\n", shape, hist)
 			expectedPerBin := numSamples / numBins
 			maxDeviation := float64(expectedPerBin) * tolerance
 
@@ -676,43 +598,39 @@ func TestExecSpecialOps_RNGBitsGenerator(t *testing.T) {
 
 func TestExecSpecialOps_ArgMinMaxOp(t *testing.T) {
 	// Test Case 1: Simple 1D argmin
-	y0 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ArgMin(x, 0)
-	}, []float32{3, 1, 4, 1, 5})
-	// fmt.Printf("\ty0=%s\n", y0.GoStr())
-	if ok, diff := testutil.IsEqual(int32(1), y0.Value()); !ok {
+	y0, _ := testutil.Exec1(backend, []any{[]float32{3, 1, 4, 1, 5}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ArgMinMax(p[0], 0, dtypes.Int32, true)
+	})
+	if ok, diff := testutil.IsEqual(int32(1), y0); !ok {
 		t.Errorf("ArgMin Case 1 mismatch:\n%s", diff)
 	}
 
 	// Test Case 2: 2D argmax along axis 1 (columns)
-	y1 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ArgMax(x, 1)
-	}, [][]int32{{1, 2, 3}, {4, 1, 2}, {7, 8, 5}})
-	// fmt.Printf("\ty1=%s\n", y1.GoStr())
-	if ok, diff := testutil.IsEqual([]int32{2, 0, 1}, y1.Value()); !ok {
+	y1, _ := testutil.Exec1(backend, []any{[][]int32{{1, 2, 3}, {4, 1, 2}, {7, 8, 5}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ArgMinMax(p[0], 1, dtypes.Int32, false)
+	})
+	if ok, diff := testutil.IsEqual([]int32{2, 0, 1}, y1); !ok {
 		t.Errorf("ArgMax Case 2 mismatch:\n%s", diff)
 	}
 
 	// Test Case 3: 2D argmin along axis 0 (rows) with BFloat16
-	y2 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ArgMin(x, 0)
-	}, [][]bfloat16.BFloat16{
+	y2, _ := testutil.Exec1(backend, []any{[][]bfloat16.BFloat16{
 		{bf16(1), bf16(2)},
 		{bf16(-1), bf16(3)},
-		{bf16(4), bf16(-2)}})
-	// fmt.Printf("\ty2=%s\n", y2.GoStr())
-	if ok, diff := testutil.IsEqual([]int32{1, 2}, y2.Value()); !ok {
+		{bf16(4), bf16(-2)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ArgMinMax(p[0], 0, dtypes.Int32, true)
+	})
+	if ok, diff := testutil.IsEqual([]int32{1, 2}, y2); !ok {
 		t.Errorf("ArgMin Case 3 mismatch:\n%s", diff)
 	}
 
 	// Test Case 4: 3D argmax with repeated values
-	y3 := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-		return graph.ArgMax(x, 1)
-	}, [][][]float32{
+	y3, _ := testutil.Exec1(backend, []any{[][][]float32{
 		{{1, 2}, {1, 0}, {1, -1}},
-		{{4, 3}, {4, 5}, {4, 2}}})
-	// fmt.Printf("\ty3=%s\n", y3.GoStr())
-	if ok, diff := testutil.IsEqual([][]int32{{0, 0}, {0, 1}}, y3.Value()); !ok {
+		{{4, 3}, {4, 5}, {4, 2}}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+		return f.ArgMinMax(p[0], 1, dtypes.Int32, false)
+	})
+	if ok, diff := testutil.IsEqual([][]int32{{0, 0}, {0, 1}}, y3); !ok {
 		t.Errorf("ArgMax Case 4 mismatch:\n%s", diff)
 	}
 }
@@ -739,7 +657,7 @@ type reduceWindowGraphTestCase struct { // T is the Go type for data, e.g., floa
 	operandData      any // e.g., []float32{1,2,3,4,5} or [][]int32{{1,2},{3,4}}
 	reductionType    compute.ReduceOpType
 	windowDimensions []int
-	strides          []int    // Can be nil, graph.BackendReduceWindow should handle defaults.
+	strides          []int    // Can be nil, f.ReduceWindow should handle defaults.
 	paddings         [][2]int // Can be nil.
 	baseDilations    []int    // Can be nil.
 	windowDilations  []int    // Can be nil.
@@ -765,7 +683,7 @@ func TestExecSpecialOps_ReduceWindow(t *testing.T) { // Renamed for common Go te
 			reductionType:    compute.ReduceOpSum,
 			windowDimensions: []int{2},
 			strides:          []int{1},
-			// Nil for paddings, baseDilations, windowDilations will use graph.BackendReduceWindow defaults
+			// Nil for paddings, baseDilations, windowDilations will use f.ReduceWindow defaults
 			expectedOutput: []float32{3, 5, 7, 9},
 			expectedShape:  []int{4},
 		},
@@ -874,20 +792,13 @@ func TestExecSpecialOps_ReduceWindow(t *testing.T) { // Renamed for common Go te
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			y := graph.MustExecOnce(backend, func(x *graph.Node) *graph.Node {
-				return graph.BackendReduceWindow(
-					x, tc.reductionType,
-					tc.windowDimensions, tc.strides, tc.baseDilations, tc.windowDilations,
-					tc.paddings)
-			}, tc.operandData)
-			dtype := dtypeForSlice(tc.operandData)
-			if y.DType() != dtype {
-				t.Errorf("Unexpected dtype %s for test %q: wanted %s", y.DType(), tc.name, dtype)
+			y, err := testutil.Exec1(backend, []any{tc.operandData}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.ReduceWindow(p[0], tc.reductionType, tc.windowDimensions, tc.strides, tc.baseDilations, tc.windowDilations, tc.paddings)
+			})
+			if err != nil {
+				t.Fatalf("ReduceWindow failed: %v", err)
 			}
-			if err := y.Shape().CheckDims(tc.expectedShape...); err != nil {
-				t.Errorf("Got unexpected shape %s for %q: wanted %v. Error: %+v", y.Shape(), tc.name, tc.expectedShape, err)
-			}
-			if ok, diff := testutil.IsEqual(tc.expectedOutput, y.Value()); !ok {
+			if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
 				t.Errorf("ReduceWindow: test %q mismatch:\n%s", tc.name, diff)
 			}
 		})
