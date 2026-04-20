@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/gomlx/pkg/support/xsync"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestPool_Saturate(t *testing.T) {
@@ -47,7 +47,9 @@ func TestPool_Saturate(t *testing.T) {
 	pool.SetMaxParallelism(0)
 	count.Store(0)
 	pool.Saturate(func() { count.Add(1) })
-	assert.Equal(t, int32(1), count.Load())
+	if ok, diff := testutil.IsEqual(int32(1), count.Load()); !ok {
+		t.Errorf("Pool with parallelism 0 result mismatch:\n%s", diff)
+	}
 
 	// Test Unlimited
 	pool.SetMaxParallelism(-1)
@@ -58,6 +60,10 @@ func TestPool_Saturate(t *testing.T) {
 		runtime.Gosched()
 		count.Add(1)
 	})
-	assert.Greater(t, int(started.Load()), 1)
-	assert.Equal(t, count.Load(), started.Load())
+	if started.Load() <= 1 {
+		t.Errorf("Expected more than 1 started task for unlimited parallelism, got %d", started.Load())
+	}
+	if count.Load() != started.Load() {
+		t.Errorf("Expected count %d to match started %d", count.Load(), started.Load())
+	}
 }

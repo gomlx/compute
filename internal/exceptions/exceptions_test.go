@@ -4,12 +4,12 @@ package exceptions_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/gomlx/pkg/support/exceptions"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // testCatchExceptions is a helper function to catch different types of exceptions and return them accordingly.
@@ -35,52 +35,78 @@ func testCatchExceptions(fn func()) (int, float64, error) {
 	return eInt, eFloat, eErr
 }
 
-//nolint:testifylint // The checks for errors and equality of floats don't apply here.
 func TestTry(t *testing.T) {
 	// No throws.
 	eInt, eFloat, eErr := testCatchExceptions(func() {})
-	assert.Equal(t, 0, eInt)
-	require.NoError(t, eErr)
-	assert.Equal(t, 0.0, eFloat)
+	if eInt != 0 {
+		t.Errorf("Expected eInt 0, got %d", eInt)
+	}
+	if eErr != nil {
+		t.Errorf("Unexpected error: %+v", eErr)
+	}
+	if eFloat != 0.0 {
+		t.Errorf("Expected eFloat 0.0, got %f", eFloat)
+	}
 
-	// Panicf an int.
+	// Panic an int.
 	eInt, eFloat, eErr = testCatchExceptions(func() {
 		panic(7)
 	})
-	assert.Equal(t, 7, eInt)
-	assert.NoError(t, eErr)
-	assert.Equal(t, 0.0, eFloat)
+	if eInt != 7 {
+		t.Errorf("Expected eInt 7, got %d", eInt)
+	}
+	if eErr != nil {
+		t.Errorf("Unexpected error: %+v", eErr)
+	}
+	if eFloat != 0.0 {
+		t.Errorf("Expected eFloat 0.0, got %f", eFloat)
+	}
 
-	// Panicf an error.
+	// Panic an error.
 	e := errors.New("blah")
 	eInt, eFloat, eErr = testCatchExceptions(func() { panic(e) })
-	assert.Equal(t, 0, eInt)
-	assert.ErrorIs(t, e, eErr)
-	assert.Equal(t, 0.0, eFloat)
+	if eInt != 0 {
+		t.Errorf("Expected eInt 0, got %d", eInt)
+	}
+	if !errors.Is(eErr, e) {
+		t.Errorf("Expected error %v, got %v", e, eErr)
+	}
+	if eFloat != 0.0 {
+		t.Errorf("Expected eFloat 0.0, got %f", eFloat)
+	}
 
-	// Panicf something different.
-	assert.Panics(t,
-		func() {
-			// A string exception is not caught.
-			_, _, _ = testCatchExceptions(func() { panic("some string") })
-		})
+	// Panic something different.
+	if panicked, _ := testutil.Try(func() {
+		// A string exception is not caught.
+		_, _, _ = testCatchExceptions(func() { panic("some string") })
+	}); !panicked {
+		t.Errorf("Expected panic for string exception")
+	}
 }
 
 func TestTryCatch(t *testing.T) {
 	want := errors.New("test error")
 	var err error
-	require.NotPanics(t, func() { err = exceptions.TryCatch[error](func() { panic(want) }) })
-	require.EqualError(t, err, want.Error())
+	if panicked, panicErr := testutil.Try(func() { err = exceptions.TryCatch[error](func() { panic(want) }) }); panicked {
+		t.Errorf("Unexpected panic: %v", panicErr)
+	}
+	if err == nil || err.Error() != want.Error() {
+		t.Errorf("Expected error %q, got %v", want.Error(), err)
+	}
 }
 
 func TestThrow(t *testing.T) {
 	err := exceptions.TryCatch[error](func() { exceptions.Panicf("2+3=%d", 2+3) })
-	require.EqualError(t, err, "2+3=5")
+	if err == nil || err.Error() != "2+3=5" {
+		t.Errorf("Expected error %q, got %v", "2+3=5", err)
+	}
 }
 
 func TestRuntimeErrors(t *testing.T) {
 	var x any = 0.0
 	//nolint:forbidigo // fmt.Println is used to cause a panic here.
 	err := exceptions.TryCatch[error](func() { fmt.Println(x.(string)) })
-	require.ErrorContains(t, err, "interface conversion")
+	if err == nil || !strings.Contains(err.Error(), "interface conversion") {
+		t.Errorf("Expected error containing %q, got %v", "interface conversion", err)
+	}
 }
