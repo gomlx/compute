@@ -114,8 +114,13 @@ func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) a
 // UnsafeSliceFromBytes casts a pointer to a buffer of bytes to a slice of the given E type and length
 // pointing to the same data.
 //
+// If length is zero or bytesPtr is nil, it returns nil.
+//
 // Unsafe: bytesPtr must have enough data to hold the []E of the given length.
 func UnsafeSliceFromBytes[E Supported](bytesPtr unsafe.Pointer, length int) []E {
+	if bytesPtr == nil || length == 0 {
+		return nil
+	}
 	return unsafe.Slice((*E)(bytesPtr), length)
 }
 
