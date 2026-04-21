@@ -42,6 +42,8 @@ type DataInterface interface {
 
 	// BufferFromFlatData transfers data from Go given as a flat slice (of the type corresponding to the shape DType)
 	// to the deviceNum, and returns the corresponding Buffer.
+	//
+	// If the shape is zero-sized, 'flat' is ignored and can be nil.
 	BufferFromFlatData(deviceNum DeviceNum, flat any, shape shapes.Shape) (Buffer, error)
 
 	// HasSharedBuffers returns whether the backend supports "shared buffers": these are buffers
