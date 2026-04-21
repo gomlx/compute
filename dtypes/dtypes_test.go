@@ -109,9 +109,24 @@ func TestSizeForDimensions(t *testing.T) {
 	if Int4.SizeForDimensions(3) != 2 {
 		t.Fatalf("expected Int4.SizeForDimensions(3) to be 2, got %d", Int4.SizeForDimensions(3))
 	}
+	if Int1.SizeForDimensions(1) != 1 {
+		t.Fatalf("expected S1.SizeForDimensions(1) to be 1, got %d", Int1.SizeForDimensions(1))
+	}
+	if Int1.SizeForDimensions(8) != 1 {
+		t.Fatalf("expected S1.SizeForDimensions(8) to be 1, got %d", Int1.SizeForDimensions(8))
+	}
+	if Int1.SizeForDimensions(9) != 2 {
+		t.Fatalf("expected S1.SizeForDimensions(9) to be 2, got %d", Int1.SizeForDimensions(9))
+	}
 }
 
 func TestBits(t *testing.T) {
+	if Int1.Bits() != 1 {
+		t.Fatalf("expected S1.Bits() to be 1, got %d", Int1.Bits())
+	}
+	if Uint1.Bits() != 1 {
+		t.Fatalf("expected U1.Bits() to be 1, got %d", Uint1.Bits())
+	}
 	if Int4.Bits() != 4 {
 		t.Fatalf("expected Int4.Bits() to be 4, got %d", Int4.Bits())
 	}
@@ -127,6 +142,12 @@ func TestBits(t *testing.T) {
 }
 
 func TestIsPacked(t *testing.T) {
+	if !Int1.IsPacked() {
+		t.Fatal("expected S1 to be packed")
+	}
+	if !Uint1.IsPacked() {
+		t.Fatal("expected U1 to be packed")
+	}
 	if !Int4.IsPacked() {
 		t.Fatal("expected Int4 to be packed")
 	}

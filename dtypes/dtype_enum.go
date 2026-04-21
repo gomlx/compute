@@ -2,9 +2,7 @@
 
 package dtypes
 
-// File originally copied from github.com/gomlx/go-xla/pkg/types/dtypes/gen_dtype_enum.go.
-// As much as possible, keep data types aligned (same values for same types).
-// But they may diverge if new dtypes are introduced by other backends.
+//go:generate go tool enumer -type=DType -yaml -json -text -values -output=gen_dtype_enumer.go dtype_enum.go
 
 // DType is an enum represents the data type of a buffer or a scalar.
 //
@@ -123,6 +121,18 @@ const (
 
 	// F4E2M1FN represents 4-bit MX floating-point format.
 	F4E2M1FN DType = 29
+
+	// Int1 represents a 1-bit integer type.
+	//
+	// This is assumed to be a "packet" type (8 values per byte): at least this is how it is stored
+	// in Go tensors (in a slice of bytes), different backends may have their own varying internal representation.
+	Int1 DType = 30
+
+	// Uint1 represents a 1-bit unsigned integer type.
+	//
+	// This is assumed to be a "packet" type (8 values per byte): at least this is how it is stored
+	// in Go tensors (in a slice of bytes), different backends may have their own varying internal representation.
+	Uint1 DType = 31
 )
 
 // Aliases from PJRT C API.
@@ -196,6 +206,10 @@ var MapOfNames = map[string]DType{
 	"Bool":         Bool,
 	"PRED":         Bool,
 
+	"S1":   Int1,
+	"Int1": Int1,
+	"I1":   Int1,
+
 	"I2":   Int2,
 	"Int2": Int2,
 	"S2":   Int2,
@@ -220,6 +234,8 @@ var MapOfNames = map[string]DType{
 	"Int64": Int64,
 	"S64":   Int64,
 
+	"U1":     Uint1,
+	"Uint1":  Uint1,
 	"Uint2":  Uint2,
 	"U2":     Uint2,
 	"Uint4":  Uint4,

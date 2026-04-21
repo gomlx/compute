@@ -165,7 +165,7 @@ func (dtype DType) Size() int {
 }
 
 // Bits returns the number of bits for the given DType.
-// This is only used for "packed" storage version (Int4, Int2, Uint4, Uint2).
+// This is only used for "packed" storage version (Int4, Int2, Uint4, Uint2, S1, U1).
 // Bool is never packed and hence returns 8.
 func (dtype DType) Bits() int {
 	switch dtype {
@@ -173,6 +173,8 @@ func (dtype DType) Bits() int {
 		return 4
 	case Int2, Uint2:
 		return 2
+	case Int1, Uint1:
+		return 1
 	case Bool:
 		return 8
 	default:
@@ -182,7 +184,7 @@ func (dtype DType) Bits() int {
 
 // IsPacked returns whether the dtype uses less than a byte and is "packed" into bytes into memory.
 // It is always "little-endian": the lower bits represent the first values in a sequence.
-// E.g.: Int4, Int2, Uint4, Uint2.
+// E.g.: Int4, Int2, Uint4, Uint2, S1, U1.
 func (dtype DType) IsPacked() bool {
 	return dtype.Bits() < 8
 }
@@ -195,6 +197,8 @@ func (dtype DType) ValuesPerStorageUnit() int {
 		return 2
 	case Int2, Uint2:
 		return 4
+	case Int1, Uint1:
+		return 8
 	case Bool:
 		return 1
 	default:
@@ -269,7 +273,7 @@ func (dtype DType) GoType() reflect.Type {
 	case Uint8:
 		return reflect.TypeFor[uint8]()
 
-	case Uint4, Uint2, Int4, Int2:
+	case Uint4, Uint2, Int4, Int2, Int1, Uint1:
 		// Packed sub-byte types have a Go type `byte`.
 		return reflect.TypeFor[uint8]()
 
@@ -301,7 +305,7 @@ func (dtype DType) GoType() reflect.Type {
 // GoStr converts dtype to the corresponding Go type and convert that to string.
 // Notice the names are different from the Dtype (so `Int64` dtype is simply `int` in Go).
 //
-// Sub-byte packed values (Int2, Uint2, Int4, Uint4) are packed as "uint8", so that's what is returned.
+// Sub-byte packed values (Int2, Uint2, Int4, Uint4, S1, U1) are packed as "uint8", so that's what is returned.
 func (dtype DType) GoStr() string {
 	return dtype.GoType().Name()
 }
@@ -310,8 +314,8 @@ func (dtype DType) GoStr() string {
 // For float values it will return negative infinite.
 // There is no lowest value for complex numbers, since they are not ordered.
 //
-// For the packed sub-byte types (Int4, Int2, Uint4, Uint2), the lowest value is returned as a byte,
-// with all values ("nibbles" for 4 bits, and "crumbs" for 2 bits) set to the lowest value.
+// For the packed sub-byte types (Int4, Int2, Uint4, Uint2, S1, U1), the lowest value is returned as a byte,
+// with all values set to the lowest value.
 func (dtype DType) LowestValue() any {
 	switch dtype {
 	case Int64:
@@ -326,6 +330,8 @@ func (dtype DType) LowestValue() any {
 		return uint8(0x88) // Two nibbles: [-8, -8]
 	case Int2:
 		return uint8(0xEE) // Four crumbs: [-2, -2, -2, -2]
+	case Int1:
+		return uint8(0xFF) // Eight 1-bit values: [-1, -1, -1, -1, -1, -1, -1, -1]
 
 	case Uint64:
 		return uint64(0)
@@ -335,7 +341,7 @@ func (dtype DType) LowestValue() any {
 		return uint16(0)
 	case Uint8:
 		return uint8(0)
-	case Uint4, Uint2:
+	case Uint4, Uint2, Uint1:
 		return uint8(0)
 
 	case Bool:
@@ -376,6 +382,8 @@ func (dtype DType) HighestValue() any {
 		return byte(0x77) // Two "nibbles": [7, 7]
 	case Int2:
 		return byte(0x55) // Four "crumbs": [1, 1, 1, 1]
+	case Int1:
+		return byte(0) // Eight 1-bit values: [0, 0, 0, 0, 0, 0, 0, 0]
 
 	case Uint64:
 		return uint64(math.MaxUint64)
@@ -389,6 +397,8 @@ func (dtype DType) HighestValue() any {
 		return byte(0xFF) // Two "nibbles": [15, 15]
 	case Uint2:
 		return byte(0xFF) // Four "crumbs": [3, 3, 3, 3]
+	case Uint1:
+		return byte(0xFF) // Eight 1-bit values: [1, 1, 1, 1, 1, 1, 1, 1]
 
 	case Bool:
 		return true
@@ -413,8 +423,8 @@ func (dtype DType) HighestValue() any {
 // The return value is converted to the corresponding Go type.
 // There is no smallest non-zero value for complex numbers, since they are not ordered.
 //
-// For the packed sub-byte types (Int4, Int2, Uint4, Uint2), the value is returned as a byte,
-// with all values ("nibbles" for 4 bits, and "crumbs" for 2 bits) set to the lowest non-zero value.
+// For the packed sub-byte types (Int4, Int2, Uint4, Uint2, S1, U1), the value is returned as a byte,
+// with all values set to the lowest non-zero value.
 func (dtype DType) SmallestNonZeroValueForDType() any {
 	switch dtype {
 	case Int64:
@@ -429,6 +439,8 @@ func (dtype DType) SmallestNonZeroValueForDType() any {
 		return uint8(0x11) // Two "nibbles": [1, 1]
 	case Int2:
 		return uint8(0x33) // Four "crumbs": [1, 1, 1, 1]
+	case Int1:
+		return uint8(0xFF) // Eight 1-bit values: [-1, -1, -1, -1, -1, -1, -1, -1] -- 1 is not a value in S1 (only 0 and -1)
 
 	case Uint64:
 		return uint64(1)
@@ -442,6 +454,8 @@ func (dtype DType) SmallestNonZeroValueForDType() any {
 		return byte(0x11) // Two "nibbles": [1, 1]
 	case Uint2:
 		return byte(0x33) // Four "crumbs": [1, 1, 1, 1]
+	case Uint1:
+		return byte(0xFF) // Eight 1-bit values: [1, 1, 1, 1, 1, 1, 1, 1]
 
 	case Bool:
 		return true
@@ -480,12 +494,12 @@ var (
 	FloatDTypes     = dtypeSetWith(Float32, Float64, Float16, BFloat16)
 	Float16DTypes   = dtypeSetWith(Float16, BFloat16)
 	ComplexDTypes   = dtypeSetWith(Complex64, Complex128)
-	IntDTypes       = dtypeSetWith(Int64, Int32, Int16, Int8, Int4, Int2, Uint2, Uint4, Uint8, Uint16, Uint32, Uint64)
-	UnsignedDTypes  = dtypeSetWith(Uint8, Uint16, Uint32, Uint64, Uint4, Uint2)
+	IntDTypes       = dtypeSetWith(Int64, Int32, Int16, Int8, Int4, Int2, Int1, Uint1, Uint2, Uint4, Uint8, Uint16, Uint32, Uint64)
+	UnsignedDTypes  = dtypeSetWith(Uint8, Uint16, Uint32, Uint64, Uint4, Uint2, Uint1)
 	SupportedDTypes = dtypeSetWith(Bool,
 		Float16, BFloat16, Float32, Float64,
-		Int64, Int32, Int16, Int8, Int4, Int2,
-		Uint64, Uint32, Uint16, Uint8, Uint4, Uint2,
+		Int64, Int32, Int16, Int8, Int4, Int2, Int1,
+		Uint64, Uint32, Uint16, Uint8, Uint4, Uint2, Uint1,
 		Complex64, Complex128)
 )
 
