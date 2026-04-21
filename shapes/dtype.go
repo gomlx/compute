@@ -74,47 +74,11 @@ func ConvertTo[T NumberNotComplex](value any) T {
 // UnsafeSliceForDType creates a slice of the corresponding dtype
 // and casts it to any.
 // It uses unsafe.Slice.
-// Set `len` to the number of `DType` elements (not the number of bytes).
-func UnsafeSliceForDType(dtype DType, unsafePtr unsafe.Pointer, len int) any {
-	switch dtype {
-	case Int64:
-		return unsafe.Slice((*int64)(unsafePtr), len)
-	case Int32:
-		return unsafe.Slice((*int32)(unsafePtr), len)
-	case Int16:
-		return unsafe.Slice((*int16)(unsafePtr), len)
-	case Int8:
-		return unsafe.Slice((*int8)(unsafePtr), len)
-
-	case Uint64:
-		return unsafe.Slice((*uint64)(unsafePtr), len)
-	case Uint32:
-		return unsafe.Slice((*uint32)(unsafePtr), len)
-	case Uint16:
-		return unsafe.Slice((*uint16)(unsafePtr), len)
-	case Uint8:
-		return unsafe.Slice((*uint8)(unsafePtr), len)
-
-	case Bool:
-		return unsafe.Slice((*bool)(unsafePtr), len)
-
-	case Float16:
-		return unsafe.Slice((*float16.Float16)(unsafePtr), len)
-	case BFloat16:
-		return unsafe.Slice((*bfloat16.BFloat16)(unsafePtr), len)
-	case Float32:
-		return unsafe.Slice((*float32)(unsafePtr), len)
-	case Float64:
-		return unsafe.Slice((*float64)(unsafePtr), len)
-
-	case Complex64:
-		return unsafe.Slice((*complex64)(unsafePtr), len)
-	case Complex128:
-		return unsafe.Slice((*complex128)(unsafePtr), len)
-	default:
-		panicf("unknown dtype %q (%d) in UnsafeSliceForDType", dtype, dtype)
-		panic(nil) // Quiet lint warning.
-	}
+// Set `length` to the number of `DType` elements (not the number of bytes).
+//
+// Deprecated: use [dtypes.UnsafeAnySliceFromBytes] instead.
+func UnsafeSliceForDType(dtype DType, unsafePtr unsafe.Pointer, length int) any {
+	return UnsafeAnySliceFromBytes(unsafePtr, dtype, length)
 }
 
 // Pre-generate constant reflect.TypeOf for convenience.
