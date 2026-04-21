@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const _DTypeName = "InvalidDTypeBoolInt8Int16Int32Int64Uint8Uint16Uint32Uint64Float16Float32Float64BFloat16Complex64Complex128F8E5M2F8E4M3FNF8E4M3B11FNUZF8E5M2FNUZF8E4M3FNUZInt4Uint4TOKENInt2Uint2F8E4M3F8E3M4F8E8M0FNUF4E2M1FNS1U1"
+const _DTypeName = "InvalidDTypeBoolInt8Int16Int32Int64Uint8Uint16Uint32Uint64Float16Float32Float64BFloat16Complex64Complex128F8E5M2F8E4M3FNF8E4M3B11FNUZF8E5M2FNUZF8E4M3FNUZInt4Uint4TOKENInt2Uint2F8E4M3F8E3M4F8E8M0FNUF4E2M1FNInt1Uint1"
 
-var _DTypeIndex = [...]uint8{0, 12, 16, 20, 25, 30, 35, 40, 46, 52, 58, 65, 72, 79, 87, 96, 106, 112, 120, 133, 143, 153, 157, 162, 167, 171, 176, 182, 188, 197, 205, 207, 209}
+var _DTypeIndex = [...]uint8{0, 12, 16, 20, 25, 30, 35, 40, 46, 52, 58, 65, 72, 79, 87, 96, 106, 112, 120, 133, 143, 153, 157, 162, 167, 171, 176, 182, 188, 197, 205, 209, 214}
 
-const _DTypeLowerName = "invaliddtypeboolint8int16int32int64uint8uint16uint32uint64float16float32float64bfloat16complex64complex128f8e5m2f8e4m3fnf8e4m3b11fnuzf8e5m2fnuzf8e4m3fnuzint4uint4tokenint2uint2f8e4m3f8e3m4f8e8m0fnuf4e2m1fns1u1"
+const _DTypeLowerName = "invaliddtypeboolint8int16int32int64uint8uint16uint32uint64float16float32float64bfloat16complex64complex128f8e5m2f8e4m3fnf8e4m3b11fnuzf8e5m2fnuzf8e4m3fnuzint4uint4tokenint2uint2f8e4m3f8e3m4f8e8m0fnuf4e2m1fnint1uint1"
 
 func (i DType) String() string {
 	if i < 0 || i >= DType(len(_DTypeIndex)-1) {
@@ -126,10 +126,10 @@ var _DTypeNameToValueMap = map[string]DType{
 	_DTypeLowerName[188:197]: F8E8M0FNU,
 	_DTypeName[197:205]:      F4E2M1FN,
 	_DTypeLowerName[197:205]: F4E2M1FN,
-	_DTypeName[205:207]:      Int1,
-	_DTypeLowerName[205:207]: Int1,
-	_DTypeName[207:209]:      Uint1,
-	_DTypeLowerName[207:209]: Uint1,
+	_DTypeName[205:209]:      Int1,
+	_DTypeLowerName[205:209]: Int1,
+	_DTypeName[209:214]:      Uint1,
+	_DTypeLowerName[209:214]: Uint1,
 }
 
 var _DTypeNames = []string{
@@ -163,8 +163,8 @@ var _DTypeNames = []string{
 	_DTypeName[182:188],
 	_DTypeName[188:197],
 	_DTypeName[197:205],
-	_DTypeName[205:207],
-	_DTypeName[207:209],
+	_DTypeName[205:209],
+	_DTypeName[209:214],
 }
 
 // DTypeString retrieves an enum value from the enum constants string name.
