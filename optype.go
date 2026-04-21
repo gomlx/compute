@@ -5,8 +5,7 @@ package compute
 // OpType is an enum of all generic operations that can be supported by a Backend.Builder.
 //
 // Notice: nothing precludes a specialized backend Builder to support other ops not included here.
-// It requires some careful casting of interfaces by the caller (presumably in package
-// github.com/gomlx/gomlx/pkg/core/graph) and fallback to backends that don't support the specialized op.
+// It requires some careful casting of interfaces by the caller.
 type OpType int
 
 //go:generate go tool enumer -type=OpType -trimprefix=OpType -output=gen_optype_enumer.go optype.go
