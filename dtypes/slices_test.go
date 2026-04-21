@@ -121,13 +121,13 @@ func TestMakeAnySlice(t *testing.T) {
 	}
 
 	// Test with sub-byte packed types
-	uint4sAny := MakeAnySlice(Uint4, 10)
+	uint4sAny := MakeAnySlice(Uint4, 11)
 	uint4s, ok := uint4sAny.([]uint8)
 	if !ok {
 		t.Fatal("TestMakeAnySlice (Uint4): expected []uint8")
 	}
-	if len(uint4s) != 10 {
-		t.Errorf("TestMakeAnySlice (Uint4): expected length 10, got %d", len(uint4s))
+	if len(uint4s) != 6 {
+		t.Errorf("TestMakeAnySlice (Uint4): expected length 6 (to hold 11 nibbles), got %d", len(uint4s))
 	}
 
 	// Test panic

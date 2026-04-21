@@ -210,12 +210,20 @@ func (dtype DType) ValuesPerStorageUnit() int {
 // For packed types, it assumes padding the last byte where needed. E.g.: Int4.SizeForDiemensions(1) -> 1,
 // even though only 4 bits are used for the one byte.
 func (dtype DType) SizeForDimensions(dimensions ...int) int {
-	numElements := 1
-	for _, dim := range dimensions {
-		if dim < 0 {
-			panicf("dim cannot be negative for SizeForDimensions, got %v", dimensions)
+	var numElements int
+	switch len(dimensions) {
+	case 0:
+		numElements = 1
+	case 1:
+		numElements = dimensions[0]
+	default:
+		numElements = 1
+		for _, dim := range dimensions {
+			if dim < 0 {
+				panicf("dim cannot be negative for SizeForDimensions, got %v", dimensions)
+			}
+			numElements *= dim
 		}
-		numElements *= dim
 	}
 	if dtype.IsPacked() {
 		return (numElements*dtype.Bits() + 7) / 8

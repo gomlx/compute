@@ -9,6 +9,10 @@ import (
 
 // UnsafeByteSliceFromAny casts a slice of any of the supported Go types (feed as type any) to a slice of bytes.
 func UnsafeByteSliceFromAny(flatAny any) []byte {
+	if flatAny == nil {
+		// Zero-sized shapes use a nil flat.
+		return nil
+	}
 	switch flat := flatAny.(type) {
 	case []float64:
 		return UnsafeByteSlice(flat)
@@ -62,8 +66,8 @@ func UnsafeByteSlice[E Supported](flat []E) []byte {
 // pointing to the same data.
 //
 // For sub-byte types (Uint2, Uint4, Int2, Int4) it returns a slice of uint8 of
-// the given length -- that is, the length is in bytes in this case
-// (not in number of sub-byte elements) -- use DType.ValuesPerStorageUnit() to get the number of elements.
+// the length adjusted to hold that many elements (packed), length is always
+// given in number of elements (nibbles in this case).
 //
 // Unsafe: bytesPtr must have enough data to hold the []dtype of the given length.
 func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) any {
@@ -100,7 +104,7 @@ func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) a
 		return UnsafeSliceFromBytes[complex128](bytesPtr, length)
 	case Uint2, Uint4, Int2, Int4:
 		// Sub-byte packed types are stored as uint8.
-		return UnsafeSliceFromBytes[uint8](bytesPtr, length)
+		return UnsafeSliceFromBytes[uint8](bytesPtr, dtype.SizeForDimensions(length))
 	default:
 		panicf("unsupported dtype for UnsafeByteSliceFromAny: %s", dtype)
 	}
@@ -118,8 +122,7 @@ func UnsafeSliceFromBytes[E Supported](bytesPtr unsafe.Pointer, length int) []E 
 // MakeAnySlice creates a slice of the given dtype and length, casted to any.
 //
 // For sub-byte types (Uint2, Uint4, Int2, Int4) it returns a slice of uint8 of
-// the given length -- that is, the length is in bytes in this case
-// (not in number of sub-byte elements).
+// with an adjusted length -- that is, enough bytes to hold those many nibbles.
 func MakeAnySlice(dtype DType, length int) any {
 	switch dtype {
 	case Float64:
@@ -154,7 +157,8 @@ func MakeAnySlice(dtype DType, length int) any {
 		return make([]complex128, length)
 	case Uint2, Uint4, Int2, Int4:
 		// Sub-byte packed types are stored as uint8.
-		return make([]uint8, length)
+		// This allocates enough bytes to hold those many nibbles.
+		return make([]uint8, dtype.SizeForDimensions(length))
 	default:
 		panicf("unsupported dtype for MakeAnySlice: %s", dtype)
 	}

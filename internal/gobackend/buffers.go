@@ -28,6 +28,7 @@ var _ compute.DataInterface = (*Backend)(nil)
 type Buffer struct {
 	shape shapes.Shape
 
+	// inUse is set to false when the buffer is finalized and moved back to the pool.
 	inUse bool
 
 	// flat is always a slice of the underlying data type (shape.DType).
@@ -75,49 +76,6 @@ type bufferPoolKey struct {
 	length int
 }
 
-// makeSliceForDType creates a slice of the appropriate type for the given dtype and length.
-// Fast paths for common dtypes avoid reflection overhead.
-//
-// For sub-byte types (Int4, Uint4, Int2, Uint2), the returned slice is []byte
-// with packed storage (multiple values per byte). The `length` parameter is the
-// logical element count; the actual slice length is dtype.SizeForDimensions(length).
-func makeSliceForDType(dtype dtypes.DType, length int) any {
-	switch dtype { //nolint:exhaustive
-	case dtypes.Float32:
-		return make([]float32, length)
-	case dtypes.Float64:
-		return make([]float64, length)
-	case dtypes.Int32:
-		return make([]int32, length)
-	case dtypes.Int64:
-		return make([]int64, length)
-	case dtypes.Int8:
-		return make([]int8, length)
-	case dtypes.Int16:
-		return make([]int16, length)
-	case dtypes.Uint8:
-		return make([]uint8, length)
-	case dtypes.Uint16:
-		return make([]uint16, length)
-	case dtypes.Uint32:
-		return make([]uint32, length)
-	case dtypes.Uint64:
-		return make([]uint64, length)
-	case dtypes.Bool:
-		return make([]bool, length)
-	case dtypes.Complex64:
-		return make([]complex64, length)
-	case dtypes.Complex128:
-		return make([]complex128, length)
-	case dtypes.Int4, dtypes.Uint4, dtypes.Int2, dtypes.Uint2:
-		// Sub-byte types are always stored packed: multiple values per byte.
-		return make([]byte, dtype.SizeForDimensions(length))
-	default:
-		// Fallback to reflection for less common types (BFloat16, Float16, etc.).
-		return reflect.MakeSlice(reflect.SliceOf(dtype.GoType()), length, length).Interface()
-	}
-}
-
 // getBufferPool for given dtype/length.
 func (b *Backend) getBufferPool(dtype dtypes.DType, length int) *sync.Pool {
 	key := bufferPoolKey{dtype: dtype, length: length}
@@ -126,7 +84,7 @@ func (b *Backend) getBufferPool(dtype dtypes.DType, length int) *sync.Pool {
 		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{
 			New: func() any {
 				return &Buffer{
-					flat:  makeSliceForDType(dtype, length),
+					flat:  dtypes.MakeAnySlice(dtype, length),
 					shape: shapes.Make(dtype, length),
 				}
 			},
@@ -147,7 +105,7 @@ func (b *Backend) getBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	pool := b.getBufferPool(dtype, length)
 	buf := pool.Get().(*Buffer) //nolint:errcheck
 	buf.inUse = true
-	// buf.randomize() // Useful to find where zero-initialized is needed but missing.
+	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
 }
 
