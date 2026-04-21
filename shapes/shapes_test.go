@@ -90,6 +90,16 @@ func TestShape(t *testing.T) {
 	if shapeUint4.ByteSize() != 5 {
 		t.Errorf("expected shapeUint4.ByteSize() to be 5, got %d", shapeUint4.ByteSize())
 	}
+
+	shapeInt1 := Make(dtypes.Int1, 9)
+	if shapeInt1.ByteSize() != 2 {
+		t.Errorf("expected shapeInt1.ByteSize() to be 2, got %d", shapeInt1.ByteSize())
+	}
+
+	shapeUint1 := Make(dtypes.Uint1, 8)
+	if shapeUint1.ByteSize() != 1 {
+		t.Errorf("expected shapeUint1.ByteSize() to be 1, got %d", shapeUint1.ByteSize())
+	}
 }
 
 func TestDim(t *testing.T) {

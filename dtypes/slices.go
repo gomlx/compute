@@ -65,9 +65,9 @@ func UnsafeByteSlice[E Supported](flat []E) []byte {
 // UnsafeAnySliceFromBytes casts a pointer to a buffer of bytes to a slice of the given dtype and length
 // pointing to the same data.
 //
-// For sub-byte types (Uint2, Uint4, Int2, Int4) it returns a slice of uint8 of
+// For sub-byte types (Uint1, Uint2, Uint4, Int1, Int2, Int4) it returns a slice of uint8 of
 // the length adjusted to hold that many elements (packed), length is always
-// given in number of elements (nibbles in this case).
+// given in number of elements (bits, crumbs, nibbles in this case).
 //
 // Unsafe: bytesPtr must have enough data to hold the []dtype of the given length.
 func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) any {
@@ -102,7 +102,7 @@ func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) a
 		return UnsafeSliceFromBytes[complex64](bytesPtr, length)
 	case Complex128:
 		return UnsafeSliceFromBytes[complex128](bytesPtr, length)
-	case Uint2, Uint4, Int2, Int4:
+	case Int1, Uint1, Int2, Uint2, Int4, Uint4:
 		// Sub-byte packed types are stored as uint8.
 		return UnsafeSliceFromBytes[uint8](bytesPtr, dtype.SizeForDimensions(length))
 	default:
@@ -126,8 +126,8 @@ func UnsafeSliceFromBytes[E Supported](bytesPtr unsafe.Pointer, length int) []E 
 
 // MakeAnySlice creates a slice of the given dtype and length, casted to any.
 //
-// For sub-byte types (Uint2, Uint4, Int2, Int4) it returns a slice of uint8 of
-// with an adjusted length -- that is, enough bytes to hold those many nibbles.
+// For sub-byte types (Uint1, Uint2, Uint4, Int1, Int2, Int4) it returns a slice of uint8 of
+// with an adjusted length -- that is, enough bytes to hold those many bits/crumbs/nibbles.
 func MakeAnySlice(dtype DType, length int) any {
 	switch dtype {
 	case Float64:
@@ -160,9 +160,9 @@ func MakeAnySlice(dtype DType, length int) any {
 		return make([]complex64, length)
 	case Complex128:
 		return make([]complex128, length)
-	case Uint2, Uint4, Int2, Int4:
+	case Int1, Uint1, Int2, Uint2, Int4, Uint4:
 		// Sub-byte packed types are stored as uint8.
-		// This allocates enough bytes to hold those many nibbles.
+		// This allocates enough bytes to hold those many bits/crumbs/nibbles.
 		return make([]uint8, dtype.SizeForDimensions(length))
 	default:
 		panicf("unsupported dtype for MakeAnySlice: %s", dtype)

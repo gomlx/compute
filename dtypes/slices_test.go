@@ -130,6 +130,15 @@ func TestMakeAnySlice(t *testing.T) {
 		t.Errorf("TestMakeAnySlice (Uint4): expected length 6 (to hold 11 nibbles), got %d", len(uint4s))
 	}
 
+	int1sAny := MakeAnySlice(Int1, 9)
+	int1s, ok := int1sAny.([]uint8)
+	if !ok {
+		t.Fatal("TestMakeAnySlice (Int1): expected []uint8")
+	}
+	if len(int1s) != 2 {
+		t.Errorf("TestMakeAnySlice (Int1): expected length 2 (to hold 9 bits), got %d", len(int1s))
+	}
+
 	// Test panic
 	assertPanics(t, "TestMakeAnySlice (invalid)", func() { MakeAnySlice(InvalidDType, 10) })
 }

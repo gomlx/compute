@@ -166,11 +166,7 @@ func (s Shape) IsZeroSize() bool {
 
 // ByteSize returns the number of bytes used to store an array of the given shape.
 func (s Shape) ByteSize() int64 {
-	size64 := int64(s.DType.Size()) * int64(s.Size())
-	if !s.DType.IsPacked() {
-		return size64
-	}
-	return (size64 + (int64(s.DType.ValuesPerStorageUnit()) - 1)) / int64(s.DType.ValuesPerStorageUnit())
+	return int64(s.DType.SizeForDimensions(s.Dimensions...))
 }
 
 // Memory is an old alias to ByteSize, kept for backward compatibility.
