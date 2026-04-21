@@ -196,6 +196,12 @@ const (
 
 	// U2 (or PJRT_Buffer_Type_U2) is the C enum name for Uint2.
 	U2 = Uint2
+
+	// U1 (or PJRT_Buffer_Type_U1) is the C enum name for Uint1.
+	U1 = Uint1
+
+	// S1 (or PJRT_Buffer_Type_S1) is the C enum name for Int1.
+	S1 = Int1
 )
 
 // MapOfNames to their dtypes. It includes also aliases to the various dtypes.
@@ -234,8 +240,8 @@ var MapOfNames = map[string]DType{
 	"Int64": Int64,
 	"S64":   Int64,
 
-	"U1":     Uint1,
 	"Uint1":  Uint1,
+	"U1":     Uint1,
 	"Uint2":  Uint2,
 	"U2":     Uint2,
 	"Uint4":  Uint4,
