@@ -9,8 +9,8 @@ import (
 
 	. "github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 // Aliases

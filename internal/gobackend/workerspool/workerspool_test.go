@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/internal/xsync"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 func TestPool_Saturate(t *testing.T) {

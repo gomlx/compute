@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 func TestBuffers_Bytes(t *testing.T) {

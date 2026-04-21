@@ -8,8 +8,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/internal/testutil"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 func testExecUnaryOp(t *testing.T, buildFn func(f compute.Function, param compute.Value) (compute.Value, error), input any) *Buffer {

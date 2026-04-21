@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute/internal/exceptions"
-	"github.com/gomlx/compute/internal/testutil"
+	"github.com/gomlx/compute/support/testutil"
 	"github.com/pkg/errors"
 )
 

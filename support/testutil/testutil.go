@@ -1,5 +1,15 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
+// Package testutil provides utilities for testing a compute.Backend.
+// It is used by the gobackend package to implement the "go" backend,
+// but shared here as it could be used by other backends as well.
+//
+// It includes helpers for:
+//
+//   - Comparison: IsEqual, IsInDelta and IsInRelativeDelta, implemented for various types,
+//     including the half-precision float16 and bfloat16.
+//   - Buffer manipulation: ToBuffer and FromBuffer are not efficient, but convenient conversion
+//     of values to Go for testing.
 package testutil
 
 import (
