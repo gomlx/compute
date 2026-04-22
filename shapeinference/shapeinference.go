@@ -1003,15 +1003,15 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	}
 
 	// Check strides, paddings, inputDilations and kernelDilations.
-	if len(strides) != 0 && len(strides) != spatialRank {
+	if len(strides) > 0 && len(strides) != spatialRank {
 		return errorf("strides (%v) must either be nil or provide one value for each spatial axis (%d), input shape is %s",
 			strides, spatialRank, input.Shape())
 	}
-	if len(paddings) != 0 && len(paddings) != spatialRank {
+	if len(paddings) > 0 && len(paddings) != spatialRank {
 		return errorf("paddings (%v) must either be nil or provide one value for each spatial axis (%d), input shape is %s",
 			paddings, spatialRank, input.Shape())
 	}
-	if len(inputDilations) != 0 && len(inputDilations) != spatialRank {
+	if len(inputDilations) > 0 && len(inputDilations) != spatialRank {
 		return errorf("inputDilations (%v) must either be nil or provide one value for each spatial axis (%d), input shape is %s",
 			inputDilations, spatialRank, input.Shape())
 	}
@@ -1073,21 +1073,20 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 		inputDim := input.Dim(inputAxis)
 		filterAxis := axes.KernelSpatial[spatialAxisIdx]
 		kernelDim := kernel.Dim(filterAxis)
-		var (
-			stride  int
-			padding [2]int
-		)
-		if strides != nil {
+		stride := 1
+		var padding [2]int
+
+		if len(strides) > 0 {
 			stride = strides[spatialAxisIdx]
 		}
-		if paddings != nil {
+		if len(paddings) > 0 {
 			padding = paddings[spatialAxisIdx]
 		}
 		inputDilation, kernelDilation := 1, 1
-		if inputDilations != nil {
+		if len(inputDilations) > 0 {
 			inputDilation = inputDilations[spatialAxisIdx]
 		}
-		if kernelDilations != nil {
+		if len(kernelDilations) > 0 {
 			kernelDilation = kernelDilations[spatialAxisIdx]
 		}
 

@@ -3,7 +3,6 @@
 package gobackend
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/gomlx/compute"
@@ -11,6 +10,7 @@ import (
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
+	"github.com/pkg/errors"
 )
 
 func init() {
@@ -52,29 +52,31 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 	}
 	input, kernel := inputs[0], inputs[1]
 
+	// Run shape inference.
 	outputShape, err := shapeinference.ConvGeneralOp(input.shape, kernel.shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 	if err != nil {
-		fmt.Printf("ConvGeneral: input=%s, kernel=%s, output=%s, axes=%+v, strides=%v, paddings=%v, inputDilations=%v, kernelDilations=%v, channelGroupCount=%d, batchGroupCount=%d\n",
+		err = errors.WithMessagef(err, "ConvGeneral: input=%s, kernel=%s, output=%s, axes=%+v, strides=%v, paddings=%v, inputDilations=%v, kernelDilations=%v, channelGroupCount=%d, batchGroupCount=%d\n",
 			input.shape, kernel.shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 		return nil, err
 	}
 
 	// Sanitize parameters.
-	spatialRank := outputShape.Rank() - 2
-	if strides == nil {
+	spatialRank := input.shape.Rank() - 2
+	if len(strides) == 0 {
 		strides = xslices.SliceWithValue(spatialRank, 1)
 	} else {
 		strides = slices.Clone(strides)
 	}
-	if paddings == nil {
+	if len(paddings) == 0 {
 		paddings = make([][2]int, spatialRank)
 	} else {
 		paddings = slices.Clone(paddings)
 	}
+
 	if len(inputDilations) > 0 {
 		inputDilations = slices.Clone(inputDilations)
-		for i, dilation := range inputDilations {
-			if dilation <= 0 {
+		for i := range inputDilations {
+			if inputDilations[i] <= 0 {
 				inputDilations[i] = 1
 			}
 		}
@@ -83,8 +85,8 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 	}
 	if len(kernelDilations) > 0 {
 		kernelDilations = slices.Clone(kernelDilations)
-		for i, dilation := range kernelDilations {
-			if dilation <= 0 {
+		for i := range kernelDilations {
+			if kernelDilations[i] <= 0 {
 				kernelDilations[i] = 1
 			}
 		}
@@ -103,6 +105,16 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 		inputStrides:            input.shape.Strides(),
 		kernelStrides:           kernel.shape.Strides(),
 		dilatedInputSpatialDims: outputShape.Dimensions,
+	}
+
+	// If we are going to use the "full" version of ConvGeneral, set the default values for these.
+	if params.hasInputDilations || params.hasKernelDilations || params.channelGroupCount > 1 || params.batchGroupCount > 1 {
+		if len(params.inputDilations) == 0 {
+			params.inputDilations = xslices.SliceWithValue(spatialRank, 1)
+		}
+		if len(params.kernelDilations) == 0 {
+			params.kernelDilations = xslices.SliceWithValue(spatialRank, 1)
+		}
 	}
 
 	// Generate static derived data that will be used during execution.
@@ -211,8 +223,9 @@ func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
 	}
 	var convFnAny any
 	if params.hasInputDilations || params.hasKernelDilations || params.channelGroupCount > 1 || params.batchGroupCount > 1 {
-		// Full version.
+		// Full version: require defaults for dilations and group parameters.
 		convFnAny, err = convDTypeMap.Get(dtype)
+
 	} else {
 		// Faster, but no dilation or grouping version.
 		convFnAny, err = convNoDilationDTypeMap.Get(dtype)
