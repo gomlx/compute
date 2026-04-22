@@ -2,12 +2,9 @@
 
 // Package dtypes includes the DType enum for all supported data types for GoMLX.
 //
-// It is forked from XLA based github.com/gomlx/go-xla/pkg/types/dtypes, and likely it will almost
-// always be mostly the same (maybe with a lag), but may diverge if new backends emerge with different
-// data-types not supported by XLA.
-//
-// It includes several converters to/from Go native types (and reflect.Type), and constants for min/max values
-// for types, etc. It also includes some constraint interfaces to be used with generics (Number, NumberNotComplex, GoFloat).
+// It includes several converters to/from Go native types (and reflect.Type), and constants for min/max values for
+// types, slice of DType types manipulation, etc. It also includes some constraint interfaces to be used with generics
+// (Number, NumberNotComplex, GoFloat).
 package dtypes
 
 import (

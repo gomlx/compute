@@ -61,21 +61,28 @@ func ToBuffer(backend compute.Backend, v any) (compute.Buffer, error) {
 
 // FromBuffer converts a [compute.Buffer] into a nested slice of the corresponding Go type.
 func FromBuffer(backend compute.Backend, buf compute.Buffer) (any, error) {
-	flat, err := backend.BufferData(buf)
-	if err != nil {
-		return nil, err
-	}
 	shape, err := backend.BufferShape(buf)
 	if err != nil {
 		return nil, err
+	}
+	var flat any
+	if backend.HasSharedBuffers() {
+		flat, err = backend.BufferData(buf)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		flat = dtypes.MakeAnySlice(shape.DType, shape.Size())
+		if err := backend.BufferToFlatData(buf, flat); err != nil {
+			return nil, err
+		}
 	}
 
 	if shape.Rank() == 0 {
 		return reflect.ValueOf(flat).Index(0).Interface(), nil
 	}
-
-	flatVal := reflect.ValueOf(flat)
 	sliceTypes := make([]reflect.Type, shape.Rank())
+	flatVal := reflect.ValueOf(flat)
 	currType := flatVal.Type().Elem()
 	for i := shape.Rank() - 1; i >= 0; i-- {
 		currType = reflect.SliceOf(currType)
