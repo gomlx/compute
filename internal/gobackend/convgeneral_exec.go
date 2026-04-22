@@ -55,6 +55,7 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 	//alt:full|full_bf16 outputBatchSize := outputShape.Dimensions[inputBatchAxis]
 	//alt:full|full_bf16 channelGroupCount := params.channelGroupCount
 	//alt:full|full_bf16 numOutputChannelsPerGroup := outputShape.Dimensions[axes.OutputChannels] / channelGroupCount
+	//alt:full|full_bf16 numOutputChannelsPerBatchGroup := outputShape.Dimensions[axes.OutputChannels] / batchGroupCount
 
 	outputBatchAxis := axes.OutputBatch
 	outputChannelsAxis := axes.OutputChannels
@@ -79,7 +80,7 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 		batchIdx := outputIndices[outputBatchAxis]
 		outputChannel := outputIndices[outputChannelsAxis]
 		//alt:full|full_bf16 if batchGroupCount > 1 {
-		//alt:full|full_bf16 subBatchIdx := outputChannel / batchGroupCount
+		//alt:full|full_bf16 subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
 		//alt:full|full_bf16 batchIdx = subBatchIdx*outputBatchSize + batchIdx
 		//alt:full|full_bf16 }
 		baseInputFlatIdx := batchIdx * inputStrides[inputBatchAxis]
