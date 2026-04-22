@@ -179,10 +179,10 @@ func ParseBuilder() ([]Method, error) {
 
 // isTargetModule checks if the go.mod contents declare the target module.
 func isTargetModule(modBytes []byte, target string) bool {
-	for _, line := range strings.Split(string(modBytes), "\n") {
+	for line := range strings.SplitSeq(string(modBytes), "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			modName := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		if after, ok := strings.CutPrefix(line, "module "); ok {
+			modName := strings.TrimSpace(after)
 			if idx := strings.Index(modName, "//"); idx != -1 {
 				modName = strings.TrimSpace(modName[:idx])
 			}
@@ -204,7 +204,7 @@ func checkGoWork(gowork, moduleName string) (string, error) {
 	workDir := filepath.Dir(gowork)
 
 	var inUseBlock bool
-	for _, line := range strings.Split(string(workBytes), "\n") {
+	for line := range strings.SplitSeq(string(workBytes), "\n") {
 		if idx := strings.Index(line, "//"); idx != -1 {
 			line = line[:idx]
 		}
@@ -220,8 +220,8 @@ func checkGoWork(gowork, moduleName string) (string, error) {
 				continue
 			}
 			usePath = strings.Trim(line, "\"'`")
-		} else if strings.HasPrefix(line, "use ") {
-			rest := strings.TrimSpace(strings.TrimPrefix(line, "use "))
+		} else if after, ok := strings.CutPrefix(line, "use "); ok {
+			rest := strings.TrimSpace(after)
 			if rest == "(" {
 				inUseBlock = true
 				continue

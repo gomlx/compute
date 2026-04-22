@@ -78,7 +78,7 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 
 	// Initialize execution buffers pool
 	fe.executionBuffersPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &funcExecBuffers{
 				results:       make([]*Buffer, numNodesToProcess),
 				numUsed:       make([]atomic.Int32, numNodesToProcess),

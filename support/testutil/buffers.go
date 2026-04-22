@@ -94,7 +94,7 @@ func FromBuffer(backend compute.Backend, buf compute.Buffer) (any, error) {
 
 		dimSize := shape.Dimensions[dimIdx]
 		slice := reflect.MakeSlice(sliceTypes[dimIdx], dimSize, dimSize)
-		for i := 0; i < dimSize; i++ {
+		for i := range dimSize {
 			slice.Index(i).Set(build(dimIdx + 1))
 		}
 		return slice

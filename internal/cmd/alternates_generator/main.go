@@ -163,13 +163,13 @@ func processFileForTag(targetTag string, baseName, sourceFileName string, lines 
 			var inner string
 
 			// Check styles
-			if strings.HasPrefix(s, "//alt:") {
-				inner = strings.TrimPrefix(s, "//alt:")
-			} else if strings.HasPrefix(s, "/* //alt:") {
-				inner = strings.TrimPrefix(s, "/* //alt:")
+			if after, ok := strings.CutPrefix(s, "//alt:"); ok {
+				inner = after
+			} else if after, ok := strings.CutPrefix(s, "/* //alt:"); ok {
+				inner = after
 				isBlockComment = true
-			} else if strings.HasPrefix(s, "*/ //alt:") {
-				inner = strings.TrimPrefix(s, "*/ //alt:")
+			} else if after, ok := strings.CutPrefix(s, "*/ //alt:"); ok {
+				inner = after
 				isBlockComment = true
 			} else {
 				return false, "", false, false, false

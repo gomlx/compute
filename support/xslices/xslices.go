@@ -315,14 +315,12 @@ func MapParallel[In, Out any](in []In, fn func(e In) Out) (out []Out) {
 	goroutines := min(runtime.NumCPU(), len(in))
 	indices := make(chan int, goroutines)
 	var wg sync.WaitGroup
-	for ii := 0; ii < goroutines; ii++ {
-		wg.Add(1)
-		go func() {
+	for range goroutines {
+		wg.Go(func() {
 			for ii := range indices {
 				out[ii] = fn(in[ii])
 			}
-			wg.Done()
-		}()
+		})
 	}
 	for ii := range in {
 		indices <- ii

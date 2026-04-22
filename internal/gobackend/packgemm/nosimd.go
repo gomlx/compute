@@ -158,7 +158,7 @@ func basicSymmetricGenericSmallGEMM[T dtypes.Number](
 		return
 	}
 
-	for batchIdx := 0; batchIdx < batchCount; batchIdx++ {
+	for batchIdx := range batchCount {
 		lhsBase := batchIdx * lhsStride
 		rhsBase := batchIdx * rhsStride
 		outputBase := batchIdx * outputStride
