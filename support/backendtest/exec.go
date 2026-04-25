@@ -13,6 +13,8 @@ import (
 
 func TestExec(t *testing.T, b compute.Backend) {
 	t.Run("CompileAndExecute", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeNeg)
+		testutil.SkipIfMissing(t, b, compute.OpTypeConstant)
 		builder := b.Builder("test")
 		mainFn := builder.Main()
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 3), nil)

@@ -12,6 +12,7 @@ import (
 
 func TestBinaryOps(t *testing.T, b compute.Backend) {
 	t.Run("Add", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
 		buildFnAdd := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Add(params[0], params[1])
 		}
@@ -61,6 +62,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Mul", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeMul)
 		buildFnMul := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Mul(params[0], params[1])
 		}
@@ -75,6 +77,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Sub", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeSub)
 		buildFnSub := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Sub(params[0], params[1])
 		}
@@ -88,6 +91,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Div", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDiv)
 		buildFnDiv := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Div(params[0], params[1])
 		}
@@ -101,6 +105,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Rem", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeRem)
 		buildFnRem := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Rem(params[0], params[1])
 		}
@@ -114,6 +119,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Pow", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypePow)
 		buildFnPow := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Pow(params[0], params[1])
 		}
@@ -127,6 +133,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Max", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeMax)
 		buildFnMax := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Max(params[0], params[1])
 		}
@@ -140,6 +147,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Min", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeMin)
 		buildFnMin := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Min(params[0], params[1])
 		}
@@ -153,129 +161,162 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Logical", func(t *testing.T) {
-		buildFnAnd := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.LogicalAnd(params[0], params[1])
-		}
-		y, err := testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnAnd)
-		if err != nil {
-			t.Fatalf("Failed to execute LogicalAnd: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual([]bool{true, false}, y); !ok {
-			t.Errorf("LogicalAnd mismatch:\n%s", diff)
-		}
+		t.Run("And", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeLogicalAnd)
+			buildFnAnd := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.LogicalAnd(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnAnd)
+			if err != nil {
+				t.Fatalf("Failed to execute LogicalAnd: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]bool{true, false}, y); !ok {
+				t.Errorf("LogicalAnd mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnOr := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.LogicalOr(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnOr)
-		if err != nil {
-			t.Fatalf("Failed to execute LogicalOr: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual([]bool{true, true}, y); !ok {
-			t.Errorf("LogicalOr mismatch:\n%s", diff)
-		}
+		t.Run("Or", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeLogicalOr)
+			buildFnOr := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.LogicalOr(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnOr)
+			if err != nil {
+				t.Fatalf("Failed to execute LogicalOr: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]bool{true, true}, y); !ok {
+				t.Errorf("LogicalOr mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnXor := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.LogicalXor(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnXor)
-		if err != nil {
-			t.Fatalf("Failed to execute LogicalXor: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual([]bool{false, true}, y); !ok {
-			t.Errorf("LogicalXor mismatch:\n%s", diff)
-		}
+		t.Run("Xor", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeLogicalXor)
+			buildFnXor := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.LogicalXor(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{[]bool{true, false}, []bool{true, true}}, buildFnXor)
+			if err != nil {
+				t.Fatalf("Failed to execute LogicalXor: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]bool{false, true}, y); !ok {
+				t.Errorf("LogicalXor mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Bitwise", func(t *testing.T) {
-		buildFnAnd := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.BitwiseAnd(params[0], params[1])
-		}
-		y, err := testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnAnd)
-		if err != nil {
-			t.Fatalf("Failed to execute BitwiseAnd: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(uint8(0b10100000), y); !ok {
-			t.Errorf("BitwiseAnd mismatch:\n%s", diff)
-		}
+		t.Run("And", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBitwiseAnd)
+			buildFnAnd := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.BitwiseAnd(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnAnd)
+			if err != nil {
+				t.Fatalf("Failed to execute BitwiseAnd: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(uint8(0b10100000), y); !ok {
+				t.Errorf("BitwiseAnd mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnOr := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.BitwiseOr(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnOr)
-		if err != nil {
-			t.Fatalf("Failed to execute BitwiseOr: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(uint8(0b11111010), y); !ok {
-			t.Errorf("BitwiseOr mismatch:\n%s", diff)
-		}
+		t.Run("Or", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBitwiseOr)
+			buildFnOr := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.BitwiseOr(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnOr)
+			if err != nil {
+				t.Fatalf("Failed to execute BitwiseOr: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(uint8(0b11111010), y); !ok {
+				t.Errorf("BitwiseOr mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnXor := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.BitwiseXor(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnXor)
-		if err != nil {
-			t.Fatalf("Failed to execute BitwiseXor: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(uint8(0b01011010), y); !ok {
-			t.Errorf("BitwiseXor mismatch:\n%s", diff)
-		}
+		t.Run("Xor", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBitwiseXor)
+			buildFnXor := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.BitwiseXor(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{uint8(0b11110000), uint8(0b10101010)}, buildFnXor)
+			if err != nil {
+				t.Fatalf("Failed to execute BitwiseXor: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(uint8(0b01011010), y); !ok {
+				t.Errorf("BitwiseXor mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Comparison", func(t *testing.T) {
-		buildFnEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.Equal(params[0], params[1])
-		}
-		y, err := testutil.Exec1(b, []any{float32(1.5), float32(1.5)}, buildFnEqual)
-		if err != nil {
-			t.Fatalf("Failed to execute Equal: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(true, y); !ok {
-			t.Errorf("Equal mismatch:\n%s", diff)
-		}
+		t.Run("Equal", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeEqual)
+			buildFnEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Equal(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{float32(1.5), float32(1.5)}, buildFnEqual)
+			if err != nil {
+				t.Fatalf("Failed to execute Equal: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(true, y); !ok {
+				t.Errorf("Equal mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnGreaterOrEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.GreaterOrEqual(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{float32(2.5), float32(1.5)}, buildFnGreaterOrEqual)
-		if err != nil {
-			t.Fatalf("Failed to execute GreaterOrEqual: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(true, y); !ok {
-			t.Errorf("GreaterOrEqual mismatch:\n%s", diff)
-		}
+		t.Run("GreaterOrEqual", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeGreaterOrEqual)
+			buildFnGreaterOrEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.GreaterOrEqual(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{float32(2.5), float32(1.5)}, buildFnGreaterOrEqual)
+			if err != nil {
+				t.Fatalf("Failed to execute GreaterOrEqual: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(true, y); !ok {
+				t.Errorf("GreaterOrEqual mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnGreaterThan := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.GreaterThan(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{float32(2.5), float32(1.5)}, buildFnGreaterThan)
-		if err != nil {
-			t.Fatalf("Failed to execute GreaterThan: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(true, y); !ok {
-			t.Errorf("GreaterThan mismatch:\n%s", diff)
-		}
+		t.Run("GreaterThan", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeGreaterThan)
+			buildFnGreaterThan := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.GreaterThan(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{float32(2.5), float32(1.5)}, buildFnGreaterThan)
+			if err != nil {
+				t.Fatalf("Failed to execute GreaterThan: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(true, y); !ok {
+				t.Errorf("GreaterThan mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnLessOrEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.LessOrEqual(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{float32(1.0), float32(2.0)}, buildFnLessOrEqual)
-		if err != nil {
-			t.Fatalf("Failed to execute LessOrEqual: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(true, y); !ok {
-			t.Errorf("LessOrEqual mismatch:\n%s", diff)
-		}
+		t.Run("LessOrEqual", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeLessOrEqual)
+			buildFnLessOrEqual := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.LessOrEqual(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{float32(1.0), float32(2.0)}, buildFnLessOrEqual)
+			if err != nil {
+				t.Fatalf("Failed to execute LessOrEqual: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(true, y); !ok {
+				t.Errorf("LessOrEqual mismatch:\n%s", diff)
+			}
+		})
 
-		buildFnLessThan := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.LessThan(params[0], params[1])
-		}
-		y, err = testutil.Exec1(b, []any{float32(1.5), float32(2.5)}, buildFnLessThan)
-		if err != nil {
-			t.Fatalf("Failed to execute LessThan: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(true, y); !ok {
-			t.Errorf("LessThan mismatch:\n%s", diff)
-		}
+		t.Run("LessThan", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeLessThan)
+			buildFnLessThan := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.LessThan(params[0], params[1])
+			}
+			y, err := testutil.Exec1(b, []any{float32(1.5), float32(2.5)}, buildFnLessThan)
+			if err != nil {
+				t.Fatalf("Failed to execute LessThan: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(true, y); !ok {
+				t.Errorf("LessThan mismatch:\n%s", diff)
+			}
+		})
 	})
 }

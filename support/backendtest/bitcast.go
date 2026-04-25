@@ -11,7 +11,10 @@ import (
 )
 
 func TestBitcast(t *testing.T, b compute.Backend) {
+	testutil.SkipIfMissing(t, b, compute.OpTypeBitcast)
 	t.Run("Uint32ToFloat32", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint32)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
 		y0, err := testutil.Exec1(b, []any{[]uint32{0x3F800000}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Bitcast(params[0], dtypes.Float32)
 		})
@@ -24,6 +27,8 @@ func TestBitcast(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Uint32ToUint16", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint32)
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint16)
 		y0, err := testutil.Exec1(b, []any{[]uint32{0xDEADBEEF}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Bitcast(params[0], dtypes.Uint16)
 		})
@@ -37,13 +42,15 @@ func TestBitcast(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Uint16ToUint32", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint16)
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint32)
 		y0, err := testutil.Exec1(b, []any{[][]uint16{{0xBEEF, 0xDEAD}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Bitcast(params[0], dtypes.Uint32)
 		})
 		if err != nil {
 			t.Fatalf("Failed to execute Bitcast: %+v", err)
 		}
-		// Expectation: [1]uint32{0xDEADBEEF}
+		// Expectation: [1]uint32{0xDEADBEEF} (Rank 2 [1, 2] -> Rank 1 [1])
 		if ok, diff := testutil.IsEqual([]uint32{0xDEADBEEF}, y0); !ok {
 			t.Errorf("Bitcast uint16{0xBEEF, 0xDEAD} -> uint32 mismatch:\n%s", diff)
 		}

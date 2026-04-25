@@ -12,6 +12,7 @@ import (
 
 func TestUnaryOps(t *testing.T, b compute.Backend) {
 	t.Run("Neg", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeNeg)
 		buildFnNeg := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Neg(param) }
 		y0, err := testutil.Exec1(b, []any{float32(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnNeg(f, params[0])
@@ -33,6 +34,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Abs", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeAbs)
 		buildFnAbs := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Abs(param) }
 		y0, err := testutil.Exec1(b, []any{float32(-7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnAbs(f, params[0])
@@ -45,6 +47,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Sign", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeSign)
 		buildFnSign := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Sign(param) }
 		y1, err := testutil.Exec1(b, []any{[]int32{-1, 0, 2}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnSign(f, params[0])
@@ -57,6 +60,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("LogicalNot", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeLogicalNot)
 		buildFnLogicalNot := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.LogicalNot(param) }
 		y1, err := testutil.Exec1(b, []any{[]bool{true, false, true}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnLogicalNot(f, params[0])
@@ -69,6 +73,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("BitwiseNot", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeBitwiseNot)
 		buildFnBitwiseNot := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.BitwiseNot(param) }
 		y0, err := testutil.Exec1(b, []any{int32(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnBitwiseNot(f, params[0])
@@ -81,6 +86,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("BitCount", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeBitCount)
 		buildFnBitCount := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.BitCount(param) }
 		y0, err := testutil.Exec1(b, []any{int8(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnBitCount(f, params[0])
@@ -93,6 +99,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Clz", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeClz)
 		buildFnClz := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Clz(param) }
 		y0, err := testutil.Exec1(b, []any{int8(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnClz(f, params[0])
@@ -105,6 +112,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Exp", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeExp)
 		buildFnExp := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Exp(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnExp(f, params[0])
@@ -117,6 +125,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Expm1", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeExpm1)
 		buildFnExpm1 := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Expm1(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnExpm1(f, params[0])
@@ -129,6 +138,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Log", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeLog)
 		buildFnLog := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Log(param) }
 		y0, err := testutil.Exec1(b, []any{float32(2.718281828459045)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnLog(f, params[0])
@@ -141,6 +151,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Log1p", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeLog1p)
 		buildFnLog1p := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Log1p(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.718281828459045)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnLog1p(f, params[0])
@@ -153,6 +164,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Ceil", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeCeil)
 		buildFnCeil := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Ceil(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.6)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnCeil(f, params[0])
@@ -165,6 +177,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Floor", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeFloor)
 		buildFnFloor := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Floor(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.6)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnFloor(f, params[0])
@@ -177,6 +190,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Round", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeRound)
 		buildFnRound := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Round(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.6)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnRound(f, params[0])
@@ -189,6 +203,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Rsqrt", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeRsqrt)
 		buildFnRsqrt := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Rsqrt(param) }
 		y0, err := testutil.Exec1(b, []any{float32(4.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnRsqrt(f, params[0])
@@ -201,6 +216,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Sqrt", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeSqrt)
 		buildFnSqrt := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Sqrt(param) }
 		y0, err := testutil.Exec1(b, []any{float32(4.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnSqrt(f, params[0])
@@ -213,6 +229,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Cos", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeCos)
 		buildFnCos := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Cos(param) }
 		y0, err := testutil.Exec1(b, []any{float32(0.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnCos(f, params[0])
@@ -225,6 +242,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Sin", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeSin)
 		buildFnSin := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Sin(param) }
 		y0, err := testutil.Exec1(b, []any{float32(math.Pi / 2)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnSin(f, params[0])
@@ -237,6 +255,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Tanh", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeTanh)
 		buildFnTanh := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Tanh(param) }
 		y0, err := testutil.Exec1(b, []any{float32(0.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnTanh(f, params[0])
@@ -249,6 +268,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Logistic", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeLogistic)
 		buildFnLogistic := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Logistic(param) }
 		y0, err := testutil.Exec1(b, []any{float32(0.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnLogistic(f, params[0])
@@ -261,6 +281,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("IsFinite", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeIsFinite)
 		buildFnIsFinite := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.IsFinite(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnIsFinite(f, params[0])
@@ -273,6 +294,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 	})
 	t.Run("Erf", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeErf)
 		buildFnErf := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.Erf(param) }
 		y0, err := testutil.Exec1(b, []any{float32(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnErf(f, params[0])

@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 func TestFunctions(t *testing.T, b compute.Backend) {
+	testutil.SkipIfMissingFunctions(t, b)
 	t.Run("Capabilities", func(t *testing.T) {
 		caps := b.Capabilities()
 		if !caps.Functions {
