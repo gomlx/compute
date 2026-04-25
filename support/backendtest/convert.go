@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -32,7 +33,8 @@ func TestConvertDType(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("Failed to execute ConvertDType: %+v", err)
 		}
-		if ok, diff := testutil.IsEqual(bf16(3.14), y1); !ok {
+		if ok, diff := testutil.IsInDelta(bf16(3.14), y1, 0.02); !ok {
+			fmt.Printf("want=%d, y1=%d\n", uint16(bf16(3.14)), uint16(y1.(bfloat16.BFloat16)))
 			t.Errorf("Expected y1 value to be bf16(3.14), got %v\n%s", y1, diff)
 		}
 

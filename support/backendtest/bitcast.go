@@ -43,8 +43,8 @@ func TestBitcast(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("Failed to execute Bitcast: %+v", err)
 		}
-		// Expectation: [1, 1]uint32{{0xDEADBEEF}}
-		if ok, diff := testutil.IsEqual([][]uint32{{0xDEADBEEF}}, y0); !ok {
+		// Expectation: [1]uint32{0xDEADBEEF}
+		if ok, diff := testutil.IsEqual([]uint32{0xDEADBEEF}, y0); !ok {
 			t.Errorf("Bitcast uint16{0xBEEF, 0xDEAD} -> uint32 mismatch:\n%s", diff)
 		}
 	})

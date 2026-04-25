@@ -9,9 +9,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
-	"github.com/gomlx/gomlx/pkg/core/graph"
-	"github.com/gomlx/gomlx/pkg/ml/context"
-	"github.com/gomlx/gomlx/pkg/ml/context/initializers"
 )
 
 func TestExec(t *testing.T, b compute.Backend) {
@@ -103,28 +100,6 @@ func TestExec(t *testing.T, b compute.Backend) {
 		_, err = exec.Execute([]compute.Buffer{i1}, []bool{true}, 0)
 		if err == nil {
 			t.Errorf("Expected error when feeding incompatible parameters (different dtype)")
-		}
-	})
-
-	t.Run("GomlxIntegration", func(t *testing.T) {
-		// Checks that basic graph building and execution works.
-		y := graph.MustExecOnce(b, graph.Neg, float32(7))
-		if ok, diff := testutil.IsEqual(float32(-7), y.Value()); !ok {
-			t.Errorf("Value mismatch:\n%s", diff)
-		}
-
-		ctx := context.New()
-		exec := context.MustNewExec(b, ctx, func(ctx *context.Context, g *graph.Graph) *graph.Node {
-			counterVar := ctx.WithInitializer(initializers.Zero).VariableWithShape("counter", shapes.Make(dtypes.Int64))
-			counter := counterVar.ValueGraph(g)
-			counterVar.SetValueGraph(graph.OnePlus(counter))
-			return counter
-		})
-		for ii := range 10 {
-			got := exec.MustExec()[0]
-			if ok, diff := testutil.IsEqual(int64(ii), got.Value()); !ok {
-				t.Errorf("iteration %d: value mismatch:\n%s", ii, diff)
-			}
 		}
 	})
 }

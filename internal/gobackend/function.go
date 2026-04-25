@@ -650,12 +650,18 @@ func (f *Function) Concatenate(axis int, operandOps ...compute.Value) (compute.V
 	return node, nil
 }
 
-// Bitcast reinterprets the bits of operandOp as targetDType. It implements the compute.Builder interface.
+// Bitcast performs an elementwise bitcast operation from a dtype to another dtype.
 //
-// If the element sizes differ, the last dimension is adjusted:
+// The Bitcast doesn't "convert", rather it just reinterprets the bits from operand.DType() to the targetDType.
+//
+// If the element sizes (in bytes/bits) differ, the last dimension is adjusted:
 //   - Smaller target: a new trailing axis of size (srcBits / dstBits) is appended, so rank is increased by 1.
-//   - Larger target: the last axis must be divisible by (dstBits / srcBits) and is divided by this ratio,
-//     but not "squeezed", the rank is always preserved in this case.
+//   - Larger target: the last axis must be equal to (dstBits / srcBits), and the resultign rank is decreased by 1 ("squeezed").
+//
+// E.g:
+//
+//	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
+//	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
 func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (compute.Value, error) {
 	opType := compute.OpTypeBitcast
 	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
@@ -663,31 +669,10 @@ func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (c
 		return nil, err
 	}
 	operand := inputs[0]
-	if operand.shape.DType == targetDType {
-		return operand, nil
+	outputShape, err := shapeinference.BitcastOp(operand.shape, targetDType)
+	if err != nil {
+		return nil, err
 	}
-
-	srcBits := operand.shape.DType.Bits()
-	dstBits := targetDType.Bits()
-	dims := slices.Clone(operand.shape.Dimensions)
-
-	switch {
-	case srcBits == dstBits:
-		// Same element size: just change dtype, keep dimensions.
-	case srcBits > dstBits:
-		// Smaller target: append a trailing axis.
-		ratio := srcBits / dstBits
-		dims = append(dims, ratio)
-	default:
-		// Larger target: collapse the last axis.
-		ratio := dstBits / srcBits
-		lastDim := dims[len(dims)-1]
-		if lastDim%ratio != 0 {
-			return nil, errors.Errorf("Bitcast: last dim %d not divisible by element-size ratio %d", lastDim, ratio)
-		}
-		dims[len(dims)-1] = lastDim / ratio
-	}
-	outputShape := shapes.Make(targetDType, dims...)
 	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, nil)
 	return node, nil
 }

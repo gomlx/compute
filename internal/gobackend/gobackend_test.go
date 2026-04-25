@@ -16,7 +16,8 @@ import (
 
 var backend compute.Backend
 
-func TestGeneric(t *testing.T) {
+// TestCompliance runs all compute.Backend compliance tests.
+func TestCompliance(t *testing.T) {
 	backendtest.RunAll(t, backend)
 }
 

@@ -1117,6 +1117,36 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	return output, nil
 }
 
+// BitcastOp calculates the output shape for a Bitcast operation.
+func BitcastOp(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shape, err error) {
+	if operand.DType == targetDType {
+		return operand, nil
+	}
+
+	operandBits := operand.DType.Bits()
+	targetBits := targetDType.Bits()
+	dims := slices.Clone(operand.Dimensions)
+
+	switch {
+	case operandBits == targetBits:
+		// Same element size: just change dtype, keep dimensions.
+	case operandBits > targetBits:
+		// Smaller target: append a trailing axis.
+		ratio := operandBits / targetBits
+		dims = append(dims, ratio)
+	default:
+		// Larger target: collapse the last axis.
+		ratio := targetBits / operandBits
+		lastDim := dims[len(dims)-1]
+		if lastDim != ratio {
+			return shapes.Invalid(), errors.Errorf("Bitcast: last dim %d is not equal to element-size ratio operandBits(%d)/targetBits(%d)=%d", lastDim, operandBits, targetBits, ratio)
+		}
+		dims = dims[:len(dims)-1]
+	}
+	output = shapes.Make(targetDType, dims...)
+	return output, nil
+}
+
 // PadOp returns the expected output shape for the Pad operation.
 func PadOp(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
 	if !operand.Ok() {

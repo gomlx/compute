@@ -18,7 +18,6 @@ The `compute.Backend` API is currently implemented by:
 ## Using the `compute.Backend` interface
 
 
-
 ## Roadmap
 
 **Short term:**
@@ -41,6 +40,15 @@ It's conceptually simple:
 - Inherit from `notimplemented`, and return an empty capabilities.
 - Implement the transferring of buffers to/from your backend.
 - Implement the operations that you need.
+- Make sure you pass the "compliance" tests in `support/backendtest`, by calling
+  the function `backendtest.RunAll(t *testing.T, b compute.Backend)`, or running
+  the individual tests. Example:
+
+```
+func TestCompliance(t *testing.T) {
+	backendtest.RunAll(t, myBackend)
+}
+```
 
 Consider using GoMLX tests against your Backend to test that they are working -- just set the environment variable `GOMLX_BACKEND` to your new backend, and you can run arbitrary tests.
 Also, once you have enough ops implemented, you can use some of the example models to benchmark your backend against some of the others.
