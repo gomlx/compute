@@ -10,10 +10,15 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/backendtest"
 	"k8s.io/klog/v2"
 )
 
 var backend compute.Backend
+
+func TestGeneric(t *testing.T) {
+	backendtest.RunAll(t, backend)
+}
 
 func init() {
 	klog.InitFlags(nil)

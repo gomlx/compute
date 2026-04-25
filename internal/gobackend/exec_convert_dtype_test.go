@@ -5,9 +5,7 @@ package gobackend
 import (
 	"testing"
 
-	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -172,44 +170,3 @@ func TestConvertPackedUint2ToUint8(t *testing.T) {
 	}
 }
 
-func TestExecSpecialOps_ConvertDType(t *testing.T) {
-	// Test int32 to float32
-	y0 := testBackend(t, shapes.Make(dtypes.Int32), []int32{42}, func(f compute.Function, param compute.Value) (compute.Value, error) {
-		return f.ConvertDType(param, dtypes.Float32)
-	})
-	if val := y0.flat.([]float32)[0]; val != float32(42.0) {
-		t.Errorf("Expected y0 value to be 42.0, got %v", val)
-	}
-
-	// Test float32 to bfloat16
-	y1 := testBackend(t, shapes.Make(dtypes.Float32), []float32{3.14}, func(f compute.Function, param compute.Value) (compute.Value, error) {
-		return f.ConvertDType(param, dtypes.BFloat16)
-	})
-	if val := y1.flat.([]bfloat16.BFloat16)[0]; val != bf16(3.14) {
-		t.Errorf("Expected y1 value to be bf16(3.14), got %v", val)
-	}
-
-	// Test bfloat16 to int32
-	y2 := testBackend(t, shapes.Make(dtypes.BFloat16), []bfloat16.BFloat16{bf16(7.8)}, func(f compute.Function, param compute.Value) (compute.Value, error) {
-		return f.ConvertDType(param, dtypes.Int32)
-	})
-	if val := y2.flat.([]int32)[0]; val != int32(7) {
-		t.Errorf("Expected y2 value to be 7, got %v", val)
-	}
-
-	// Test bool to int32
-	y3 := testBackend(t, shapes.Make(dtypes.Bool), []bool{true}, func(f compute.Function, param compute.Value) (compute.Value, error) {
-		return f.ConvertDType(param, dtypes.Int32)
-	})
-	if val := y3.flat.([]int32)[0]; val != int32(1) {
-		t.Errorf("Expected y3 value to be 1, got %v", val)
-	}
-
-	// Test float32 to bool
-	y4 := testBackend(t, shapes.Make(dtypes.Float32), []float32{1.0}, func(f compute.Function, param compute.Value) (compute.Value, error) {
-		return f.ConvertDType(param, dtypes.Bool)
-	})
-	if val := y4.flat.([]bool)[0]; val != true {
-		t.Errorf("Expected y4 value to be true, got %v", val)
-	}
-}
