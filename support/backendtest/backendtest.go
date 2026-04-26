@@ -16,4 +16,5 @@ func RunAll(t *testing.T, b compute.Backend) {
 	t.Run("Bitcast", func(t *testing.T) { TestBitcast(t, b) })
 	t.Run("Exec", func(t *testing.T) { TestExec(t, b) })
 	t.Run("Functions", func(t *testing.T) { TestFunctions(t, b) })
+	t.Run("ConvGeneral", func(t *testing.T) { TestConvGeneral(t, b) })
 }

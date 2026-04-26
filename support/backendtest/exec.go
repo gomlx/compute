@@ -99,9 +99,13 @@ func TestExec(t *testing.T, b compute.Backend) {
 
 		// Different dtype
 		i1, _ := b.BufferFromFlatData(0, []uint32{1, 2, 3}, shapes.Make(dtypes.Uint32, 3))
-		_, err = exec.Execute([]compute.Buffer{i1}, []bool{true}, 0)
+		outputs, err := exec.Execute([]compute.Buffer{i1}, []bool{true}, 0)
 		if err == nil {
-			t.Errorf("Expected error when feeding incompatible parameters (different dtype)")
+			got, err := testutil.FromBuffer(b, outputs[0])
+			if err != nil {
+				t.Fatalf("unexpected error transferring incompatible buffer back: %+v", err)
+			}
+			t.Errorf("Expected error when feeding incompatible parameters (different dtype): got %v", got)
 		}
 	})
 }
