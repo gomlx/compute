@@ -18,7 +18,7 @@ var backend compute.Backend
 
 // TestCompliance runs all compute.Backend compliance tests.
 func TestCompliance(t *testing.T) {
-	backendtest.RunAll(t, backend)
+	backendtest.RunAll(t, backend, nil)
 }
 
 func init() {

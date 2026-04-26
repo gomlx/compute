@@ -11,7 +11,18 @@ import (
 	"github.com/gomlx/compute/support/testutil"
 )
 
-func TestConvGeneral(t *testing.T, b compute.Backend) {
+var AllConvGeneralTestDTypes = []dtypes.DType{
+	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Int32, dtypes.Uint64}
+
+func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguration) {
+	testDTypes := AllConvGeneralTestDTypes
+	if opts != nil && opts.ConvGeneralDTypes != nil {
+		// Here nil means all dtypes, but an empty slice means no test dtypes.
+		testDTypes = opts.ConvGeneralDTypes
+	}
+	if len(testDTypes) == 0 {
+		t.Skip("No test dtypes specified for ConvGeneral tests")
+	}
 	testutil.SkipIfMissing(t, b, compute.OpTypeConvGeneral)
 	type testCase struct {
 		name                               string
@@ -262,54 +273,56 @@ func TestConvGeneral(t *testing.T, b compute.Backend) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// The result should be the same for the all dtypes:
-			for _, dtype := range []dtypes.DType{dtypes.Float32, dtypes.BFloat16, dtypes.Float64, dtypes.Int32, dtypes.Uint64} {
-				tc.input.DType = dtype
-				tc.kernel.DType = dtype
+			for _, dtype := range testDTypes {
+				t.Run(dtype.String(), func(t *testing.T) {
+					tc.input.DType = dtype
+					tc.kernel.DType = dtype
 
-				buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					flatInputShape := shapes.Make(tc.input.DType, tc.input.Size())
-					flatInputIota, err := f.Iota(flatInputShape, 0)
-					if err != nil {
-						return nil, err
-					}
-					input, err := f.Reshape(flatInputIota, tc.input.Dimensions...)
-					if err != nil {
-						return nil, err
+					buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						flatInputShape := shapes.Make(tc.input.DType, tc.input.Size())
+						flatInputIota, err := f.Iota(flatInputShape, 0)
+						if err != nil {
+							return nil, err
+						}
+						input, err := f.Reshape(flatInputIota, tc.input.Dimensions...)
+						if err != nil {
+							return nil, err
+						}
+
+						flatKernelShape := shapes.Make(tc.kernel.DType, tc.kernel.Size())
+						flatKernelIota, err := f.Iota(flatKernelShape, 0)
+						if err != nil {
+							return nil, err
+						}
+						kernel, err := f.Reshape(flatKernelIota, tc.kernel.Dimensions...)
+						if err != nil {
+							return nil, err
+						}
+
+						output, err := f.ConvGeneral(input, kernel, tc.axes, tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations, tc.channelGroupCount, tc.batchGroupCount)
+						if err != nil {
+							return nil, err
+						}
+						// We convert the result to float64 to make it easy to check.
+						return f.ConvertDType(output, dtypes.Float64)
 					}
 
-					flatKernelShape := shapes.Make(tc.kernel.DType, tc.kernel.Size())
-					flatKernelIota, err := f.Iota(flatKernelShape, 0)
+					outputValue, err := testutil.Exec1(b, nil, buildFn)
 					if err != nil {
-						return nil, err
-					}
-					kernel, err := f.Reshape(flatKernelIota, tc.kernel.Dimensions...)
-					if err != nil {
-						return nil, err
+						t.Fatalf("Failed to execute ConvGeneral for dtype %s: %+v", dtype, err)
 					}
 
-					output, err := f.ConvGeneral(input, kernel, tc.axes, tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations, tc.channelGroupCount, tc.batchGroupCount)
-					if err != nil {
-						return nil, err
+					if !dtype.IsHalfPrecision() {
+						if ok, diff := testutil.IsEqual(tc.want, outputValue); !ok {
+							t.Fatalf("Output mismatch for test case %q, dtype %s, got %v, wanted %#v:\n%s", tc.name, dtype, outputValue, tc.want, diff)
+						}
+					} else {
+						// Half precison is too small to hold the exact values.
+						if ok, diff := testutil.IsInDelta(tc.want, outputValue, 100.0); !ok {
+							t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %v\n\twanted %#v\n\tdiff: %s", tc.name, dtype, outputValue, tc.want, diff)
+						}
 					}
-					// We convert the result to float64 to make it easy to check.
-					return f.ConvertDType(output, dtypes.Float64)
-				}
-
-				outputValue, err := testutil.Exec1(b, nil, buildFn)
-				if err != nil {
-					t.Fatalf("Failed to execute ConvGeneral for dtype %s: %+v", dtype, err)
-				}
-
-				if dtype != dtypes.BFloat16 {
-					if ok, diff := testutil.IsEqual(tc.want, outputValue); !ok {
-						t.Fatalf("Output mismatch for test case %q, dtype %s, got %v, wanted %#v:\n%s", tc.name, dtype, outputValue, tc.want, diff)
-					}
-				} else {
-					// BFloat16 precision is too small to hold the exact values.
-					if ok, diff := testutil.IsInDelta(tc.want, outputValue, 100.0); !ok {
-						t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %v\n\twanted %#v\n\tdiff: %s", tc.name, dtype, outputValue, tc.want, diff)
-					}
-				}
+				})
 			}
 		})
 	}
