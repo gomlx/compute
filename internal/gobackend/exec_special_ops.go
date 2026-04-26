@@ -10,6 +10,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/sets"
 	"github.com/gomlx/compute/support/xslices"
@@ -920,7 +921,10 @@ func execIotaGeneric[T PODNumericConstraints](params ...any) any {
 	return nil
 }
 
-func init() { dispatchIota.Register(dtypes.BFloat16, priorityTyped, execIotaBFloat16) }
+func init() {
+	dispatchIota.Register(dtypes.BFloat16, priorityTyped, execIotaBFloat16)
+	dispatchIota.Register(dtypes.Float16, priorityTyped, execIotaFloat16)
+}
 
 func execIotaBFloat16(params ...any) any {
 	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
@@ -933,6 +937,25 @@ func execIotaBFloat16(params ...any) any {
 		for range iotaSize {
 			for range repeatsSize {
 				outputFlat[flatIdx] = bfloat16.FromFloat32(value)
+				flatIdx++
+			}
+			value++
+		}
+	}
+	return nil
+}
+
+func execIotaFloat16(params ...any) any {
+	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
+	outputFlat := output.flat.([]float16.Float16)
+	flatIdx := 0
+	var value float32
+	for range batchSize {
+		// Repeat starting from 0 for each "batch dimension".
+		value = 0
+		for range iotaSize {
+			for range repeatsSize {
+				outputFlat[flatIdx] = float16.FromFloat32(value)
 				flatIdx++
 			}
 			value++
