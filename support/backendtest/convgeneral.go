@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package backendtest
 
 import (
 	"testing"
@@ -11,12 +11,8 @@ import (
 	"github.com/gomlx/compute/support/testutil"
 )
 
-// Aliases
-var (
-	S = shapes.Make
-)
-
-func TestConvGeneral(t *testing.T) {
+func TestConvGeneral(t *testing.T, b compute.Backend) {
+	testutil.SkipIfMissing(t, b, compute.OpTypeConvGeneral)
 	type testCase struct {
 		name                               string
 		input, kernel                      shapes.Shape
@@ -28,6 +24,11 @@ func TestConvGeneral(t *testing.T) {
 		// want should be multidimensional slice of float64.
 		want any
 	}
+	// Aliases
+	var (
+		S   = shapes.Make
+		F32 = dtypes.Float32
+	)
 	testCases := []testCase{
 		{
 			name:   "1D with padding",
@@ -294,21 +295,22 @@ func TestConvGeneral(t *testing.T) {
 					return f.ConvertDType(output, dtypes.Float64)
 				}
 
-				outputBuf := testBackendMultiInput(t, nil, nil, buildFn)
+				outputValue, err := testutil.Exec1(b, nil, buildFn)
+				if err != nil {
+					t.Fatalf("Failed to execute ConvGeneral for dtype %s: %+v", dtype, err)
+				}
 
 				if dtype != dtypes.BFloat16 {
-					outputValue := outputBuf.flat
-					if ok, diff := testutil.IsEqual(testutil.FlattenSlice(tc.want), outputValue); !ok {
-						t.Fatalf("Output mismatch for test case %q, got %v, wanted %#v:\n%s", tc.name, outputValue, tc.want, diff)
+					if ok, diff := testutil.IsEqual(tc.want, outputValue); !ok {
+						t.Fatalf("Output mismatch for test case %q, dtype %s, got %v, wanted %#v:\n%s", tc.name, dtype, outputValue, tc.want, diff)
 					}
 				} else {
 					// BFloat16 precision is too small to hold the exact values.
-					if ok, diff := testutil.IsInDelta(testutil.FlattenSlice(tc.want), outputBuf.flat, 100.0); !ok {
-						t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %v\n\twanted %#v\n\tdiff: %s", tc.name, dtype, outputBuf.flat, tc.want, diff)
+					if ok, diff := testutil.IsInDelta(tc.want, outputValue, 100.0); !ok {
+						t.Fatalf("Output mismatch for test case %q with dtype %s:\n\tgot %v\n\twanted %#v\n\tdiff: %s", tc.name, dtype, outputValue, tc.want, diff)
 					}
 				}
 			}
 		})
 	}
-
 }
