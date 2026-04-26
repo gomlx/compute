@@ -480,7 +480,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			windowDimensions []int
 			strides          []int
 			paddings         [][2]int
-			baseDilations    []int
+			inputDilations   []int
 			windowDilations  []int
 			expectedOutput   any
 		}
@@ -512,6 +512,16 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 				windowDilations:  []int{2},
 				expectedOutput:   []float32{5, 6, 7},
 			},
+			{
+				name:             "F32_1D_Max_Win3_InputDilation2",
+				operandData:      []float32{1, 2, 3, 4, 5, 6, 7},
+				reductionType:    compute.ReduceOpMax,
+				windowDimensions: []int{3},
+				strides:          []int{1},
+				inputDilations:   []int{2},
+				paddings:         [][2]int{{1, 1}},
+				expectedOutput:   []float32{1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7},
+			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				y, err := testutil.Exec1(b, []any{tc.operandData},
@@ -521,7 +531,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 							tc.reductionType,
 							tc.windowDimensions,
 							tc.strides,
-							tc.baseDilations,
+							tc.inputDilations,
 							tc.windowDilations,
 							tc.paddings)
 					})

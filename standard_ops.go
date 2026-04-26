@@ -609,19 +609,19 @@ type StandardOps interface {
 	// - windowDimensions: the dimensions of the window, must be defined for each axis.
 	// - strides: stride over elements in each axis for each window reduction. If nil, it's assume to be the
 	//   same as the windowDimensions -- that is, the strides jump a window at a time.
-	// - baseDilations: "virtually" expand the input by introducing "holes" between elements. I.e. if
-	//   baseDilations are `[2,2]`, then the input is expanded by inserting `2-1` copies of `0` (or whatever
+	// - inputDilations: "virtually" expand the input by introducing "holes" between elements. I.e. if
+	//   inputDilations are 2, then the input is expanded by inserting `2-1` copies of `0` (or whatever
 	//   is the reduciton "zero" value) between the elements in each dimension.
-	//   If nil, it's assumed to be 1 (no dilation) for each axis.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
 	// - windowDilations: "virtually" expand the window by inserting `2-1` copies of `0` between the
 	//   elements in each dimension.
-	//   If nil, it's assumed to be 1 (no dilation) for each axis.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
 	// - paddings: virtual padding to be added to the input at the edges (start and end) of each axis.
 	//   If nil, it's assumed to be 0 for each axis.
 	ReduceWindow(
 		x Value,
 		reductionType ReduceOpType,
-		windowDimensions, strides, baseDilations, windowDilations []int,
+		windowDimensions, strides, inputDilations, windowDilations []int,
 		paddings [][2]int,
 	) (Value, error)
 
