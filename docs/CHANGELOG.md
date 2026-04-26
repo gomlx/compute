@@ -1,4 +1,4 @@
-# v0.0.1
+# Initial release
 
 - Moved GoMLX's `backends/simplego` to `gobackend`.
 - Removed all dependencies to `stretchr/testify` and `gomlx`, to trim as much as possible external dependencies.
