@@ -605,10 +605,19 @@ type StandardOps interface {
 	// ReduceWindow runs a reduction function of the type given by reductionType,
 	// it can be either ReduceMaxNode, ReduceSumNode, or ReduceMultiplyNode.
 	//
-	// The parameter windowDimensions must be set and have a value for each axis.
-	// If strides is nil, it's assumed to be the same as windowDimensions -- that is, the strides jump a window at a time.
-	// If baseDilations, windowDilations are nil, they are assumed to be 1 (no dilation).
-	// If paddings is nil, they are assumed to be 0.
+	// - reductionType: the type of reduction to perform. E.g.: [ReduceOpMax], [ReduceOpSum],...
+	// - windowDimensions: the dimensions of the window, must be defined for each axis.
+	// - strides: stride over elements in each axis for each window reduction. If nil, it's assume to be the
+	//   same as the windowDimensions -- that is, the strides jump a window at a time.
+	// - baseDilations: "virtually" expand the input by introducing "holes" between elements. I.e. if
+	//   baseDilations are `[2,2]`, then the input is expanded by inserting `2-1` copies of `0` (or whatever
+	//   is the reduciton "zero" value) between the elements in each dimension.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis.
+	// - windowDilations: "virtually" expand the window by inserting `2-1` copies of `0` between the
+	//   elements in each dimension.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis.
+	// - paddings: virtual padding to be added to the input at the edges (start and end) of each axis.
+	//   If nil, it's assumed to be 0 for each axis.
 	ReduceWindow(
 		x Value,
 		reductionType ReduceOpType,

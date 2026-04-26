@@ -19,7 +19,10 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 	t.Run("Identity", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeIdentity)
-		y0, err := testutil.Exec1(b, []any{bf16(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) { return f.Identity(params[0]) })
+		y0, err := testutil.Exec1(b, []any{bf16(7)},
+			func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Identity(params[0])
+			})
 		if err != nil {
 			t.Errorf("Identity failed: %v", err)
 		}
@@ -511,9 +514,17 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				y, err := testutil.Exec1(b, []any{tc.operandData}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-					return f.ReduceWindow(p[0], tc.reductionType, tc.windowDimensions, tc.strides, tc.baseDilations, tc.windowDilations, tc.paddings)
-				})
+				y, err := testutil.Exec1(b, []any{tc.operandData},
+					func(f compute.Function, p []compute.Value) (compute.Value, error) {
+						return f.ReduceWindow(
+							p[0],
+							tc.reductionType,
+							tc.windowDimensions,
+							tc.strides,
+							tc.baseDilations,
+							tc.windowDilations,
+							tc.paddings)
+					})
 				if err != nil {
 					t.Fatalf("ReduceWindow failed: %v", err)
 				}
