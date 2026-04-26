@@ -252,17 +252,31 @@ type StandardOps interface {
 	// Conj returns the conjugate of a complex number. E.g: Conj(1+3i) = 1-3i
 	Conj(x Value) (Value, error)
 
-	// ConvGeneral is a generic Convolution operation with support for:
-	// - Arbitrary number of spatial axes.
-	// - Arbitrary transposition of axes.
-	// - Strides and padding.
-	// - Dilations of the input.
-	// - Dilations of the kernel, aka. atrous convolution.
-	// - Channels grouping (on the input channels).
-	// - Batch grouping.
-	// Some details in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution.
-	// There operand and filter are called lhs and rhs.
-	// (XLA documentation is unfortunately poor, much is guess-work).
+	// ConvGeneral is a generic Convolution operation with arbitrary number of spatial axes, strides,
+	// paddings, dilations, and grouping.
+	//
+	// Arguments:
+	//
+	// - input: it must have one batch and one channel axis, and arbitrary number of spatial axes.
+	// - kernel: its rank must match the input's spatial axes.
+	// - axes: defines how the axes of input and kernel are mapped.
+	// - strides: stride of the convolution window, how it moves. If set, one value per spatial axis,
+	//   and values must be >= 1. If not set, strides default to 1.
+	// - paddings: padding applied to the start and end of each axis of the input.
+	//   If nil, it defaults to no padding.
+	// - inputDilations: "virtually" expand the input by inserting `2-1` copies of `0` (or whatever
+	//   is the reduciton "zero" value) between the elements in each dimension.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
+	// - kernelDilations: "virtually" expand the kernel by inserting `2-1` copies of `0` between the
+	//   elements in each dimension.
+	//   If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
+	//   Also known as "atrous convolution".
+	// - channelGroupCount: number of input channels to group together for the convolution.
+	//   (aka "grouped convolution"). If <= 1 it's disabled.
+	// - batchGroupCount: number of input batches to group together for the convolution.
+	//   If <= 1 it's disabled.
+	//
+	// There is a more detailed description in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution.
 	// Also useful, https://arxiv.org/pdf/1603.07285v1.pdf.
 	// Note:
 	//   - Another common term for "channels" is "features".
