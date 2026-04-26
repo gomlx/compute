@@ -1,0 +1,526 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+package backendtest
+
+import (
+	"math"
+	"testing"
+
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/testutil"
+	"github.com/gomlx/compute/support/xslices"
+)
+
+func TestSpecialOps(t *testing.T, b compute.Backend) {
+	bf16 := bfloat16.FromFloat32
+
+	t.Run("Identity", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeIdentity)
+		y0, err := testutil.Exec1(b, []any{bf16(7)}, func(f compute.Function, params []compute.Value) (compute.Value, error) { return f.Identity(params[0]) })
+		if err != nil {
+			t.Errorf("Identity failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
+			t.Errorf("Identity mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Where", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeWhere)
+		buildWhere := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.Where(params[0], params[1], params[2])
+		}
+
+		// All scalars.
+		y0, err := testutil.Exec1(b, []any{true, bf16(7), bf16(11)}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (scalar) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
+			t.Errorf("Where (scalar) mismatch:\n%s", diff)
+		}
+
+		// Scalar cond, non-scalar values.
+		y1, err := testutil.Exec1(b, []any{false, []uint8{1, 2}, []uint8{11, 12}}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (scalar cond) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]uint8{11, 12}, y1); !ok {
+			t.Errorf("Where (scalar cond) mismatch:\n%s", diff)
+		}
+
+		// Non-scalar cond, scalar values.
+		y2, err := testutil.Exec1(b, []any{[]bool{true, false}, int32(1), int32(0)}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (non-scalar cond) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int32{1, 0}, y2); !ok {
+			t.Errorf("Where (non-scalar cond) mismatch:\n%s", diff)
+		}
+
+		// Non-scalar cond and values.
+		y3, err := testutil.Exec1(b, []any{[]bool{false, true, true}, []float32{1, 2, 3}, []float32{101, 102, 103}}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (non-scalar cond and values) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{101, 2, 3}, y3); !ok {
+			t.Errorf("Where (non-scalar cond and values) mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Reshape", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReshape)
+		// Reshape array to matrix.
+		y0, err := testutil.Exec1(b, []any{[]int32{42, 0, 1, 2}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.Reshape(params[0], 2, 2)
+		})
+		if err != nil {
+			t.Fatalf("Reshape failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([][]int32{{42, 0}, {1, 2}}, y0); !ok {
+			t.Errorf("Reshape mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Reduce", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceProduct)
+
+		y0, _ := testutil.Exec1(b, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
+		if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0); !ok {
+			t.Errorf("ReduceMin mismatch:\n%s", diff)
+		}
+
+		y1, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+		if ok, diff := testutil.IsEqual(-1.0e6, y1); !ok {
+			t.Errorf("ReduceMax mismatch:\n%s", diff)
+		}
+
+		input2Data := make([][][][][]uint32, 2)
+		idx := uint32(0)
+		for i0 := range input2Data {
+			input2Data[i0] = make([][][][]uint32, 2)
+			for i1 := range input2Data[i0] {
+				input2Data[i0][i1] = make([][][]uint32, 2)
+				for i2 := range input2Data[i0][i1] {
+					input2Data[i0][i1][i2] = make([][]uint32, 2)
+					for i3 := range input2Data[i0][i1][i2] {
+						input2Data[i0][i1][i2][i3] = make([]uint32, 2)
+						for i4 := range input2Data[i0][i1][i2][i3] {
+							input2Data[i0][i1][i2][i3][i4] = idx
+							idx++
+						}
+					}
+				}
+			}
+		}
+		y2, _ := testutil.Exec1(b, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.ReduceSum(p[0], 1, 3)
+		})
+		want2 := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
+		if ok, diff := testutil.IsEqual(want2, y2); !ok {
+			t.Errorf("ReduceSum mismatch:\n%s", diff)
+		}
+
+		y3, _ := testutil.Exec1(b, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
+		if ok, diff := testutil.IsEqual(float32(1), y3); !ok {
+			t.Errorf("ReduceMultiply mismatch:\n%s", diff)
+		}
+
+		y4, _ := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
+		if ok, diff := testutil.IsEqual(bf16(-17), y4); !ok {
+			t.Errorf("ReduceMin (bf16) mismatch:\n%s", diff)
+		}
+
+		// Test full reduction to scalar if no axes are given.
+		y5, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(-11), bf16(-17)}, {bf16(8), bf16(21)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceSum(p[0], 0, 1) })
+		if ok, diff := testutil.IsEqual(bf16(1), y5); !ok {
+			t.Errorf("Full reduction mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("ReduceBitwise", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceBitwiseAnd)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceBitwiseOr)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceBitwiseXor)
+
+		y0, _ := testutil.Exec1(b, []any{[]int32{7, 3, 2}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceBitwiseAnd(p[0], 0) })
+		if ok, diff := testutil.IsEqual(int32(2), y0); !ok {
+			t.Errorf("ReduceBitwiseAnd mismatch:\n%s", diff)
+		}
+
+		y1, _ := testutil.Exec1(b, []any{[][]uint8{{3}, {12}, {17}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.ReduceBitwiseOr(p[0], 0, 1)
+		})
+		if ok, diff := testutil.IsEqual(uint8(31), y1); !ok {
+			t.Errorf("ReduceBitwiseOr mismatch:\n%s", diff)
+		}
+
+		y2, _ := testutil.Exec1(b, []any{[][]int64{{3}, {12}, {17}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceBitwiseXor(p[0], 0) })
+		if ok, diff := testutil.IsEqual([]int64{30}, y2); !ok {
+			t.Errorf("ReduceBitwiseXor mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("ReduceLogical", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceLogicalAnd)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceLogicalOr)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceLogicalXor)
+
+		y0, _ := testutil.Exec1(b, []any{[][]bool{{true, false}, {true, true}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalAnd(p[0], 1) })
+		if ok, diff := testutil.IsEqual([]bool{false, true}, y0); !ok {
+			t.Errorf("ReduceLogicalAnd mismatch:\n%s", diff)
+		}
+
+		y1, _ := testutil.Exec1(b, []any{[][]bool{{true, false}, {false, false}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalOr(p[0], 0) })
+		if ok, diff := testutil.IsEqual([]bool{true, false}, y1); !ok {
+			t.Errorf("ReduceLogicalOr mismatch:\n%s", diff)
+		}
+
+		y2, _ := testutil.Exec1(b, []any{[][]bool{{true, false}, {true, true}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceLogicalXor(p[0], 1) })
+		if ok, diff := testutil.IsEqual([]bool{true, false}, y2); !ok {
+			t.Errorf("ReduceLogicalXor mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Transpose", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeTranspose)
+		operandFlat := xslices.Iota(float32(0), 24)
+		// We construct a nested slice from operandFlat.
+		operandNested := make([][][]float32, 2)
+		idx := 0
+		for i := range operandNested {
+			operandNested[i] = make([][]float32, 3)
+			for j := range operandNested[i] {
+				operandNested[i][j] = make([]float32, 4)
+				for k := range operandNested[i][j] {
+					operandNested[i][j][k] = operandFlat[idx]
+					idx++
+				}
+			}
+		}
+		y0, _ := testutil.Exec1(b, []any{operandNested}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.Transpose(p[0], 2, 0, 1)
+		})
+		want := [][][]float32{
+			{{0, 4, 8}, {12, 16, 20}},
+			{{1, 5, 9}, {13, 17, 21}},
+			{{2, 6, 10}, {14, 18, 22}},
+			{{3, 7, 11}, {15, 19, 23}}}
+		if ok, diff := testutil.IsEqual(want, y0); !ok {
+			t.Fatalf("Transpose result mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Iota", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeIota)
+		y0, _ := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+			return f.Iota(shapes.Make(dtypes.Int8, 2, 3), 1)
+		})
+		if ok, diff := testutil.IsEqual([][]int8{{0, 1, 2}, {0, 1, 2}}, y0); !ok {
+			t.Fatalf("Iota y0 mismatch:\n%s", diff)
+		}
+
+		y1, _ := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+			return f.Iota(shapes.Make(dtypes.BFloat16, 2, 3), 0)
+		})
+		if ok, diff := testutil.IsEqual([][]bfloat16.BFloat16{{bf16(0), bf16(0), bf16(0)}, {bf16(1), bf16(1), bf16(1)}}, y1); !ok {
+			t.Fatalf("Iota y1 mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("BroadcastInDim", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeBroadcastInDim)
+		y0, _ := testutil.Exec1(b, []any{[][]int8{{1, 3}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.BroadcastInDim(p[0], shapes.Make(dtypes.Int8, 2, 3, 2), []int{0, 2})
+		})
+		if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0); !ok {
+			t.Errorf("BroadcastInDim y0 result mismatch:\n%s", diff)
+		}
+
+		y1, _ := testutil.Exec1(b, []any{bf16(42)}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.BroadcastInDim(p[0], shapes.Make(dtypes.BFloat16, 2), []int{})
+		})
+		if ok, diff := testutil.IsEqual([]bfloat16.BFloat16{bf16(42), bf16(42)}, y1); !ok {
+			t.Errorf("BroadcastInDim y1 result mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Gather", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeGather)
+		buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			operand, err := f.Iota(shapes.Make(dtypes.Float32, 4*3*2*2), 0)
+			if err != nil {
+				return nil, err
+			}
+			operand, err = f.Reshape(operand, 4, 3, 2, 2)
+			if err != nil {
+				return nil, err
+			}
+			startIndices := params[0]
+			startVectorAxis := 1
+			offsetOutputAxes := []int{1, 3}
+			collapsedSliceAxes := []int{0, 2}
+			startIndexMap := []int{0, 2, 3}
+			sliceSizes := []int{1, 3, 1, 1}
+			return f.Gather(operand, startIndices, startVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, false)
+		}
+		y0, _ := testutil.Exec1(b, []any{[][][]int32{{{0, 1}, {0, 1}, {0, 1}}, {{0, 0}, {0, 0}, {1, 1}}, {{0, 0}, {1, 1}, {0, 0}}}}, buildFn)
+		want := [][][][]float32{
+			{{{0}, {15}}, {{4}, {19}}, {{8}, {23}}},
+			{{{1}, {1}}, {{5}, {5}}, {{9}, {9}}},
+			{{{2}, {2}}, {{6}, {6}}, {{10}, {10}}}}
+		if ok, diff := testutil.IsEqual(want, y0); !ok {
+			t.Fatalf("Gather mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Concatenate", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeConcatenate)
+		// Test Case 1: Concatenating vectors (rank 1) along axis 0
+		y1, _ := testutil.Exec1(b, []any{[]float32{1, 2, 3}, []float32{4, 5}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.Concatenate(0, p[0], p[1])
+		})
+		want1 := []float32{1, 2, 3, 4, 5}
+		if ok, diff := testutil.IsEqual(want1, y1); !ok {
+			t.Fatalf("Concatenate y1 mismatch:\n%s", diff)
+		}
+
+		// Test Case 2: Concatenating matrices (rank 2) along axis 0
+		y2, _ := testutil.Exec1(b, []any{[][]int8{{1, 2}, {3, 4}}, [][]int8{{5, 6}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.Concatenate(0, p[0], p[1])
+		})
+		want2 := [][]int8{{1, 2}, {3, 4}, {5, 6}}
+		if ok, diff := testutil.IsEqual(want2, y2); !ok {
+			t.Fatalf("Concatenate y2 mismatch:\n%s", diff)
+		}
+
+		// Test Case 3: Concatenating matrices (rank 2) along axis 1
+		y3, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(1)}, {bf16(2)}}, [][]bfloat16.BFloat16{{bf16(3), bf16(4)}, {bf16(5), bf16(6)}}, [][]bfloat16.BFloat16{{bf16(7)}, {bf16(8)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.Concatenate(1, p[0], p[1], p[2])
+		})
+		want3 := [][]bfloat16.BFloat16{{bf16(1), bf16(3), bf16(4), bf16(7)}, {bf16(2), bf16(5), bf16(6), bf16(8)}}
+		if ok, diff := testutil.IsEqual(want3, y3); !ok {
+			t.Fatalf("Concatenate y3 mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Scatter", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeScatterMax)
+		testutil.SkipIfMissing(t, b, compute.OpTypeScatterSum)
+		testutil.SkipIfMissing(t, b, compute.OpTypeScatterMin)
+
+		// Case 0: Typical scatter, except updates window is the first axis (usually it's the last)
+		operandData0 := make([][][]float32, 2)
+		for i := range operandData0 {
+			operandData0[i] = make([][]float32, 2)
+			for j := range operandData0[i] {
+				operandData0[i][j] = make([]float32, 5)
+			}
+		}
+		indicesData := [][]uint8{{0, 1}, {1, 0}}
+		updatesData0 := [][]float32{{1, 2}, {3, 4}, {5, 6}, {7, 8}, {9, 10}}
+
+		y0, _ := testutil.Exec1(b, []any{operandData0, indicesData, updatesData0}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			indexVectorAxis := 1
+			updateWindowAxes := []int{0}
+			insertedWindowAxes := []int{0, 1}
+			scatterAxesToOperandAxes := []int{0, 1}
+			return f.ScatterMax(p[0], p[1], p[2], indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
+		})
+		want0 := [][][]float32{{{0, 0, 0, 0, 0}, {1, 3, 5, 7, 9}}, {{2, 4, 6, 8, 10}, {0, 0, 0, 0, 0}}}
+		if ok, diff := testutil.IsEqual(want0, y0); !ok {
+			t.Errorf("ScatterMax mismatch:\n%s", diff)
+		}
+
+		// Case 1: operand axes shuffled; Operand initialized with ones instead.
+		operandData1 := make([][][]float32, 2)
+		for i := range operandData1 {
+			operandData1[i] = make([][]float32, 5)
+			for j := range operandData1[i] {
+				operandData1[i][j] = []float32{1, 1}
+			}
+		}
+		y1, _ := testutil.Exec1(b, []any{operandData1, indicesData, updatesData0}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			indexVectorAxis := 1
+			updateWindowAxes := []int{0}
+			insertedWindowAxes := []int{0, 2}
+			scatterAxesToOperandAxes := []int{0, 2}
+			return f.ScatterSum(p[0], p[1], p[2], indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, true, true)
+		})
+		want1 := [][][]float32{{{1, 2}, {1, 4}, {1, 6}, {1, 8}, {1, 10}}, {{3, 1}, {5, 1}, {7, 1}, {9, 1}, {11, 1}}}
+		if ok, diff := testutil.IsEqual(want1, y1); !ok {
+			t.Errorf("ScatterSum mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Slice", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeSlice)
+		// Test Case 1: Simple 1D slice
+		y1, _ := testutil.Exec1(b, []any{[]int64{0, 1, 2, 3, 4}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			starts := []int{1}
+			limits := []int{4}
+			strides := []int{1}
+			return f.Slice(p[0], starts, limits, strides)
+		})
+		want1 := []int64{1, 2, 3}
+		if ok, diff := testutil.IsEqual(want1, y1); !ok {
+			t.Fatalf("Slice y1 mismatch:\n%s", diff)
+		}
+
+		// Test Case 2: 2D slice with stride > 1
+		y2, _ := testutil.Exec1(b, []any{[][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			starts := []int{0, 0}
+			limits := []int{3, 3}
+			strides := []int{2, 2}
+			return f.Slice(p[0], starts, limits, strides)
+		})
+		want2 := [][]int32{{0, 2}, {6, 8}}
+		if ok, diff := testutil.IsEqual(want2, y2); !ok {
+			t.Fatalf("Slice y2 mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("RNGBitsGenerator", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeRNGBitGenerator)
+		numSamples := 100000
+		numBins := 10
+		tolerance := 0.1 // 10% deviation allowed for randomness
+
+		testCases := []struct {
+			dtype dtypes.DType
+			name  string
+		}{
+			{dtypes.Uint32, "uint32"},
+			{dtypes.Uint64, "uint64"},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				shape := shapes.Make(tc.dtype, numSamples)
+				y, err := testutil.Exec1(b, []any{[]uint64{0, 0, 0}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					_, values, err := f.RNGBitGenerator(params[0], shape)
+					return values, err
+				})
+				if err != nil {
+					t.Fatalf("RNGBitGenerator failed: %v", err)
+				}
+
+				// Convert all values to float64 in [0, 1) for histogram computation
+				values := make([]float64, numSamples)
+				switch tc.dtype {
+				case dtypes.Uint32:
+					maxVal := float64(math.MaxUint32)
+					for i, v := range y.([]uint32) {
+						values[i] = float64(v) / maxVal
+					}
+				case dtypes.Uint64:
+					maxVal := float64(math.MaxUint64)
+					for i, v := range y.([]uint64) {
+						values[i] = float64(v) / maxVal
+					}
+				}
+
+				hist := make([]int, numBins)
+				for _, v := range values {
+					bin := int(v * float64(numBins))
+					if bin == numBins {
+						bin--
+					}
+					hist[bin]++
+				}
+
+				expectedPerBin := numSamples / numBins
+				maxDeviation := float64(expectedPerBin) * tolerance
+
+				for bin, count := range hist {
+					deviation := math.Abs(float64(count) - float64(expectedPerBin))
+					if deviation > maxDeviation {
+						t.Errorf("Bin %d count %d deviates too much from expected %d (deviation: %.2f > %.2f)",
+							bin, count, expectedPerBin, deviation, maxDeviation)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("ArgMinMax", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeArgMinMax)
+		// Test Case 1: Simple 1D argmin
+		y0, _ := testutil.Exec1(b, []any{[]float32{3, 1, 4, 1, 5}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.ArgMinMax(p[0], 0, dtypes.Int32, true)
+		})
+		if ok, diff := testutil.IsEqual(int32(1), y0); !ok {
+			t.Errorf("ArgMin Case 1 mismatch:\n%s", diff)
+		}
+
+		// Test Case 2: 2D argmax along axis 1 (columns)
+		y1, _ := testutil.Exec1(b, []any{[][]int32{{1, 2, 3}, {4, 1, 2}, {7, 8, 5}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.ArgMinMax(p[0], 1, dtypes.Int32, false)
+		})
+		if ok, diff := testutil.IsEqual([]int32{2, 0, 1}, y1); !ok {
+			t.Errorf("ArgMax Case 2 mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("ReduceWindow", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReduceWindow)
+		type reduceWindowGraphTestCase struct {
+			name             string
+			operandData      any
+			reductionType    compute.ReduceOpType
+			windowDimensions []int
+			strides          []int
+			paddings         [][2]int
+			baseDilations    []int
+			windowDilations  []int
+			expectedOutput   any
+		}
+
+		for _, tc := range []reduceWindowGraphTestCase{
+			{
+				name:             "F32_1D_Sum_Win2_Stride1",
+				operandData:      []float32{1, 2, 3, 4, 5},
+				reductionType:    compute.ReduceOpSum,
+				windowDimensions: []int{2},
+				strides:          []int{1},
+				expectedOutput:   []float32{3, 5, 7, 9},
+			},
+			{
+				name:             "F32_1D_Product_Win2_Stride2_Pad1_1",
+				operandData:      []float32{1, 2, 3, 4},
+				reductionType:    compute.ReduceOpProduct,
+				windowDimensions: []int{2},
+				strides:          []int{2},
+				paddings:         [][2]int{{1, 1}},
+				expectedOutput:   []float32{1, 6, 4},
+			},
+			{
+				name:             "F32_1D_Max_Win3_WindowDilation2",
+				operandData:      []float32{1, 2, 3, 4, 5, 6, 7},
+				reductionType:    compute.ReduceOpMax,
+				windowDimensions: []int{3},
+				strides:          []int{1},
+				windowDilations:  []int{2},
+				expectedOutput:   []float32{5, 6, 7},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				y, err := testutil.Exec1(b, []any{tc.operandData}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.ReduceWindow(p[0], tc.reductionType, tc.windowDimensions, tc.strides, tc.baseDilations, tc.windowDilations, tc.paddings)
+				})
+				if err != nil {
+					t.Fatalf("ReduceWindow failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
+					t.Errorf("ReduceWindow: test %q mismatch:\n%s", tc.name, diff)
+				}
+			})
+		}
+	})
+}

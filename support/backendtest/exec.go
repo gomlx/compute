@@ -108,4 +108,34 @@ func TestExec(t *testing.T, b compute.Backend) {
 			t.Errorf("Expected error when feeding incompatible parameters (different dtype): got %v", got)
 		}
 	})
+
+	t.Run("BufferReuse", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeNeg)
+		builder := b.Builder("test_reuse")
+		mainFn := builder.Main()
+		x, _ := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 3), nil)
+		negX, _ := mainFn.Neg(x)
+		_ = mainFn.Return([]compute.Value{negX}, nil)
+		exec, _ := builder.Compile()
+
+		// Checks correct execution with donated inputs.
+		i0, _ := b.BufferFromFlatData(0, []float32{3, 5, 7}, shapes.Make(dtypes.Float32, 3))
+		outputs, err := exec.Execute([]compute.Buffer{i0}, []bool{true}, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		if len(outputs) != 1 {
+			t.Fatalf("expected 1 output, got %d", len(outputs))
+		}
+
+		// Checks correct execution without donated inputs.
+		i1, _ := b.BufferFromFlatData(0, []float32{3, 5, 7}, shapes.Make(dtypes.Float32, 3))
+		outputs, err = exec.Execute([]compute.Buffer{i1}, []bool{false}, 0)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		if len(outputs) != 1 {
+			t.Fatalf("expected 1 output, got %d", len(outputs))
+		}
+	})
 }
