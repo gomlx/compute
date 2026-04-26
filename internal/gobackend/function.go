@@ -935,9 +935,9 @@ func (f *Function) ArgMinMax(
 }
 
 type reduceWindowNode struct {
-	reductionType                                             compute.ReduceOpType
-	windowDimensions, strides, baseDilations, windowDilations []int
-	paddings                                                  [][2]int
+	reductionType                                              compute.ReduceOpType
+	windowDimensions, strides, inputDilations, windowDilations []int
+	paddings                                                   [][2]int
 }
 
 // EqualNodeData implements nodeDataComparable for reduceWindowNode.
@@ -948,7 +948,7 @@ func (r *reduceWindowNode) EqualNodeData(other nodeDataComparable) bool {
 	}
 	return slices.Equal(r.windowDimensions, o.windowDimensions) &&
 		slices.Equal(r.strides, o.strides) &&
-		slices.Equal(r.baseDilations, o.baseDilations) &&
+		slices.Equal(r.inputDilations, o.inputDilations) &&
 		slices.Equal(r.windowDilations, o.windowDilations) &&
 		slices.Equal(r.paddings, o.paddings)
 }
@@ -996,7 +996,7 @@ func (f *Function) ReduceWindow(
 		reductionType:    reductionType,
 		windowDimensions: windowDimensions,
 		strides:          strides,
-		baseDilations:    inputDilations,
+		inputDilations:   inputDilations,
 		windowDilations:  windowDilations,
 		paddings:         paddings,
 	}

@@ -60,8 +60,8 @@ func (f Function) Identity(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeIdentity)
 }
 
-func (f Function) ReduceWindow(x compute.Value, reductionType compute.ReduceOpType,
-	windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (compute.Value, error) {
+func (f Function) ReduceWindow(input compute.Value, reductionType compute.ReduceOpType,
+	windowDimensions, strides, inputDilations, windowDilations []int, paddings [][2]int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeReduceWindow)
 }
 

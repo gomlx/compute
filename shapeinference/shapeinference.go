@@ -828,7 +828,7 @@ func ArgMinMaxOp(operand shapes.Shape, axis int, outputDType dtypes.DType) (outp
 // ReduceWindowOp returns the expected output shape for the operation.
 //
 // Notice it doesn't take as input the reductionType parameter, since it doesn't affect the output shape.
-func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
+func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: invalid operand shape %s", operand)
 	}
@@ -844,8 +844,8 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, baseDilatio
 	if len(paddings) != 0 && len(paddings) != rank {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: len(paddings)=%d, but operand rank is %d", len(paddings), rank)
 	}
-	if baseDilations != nil && len(baseDilations) != rank {
-		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: baseDilations is not nil and len(baseDilations)=%d, but operand rank is %d", len(baseDilations), rank)
+	if inputDilations != nil && len(inputDilations) != rank {
+		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: inputDilations is not nil and len(inputDilations)=%d, but operand rank is %d", len(inputDilations), rank)
 	}
 	if windowDilations != nil && len(windowDilations) != rank {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: windowDilations is not nil and len(windowDilations)=%d, but operand rank is %d", len(windowDilations), rank)
@@ -886,10 +886,10 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, baseDilatio
 		}
 
 		baseDilation := 1
-		if baseDilations != nil {
-			baseDilation = baseDilations[i]
+		if inputDilations != nil {
+			baseDilation = inputDilations[i]
 			if baseDilation < 1 {
-				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: baseDilations[%d]=%d must be >= 1 for operand shape %s", i, baseDilation, operand)
+				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: inputDilations[%d]=%d must be >= 1 for operand shape %s", i, baseDilation, operand)
 			}
 		}
 

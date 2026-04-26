@@ -1911,7 +1911,7 @@ func execReduceWindow(backend *Backend, node *Node, inputs []*Buffer, _ []bool) 
 
 	// resolve the effective parameters, assuming shapeinference.ReduceWindowOp handled nils by defaulting them:
 	// - windowDimensions is guaranteed non-nil by the builder.
-	// - strides, paddings, baseDilations, windowDilations default if their opData fields are nil.
+	// - strides, paddings, inputDilations, windowDilations default if their opData fields are nil.
 	effWindowDimensions := opData.windowDimensions
 	if effWindowDimensions == nil {
 		effWindowDimensions = xslices.SliceWithValue(rank, 1)
@@ -1925,8 +1925,8 @@ func execReduceWindow(backend *Backend, node *Node, inputs []*Buffer, _ []bool) 
 	if effPaddings == nil {
 		effPaddings = xslices.SliceWithValue(rank, [2]int{0, 0})
 	}
-	effBaseDilations := opData.baseDilations
-	if opData.baseDilations == nil {
+	effBaseDilations := opData.inputDilations
+	if opData.inputDilations == nil {
 		effBaseDilations = xslices.SliceWithValue(rank, 1)
 	}
 	effWindowDilations := opData.windowDilations

@@ -619,7 +619,7 @@ type StandardOps interface {
 	// - paddings: virtual padding to be added to the input at the edges (start and end) of each axis.
 	//   If nil, it's assumed to be 0 for each axis.
 	ReduceWindow(
-		x Value,
+		input Value,
 		reductionType ReduceOpType,
 		windowDimensions, strides, inputDilations, windowDilations []int,
 		paddings [][2]int,
