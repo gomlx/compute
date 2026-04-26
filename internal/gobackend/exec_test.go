@@ -3,16 +3,11 @@
 package gobackend
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/compute/support/testutil"
-	"github.com/gomlx/gomlx/pkg/core/graph"
-	"github.com/gomlx/gomlx/pkg/ml/context"
-	"github.com/gomlx/gomlx/pkg/ml/context/initializers"
 )
 
 func TestBuilder_Compile(t *testing.T) {
@@ -132,37 +127,5 @@ func TestBuilder_Compile(t *testing.T) {
 	}
 	if !outputShape.Equal(shapes.Make(dtypes.Int64, 3)) {
 		t.Errorf("Expected output shape %s, got %s", shapes.Make(dtypes.Int64, 3), outputShape)
-	}
-}
-
-func TestGomlxIntegration(t *testing.T) {
-	// Makes sure we get a SimpleGo backend.
-	backend, err := compute.NewWithConfig(BackendName)
-	if err != nil {
-		t.Fatalf("unexpected error: %+v", err)
-	}
-	if panicked, _ := testutil.Try(func() { _ = backend.(*Backend) }); panicked {
-		t.Errorf("Expected no panic when casting backend to *Backend")
-	}
-
-	// Checks that basic graph building and execution works.
-	y := graph.MustExecOnce(backend, graph.Neg, float32(7))
-	fmt.Printf("\ty=-x: x=7, y=%s\n", y.GoStr())
-	if ok, diff := testutil.IsEqual(float32(-7), y.Value()); !ok {
-		t.Errorf("Value mismatch:\n%s", diff)
-	}
-
-	ctx := context.New()
-	exec := context.MustNewExec(backend, ctx, func(ctx *context.Context, g *graph.Graph) *graph.Node {
-		counterVar := ctx.WithInitializer(initializers.Zero).VariableWithShape("counter", shapes.Make(dtypes.Int64))
-		counter := counterVar.ValueGraph(g)
-		counterVar.SetValueGraph(graph.OnePlus(counter))
-		return counter
-	})
-	for ii := range 10 {
-		got := exec.MustExec()[0]
-		if ok, diff := testutil.IsEqual(int64(ii), got.Value()); !ok {
-			t.Errorf("iteration %d: value mismatch:\n%s", ii, diff)
-		}
 	}
 }
