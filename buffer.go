@@ -9,41 +9,43 @@ import (
 // Buffer represents actual data (a tensor) stored in the accelerator that is actually going to execute the graph.
 // It's used as input/output of computation execution. A Buffer is always associated to a DeviceNum, even if there is
 // only one.
-//
-// It is opaque from the compute user perspective, but it cannot be mixed -- a Buffer returned by one backend can't
-// be used with another backend.
-type Buffer any
+type Buffer interface {
+	// Backend returns the compute Backend that owns and manages this buffer.
+	Backend() Backend
+
+	// Finalize allows the client to inform the backend that the buffer is no longer needed and associated
+	// resources can be freed immediately, as opposed to waiting for a garbage collection.
+	//
+	// A finalized buffer should never be used again.
+	Finalize() error
+
+	// Shape returns the shape for the buffer.
+	Shape() (shapes.Shape, error)
+
+	// DeviceNum returns the deviceNum for the buffer.
+	DeviceNum() (DeviceNum, error)
+
+	// ToFlatData transfers the flat values of a buffer to a Go flat slice.
+	// The slice flat must have the exact number of elements required to store the Buffer shape,
+	// and be a slice of the corresponding DType -- see DType.GoType().
+	ToFlatData(flat any) error
+
+	// Data returns a slice pointing to the buffer storage memory directly.
+	// This only works if the backend's HasSharedBuffer is true.
+	Data() (flat any, err error)
+
+	// CopyToDevice copies the buffer to the deviceNum.
+	//
+	// Accelerators often have a much faster bus on which to transfer data, so this is expected to be potentially
+	// much faster than copying to the host and to the new device.
+	CopyToDevice(deviceNum DeviceNum) (bufferOnDevice Buffer, err error)
+}
 
 // DataInterface is the Backend's subinterface that defines the API to transfer Buffer to/from accelerators for the
 // backend.
 type DataInterface interface {
-	// BufferFinalize allows the client to inform the backend that the buffer is no longer needed and associated
-	// resources can be freed immediately, as opposed to waiting for a garbage collection.
-	//
-	// A finalized buffer should never be used again. Preferably, the caller should set its references to it to nil.
-	//
-	// It's good practice not to rely on the GC for backends' buffers, because the backend memory may not be managed by
-	// Go (or not even run on CPU) and the GC won't know about the memory it uses, and won't be pressured to release
-	// those buffers (since on the Go side, they may just be tiny references).
-	BufferFinalize(buffer Buffer) error
-
-	// BufferShape returns the shape for the buffer.
-	BufferShape(buffer Buffer) (shapes.Shape, error)
-
-	// BufferDeviceNum returns the deviceNum for the buffer.
-	BufferDeviceNum(buffer Buffer) (DeviceNum, error)
-
-	// BufferToFlatData transfers the flat values of a buffer to a Go flat slice.
-	// The slice flat must have the exact number of elements required to store the Buffer shape,
-	// and be a slice of the corresponding DType -- see DType.GoType().
-	//
-	// See also FlatDataToBuffer, BufferShape, and shapes.Shape.Size.
-	BufferToFlatData(buffer Buffer, flat any) error
-
 	// BufferFromFlatData transfers data from Go given as a flat slice (of the type corresponding to the shape DType)
 	// to the deviceNum, and returns the corresponding Buffer.
-	//
-	// If the shape is zero-sized, 'flat' is ignored and can be nil.
 	BufferFromFlatData(deviceNum DeviceNum, flat any, shape shapes.Shape) (Buffer, error)
 
 	// HasSharedBuffers returns whether the backend supports "shared buffers": these are buffers
@@ -54,33 +56,6 @@ type DataInterface interface {
 	// NewSharedBuffer returns a "shared buffer" that can be both used as input for execution of
 	// computations and directly read or mutated by the clients.
 	//
-	// It panics if the backend doesn't support shared buffers -- see HasSharedBuffer.
-	//
-	// The shared buffer should not be mutated while it is used by an execution.
-	// Also, the shared buffer cannot be "donated" during execution.
-	//
-	// When done, to release the memory, call BufferFinalized on the returned buffer.
-	//
-	// It returns a handle to the buffer and a slice of the corresponding data type pointing
-	// to the shared data.
-	//
-	// The buffer cannot be assumed to be zero-initialized.
+	// It panics if the backend doesn't support shared buffers -- see HasSharedBuffers.
 	NewSharedBuffer(deviceNum DeviceNum, shape shapes.Shape) (buffer Buffer, flat any, err error)
-
-	// BufferData returns a slice pointing to the buffer storage memory directly.
-	//
-	// This only works if HasSharedBuffer is true, that is, if the backend engine runs on CPU, or
-	// shares CPU memory.
-	//
-	// The returned slice becomes invalid after the buffer is destroyed.
-	BufferData(buffer Buffer) (flat any, err error)
-
-	// BufferCopyToDevice copies the buffer to the deviceNum.
-	//
-	// Accelerators often have a much faster bus on which to transfer data, so this is expected to be potentially
-	// much faster than copying to the host and to the new device.
-	//
-	// It cannot be used to copy within the same device: it returns an error if the deviceNum is the same as the
-	// source deviceNum.
-	BufferCopyToDevice(source Buffer, deviceNum DeviceNum) (bufferOnDevice Buffer, err error)
 }

@@ -26,6 +26,8 @@ var _ compute.DataInterface = (*Backend)(nil)
 // The flat data may be shared -- for temporary buffers from compiled graphs they are
 // taken from larger blobs of bytes allocated in one Go -- or owned by the buffer.
 type Buffer struct {
+	backend *Backend
+
 	shape shapes.Shape
 
 	// inUse is set to false when the buffer is finalized and moved back to the pool.
@@ -104,6 +106,7 @@ func (b *Backend) getBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	}
 	pool := b.getBufferPool(dtype, length)
 	buf := pool.Get().(*Buffer) //nolint:errcheck
+	buf.backend = b
 	buf.inUse = true
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
@@ -286,14 +289,15 @@ func (b *Backend) NewBuffer(shape shapes.Shape) *Buffer {
 // can be freed immediately.
 //
 // A isFinalized buffer should never be used again. Preferably, the caller should set its references to it to nil.
-func (b *Backend) BufferFinalize(backendBuffer compute.Buffer) error {
-	buffer := backendBuffer.(*Buffer) //nolint:errcheck
-	if b.isFinalized {
-		buffer.flat = nil // Accelerates GC.
-		return errors.Errorf("BufferFinalize(%p): backend is already finalized", backendBuffer)
-	}
+// Finalize allows the client to inform the backend that the buffer is no longer needed and associated resources
+// can be freed immediately.
+func (buffer *Buffer) Finalize() error {
 	if buffer == nil {
-		return errors.Errorf("BufferFinalize(%p): buffer was nil", backendBuffer)
+		return errors.Errorf("Finalize(%p): buffer was nil", buffer)
+	}
+	if buffer.backend.isFinalized {
+		buffer.flat = nil // Accelerates GC.
+		return errors.Errorf("Finalize(%p): backend is already finalized", buffer)
 	}
 	var issues []string
 	if buffer.flat == nil {
@@ -306,30 +310,22 @@ func (b *Backend) BufferFinalize(backendBuffer compute.Buffer) error {
 		issues = append(issues, "buffer was marked as not in use (already back in the pool)")
 	}
 	if len(issues) > 0 {
-		return errors.Errorf("BufferFinalize(%p): %s -- buffer was already finalized or back in the pool",
+		return errors.Errorf("Finalize(%p): %s -- buffer was already finalized or back in the pool",
 			buffer, strings.Join(issues, ", "))
 	}
-	// fmt.Printf("> BufferFinalize(%p): shape=%s\n", buffer, buffer.shape)
-	// fmt.Printf("\tStack trace:\n%s\n", debug.Stack())
-	b.putBuffer(buffer)
+	buffer.backend.putBuffer(buffer)
 	return nil
 }
 
 // BufferShape returns the shape for the buffer.
-func (b *Backend) BufferShape(buffer compute.Buffer) (shapes.Shape, error) {
-	buf, ok := buffer.(*Buffer)
-	if !ok {
-		return shapes.Invalid(), errors.Errorf("buffer is not a %q backend buffer", BackendName)
-	}
-	return buf.shape, nil
+// Shape returns the shape for the buffer.
+func (buffer *Buffer) Shape() (shapes.Shape, error) {
+	return buffer.shape, nil
 }
 
 // BufferDeviceNum returns the deviceNum for the buffer.
-func (b *Backend) BufferDeviceNum(buffer compute.Buffer) (compute.DeviceNum, error) {
-	_, ok := buffer.(*Buffer)
-	if !ok {
-		return 0, errors.Errorf("buffer is not a %q backend buffer", BackendName)
-	}
+// DeviceNum returns the deviceNum for the buffer.
+func (buffer *Buffer) DeviceNum() (compute.DeviceNum, error) {
 	return 0, nil
 }
 
@@ -337,12 +333,9 @@ func (b *Backend) BufferDeviceNum(buffer compute.Buffer) (compute.DeviceNum, err
 // The slice flat must have the exact number of elements required to store the compute.Buffer shape.
 //
 // See also FlatDataToBuffer, BufferShape, and shapes.Shape.Size.
-func (b *Backend) BufferToFlatData(backendBuffer compute.Buffer, flat any) error {
-	buf, ok := backendBuffer.(*Buffer)
-	if !ok {
-		return errors.Errorf("buffer is not a %q backend buffer", BackendName)
-	}
-	copyFlat(flat, buf.flat)
+// ToFlatData transfers the flat values of the buffer to the Go flat array.
+func (buffer *Buffer) ToFlatData(flat any) error {
+	copyFlat(flat, buffer.flat)
 	return nil
 }
 
@@ -421,20 +414,21 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 // shares CPU memory.
 //
 // The returned slice becomes invalid after the buffer is destroyed.
-func (b *Backend) BufferData(buffer compute.Buffer) (flat any, err error) {
-	if b.isFinalized {
+// Data returns a slice pointing to the buffer storage memory directly.
+func (buffer *Buffer) Data() (flat any, err error) {
+	if buffer.backend.isFinalized {
 		return nil, errors.Errorf("backend is already finalized")
 	}
-	buf, ok := buffer.(*Buffer)
-	if !ok {
-		return nil, errors.Errorf("buffer is not a %q backend buffer", BackendName)
-	}
-	return buf.flat, nil
+	return buffer.flat, nil
 }
 
 // BufferCopyToDevice implements the compute.Backend interface.
-func (b *Backend) BufferCopyToDevice(_ compute.Buffer, _ compute.DeviceNum) (
-	bufferOnDevice compute.Buffer, err error) {
-	return nil, errors.Errorf("backend %q: multi-device not supported on this backend",
-		BackendName)
+// CopyToDevice implements the compute.Buffer interface.
+func (buffer *Buffer) CopyToDevice(deviceNum compute.DeviceNum) (compute.Buffer, error) {
+	return nil, errors.Errorf("backend %q: multi-device not supported on this backend", BackendName)
+}
+
+// Backend returns the backend that owns this buffer.
+func (buffer *Buffer) Backend() compute.Backend {
+	return buffer.backend
 }

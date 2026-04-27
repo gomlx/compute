@@ -25,7 +25,7 @@ func Exec(backend compute.Backend, inputs []any,
 		if err != nil {
 			return nil, errors.WithMessagef(err, "while transferring input #%d to a backend buffer", i)
 		}
-		inputShapes[i], err = backend.BufferShape(inputBuffers[i])
+		inputShapes[i], err = inputBuffers[i].Shape()
 		if err != nil {
 			return nil, errors.WithMessagef(err, "while getting shape of input #%d", i)
 		}

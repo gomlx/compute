@@ -68,7 +68,7 @@ func TestDuplicatedOutputNodes(t *testing.T) {
 	}
 
 	// Verify shapes are correct
-	shape0, err := backend.BufferShape(outputs[0])
+	shape0, err := outputs[0].Shape()
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -76,7 +76,7 @@ func TestDuplicatedOutputNodes(t *testing.T) {
 		t.Errorf("Expected shape %s, got %s", shapes.Make(dtypes.Float32, 3), shape0)
 	}
 
-	shape1, err := backend.BufferShape(outputs[1])
+	shape1, err := outputs[1].Shape()
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
