@@ -169,4 +169,3 @@ func TestConvertPackedUint2ToUint8(t *testing.T) {
 		t.Errorf("Expected result[3] to be 3, got %d", result[3])
 	}
 }
-

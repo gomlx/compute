@@ -165,7 +165,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 			// mean=2, var=2/3
 			invStd := float32(1.0 / math.Sqrt(2.0/3.0+epsilon))
-			want := []float32{(1.0 - 2.0)*invStd*2.0 + 1.0, (2.0 - 2.0)*invStd*2.0 + 1.0, (3.0 - 2.0)*invStd*2.0 + 1.0}
+			want := []float32{(1.0-2.0)*invStd*2.0 + 1.0, (2.0-2.0)*invStd*2.0 + 1.0, (3.0-2.0)*invStd*2.0 + 1.0}
 			if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
 				t.Errorf("LayerNorm with gamma/beta mismatch:\n%s", diff)
 			}
@@ -243,10 +243,10 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 		})
 
 		t.Run("WithBooleanMask", func(t *testing.T) {
-			q := [][][][]float32{{{{1}}}} // [1,1,1,1]
-			k := [][][][]float32{{{{1}, {1}}}} // [1,1,2,1]
+			q := [][][][]float32{{{{1}}}}        // [1,1,1,1]
+			k := [][][][]float32{{{{1}, {1}}}}   // [1,1,2,1]
 			v := [][][][]float32{{{{10}, {20}}}} // [1,1,2,1]
-			mask := [][]bool{{true, false}} // [1, 2]
+			mask := [][]bool{{true, false}}      // [1, 2]
 			got, err := testutil.Exec1(b, []any{q, k, v, mask}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedScaledDotProductAttention(params[0], params[1], params[2], params[3], 1, 1, compute.AxesLayoutBHSD, 1.0, false, nil)
 			})
