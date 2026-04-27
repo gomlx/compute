@@ -54,7 +54,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("Unexpected error: %+v", err)
 		}
-		outputShape, err := b.BufferShape(outputs[0])
+		outputShape, err := outputs[0].Shape()
 		if err != nil {
 			t.Fatalf("Unexpected error: %+v", err)
 		}

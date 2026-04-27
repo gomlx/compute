@@ -64,26 +64,6 @@ func (b *Backend) Builder(name string) compute.Builder {
 	return Builder{}
 }
 
-// BufferFinalize returns NotImplementedError.
-func (b *Backend) BufferFinalize(buffer compute.Buffer) error {
-	return errors.Wrapf(NotImplementedError, "in BufferFinalize()")
-}
-
-// BufferShape returns NotImplementedError.
-func (b *Backend) BufferShape(buffer compute.Buffer) (shapes.Shape, error) {
-	return shapes.Invalid(), errors.Wrapf(NotImplementedError, "in BufferShape()")
-}
-
-// BufferDeviceNum returns NotImplementedError.
-func (b *Backend) BufferDeviceNum(buffer compute.Buffer) (compute.DeviceNum, error) {
-	return 0, errors.Wrapf(NotImplementedError, "in BufferDeviceNum()")
-}
-
-// BufferToFlatData returns NotImplementedError.
-func (b *Backend) BufferToFlatData(buffer compute.Buffer, flat any) error {
-	return errors.Wrapf(NotImplementedError, "in BufferToFlatData()")
-}
-
 // BufferFromFlatData returns NotImplementedError.
 func (b *Backend) BufferFromFlatData(
 	deviceNum compute.DeviceNum,
@@ -104,19 +84,6 @@ func (b *Backend) NewSharedBuffer(
 	shape shapes.Shape,
 ) (buffer compute.Buffer, flat any, err error) {
 	return nil, nil, errors.Wrapf(NotImplementedError, "in NewSharedBuffer()")
-}
-
-// BufferData returns NotImplementedError.
-func (b *Backend) BufferData(buffer compute.Buffer) (flat any, err error) {
-	return nil, errors.Wrapf(NotImplementedError, "in BufferData()")
-}
-
-// BufferCopyToDevice returns NotImplementedError.
-func (b *Backend) BufferCopyToDevice(
-	source compute.Buffer,
-	deviceNum compute.DeviceNum,
-) (bufferOnDevice compute.Buffer, err error) {
-	return nil, errors.Wrapf(NotImplementedError, "in BufferCopyToDevice()")
 }
 
 // Finalize does nothing for this dummy backend.

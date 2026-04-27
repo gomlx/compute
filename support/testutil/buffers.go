@@ -61,19 +61,19 @@ func ToBuffer(backend compute.Backend, v any) (compute.Buffer, error) {
 
 // FromBuffer converts a [compute.Buffer] into a nested slice of the corresponding Go type.
 func FromBuffer(backend compute.Backend, buf compute.Buffer) (any, error) {
-	shape, err := backend.BufferShape(buf)
+	shape, err := buf.Shape()
 	if err != nil {
 		return nil, err
 	}
 	var flat any
 	if backend.HasSharedBuffers() {
-		flat, err = backend.BufferData(buf)
+		flat, err = buf.Data()
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		flat = dtypes.MakeAnySlice(shape.DType, shape.Size())
-		if err := backend.BufferToFlatData(buf, flat); err != nil {
+		if err := buf.ToFlatData(flat); err != nil {
 			return nil, err
 		}
 	}

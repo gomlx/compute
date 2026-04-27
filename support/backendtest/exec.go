@@ -142,13 +142,13 @@ func TestExec(t *testing.T, b compute.Backend) {
 		}
 
 		// i0 should already have been finalized/donated, so this shoudl be a no-op.
-		err = b.BufferFinalize(i0)
+		err = i0.Finalize()
 		if err != nil {
 			t.Fatalf("BufferFinalize failed: %+v", err)
 		}
 
 		// Verify reuse via pointer comparison of underlying shared data.
-		out0Flat, err := b.BufferData(outputs[0])
+		out0Flat, err := outputs[0].Data()
 		if err != nil {
 			t.Fatalf("BufferData failed: %+v", err)
 		}
@@ -163,7 +163,7 @@ func TestExec(t *testing.T, b compute.Backend) {
 			}
 		}
 
-		outputShape, err := b.BufferShape(outputs[1])
+		outputShape, err := outputs[1].Shape()
 		if err != nil {
 			t.Fatalf("BufferShape failed: %+v", err)
 		}
@@ -178,7 +178,7 @@ func TestExec(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("Execute failed: %+v", err)
 		}
-		out0FlatNoDonate, _ := b.BufferData(outputs[0])
+		out0FlatNoDonate, _ := outputs[0].Data()
 		out0PointerNoDonate := reflect.ValueOf(out0FlatNoDonate).Pointer()
 		if i1Pointer == out0PointerNoDonate {
 			t.Errorf("Expected output data buffer to be different from input data buffer when input buffer not donated")
