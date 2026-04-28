@@ -1,6 +1,10 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-// Package simplego implements a simple, and not very fast, but very portable backend for GoMLX.
+// Package gobackend implements a [compute.Backend] using Go only.
+//
+// Its main goal is portability, and not be a state-of-the art ML backend.
+//
+// It also serves as a reference implementation for the [compute.Backend] interface.
 //
 // It only implements the most popular dtypes and operations.
 // But generally, it's easy to add new ops, if you need, just open an issue in GoMLX.
