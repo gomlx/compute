@@ -18,40 +18,40 @@ import (
 type Function struct {
 	notimplemented.Function
 
-	builder *Builder
+	Builder *Builder
 	name    string
 
-	// parent is the parent function if this is a closure.
+	// RawParent is the parent function if this is a closure.
 	// For top-level functions (including main), this is nil.
-	parent *Function
+	RawParent *Function
 
-	// returned indicates Return() was called.
-	returned bool
+	// IsReturned indicates Return() was called.
+	IsReturned bool
 
-	// nodes are all nodes created within this function, in DAG order.
+	// Nodes are all Nodes created within this function, in DAG order.
 	// Each node's idx field is its index in this slice.
-	nodes []*Node
+	Nodes []*Node
 
-	// outputs stores the return values set by Return().
-	outputs []*Node
+	// Outputs stores the return values set by Return().
+	Outputs []*Node
 
-	// parameters stores the parameter nodes for this function.
-	parameters []*Node
+	// Parameters stores the parameter nodes for this function.
+	Parameters []*Node
 
-	// capturedParentNodes stores nodes from parent scopes that are captured by this closure.
-	// The order matches capturedLocalNodes - capturedParentNodes[i] is the parent node for capturedLocalNodes[i].
-	capturedParentNodes []*Node
+	// CapturedParentNodes stores nodes from parent scopes that are captured by this closure.
+	// The order matches capturedLocalNodes - CapturedParentNodes[i] is the parent node for capturedLocalNodes[i].
+	CapturedParentNodes []*Node
 
-	// capturedLocalNodes stores the proxy nodes in this closure for captured values.
+	// CapturedLocalNodes stores the proxy nodes in this closure for captured values.
 	// These are OpTypeCapturedValue nodes that receive their values at execution time.
-	capturedLocalNodes []*Node
+	CapturedLocalNodes []*Node
 
 	// nodeDedup provides automatic de-duplication for nodes within this function.
-	nodeDedup map[nodeDedupKey][]*Node
+	nodeDedup map[NodeDedupKey][]*Node
 
 	// compiled holds pre-compiled execution info.
 	// This is set during Return() to allow efficient execution.
-	compiled *FunctionExecutable
+	Compiled *FunctionExecutable
 }
 
 // capturedNodeData is the data stored in a captured value node.
@@ -63,10 +63,10 @@ var _ compute.Function = (*Function)(nil)
 
 // CheckValid returns an error if the builder or the function are not ok.
 func (f *Function) CheckValid() error {
-	if f == nil || f.builder == nil {
+	if f == nil || f.Builder == nil {
 		return errors.Errorf("function is nil or undefined for %q", BackendName)
 	}
-	if f.builder.compiled {
+	if f.Builder.IsCompiled {
 		return errors.Errorf("cannot add new op to Function %q, builder has already been compiled", f.name)
 	}
 	return nil
@@ -81,10 +81,10 @@ func (f *Function) Name() string {
 // Parent returns the parent function if this is a closure.
 // Returns nil for top-level functions (including main).
 func (f *Function) Parent() compute.Function {
-	if f.parent == nil {
+	if f.RawParent == nil {
 		return nil
 	}
-	return f.parent
+	return f.RawParent
 }
 
 // IsAncestorOf checks whether f is an ancestor of leafFunc.
@@ -92,7 +92,7 @@ func (f *Function) Parent() compute.Function {
 //
 // Typically, leafFunc will be a closure.
 func (f *Function) IsAncestorOf(leafFunc *Function) bool {
-	for ; leafFunc != nil; leafFunc = leafFunc.parent {
+	for ; leafFunc != nil; leafFunc = leafFunc.RawParent {
 		if leafFunc == f {
 			return true
 		}
@@ -110,29 +110,29 @@ func (f *Function) Closure() (compute.Function, error) {
 		Function: notimplemented.Function{
 			ErrFn: notImplementedError,
 		},
-		builder:   f.builder,
+		Builder:   f.Builder,
 		name:      "", // Closures have empty names
-		parent:    f,
-		nodeDedup: make(map[nodeDedupKey][]*Node),
+		RawParent: f,
+		nodeDedup: make(map[NodeDedupKey][]*Node),
 	}
 	return closure, nil
 }
 
-// newNode adds a new node of the given opType and shape to the function's graph.
+// NewNode adds a new node of the given opType and shape to the function's graph.
 // It's used by the other ops when creating new nodes.
 // Nodes are added to the function's nodes slice.
 //
 // Use getOrCreateNode instead for most operations.
-func (f *Function) newNode(opType compute.OpType, shape shapes.Shape, inputs ...*Node) *Node {
+func (f *Function) NewNode(opType compute.OpType, shape shapes.Shape, inputs ...*Node) *Node {
 	n := &Node{
-		builder:  f.builder,
-		opType:   opType,
-		idx:      len(f.nodes),
-		shape:    shape,
-		inputs:   slices.Clone(inputs),
-		function: f,
+		Builder:  f.Builder,
+		OpType:   opType,
+		Index:    len(f.Nodes),
+		Shape:    shape,
+		Inputs:   slices.Clone(inputs),
+		Function: f,
 	}
-	f.nodes = append(f.nodes, n)
+	f.Nodes = append(f.Nodes, n)
 	return n
 }
 
@@ -147,21 +147,21 @@ func (f *Function) newMultiOutputsNode(
 	outputShapes []shapes.Shape,
 	inputs ...*Node,
 ) (node *Node) {
-	node = f.newNode(opType, shapes.Invalid(), inputs...)
-	node.multiOutputsShapes = outputShapes
-	node.multiOutputsNodes = make([]*Node, len(outputShapes))
+	node = f.NewNode(opType, shapes.Invalid(), inputs...)
+	node.MultiOutputsShapes = outputShapes
+	node.MultiOutputsNodes = make([]*Node, len(outputShapes))
 	for i, shape := range outputShapes {
-		node.multiOutputsNodes[i] = &Node{
-			builder:            f.builder,
-			opType:             opType,
-			idx:                len(f.nodes),
-			shape:              shape,
-			inputs:             []*Node{node},
-			isNodeSelectOutput: true,
-			selectOutputIdx:    i,
-			function:           f,
+		node.MultiOutputsNodes[i] = &Node{
+			Builder:            f.Builder,
+			OpType:             opType,
+			Index:              len(f.Nodes),
+			Shape:              shape,
+			Inputs:             []*Node{node},
+			IsNodeSelectOutput: true,
+			SelectOutputIdx:    i,
+			Function:           f,
 		}
-		f.nodes = append(f.nodes, node.multiOutputsNodes[i])
+		f.Nodes = append(f.Nodes, node.MultiOutputsNodes[i])
 	}
 	return node
 }
@@ -173,26 +173,26 @@ func (f *Function) verifyAndCastValues(name string, values ...compute.Value) ([]
 	if err := f.CheckValid(); err != nil {
 		return nil, err
 	}
-	nodes, err := f.builder.checkValues(name, values...)
+	nodes, err := f.Builder.checkValues(name, values...)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check each node and handle parent scope references
 	for idx, node := range nodes {
-		if node.function == nil {
+		if node.Function == nil {
 			return nil, errors.Errorf(
 				"%s: input #%d has nil function (internal error)",
 				name, idx)
 		}
-		if node.function == f {
+		if node.Function == f {
 			continue // Same function, OK.
 		}
 
 		// Check if the node is from an ancestor function (closure capture)
 		isFromAncestor := false
-		for ancestor := f.parent; ancestor != nil; ancestor = ancestor.parent {
-			if node.function == ancestor {
+		for ancestor := f.RawParent; ancestor != nil; ancestor = ancestor.RawParent {
+			if node.Function == ancestor {
 				isFromAncestor = true
 				break
 			}
@@ -211,16 +211,16 @@ func (f *Function) verifyAndCastValues(name string, values ...compute.Value) ([]
 	return nodes, nil
 }
 
-// nodeParameter data.
-type nodeParameter struct {
-	name     string
-	inputIdx int
+// NodeParameter data.
+type NodeParameter struct {
+	Name     string
+	InputIdx int
 }
 
 // EqualNodeData implements nodeDataComparable for nodeParameter.
-func (n *nodeParameter) EqualNodeData(other nodeDataComparable) bool {
-	o := other.(*nodeParameter)
-	return n.name == o.name && n.inputIdx == o.inputIdx
+func (n *NodeParameter) EqualNodeData(other NodeDataComparable) bool {
+	o := other.(*NodeParameter)
+	return n.Name == o.Name && n.InputIdx == o.InputIdx
 }
 
 // Parameter creates an input parameter for this function.
@@ -231,19 +231,19 @@ func (f *Function) Parameter(name string, shape shapes.Shape, sharding *compute.
 	}
 	if supported, ok := Capabilities.DTypes[dtype]; !ok || !supported {
 		return nil, errors.Errorf("Parameter: data type (DType) %s not supported for backend %q, try using "+
-			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.builder.backend.Name())
+			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.Builder.Backend.Name())
 	}
 	if sharding != nil {
 		return nil, errors.Wrapf(
 			notimplemented.NotImplementedError,
 			"sharding spec %+v not supported for %q builder", sharding, BackendName)
 	}
-	data := &nodeParameter{
-		name:     name,
-		inputIdx: len(f.parameters), // Index within this function's parameters
+	data := &NodeParameter{
+		Name:     name,
+		InputIdx: len(f.Parameters), // Index within this function's parameters
 	}
-	n, _ := f.getOrCreateNode(compute.OpTypeParameter, shape, nil, data)
-	f.parameters = append(f.parameters, n)
+	n, _ := f.GetOrCreateNode(compute.OpTypeParameter, shape, nil, data)
+	f.Parameters = append(f.Parameters, n)
 	return n, nil
 }
 
@@ -259,7 +259,7 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 	}
 	if supported, ok := Capabilities.DTypes[dtype]; !ok || !supported {
 		return nil, errors.Errorf("Constant: data type (DType) %s not supported for backend %q, try using "+
-			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.builder.backend.Name())
+			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.Builder.Backend.Name())
 	}
 	shape := shapes.Make(dtype, dims...)
 	if shape.Size() != flatLen {
@@ -267,11 +267,11 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 			flatLen, dtype, shape.Size())
 	}
 	data := &Buffer{
-		shape: shape,
-		flat:  flat,
-		inUse: true,
+		RawShape: shape,
+		Flat:     flat,
+		InUse:    true,
 	}
-	n, _ := f.getOrCreateNode(compute.OpTypeConstant, shape, nil, data)
+	n, _ := f.GetOrCreateNode(compute.OpTypeConstant, shape, nil, data)
 	return n, nil
 }
 
@@ -280,14 +280,14 @@ func (f *Function) Return(outputs []compute.Value, shardings []*compute.Sharding
 	if err := f.CheckValid(); err != nil {
 		return err
 	}
-	if f.returned {
+	if f.IsReturned {
 		return errors.Errorf("Return() already called for function %q", f.name)
 	}
 	if len(outputs) == 0 {
 		return errors.Errorf("Return() requires at least one output")
 	}
 	if len(shardings) != 0 {
-		return errors.Errorf("sharding or distributed execution are not supported by SimpleGo backend")
+		return errors.Errorf("sharding or distributed execution are not supported by Go backend")
 	}
 
 	outputNodes, err := f.verifyAndCastValues("Return", outputs...)
@@ -296,44 +296,33 @@ func (f *Function) Return(outputs []compute.Value, shardings []*compute.Sharding
 	}
 
 	for _, node := range outputNodes {
-		if len(node.multiOutputsShapes) != 0 {
+		if len(node.MultiOutputsShapes) != 0 {
 			return errors.Errorf(
 				"%s node %q is internal (with multiple-outputs) and cannot be used for output",
-				f.builder.Name(),
-				node.opType,
+				f.Builder.Name(),
+				node.OpType,
 			)
 		}
 	}
 
-	f.outputs = outputNodes
-	f.returned = true
+	f.Outputs = outputNodes
+	f.IsReturned = true
 
 	// If this is a closure or a named function (not main), pre-compile it for efficient execution.
 	// Main functions are compiled later in Builder.Compile() after
 	// duplicate output handling.
-	if f.parent != nil || f.name != compute.MainName {
+	if f.RawParent != nil || f.name != compute.MainName {
 		compiled, err := newFunctionExecutable(f)
 		if err != nil {
 			return errors.WithMessagef(err, "failed to compile function %q", f.name)
 		}
-		f.compiled = compiled
+		f.Compiled = compiled
 	}
 
 	return nil
 }
 
-// Compiled returns the pre-compiled function executable, or nil if not yet compiled.
-func (f *Function) Compiled() *FunctionExecutable {
-	return f.compiled
-}
-
-// CapturedParentNodes returns the list of parent nodes that this closure captures.
-// Each entry corresponds to a node from a parent function that this closure uses.
-// Returns nil for non-closures or closures that don't capture any values.
-func (f *Function) CapturedParentNodes() []*Node {
-	return f.capturedParentNodes
-}
-
+/*
 // Iota creates a constant of the given shape with increasing numbers (starting from 0)
 // on the given axis. So Iota([2,2], 1) returns [[0 1][0 1]], while Iota([2,2], 0)
 // returns [[0 0][1 1]].
@@ -351,6 +340,7 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 	node, _ := f.getOrCreateNode(compute.OpTypeIota, shape, nil, iotaAxis)
 	return node, nil
 }
+*/
 
 // Identity implements the compute.Identity interface.
 // This operation is not de-duplicated: if you issue it twice, it will not reuse the previous instance.
@@ -360,7 +350,7 @@ func (f *Function) Identity(operandOp compute.Value) (compute.Value, error) {
 		return nil, err
 	}
 	operand := inputs[0]
-	node := f.newNode(compute.OpTypeIdentity, operand.shape, operand)
+	node := f.NewNode(compute.OpTypeIdentity, operand.Shape, operand)
 	return node, nil
 }
 
@@ -371,11 +361,11 @@ func (f *Function) Where(conditionOp, onTrueOp, onFalseOp compute.Value) (comput
 		return nil, err
 	}
 	condition, onTrue, onFalse := inputs[0], inputs[1], inputs[2]
-	outputShape, err := shapeinference.WhereOp(condition.shape, onTrue.shape, onFalse.shape)
+	outputShape, err := shapeinference.WhereOp(condition.Shape, onTrue.Shape, onFalse.Shape)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(compute.OpTypeWhere, outputShape, []*Node{condition, onTrue, onFalse}, nil)
+	node, _ := f.GetOrCreateNode(compute.OpTypeWhere, outputShape, []*Node{condition, onTrue, onFalse}, nil)
 	return node, nil
 }
 
@@ -389,11 +379,11 @@ func (f *Function) Reshape(operandOp compute.Value, dims ...int) (compute.Value,
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.ReshapeOp(operand.shape, dims)
+	outputShape, err := shapeinference.ReshapeOp(operand.Shape, dims)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, nil)
 	return node, nil
 }
 
@@ -409,12 +399,12 @@ func (f *Function) Reverse(operandOp compute.Value, axes ...int) (compute.Value,
 	operand := inputs[0]
 	// Validate axes.
 	for _, axis := range axes {
-		if axis < 0 || axis >= operand.shape.Rank() {
-			return nil, errors.Errorf("Reverse: axis %d out of range for rank %d", axis, operand.shape.Rank())
+		if axis < 0 || axis >= operand.Shape.Rank() {
+			return nil, errors.Errorf("Reverse: axis %d out of range for rank %d", axis, operand.Shape.Rank())
 		}
 	}
 	// Output shape is the same as the input shape.
-	node, _ := f.getOrCreateNode(opType, operand.shape, []*Node{operand}, axes)
+	node, _ := f.GetOrCreateNode(opType, operand.Shape, []*Node{operand}, axes)
 	return node, nil
 }
 
@@ -428,11 +418,11 @@ func (f *Function) Transpose(operandOp compute.Value, permutations ...int) (comp
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.TransposeOp(operand.shape, permutations)
+	outputShape, err := shapeinference.TransposeOp(operand.Shape, permutations)
 	if err != nil {
 		panic(err)
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, permutations)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, permutations)
 	return node, nil
 }
 
@@ -452,11 +442,11 @@ func (f *Function) Broadcast(operandOp compute.Value, prefixDims ...int) (comput
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.BroadcastOp(operand.shape, prefixDims)
+	outputShape, err := shapeinference.BroadcastOp(operand.Shape, prefixDims)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, prefixDims)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, prefixDims)
 	return node, nil
 }
 
@@ -490,11 +480,11 @@ func (f *Function) BroadcastInDim(
 		return nil, err
 	}
 	operand := inputs[0]
-	err = shapeinference.BroadcastInDimOp(operand.shape, outputShape, broadcastAxes)
+	err = shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, broadcastAxes)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, broadcastAxes)
 	return node, nil
 }
 
@@ -556,14 +546,14 @@ func (f *Function) reduceImpls(reduceOpType compute.OpType, operandOp compute.Va
 	operand := inputs[0]
 	if len(axes) == 0 {
 		// Default if no axes are given, is to reduce all axes.
-		axes = xslices.Iota(0, operand.shape.Rank())
+		axes = xslices.Iota(0, operand.Shape.Rank())
 	}
-	outputShape, err := shapeinference.ReduceOp(operand.shape, axes)
+	outputShape, err := shapeinference.ReduceOp(operand.Shape, axes)
 	if err != nil {
 		return nil, err
 	}
-	outputShape.DType = operand.shape.DType
-	node, _ := f.getOrCreateNode(reduceOpType, outputShape, []*Node{operand}, axes)
+	outputShape.DType = operand.Shape.DType
+	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, []*Node{operand}, axes)
 	return node, nil
 }
 
@@ -574,7 +564,7 @@ type gatherNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for gatherNode.
-func (g *gatherNode) EqualNodeData(other nodeDataComparable) bool {
+func (g *gatherNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*gatherNode)
 	if g.indexVectorAxis != o.indexVectorAxis || g.indicesAreSorted != o.indicesAreSorted {
 		return false
@@ -600,8 +590,8 @@ func (f *Function) Gather(
 	}
 	operand, startIndices := inputs[0], inputs[1]
 	shape, err := shapeinference.Gather(
-		operand.shape,
-		startIndices.shape,
+		operand.Shape,
+		startIndices.Shape,
 		indexVectorAxis,
 		offsetOutputAxes,
 		collapsedSliceAxes,
@@ -620,7 +610,7 @@ func (f *Function) Gather(
 		sliceSizes,
 		indicesAreSorted,
 	}
-	node, _ := f.getOrCreateNode(opType, shape, []*Node{operand, startIndices}, data)
+	node, _ := f.GetOrCreateNode(opType, shape, []*Node{operand, startIndices}, data)
 	return node, nil
 }
 
@@ -640,13 +630,13 @@ func (f *Function) Concatenate(axis int, operandOps ...compute.Value) (compute.V
 	// Extract shapes for shape inference.
 	inputShapes := make([]shapes.Shape, len(operands))
 	for i, opNode := range operands {
-		inputShapes[i] = opNode.shape
+		inputShapes[i] = opNode.Shape
 	}
 	outputShape, err := shapeinference.ConcatenateOp(inputShapes, axis)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(compute.OpTypeConcatenate, outputShape, operands, axis)
+	node, _ := f.GetOrCreateNode(compute.OpTypeConcatenate, outputShape, operands, axis)
 	return node, nil
 }
 
@@ -669,11 +659,11 @@ func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (c
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.BitcastOp(operand.shape, targetDType)
+	outputShape, err := shapeinference.BitcastOp(operand.Shape, targetDType)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, nil)
 	return node, nil
 }
 
@@ -685,13 +675,13 @@ func (f *Function) ConvertDType(operandOp compute.Value, dtype dtypes.DType) (co
 		return nil, err
 	}
 	operand := inputs[0]
-	if operand.shape.DType == dtype {
+	if operand.Shape.DType == dtype {
 		// No-op
 		return operand, nil
 	}
-	outputShape := operand.shape.Clone()
+	outputShape := operand.Shape.Clone()
 	outputShape.DType = dtype
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, nil)
 	return node, nil
 }
 
@@ -766,7 +756,7 @@ type scatterNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for scatterNode.
-func (s *scatterNode) EqualNodeData(other nodeDataComparable) bool {
+func (s *scatterNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*scatterNode)
 	if s.indexVectorAxis != o.indexVectorAxis ||
 		s.indicesAreSorted != o.indicesAreSorted ||
@@ -793,9 +783,9 @@ func (f *Function) scatterImpls(
 	operand, indices, updates := inputs[0], inputs[1], inputs[2]
 	// Check that parameters are valid.
 	outputShape, err := shapeinference.ScatterOp(
-		operand.shape,
-		indices.shape,
-		updates.shape,
+		operand.Shape,
+		indices.Shape,
+		updates.Shape,
 		indexVectorAxis,
 		updateWindowAxes,
 		insertedWindowAxes,
@@ -814,7 +804,7 @@ func (f *Function) scatterImpls(
 		indicesAreSorted:         indicesAreSorted,
 		uniqueIndices:            uniqueIndices,
 	}
-	node, _ := f.getOrCreateNode(scatterOpType, outputShape, []*Node{operand, indices, updates}, data)
+	node, _ := f.GetOrCreateNode(scatterOpType, outputShape, []*Node{operand, indices, updates}, data)
 	return node, nil
 }
 
@@ -824,7 +814,7 @@ type sliceNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for sliceNode.
-func (s *sliceNode) EqualNodeData(other nodeDataComparable) bool {
+func (s *sliceNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*sliceNode)
 	return slices.Equal(s.starts, o.starts) &&
 		slices.Equal(s.limits, o.limits) &&
@@ -847,7 +837,7 @@ func (f *Function) Slice(operandOp compute.Value, starts, limits, strides []int)
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.SliceOp(operand.shape, starts, limits, strides)
+	outputShape, err := shapeinference.SliceOp(operand.Shape, starts, limits, strides)
 	if err != nil {
 		return nil, err
 	}
@@ -856,7 +846,7 @@ func (f *Function) Slice(operandOp compute.Value, starts, limits, strides []int)
 		limits,
 		strides,
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, data)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, data)
 	return node, nil
 }
 
@@ -872,21 +862,21 @@ func (f *Function) RNGBitGenerator(stateOp compute.Value, shape shapes.Shape) (n
 		return nil, nil, err
 	}
 	state := inputs[0]
-	if !state.shape.Equal(compute.RNGStateShape) {
+	if !state.Shape.Equal(compute.RNGStateShape) {
 		err := errors.Errorf(
 			"expected random state to be shaped %s, got state.shape=%s instead for RNGBitGenerator",
 			compute.RNGStateShape,
-			state.shape,
+			state.Shape,
 		)
 		return nil, nil, err
 	}
 	outputShapes := []shapes.Shape{
-		state.shape.Clone(),
+		state.Shape.Clone(),
 		shape.Clone(),
 	}
 	node := f.newMultiOutputsNode(opType, outputShapes, state)
-	newState = node.multiOutputsNodes[0]
-	values = node.multiOutputsNodes[1]
+	newState = node.MultiOutputsNodes[0]
+	values = node.MultiOutputsNodes[1]
 	return
 }
 
@@ -897,7 +887,7 @@ type argMinMaxNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for argMinMaxNode.
-func (a *argMinMaxNode) EqualNodeData(other nodeDataComparable) bool {
+func (a *argMinMaxNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*argMinMaxNode)
 	return a.axis == o.axis && a.isMin == o.isMin
 }
@@ -922,7 +912,7 @@ func (f *Function) ArgMinMax(
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.ArgMinMaxOp(operand.shape, axis, outputDType)
+	outputShape, err := shapeinference.ArgMinMaxOp(operand.Shape, axis, outputDType)
 	if err != nil {
 		return nil, err
 	}
@@ -930,7 +920,7 @@ func (f *Function) ArgMinMax(
 		axis,
 		isMin,
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, data)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, data)
 	return node, nil
 }
 
@@ -941,7 +931,7 @@ type reduceWindowNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for reduceWindowNode.
-func (r *reduceWindowNode) EqualNodeData(other nodeDataComparable) bool {
+func (r *reduceWindowNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*reduceWindowNode)
 	if r.reductionType != o.reductionType {
 		return false
@@ -982,7 +972,7 @@ func (f *Function) ReduceWindow(
 	}
 	operand := inputs[0]
 	outputShape, err := shapeinference.ReduceWindowOp(
-		operand.shape,
+		operand.Shape,
 		windowDimensions,
 		strides,
 		inputDilations,
@@ -1000,7 +990,7 @@ func (f *Function) ReduceWindow(
 		windowDilations:  windowDilations,
 		paddings:         paddings,
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand}, data)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, data)
 	return node, nil
 }
 
@@ -1121,18 +1111,18 @@ func (f *Function) IsFinite(operandOp compute.Value) (compute.Value, error) {
 		return nil, err
 	}
 	operand := inputs[0]
-	dtype := operand.shape.DType
+	dtype := operand.Shape.DType
 	if !dtype.IsFloat() && !dtype.IsComplex() {
 		return nil, errors.Errorf(
 			"the operation IsFinite is only defined for float types (%s), cannot use it",
-			operand.shape.DType,
+			operand.Shape.DType,
 		)
 	}
 
 	// Output will have the same shape but for the dtype that is bool.
-	shape := operand.shape.Clone()
+	shape := operand.Shape.Clone()
 	shape.DType = dtypes.Bool
-	node, _ := f.getOrCreateNode(opType, shape, []*Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, shape, []*Node{operand}, nil)
 	return node, nil
 }
 
@@ -1143,11 +1133,11 @@ func (f *Function) addUnaryOp(opType compute.OpType, operandOp compute.Value) (*
 		return nil, err
 	}
 	operand := inputs[0]
-	shape, err := shapeinference.UnaryOp(opType, operand.shape)
+	shape, err := shapeinference.UnaryOp(opType, operand.Shape)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, shape, []*Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, shape, []*Node{operand}, nil)
 	return node, nil
 }
 
@@ -1280,11 +1270,11 @@ func (f *Function) addBinaryOp(opType compute.OpType, lhsOp, rhsOp compute.Value
 		return nil, err
 	}
 	lhs, rhs := inputs[0], inputs[1]
-	shape, err := shapeinference.BinaryOp(opType, lhs.shape, rhs.shape)
+	shape, err := shapeinference.BinaryOp(opType, lhs.Shape, rhs.Shape)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, shape, []*Node{lhs, rhs}, nil)
+	node, _ := f.GetOrCreateNode(opType, shape, []*Node{lhs, rhs}, nil)
 	return node, nil
 }
 
@@ -1295,11 +1285,11 @@ func (f *Function) addComparisonOp(opType compute.OpType, lhsOp, rhsOp compute.V
 		return nil, err
 	}
 	lhs, rhs := inputs[0], inputs[1]
-	shape, err := shapeinference.ComparisonOp(opType, lhs.shape, rhs.shape)
+	shape, err := shapeinference.ComparisonOp(opType, lhs.Shape, rhs.Shape)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.getOrCreateNode(opType, shape, []*Node{lhs, rhs}, nil)
+	node, _ := f.GetOrCreateNode(opType, shape, []*Node{lhs, rhs}, nil)
 	return node, nil
 }
 
@@ -1361,11 +1351,11 @@ func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, in
 	}
 
 	// Verify all inputs have the same dimensions
-	firstShape := inputNodes[0].shape
+	firstShape := inputNodes[0].Shape
 	for i, node := range inputNodes[1:] {
-		if !shapesEqualDimensions(firstShape, node.shape) {
+		if !shapesEqualDimensions(firstShape, node.Shape) {
 			return nil, errors.Errorf("Sort: all inputs must have the same dimensions, input 0 has %s, input %d has %s",
-				firstShape, i+1, node.shape)
+				firstShape, i+1, node.Shape)
 		}
 	}
 
@@ -1380,40 +1370,40 @@ func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, in
 
 	// Verify comparator has 2*N scalar parameters
 	expectedParams := 2 * len(inputNodes)
-	if len(compFn.parameters) != expectedParams {
+	if len(compFn.Parameters) != expectedParams {
 		return nil, errors.Errorf("Sort: comparator must have %d parameters (2 per input), got %d",
-			expectedParams, len(compFn.parameters))
+			expectedParams, len(compFn.Parameters))
 	}
 
 	// Verify comparator parameters are scalars with correct dtypes
 	for i, node := range inputNodes {
-		expectedDType := node.shape.DType
+		expectedDType := node.Shape.DType
 		for j, side := range []string{"lhs", "rhs"} {
 			paramIdx := 2*i + j
-			param := compFn.parameters[paramIdx]
-			if param.shape.Rank() != 0 {
+			param := compFn.Parameters[paramIdx]
+			if param.Shape.Rank() != 0 {
 				return nil, errors.Errorf("Sort: comparator parameter %d (%s_%d) must be scalar, got %s",
-					paramIdx, side, i, param.shape)
+					paramIdx, side, i, param.Shape)
 			}
-			if param.shape.DType != expectedDType {
+			if param.Shape.DType != expectedDType {
 				return nil, errors.Errorf("Sort: comparator parameter %d (%s_%d) must have dtype %s, got %s",
-					paramIdx, side, i, expectedDType, param.shape.DType)
+					paramIdx, side, i, expectedDType, param.Shape.DType)
 			}
 		}
 	}
 
 	// Verify comparator returns a scalar boolean
-	if len(compFn.outputs) != 1 {
-		return nil, errors.Errorf("Sort: comparator must return exactly one value, got %d", len(compFn.outputs))
+	if len(compFn.Outputs) != 1 {
+		return nil, errors.Errorf("Sort: comparator must return exactly one value, got %d", len(compFn.Outputs))
 	}
-	if compFn.outputs[0].shape.Rank() != 0 || compFn.outputs[0].shape.DType != dtypes.Bool {
-		return nil, errors.Errorf("Sort: comparator must return a scalar boolean, got %s", compFn.outputs[0].shape)
+	if compFn.Outputs[0].Shape.Rank() != 0 || compFn.Outputs[0].Shape.DType != dtypes.Bool {
+		return nil, errors.Errorf("Sort: comparator must return a scalar boolean, got %s", compFn.Outputs[0].Shape)
 	}
 
 	// Create output shapes (same as inputs)
 	outputShapes := make([]shapes.Shape, len(inputNodes))
 	for i, node := range inputNodes {
-		outputShapes[i] = node.shape.Clone()
+		outputShapes[i] = node.Shape.Clone()
 	}
 
 	data := &sortNode{
@@ -1426,7 +1416,7 @@ func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, in
 	// Create multi-output node for Sort with only input tensors as regular inputs.
 	// Captured values are tracked separately via AddNodeCapturedInputs.
 	node := f.newMultiOutputsNode(compute.OpTypeSort, outputShapes, inputNodes...)
-	node.data = data
+	node.Data = data
 
 	// Add captured values from comparator to node.capturedInputs.
 	node.AddNodeCapturedInputs(compFn)
@@ -1464,13 +1454,13 @@ func (f *Function) Pad(operandOp, fillValueOp compute.Value, axesConfig ...compu
 	}
 	operand, fillValue := inputs[0], inputs[1]
 
-	outputShape, err := shapeinference.PadOp(operand.shape, axesConfig...)
+	outputShape, err := shapeinference.PadOp(operand.Shape, axesConfig...)
 	if err != nil {
 		return nil, err
 	}
 
 	data := &padNode{axesConfig: slices.Clone(axesConfig)}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{operand, fillValue}, data)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand, fillValue}, data)
 	return node, nil
 }
 
@@ -1479,7 +1469,7 @@ type padNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for padNode.
-func (p *padNode) EqualNodeData(other nodeDataComparable) bool {
+func (p *padNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*padNode)
 	return slices.Equal(p.axesConfig, o.axesConfig)
 }

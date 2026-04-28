@@ -22,8 +22,8 @@ func dgCopyOutputBlockToFlat[T interface { //alt:base
 	//alt:f16 func dgCopyOutputBlockToFlatF32ToF16(
 
 	blockSource, output *Buffer) {
-	sourceDims := blockSource.shape.Dimensions
-	outputDims := output.shape.Dimensions
+	sourceDims := blockSource.RawShape.Dimensions
+	outputDims := output.RawShape.Dimensions
 
 	batchSize := sourceDims[0]
 	lhsBlockCross := sourceDims[1]
@@ -42,8 +42,8 @@ func dgCopyOutputBlockToFlat[T interface { //alt:base
 	sourceLhsBlockStride := rhsBlockCross * sourceBlockSize
 	sourceBatchStride := lhsBlockCross * rhsBlockCross * sourceBlockSize
 
-	sourceData := blockSource.flat.([]T) //alt:base
-	outputData := output.flat.([]T)      //alt:base
+	sourceData := blockSource.Flat.([]T) //alt:base
+	outputData := output.Flat.([]T)      //alt:base
 	//alt:bf16|f16 sourceData := blockSource.flat.([]float32)
 	//alt:bf16 outputData := output.flat.([]bfloat16.BFloat16)
 	//alt:f16 outputData := output.flat.([]float16.Float16)
@@ -87,9 +87,9 @@ func buildDotGeneralKernel[T PODNumericConstraints]( //alt:base
 	//alt:bf16 func buildDotGeneralKernelBFloat16(
 	//alt:f16 func buildDotGeneralKernelFloat16(
 	lhs, rhs, output *Buffer, blockDim int) kernelFuncType {
-	lhsFlat := lhs.flat.([]T)       //alt:base
-	rhsFlat := rhs.flat.([]T)       //alt:base
-	outputFlat := output.flat.([]T) //alt:base
+	lhsFlat := lhs.Flat.([]T)       //alt:base
+	rhsFlat := rhs.Flat.([]T)       //alt:base
+	outputFlat := output.Flat.([]T) //alt:base
 	//alt:bf16 lhsFlat := lhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16 rhsFlat := rhs.flat.([]bfloat16.BFloat16)
 	//alt:f16 lhsFlat := lhs.flat.([]float16.Float16)

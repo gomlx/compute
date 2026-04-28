@@ -18,9 +18,9 @@ func execNormalizedDotGeneralGeneric[T PODNumericConstraints]( //alt:base
 	//alt:bf16 func execNormalizedDotGeneralBFloat16(
 	//alt:f16 func execNormalizedDotGeneralFloat16(
 	lhs, rhs, output *Buffer, params *dotGeneralNodeData, batchStartIdx, batchEndIdx int) {
-	lhsFlat := lhs.flat.([]T)       //alt:base
-	rhsFlat := rhs.flat.([]T)       //alt:base
-	outputFlat := output.flat.([]T) //alt:base
+	lhsFlat := lhs.Flat.([]T)       //alt:base
+	rhsFlat := rhs.Flat.([]T)       //alt:base
+	outputFlat := output.Flat.([]T) //alt:base
 	//alt:bf16 lhsFlat := lhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16 rhsFlat := rhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16 outputFlat := output.flat.([]float32)

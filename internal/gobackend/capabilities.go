@@ -13,7 +13,7 @@ import (
 // DotGeneral
 // ...
 
-// numericDTypes is the list of numeric data types supported by the SimpleGo backend.
+// numericDTypes is the list of numeric data types supported by the Go backend.
 // This excludes Bool and is used for operations like DotGeneral that only work on numeric types.
 var numericDTypes = []dtypes.DType{
 	dtypes.Int8,
@@ -30,9 +30,9 @@ var numericDTypes = []dtypes.DType{
 	dtypes.BFloat16,
 }
 
-// Capabilities of the SimpleGo backends: the set of supported operations and data types.
+// Capabilities of the Go backend: the set of supported operations and data types.
 var Capabilities = compute.Capabilities{
-	// Functions indicates that SimpleGo supports closures and named functions.
+	// Functions indicates that the Go backend supports closures and named functions.
 	// This enables control flow operations like While, If, Sort that take closures as parameters.
 	Functions: true,
 

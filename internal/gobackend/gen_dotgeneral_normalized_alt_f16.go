@@ -29,9 +29,9 @@ func execNormalizedDotGeneralFloat16( //alt:f16
 	//alt:bf16  lhsFlat := lhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16  rhsFlat := rhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16  outputFlat := output.flat.([]float32)
-	lhsFlat := lhs.flat.([]float16.Float16) //alt:f16
-	rhsFlat := rhs.flat.([]float16.Float16) //alt:f16
-	outputFlat := output.flat.([]float32)   //alt:f16
+	lhsFlat := lhs.Flat.([]float16.Float16) //alt:f16
+	rhsFlat := rhs.Flat.([]float16.Float16) //alt:f16
+	outputFlat := output.Flat.([]float32)   //alt:f16
 
 	// Notice we cannot trust lhs.shape and rhs.shape, in case they haven't been transposed or reshaped.
 	contractingSize := params.contractingSize

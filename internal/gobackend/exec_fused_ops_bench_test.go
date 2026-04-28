@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package gobackend_test
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -34,7 +35,7 @@ func (be *benchExec) run(b *testing.B) {
 			b.Fatal(err)
 		}
 		for _, buf := range outputs {
-			buf.(*Buffer).flat = nil // release data
+			buf.(*gobackend.Buffer).Flat = nil // release data
 		}
 	}
 }
@@ -434,5 +435,3 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		b.Run(fmt.Sprintf("Float32Dense/%s", sz.name), func(b *testing.B) { f32Dense.run(b) })
 	}
 }
-
-// BenchmarkQuantizedDenseGGML benchmarks GGML quantized dense matmul.

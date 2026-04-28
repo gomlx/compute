@@ -17,12 +17,12 @@ import (
 func binaryOperandsAndOutput(backend *Backend, inputs []*Buffer, inputsOwned []bool, outputShape shapes.Shape) (
 	lhs, rhs, output *Buffer, lhsIsScalarOr1, rhsIsScalarOr1 bool) {
 	lhs, rhs = inputs[0], inputs[1]
-	lhsIsScalarOr1, rhsIsScalarOr1 = lhs.shape.Size() == 1, rhs.shape.Size() == 1
+	lhsIsScalarOr1, rhsIsScalarOr1 = lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
 	switch {
-	case inputsOwned[1] && rhs.shape.Equal(outputShape):
+	case inputsOwned[1] && rhs.RawShape.Equal(outputShape):
 		output = rhs
 		inputs[1] = nil
-	case inputsOwned[0] && lhs.shape.Equal(outputShape):
+	case inputsOwned[0] && lhs.RawShape.Equal(outputShape):
 		output = lhs
 		inputs[0] = nil
 	default:

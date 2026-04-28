@@ -13,43 +13,43 @@ import (
 
 // Dedup implementation: remove duplicated expressions, also known as "common subexpression elimination".
 
-// nodeDataComparable is implemented by node data types that support de-duplication.
+// NodeDataComparable is implemented by node data types that support de-duplication.
 // Implementing this interface allows the Builder to automatically de-duplicate
 // nodes with matching inputs and equivalent data.
-type nodeDataComparable interface {
+type NodeDataComparable interface {
 	// EqualNodeData returns true if this data is semantically equivalent to other.
 	// The other parameter is guaranteed to be the same concrete type.
-	EqualNodeData(other nodeDataComparable) bool
+	EqualNodeData(other NodeDataComparable) bool
 }
 
-// nodeDedupKey is used to index into the de-duplication map.
+// NodeDedupKey is used to index into the de-duplication map.
 // It provides fast lookup for candidate nodes with the same operation type
 // and input structure.
-type nodeDedupKey struct {
-	opType     compute.OpType
-	inputCount int
-	firstInput *Node // nil if there are no inputs.
+type NodeDedupKey struct {
+	OpType     compute.OpType
+	InputCount int
+	FirstInput *Node // nil if there are no inputs.
 }
 
-// makeNodeDedupKey creates a de-duplication key for a node with the given opType and inputs.
-func makeNodeDedupKey(opType compute.OpType, inputs []*Node) nodeDedupKey {
-	key := nodeDedupKey{
-		opType:     opType,
-		inputCount: len(inputs),
+// MakeNodeDedupKey creates a de-duplication key for a node with the given opType and inputs.
+func MakeNodeDedupKey(opType compute.OpType, inputs []*Node) NodeDedupKey {
+	key := NodeDedupKey{
+		OpType:     opType,
+		InputCount: len(inputs),
 	}
 	if len(inputs) > 0 {
-		key.firstInput = inputs[0]
+		key.FirstInput = inputs[0]
 	}
 	return key
 }
 
-// getOrCreateNode attempts to find a node with the content (opType, shape, inputs, data).
+// GetOrCreateNode attempts to find a node with the content (opType, shape, inputs, data).
 // If found, it returns the node.
 // If not, it creates a new node with the filled fields, and returns found=false.
 //
 // It also validates that all input nodes belong to this function or one of its ancestors.
 // Using nodes from an ancestor function (closure capture) is not yet supported.
-func (f *Function) getOrCreateNode(
+func (f *Function) GetOrCreateNode(
 	opType compute.OpType, shape shapes.Shape, inputs []*Node, data any) (
 	n *Node, found bool) {
 	// Check that all input nodes belong to this function or an ancestor.
@@ -57,24 +57,24 @@ func (f *Function) getOrCreateNode(
 		if node == nil {
 			panic(errors.Errorf("getOrCreateNode(%s): input node #%d is nil", opType, i))
 		}
-		if node.function == nil {
+		if node.Function == nil {
 			panic(errors.Errorf("getOrCreateNode(%s): input node #%d has a nil function", opType, i))
 		}
-		if node.function == f {
+		if node.Function == f {
 			continue // Same function, OK.
 		}
 		// Check if the node is from an ancestor function (closure capture).
-		if f.IsAncestorOf(node.function) {
+		if f.IsAncestorOf(node.Function) {
 			// Node is from a child function - this shouldn't happen in normal usage.
 			panic(errors.Errorf(
 				"getOrCreateNode(%s): input #%d is from a child function scope %q, not from this function %q",
-				opType, i, node.function.name, f.name))
+				opType, i, node.Function.name, f.name))
 		}
-		if node.function.IsAncestorOf(f) {
+		if node.Function.IsAncestorOf(f) {
 			// Node is from a parent function (closure capture) - not yet supported.
 			panic(errors.Errorf(
 				"getOrCreateNode(%s): input #%d uses a node from a parent function scope (closure capturing parent values). "+
-					"This is not yet supported in the SimpleGo backend. "+
+					"This is not yet supported in the Go backend. "+
 					"Please pass the value as a closure parameter instead. "+
 					"If you need this feature, please open an issue at github.com/gomlx/gomlx",
 				opType, i))
@@ -82,41 +82,41 @@ func (f *Function) getOrCreateNode(
 		// Completely different function branches - this shouldn't happen.
 		panic(errors.Errorf(
 			"getOrCreateNode(%s): input #%d is from an incompatible function scope %q, not from this function %q",
-			opType, i, node.function.name, f.name))
+			opType, i, node.Function.name, f.name))
 	}
 
 	// Try to find existing node using function-local dedup.
-	key := makeNodeDedupKey(opType, inputs)
+	key := MakeNodeDedupKey(opType, inputs)
 	candidates := f.nodeDedup[key]
 	for _, candidate := range candidates {
 		// Only deduplicate within the same function scope.
 		// Deduplicating across functions would cause "different function scope" errors
 		// when the node is used in a closure.
-		if candidate.function != f {
+		if candidate.Function != f {
 			continue
 		}
-		if !slices.Equal(candidate.inputs, inputs) {
+		if !slices.Equal(candidate.Inputs, inputs) {
 			continue
 		}
-		if !candidate.shape.Equal(shape) {
+		if !candidate.Shape.Equal(shape) {
 			continue
 		}
-		if !dataEqual(candidate.data, data) {
+		if !DataEqual(candidate.Data, data) {
 			continue
 		}
 		return candidate, true
 	}
 
 	// Create new node.
-	n = f.newNode(opType, shape, inputs...)
-	n.data = data
+	n = f.NewNode(opType, shape, inputs...)
+	n.Data = data
 	f.nodeDedup[key] = append(f.nodeDedup[key], n)
 	return n, false
 }
 
-// dataEqual compares node data for equality.
+// DataEqual compares node data for equality.
 // Handles nil, NodeDataComparable, primitive types (int, []int), and uncomparable data.
-func dataEqual(a, b any) bool {
+func DataEqual(a, b any) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -132,8 +132,8 @@ func dataEqual(a, b any) bool {
 	}
 
 	// If data implements NodeDataComparable, use that
-	if comparable, ok := a.(nodeDataComparable); ok {
-		return comparable.EqualNodeData(b.(nodeDataComparable))
+	if comparable, ok := a.(NodeDataComparable); ok {
+		return comparable.EqualNodeData(b.(NodeDataComparable))
 	}
 
 	// Handle primitive types

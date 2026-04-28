@@ -1,12 +1,13 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package gobackend_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/highway"
 	"github.com/gomlx/compute/internal/gobackend/packgemm"
 	"github.com/gomlx/compute/shapes"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
-	if _, ok := backend.(*Backend); !ok {
+	if _, ok := backend.(*gobackend.Backend); !ok {
 		t.Skip("Skipping test because backend is not a SimpleGo Backend")
 	}
 
@@ -44,7 +45,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed: %+v", err)
 		}
-		source := sourceAny.(*Buffer)
+		source := sourceAny.(*gobackend.Buffer)
 		sourceFlat := sourceFlatAny.([]float64)
 		for i := range sourceFlat {
 			sourceFlat[i] = float64(i + 1)
@@ -53,7 +54,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		// Create a block shape.
 		blockLog2Dim := 1 // block dim is 2^1 = 2.
 		blockDim := 1 << blockLog2Dim
-		be := backend.(*Backend)
+		be := backend.(*gobackend.Backend)
 		outShape := dgCreateBlockedShape(dtype, batchSize, crossSize, contractingSize, blockLog2Dim)
 		// outShape = [6 1 1 2 2]
 		if ok, diff := testutil.IsEqual(
@@ -160,10 +161,10 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		if output == nil {
 			t.Fatalf("Expected non-nil value")
 		}
-		if err := output.shape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
+		if err := output.RawShape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
 			t.Fatalf("Check failed: %+v", err)
 		}
-		if ok, diff := testutil.IsEqual([]float64{1, 4, 2, 5, 3, 6}, output.flat.([]float64)); !ok {
+		if ok, diff := testutil.IsEqual([]float64{1, 4, 2, 5, 3, 6}, output.Flat.([]float64)); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
 	}

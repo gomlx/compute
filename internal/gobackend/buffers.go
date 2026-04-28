@@ -21,31 +21,30 @@ var ErrBackendAlreadyFinalized = stderrors.New("backend already exists")
 // Compile-time check.
 var _ compute.DataInterface = (*Backend)(nil)
 
-// Buffer for SimpleGo backend holds a shape and a reference to the flat data.
+// Buffer for the Go backend holds a shape and a reference to the flat data.
 //
 // The flat data may be shared -- for temporary buffers from compiled graphs they are
 // taken from larger blobs of bytes allocated in one Go -- or owned by the buffer.
 type Buffer struct {
-	backend *Backend
+	RawBackend *Backend
+	RawShape   shapes.Shape
 
-	shape shapes.Shape
+	// InUse is set to false when the buffer is finalized and moved back to the pool.
+	InUse bool
 
-	// inUse is set to false when the buffer is finalized and moved back to the pool.
-	inUse bool
-
-	// flat is always a slice of the underlying data type (shape.DType).
-	flat any
+	// Flat is always a slice of the underlying data type (shape.DType).
+	Flat any
 }
 
 // EqualNodeData implements nodeDataComparable for Buffer.
 // For Constants, this compares the shape and the actual data values.
-func (b *Buffer) EqualNodeData(other nodeDataComparable) bool {
+func (b *Buffer) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*Buffer) //nolint:errcheck
-	if !b.shape.Equal(o.shape) || b.inUse != o.inUse {
+	if !b.RawShape.Equal(o.RawShape) || b.InUse != o.InUse {
 		return false
 	}
 	// Compare flat data by comparing the underlying slice values
-	return compareFlatData(b.flat, o.flat)
+	return compareFlatData(b.Flat, o.Flat)
 }
 
 // compareFlatData compares two flat data slices element by element.
@@ -86,8 +85,8 @@ func (b *Backend) getBufferPool(dtype dtypes.DType, length int) *sync.Pool {
 		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{
 			New: func() any {
 				return &Buffer{
-					flat:  dtypes.MakeAnySlice(dtype, length),
-					shape: shapes.Make(dtype, length),
+					Flat:     dtypes.MakeAnySlice(dtype, length),
+					RawShape: shapes.Make(dtype, length),
 				}
 			},
 		})
@@ -95,30 +94,31 @@ func (b *Backend) getBufferPool(dtype dtypes.DType, length int) *sync.Pool {
 	return poolInterface.(*sync.Pool) //nolint:errcheck
 }
 
-// getBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
+// GetBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
 // initialized.
+//
 // Important: it's not necessarily initialized with zero, since it can reuse old buffers.
 //
 // See also Buffer.Zeros to initialize it with zeros, if needed.
-func (b *Backend) getBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
+func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	if b.isFinalized {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 	pool := b.getBufferPool(dtype, length)
 	buf := pool.Get().(*Buffer) //nolint:errcheck
-	buf.backend = b
-	buf.inUse = true
+	buf.RawBackend = b
+	buf.InUse = true
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
 }
 
 // getBufferForShape is a wrapper for getShape that also sets the buffer shape accordingly.
 func (b *Backend) getBufferForShape(shape shapes.Shape) (*Buffer, error) {
-	buf, err := b.getBuffer(shape.DType, shape.Size())
+	buf, err := b.GetBuffer(shape.DType, shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	buf.shape = shape
+	buf.RawShape = shape
 	return buf, nil
 }
 
@@ -137,14 +137,14 @@ func (b *Backend) putBuffer(buffer *Buffer) {
 	if b.isFinalized {
 		return
 	}
-	if buffer == nil || !buffer.shape.Ok() {
+	if buffer == nil || !buffer.RawShape.Ok() {
 		return
 	}
-	if !buffer.inUse {
+	if !buffer.InUse {
 		panic(errors.New("double-freeing simplego buffer"))
 	}
-	buffer.inUse = false
-	pool := b.getBufferPool(buffer.shape.DType, buffer.shape.Size())
+	buffer.InUse = false
+	pool := b.getBufferPool(buffer.RawShape.DType, buffer.RawShape.Size())
 	pool.Put(buffer)
 }
 
@@ -175,7 +175,7 @@ func copyFlat(flatDst, flatSrc any) {
 
 // mutableBytes returns the slice of the bytes used by the flat given -- it works with any of the supported data types for buffers.
 func (b *Buffer) mutableBytes() ([]byte, error) {
-	tmpAny, tmpErr := mutableBytesDTypeMap.Get(b.shape.DType)
+	tmpAny, tmpErr := mutableBytesDTypeMap.Get(b.RawShape.DType)
 	if tmpErr != nil {
 		return nil, tmpErr
 	}
@@ -187,7 +187,7 @@ var mutableBytesDTypeMap = NewDTypeMap("MutableBytes")
 
 // mutableBytesGeneric is the generic implementation of mutableBytes.
 func mutableBytesGeneric[T SupportedTypesConstraints](b *Buffer) ([]byte, error) {
-	flat := b.flat.([]T) //nolint:errcheck
+	flat := b.Flat.([]T) //nolint:errcheck
 	if len(flat) == 0 {
 		return nil, nil // Handle empty tensors
 	}
@@ -201,7 +201,7 @@ func mutableBytesGeneric[T SupportedTypesConstraints](b *Buffer) ([]byte, error)
 //
 // As a special case, if value is nil, it will fill the buffer with zeroes for the corresponding DType.
 func (b *Buffer) Fill(value any) error {
-	dtype := b.shape.DType
+	dtype := b.RawShape.DType
 	if value != nil && dtypes.FromAny(value) != dtype {
 		return errors.Errorf("fillBuffer: invalid value type %T for buffer of dtype %s", value, dtype)
 	}
@@ -222,7 +222,7 @@ func fillBufferGeneric[T SupportedTypesConstraints](b *Buffer, valueAny any) {
 	if valueAny != nil {
 		value = valueAny.(T) //nolint:errcheck
 	}
-	flat := b.flat.([]T) //nolint:errcheck
+	flat := b.Flat.([]T) //nolint:errcheck
 	for i := range flat {
 		flat[i] = value
 	}
@@ -240,7 +240,7 @@ func (b *Buffer) Zeros() *Buffer {
 //
 // It returns a reference to the buffer to allow cascading calls.
 func (b *Buffer) Ones() *Buffer {
-	dtype := b.shape.DType
+	dtype := b.RawShape.DType
 	_ = b.Fill(shapes.CastAsDType(1, dtype))
 	return b
 }
@@ -251,25 +251,25 @@ func (b *Backend) cloneBuffer(buffer *Buffer) (*Buffer, error) {
 		return nil, errors.Errorf("cloneBuffer(%p): buffer was nil -- buffer was already isFinalized", buffer)
 	}
 	var issues []string
-	if buffer.flat == nil {
+	if buffer.Flat == nil {
 		issues = append(issues, "buffer.flat was nil")
 	}
-	if !buffer.shape.Ok() {
+	if !buffer.RawShape.Ok() {
 		issues = append(issues, "buffer.shape was invalid")
 	}
-	if !buffer.inUse {
+	if !buffer.InUse {
 		issues = append(issues, "buffer was marked as not in use (cloning buffer already freed)")
 	}
 	if len(issues) > 0 {
 		return nil, errors.Errorf("cloneBuffer(%p): %s -- buffer was already isFinalized", buffer,
 			strings.Join(issues, ", "))
 	}
-	newBuffer, err := b.getBuffer(buffer.shape.DType, buffer.shape.Size())
+	newBuffer, err := b.GetBuffer(buffer.RawShape.DType, buffer.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	newBuffer.shape = buffer.shape.Clone()
-	copyFlat(newBuffer.flat, buffer.flat)
+	newBuffer.RawShape = buffer.RawShape.Clone()
+	copyFlat(newBuffer.Flat, buffer.Flat)
 	return newBuffer, nil
 }
 
@@ -277,11 +277,11 @@ func (b *Backend) cloneBuffer(buffer *Buffer) (*Buffer, error) {
 //
 // TODO: should we study the possibility to change the signature with an error?
 func (b *Backend) NewBuffer(shape shapes.Shape) *Buffer {
-	buffer, err := b.getBuffer(shape.DType, shape.Size())
+	buffer, err := b.GetBuffer(shape.DType, shape.Size())
 	if err != nil {
 		return nil
 	}
-	buffer.shape = shape.Clone()
+	buffer.RawShape = shape.Clone()
 	return buffer
 }
 
@@ -295,32 +295,32 @@ func (buffer *Buffer) Finalize() error {
 	if buffer == nil {
 		return errors.Errorf("Finalize(%p): buffer was nil", buffer)
 	}
-	if buffer.backend.isFinalized {
-		buffer.flat = nil // Accelerates GC.
+	if buffer.RawBackend.isFinalized {
+		buffer.Flat = nil // Accelerates GC.
 		return errors.Errorf("Finalize(%p): backend is already finalized", buffer)
 	}
 	var issues []string
-	if buffer.flat == nil {
+	if buffer.Flat == nil {
 		issues = append(issues, "buffer.flat was nil")
 	}
-	if !buffer.shape.Ok() {
+	if !buffer.RawShape.Ok() {
 		issues = append(issues, "buffer.shape was invalid")
 	}
-	if !buffer.inUse {
+	if !buffer.InUse {
 		issues = append(issues, "buffer was marked as not in use (already back in the pool)")
 	}
 	if len(issues) > 0 {
 		return errors.Errorf("Finalize(%p): %s -- buffer was already finalized or back in the pool",
 			buffer, strings.Join(issues, ", "))
 	}
-	buffer.backend.putBuffer(buffer)
+	buffer.RawBackend.putBuffer(buffer)
 	return nil
 }
 
 // BufferShape returns the shape for the buffer.
 // Shape returns the shape for the buffer.
 func (buffer *Buffer) Shape() (shapes.Shape, error) {
-	return buffer.shape, nil
+	return buffer.RawShape, nil
 }
 
 // BufferDeviceNum returns the deviceNum for the buffer.
@@ -335,7 +335,7 @@ func (buffer *Buffer) DeviceNum() (compute.DeviceNum, error) {
 // See also FlatDataToBuffer, BufferShape, and shapes.Shape.Size.
 // ToFlatData transfers the flat values of the buffer to the Go flat array.
 func (buffer *Buffer) ToFlatData(flat any) error {
-	copyFlat(flat, buffer.flat)
+	copyFlat(flat, buffer.Flat)
 	return nil
 }
 
@@ -368,7 +368,7 @@ func (b *Backend) BufferFromFlatData(deviceNum compute.DeviceNum, flat any, shap
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 
-	copyFlat(buffer.flat, flat)
+	copyFlat(buffer.Flat, flat)
 	return buffer, nil
 }
 
@@ -405,7 +405,7 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 	if goBuffer == nil {
 		return nil, nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
-	return goBuffer, goBuffer.flat, nil
+	return goBuffer, goBuffer.Flat, nil
 }
 
 // BufferData returns a slice pointing to the buffer storage memory directly.
@@ -416,10 +416,10 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 // The returned slice becomes invalid after the buffer is destroyed.
 // Data returns a slice pointing to the buffer storage memory directly.
 func (buffer *Buffer) Data() (flat any, err error) {
-	if buffer.backend.isFinalized {
+	if buffer.RawBackend.isFinalized {
 		return nil, errors.Errorf("backend is already finalized")
 	}
-	return buffer.flat, nil
+	return buffer.Flat, nil
 }
 
 // BufferCopyToDevice implements the compute.Backend interface.
@@ -430,5 +430,5 @@ func (buffer *Buffer) CopyToDevice(deviceNum compute.DeviceNum) (compute.Buffer,
 
 // Backend returns the backend that owns this buffer.
 func (buffer *Buffer) Backend() compute.Backend {
-	return buffer.backend
+	return buffer.RawBackend
 }

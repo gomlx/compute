@@ -11,6 +11,9 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
+
+	// Registers all the ops.
+	_ "github.com/gomlx/compute/internal/gobackend/ops"
 )
 
 // BackendName to be used in GOMLX_BACKEND to specify this backend.

@@ -27,8 +27,8 @@ import "github.com/gomlx/compute/dtypes/float16" //alt:f16
 func dgCopyOutputBlockToFlatF32ToF16( //alt:f16
 
 	blockSource, output *Buffer) {
-	sourceDims := blockSource.shape.Dimensions
-	outputDims := output.shape.Dimensions
+	sourceDims := blockSource.RawShape.Dimensions
+	outputDims := output.RawShape.Dimensions
 
 	batchSize := sourceDims[0]
 	lhsBlockCross := sourceDims[1]
@@ -49,9 +49,9 @@ func dgCopyOutputBlockToFlatF32ToF16( //alt:f16
 
 	//alt:base sourceData := blockSource.flat.([]T)
 	//alt:base outputData := output.flat.([]T)
-	sourceData := blockSource.flat.([]float32) //alt:bf16|f16
+	sourceData := blockSource.Flat.([]float32) //alt:bf16|f16
 	//alt:bf16  outputData := output.flat.([]bfloat16.BFloat16)
-	outputData := output.flat.([]float16.Float16) //alt:f16
+	outputData := output.Flat.([]float16.Float16) //alt:f16
 
 	for batch := range batchSize {
 		sourceBatchOffset := batch * sourceBatchStride
@@ -98,9 +98,9 @@ func buildDotGeneralKernelFloat16( //alt:f16
 	//alt:base outputFlat := output.flat.([]T)
 	//alt:bf16  lhsFlat := lhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16  rhsFlat := rhs.flat.([]bfloat16.BFloat16)
-	lhsFlat := lhs.flat.([]float16.Float16) //alt:f16
-	rhsFlat := rhs.flat.([]float16.Float16) //alt:f16
-	outputFlat := output.flat.([]float32)   //alt:bf16|f16
+	lhsFlat := lhs.Flat.([]float16.Float16) //alt:f16
+	rhsFlat := rhs.Flat.([]float16.Float16) //alt:f16
+	outputFlat := output.Flat.([]float32)   //alt:bf16|f16
 
 	blockSize := blockDim * blockDim
 

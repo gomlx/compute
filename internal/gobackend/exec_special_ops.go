@@ -18,34 +18,34 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeIdentity, priorityGeneric, execIdentity)
-	setNodeExecutor(compute.OpTypeWhere, priorityGeneric, execWhere)
-	setNodeExecutor(compute.OpTypeReshape, priorityGeneric, execReshape)
-	setNodeExecutor(compute.OpTypeTranspose, priorityGeneric, execTranspose)
-	setNodeExecutor(compute.OpTypeReverse, priorityGeneric, execReverse)
-	setNodeExecutor(compute.OpTypeBroadcast, priorityGeneric, execBroadcast)
-	setNodeExecutor(compute.OpTypeBroadcastInDim, priorityGeneric, execBroadcastInDim)
-	setNodeExecutor(compute.OpTypeReduceMax, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceMin, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceSum, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceProduct, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceBitwiseAnd, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceBitwiseOr, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceBitwiseXor, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceLogicalAnd, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceLogicalOr, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeReduceLogicalXor, priorityGeneric, execReduce)
-	setNodeExecutor(compute.OpTypeIota, priorityGeneric, execIota)
-	setNodeExecutor(compute.OpTypeGather, priorityGeneric, execGather)
-	setNodeExecutor(compute.OpTypeConcatenate, priorityGeneric, execConcatenate)
-	setNodeExecutor(compute.OpTypeConvertDType, priorityGeneric, execConvertDType)
-	setNodeExecutor(compute.OpTypeScatterMax, priorityGeneric, execScatter)
-	setNodeExecutor(compute.OpTypeScatterMin, priorityGeneric, execScatter)
-	setNodeExecutor(compute.OpTypeScatterSum, priorityGeneric, execScatter)
-	setNodeExecutor(compute.OpTypeSlice, priorityGeneric, execSlice)
-	setNodeExecutor(compute.OpTypeArgMinMax, priorityGeneric, execArgMinMax)
-	setNodeExecutor(compute.OpTypeReduceWindow, priorityGeneric, execReduceWindow)
-	setNodeExecutor(compute.OpTypePad, priorityGeneric, execPad)
+	setNodeExecutor(compute.OpTypeIdentity, PriorityGeneric, execIdentity)
+	setNodeExecutor(compute.OpTypeWhere, PriorityGeneric, execWhere)
+	setNodeExecutor(compute.OpTypeReshape, PriorityGeneric, execReshape)
+	setNodeExecutor(compute.OpTypeTranspose, PriorityGeneric, execTranspose)
+	setNodeExecutor(compute.OpTypeReverse, PriorityGeneric, execReverse)
+	setNodeExecutor(compute.OpTypeBroadcast, PriorityGeneric, execBroadcast)
+	setNodeExecutor(compute.OpTypeBroadcastInDim, PriorityGeneric, execBroadcastInDim)
+	setNodeExecutor(compute.OpTypeReduceMax, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceMin, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceSum, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceProduct, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceBitwiseAnd, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceBitwiseOr, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceBitwiseXor, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceLogicalAnd, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceLogicalOr, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeReduceLogicalXor, PriorityGeneric, execReduce)
+	setNodeExecutor(compute.OpTypeIota, PriorityGeneric, execIota)
+	setNodeExecutor(compute.OpTypeGather, PriorityGeneric, execGather)
+	setNodeExecutor(compute.OpTypeConcatenate, PriorityGeneric, execConcatenate)
+	setNodeExecutor(compute.OpTypeConvertDType, PriorityGeneric, execConvertDType)
+	setNodeExecutor(compute.OpTypeScatterMax, PriorityGeneric, execScatter)
+	setNodeExecutor(compute.OpTypeScatterMin, PriorityGeneric, execScatter)
+	setNodeExecutor(compute.OpTypeScatterSum, PriorityGeneric, execScatter)
+	setNodeExecutor(compute.OpTypeSlice, PriorityGeneric, execSlice)
+	setNodeExecutor(compute.OpTypeArgMinMax, PriorityGeneric, execArgMinMax)
+	setNodeExecutor(compute.OpTypeReduceWindow, PriorityGeneric, execReduceWindow)
+	setNodeExecutor(compute.OpTypePad, PriorityGeneric, execPad)
 
 	// For nodes with multiple outputs:
 	multiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
@@ -76,12 +76,12 @@ func execIdentity(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []
 	}
 
 	// If the input is still in use, we make a copy.
-	output, err := backend.getBuffer(operand.shape.DType, operand.shape.Size())
+	output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = operand.shape
-	copyFlat(output.flat, operand.flat)
+	output.RawShape = operand.RawShape
+	copyFlat(output.Flat, operand.Flat)
 	return output, nil
 }
 
@@ -93,23 +93,23 @@ func execWhere(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	condition, onTrue, onFalse := inputs[0], inputs[1], inputs[2]
 
 	// Figure out what the outputBuffer is going to be.
-	outputShape := node.shape
+	outputShape := node.Shape
 
 	var output *Buffer
 	var err error
 	switch {
-	case onTrue.shape.Equal(outputShape) && inputsOwned[1]:
+	case onTrue.RawShape.Equal(outputShape) && inputsOwned[1]:
 		output = onTrue
 		inputs[1] = nil
-	case onFalse.shape.Equal(outputShape) && inputsOwned[2]:
+	case onFalse.RawShape.Equal(outputShape) && inputsOwned[2]:
 		output = onFalse
 		inputs[2] = nil
 	default:
-		output, err = backend.getBuffer(outputShape.DType, outputShape.Size())
+		output, err = backend.GetBuffer(outputShape.DType, outputShape.Size())
 		if err != nil {
 			return nil, err
 		}
-		output.shape = outputShape
+		output.RawShape = outputShape
 	}
 	tmpAny, tmpErr := whereDTypeMap.Get(outputShape.DType)
 	if tmpErr != nil {
@@ -123,9 +123,9 @@ func execWhere(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 var whereDTypeMap = NewDTypeMap("Where")
 
 func execWhereGeneric[T SupportedTypesConstraints](conditionBuf, onTrueBuf, onFalseBuf, outputBuf *Buffer) {
-	if conditionBuf.shape.IsScalar() {
+	if conditionBuf.RawShape.IsScalar() {
 		// Case 1: condition is a scalar, either we take onTrue or onFalse as a whole (with potential broadcast).
-		if conditionBuf.flat.([]bool)[0] {
+		if conditionBuf.Flat.([]bool)[0] {
 			execWhereSetOutputWithValue[T](outputBuf, onTrueBuf)
 		} else {
 			execWhereSetOutputWithValue[T](outputBuf, onFalseBuf)
@@ -133,12 +133,12 @@ func execWhereGeneric[T SupportedTypesConstraints](conditionBuf, onTrueBuf, onFa
 		return
 	}
 
-	conditionFlat := conditionBuf.flat.([]bool)
-	onTrueFlat := onTrueBuf.flat.([]T)
-	onFalseFlat := onFalseBuf.flat.([]T)
-	outputFlat := outputBuf.flat.([]T)
-	onTrueIsScalar := onTrueBuf.shape.IsScalar()
-	onFalseIsScalar := onFalseBuf.shape.IsScalar()
+	conditionFlat := conditionBuf.Flat.([]bool)
+	onTrueFlat := onTrueBuf.Flat.([]T)
+	onFalseFlat := onFalseBuf.Flat.([]T)
+	outputFlat := outputBuf.Flat.([]T)
+	onTrueIsScalar := onTrueBuf.RawShape.IsScalar()
+	onFalseIsScalar := onFalseBuf.RawShape.IsScalar()
 	onTrue := onTrueFlat[0]
 	onFalse := onFalseFlat[0]
 	for outputIdx, condition := range conditionFlat {
@@ -161,14 +161,14 @@ func execWhereSetOutputWithValue[T SupportedTypesConstraints](outputBuf, valueBu
 		// The output is reusing the value buffer, nothing to do.
 		return
 	}
-	if valueBuf.shape.Equal(outputBuf.shape) {
+	if valueBuf.RawShape.Equal(outputBuf.RawShape) {
 		// Copy over values.
-		copy(outputBuf.flat.([]T), valueBuf.flat.([]T))
+		copy(outputBuf.Flat.([]T), valueBuf.Flat.([]T))
 		return
 	}
 	// Value must then be a scalar:
-	c := valueBuf.flat.([]T)[0]
-	outputSlice := outputBuf.flat.([]T)
+	c := valueBuf.Flat.([]T)[0]
+	outputSlice := outputBuf.Flat.([]T)
 	for outputIdx := range outputSlice {
 		outputSlice[outputIdx] = c
 	}
@@ -187,13 +187,13 @@ func execReshape(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 		output = operand
 		inputs[0] = nil
 	} else {
-		output, err = backend.getBuffer(operand.shape.DType, operand.shape.Size())
+		output, err = backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
 		if err != nil {
 			return nil, err
 		}
-		copyFlat(output.flat, operand.flat)
+		copyFlat(output.Flat, operand.Flat)
 	}
-	output.shape = node.shape
+	output.RawShape = node.Shape
 	return output, nil
 }
 
@@ -203,20 +203,20 @@ type genericReduceFn = func(operand, output *Buffer, it *reduceOutputIterator, d
 
 func execReduce(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	operand := inputs[0]
-	reduceAxes := node.data.([]int)
+	reduceAxes := node.Data.([]int)
 	if len(reduceAxes) == 0 {
 		return execIdentity(backend, node, inputs, inputsOwned)
 	}
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
-	it := newReduceOutputIterator(operand.shape.Dimensions, reduceAxes)
-	dtype := output.shape.DType
+	output.RawShape = node.Shape
+	it := newReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
+	dtype := output.RawShape.DType
 
 	var reduceFn genericReduceFn
-	switch node.opType { //nolint:exhaustive
+	switch node.OpType { //nolint:exhaustive
 	case compute.OpTypeReduceMax:
 		tmpAny, tmpErr := reduceMaxDTypeMap.Get(dtype)
 		if tmpErr != nil {
@@ -269,7 +269,7 @@ func execReduce(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bo
 		// Logical reduction only works on boolean variables, so there is no need for a generic implementation.
 		reduceFn = execReduceLogicalXor
 	default:
-		return nil, errors.Errorf("unsupported reduce op %s", node.opType)
+		return nil, errors.Errorf("unsupported reduce op %s", node.OpType)
 	}
 	reduceFn(operand, output, it, dtype)
 	return output, nil
@@ -332,32 +332,32 @@ func execReduceMaxGeneric[T PODNumericConstraints](operand, output *Buffer, it *
 
 	// Initialize with the lowest value.
 	initialValue := dtype.LowestValue().(T)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
 	// Reduce from operand.
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] = max(outputFlat[outputIdx], value)
 	}
 }
 
-func init() { reduceMaxDTypeMap.Register(dtypes.BFloat16, priorityTyped, execReduceMaxBFloat16) }
+func init() { reduceMaxDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execReduceMaxBFloat16) }
 
 // execReduceMaxBFloat16: use reduceMaxDTypeMa to call it.
 func execReduceMaxBFloat16(operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
 	// Initialize with the lowest value.
 	initialValue := dtype.LowestValue().(bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
 	// Reduce from operand.
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
@@ -370,29 +370,29 @@ var reduceMinDTypeMap = NewDTypeMap("ReduceMin")
 func execReduceMinGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
 	// Initialize with the highest value.
 	initialValue := dtype.HighestValue().(T)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] = min(outputFlat[outputIdx], value)
 	}
 }
 
-func init() { reduceMinDTypeMap.Register(dtypes.BFloat16, priorityTyped, execReduceMinBFloat16) }
+func init() { reduceMinDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execReduceMinBFloat16) }
 
 func execReduceMinBFloat16(operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
 	// Initialize with the highest value.
 	initialValue := dtype.HighestValue().(bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
@@ -405,29 +405,29 @@ var reduceSumDTypeMap = NewDTypeMap("ReduceSum")
 func execReduceSumGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 0.
 	initialValue := T(0)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] += value
 	}
 }
 
-func init() { reduceSumDTypeMap.Register(dtypes.BFloat16, priorityTyped, execReduceSumBFloat16) }
+func init() { reduceSumDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execReduceSumBFloat16) }
 
 func execReduceSumBFloat16(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 0.
 	initialValue := bfloat16.FromFloat32(0)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
@@ -440,12 +440,12 @@ var reduceProductDTypeMap = NewDTypeMap("ReduceProduct")
 func execReduceProductGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
 	initialValue := T(1)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] *= value
@@ -453,18 +453,18 @@ func execReduceProductGeneric[T PODNumericConstraints](operand, output *Buffer, 
 }
 
 func init() {
-	reduceProductDTypeMap.Register(dtypes.BFloat16, priorityTyped, execReduceProductBFloat16)
+	reduceProductDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execReduceProductBFloat16)
 }
 
 func execReduceProductBFloat16(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
 	initialValue := bfloat16.FromFloat32(1)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
@@ -481,12 +481,12 @@ var (
 func execReduceBitwiseAndGeneric[T PODIntegerConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
 	initialValue := ^T(0)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] &= value
@@ -496,12 +496,12 @@ func execReduceBitwiseAndGeneric[T PODIntegerConstraints](operand, output *Buffe
 func execReduceBitwiseOrGeneric[T PODIntegerConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
 	initialValue := T(0)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] |= value
@@ -511,12 +511,12 @@ func execReduceBitwiseOrGeneric[T PODIntegerConstraints](operand, output *Buffer
 func execReduceBitwiseXorGeneric[T PODIntegerConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
 	initialValue := T(0)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = initialValue
 	}
 
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] ^= value
@@ -525,12 +525,12 @@ func execReduceBitwiseXorGeneric[T PODIntegerConstraints](operand, output *Buffe
 
 func execReduceLogicalAnd(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
-	outputFlat := output.flat.([]bool)
+	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = true
 	}
 
-	operandFlat := operand.flat.([]bool)
+	operandFlat := operand.Flat.([]bool)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] && value
@@ -539,12 +539,12 @@ func execReduceLogicalAnd(operand, output *Buffer, it *reduceOutputIterator, _ d
 
 func execReduceLogicalOr(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
-	outputFlat := output.flat.([]bool)
+	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = false
 	}
 
-	operandFlat := operand.flat.([]bool)
+	operandFlat := operand.Flat.([]bool)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] || value
@@ -553,12 +553,12 @@ func execReduceLogicalOr(operand, output *Buffer, it *reduceOutputIterator, _ dt
 
 func execReduceLogicalXor(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
 	// Initialize with 1.
-	outputFlat := output.flat.([]bool)
+	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = false
 	}
 
-	operandFlat := operand.flat.([]bool)
+	operandFlat := operand.Flat.([]bool)
 	for _, value := range operandFlat {
 		outputIdx := it.next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] != value // a != b is the same as Xor(a,b).
@@ -571,17 +571,17 @@ func execReduceLogicalXor(operand, output *Buffer, it *reduceOutputIterator, _ d
 // The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
 func execTranspose(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	operand := inputs[0]
-	permutations := node.data.([]int)
+	permutations := node.Data.([]int)
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// We can't write to the same buffer we read from because it's not done with swaps.
-	output, err := backend.getBuffer(operand.shape.DType, operand.shape.Size())
+	output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
-	it := newTransposeIterator(operand.shape, permutations)
-	dtype := node.shape.DType
+	output.RawShape = node.Shape
+	it := newTransposeIterator(operand.RawShape, permutations)
+	dtype := node.Shape.DType
 	tmpAny, tmpErr := transposeDTypeMap.Get(dtype)
 	if tmpErr != nil {
 		panic(tmpErr)
@@ -657,8 +657,8 @@ func (it *transposeIterator) next() int {
 var transposeDTypeMap = NewDTypeMap("Transpose")
 
 func execTransposeGeneric[T SupportedTypesConstraints](operand, output *Buffer, it *transposeIterator) {
-	operandFlat := operand.flat.([]T)
-	outputFlat := output.flat.([]T)
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	for _, value := range operandFlat {
 		outputFlat[it.next()] = value
 	}
@@ -672,8 +672,8 @@ func execTransposeGeneric[T SupportedTypesConstraints](operand, output *Buffer, 
 func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs.
 	operand := inputs[0]
-	reverseAxes := node.data.([]int)
-	shape := operand.shape
+	reverseAxes := node.Data.([]int)
+	shape := operand.RawShape
 
 	if len(reverseAxes) == 0 && inputsOwned[0] {
 		// No-op: reuse the input buffer.
@@ -684,11 +684,11 @@ func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 
 	// Allocate output buffer.
 	// TODO: if we can reuse the input buffer, create a version that uses swap instead of copy, and reverse in-place.
-	output, err := backend.getBuffer(operand.shape.DType, operand.shape.Size())
+	output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = shape
+	output.RawShape = shape
 	if len(reverseAxes) == 0 {
 		// No-op, simply copy over bytes.
 		dstBytes, err := output.mutableBytes()
@@ -747,7 +747,7 @@ func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 	mergedShape := shapes.Make(shape.DType, mergedDims...)
 
 	// Scalar or empty tensor: just copy.
-	if operand.shape.IsScalar() || operand.shape.Size() <= 1 {
+	if operand.RawShape.IsScalar() || operand.RawShape.Size() <= 1 {
 		dstBytes, err := output.mutableBytes()
 		if err != nil {
 			return nil, err
@@ -801,17 +801,17 @@ func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 func execBroadcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs.
 	operand := inputs[0]
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
-	prefixDims := node.data.([]int)
+	output.RawShape = node.Shape
+	prefixDims := node.Data.([]int)
 	repeats := 1
 	for _, dim := range prefixDims {
 		repeats *= dim
 	}
-	dispatchBroadcast.Dispatch(node.shape.DType, operand.flat, output.flat, repeats)
+	dispatchBroadcast.Dispatch(node.Shape.DType, operand.Flat, output.Flat, repeats)
 	return output, nil
 }
 
@@ -832,31 +832,31 @@ func execBroadcastGeneric[T SupportedTypesConstraints](params ...any) any {
 func execBroadcastInDim(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs.
 	operand := inputs[0]
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
+	output.RawShape = node.Shape
 
 	// Special case: if operand is a scalar, we just pass a nil iterator.
-	if operand.shape.Size() == 1 {
-		dispatchBroadcastInDim.Dispatch(output.shape.DType, operand.flat, output.flat, nil)
+	if operand.RawShape.Size() == 1 {
+		dispatchBroadcastInDim.Dispatch(output.RawShape.DType, operand.Flat, output.Flat, nil)
 		return output, nil
 	}
 
 	// Reshape operand shape: same dimension as the operand on the corresponding axes, 1 elsewhere.
 	// Notice they must have the same size; hence the flat data doesn't change.
-	reshapedOperand := shapes.Make(operand.shape.DType)
-	reshapedOperand.Dimensions = make([]int, output.shape.Rank())
+	reshapedOperand := shapes.Make(operand.RawShape.DType)
+	reshapedOperand.Dimensions = make([]int, output.RawShape.Rank())
 	xslices.FillSlice(reshapedOperand.Dimensions, 1)
-	broadcastAxes := node.data.([]int)
+	broadcastAxes := node.Data.([]int)
 	for operandAxis, outputAxis := range broadcastAxes {
-		reshapedOperand.Dimensions[outputAxis] = operand.shape.Dimensions[operandAxis]
+		reshapedOperand.Dimensions[outputAxis] = operand.RawShape.Dimensions[operandAxis]
 	}
 
 	// Create broadcasting the iterator: it requires operand and output shapes to have the same rank.
-	iter := newBroadcastIterator(reshapedOperand, output.shape)
-	dispatchBroadcastInDim.Dispatch(output.shape.DType, operand.flat, output.flat, iter)
+	iter := newBroadcastIterator(reshapedOperand, output.RawShape)
+	dispatchBroadcastInDim.Dispatch(output.RawShape.DType, operand.Flat, output.Flat, iter)
 	return output, nil
 }
 
@@ -880,23 +880,23 @@ func execBroadcastInDimGeneric[T SupportedTypesConstraints](params ...any) any {
 
 func execIota(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	_, _ = inputs, inputsOwned // There are no inputs.
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
-	iotaAxis := node.data.(int)
-	iotaSize := node.shape.Dimensions[iotaAxis]
+	output.RawShape = node.Shape
+	iotaAxis := node.Data.(int)
+	iotaSize := node.Shape.Dimensions[iotaAxis]
 	batchSize := 1
 	repeatsSize := 1
-	for axis, dim := range node.shape.Dimensions {
+	for axis, dim := range node.Shape.Dimensions {
 		if axis > iotaAxis {
 			repeatsSize *= dim
 		} else if axis < iotaAxis {
 			batchSize *= dim
 		}
 	}
-	dispatchIota.Dispatch(node.shape.DType, output, batchSize, iotaSize, repeatsSize)
+	dispatchIota.Dispatch(node.Shape.DType, output, batchSize, iotaSize, repeatsSize)
 	return output, nil
 }
 
@@ -904,7 +904,7 @@ var dispatchIota = NewDTypeDispatcher("Iota")
 
 func execIotaGeneric[T PODNumericConstraints](params ...any) any {
 	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	flatIdx := 0
 	var value T
 	for range batchSize {
@@ -922,13 +922,13 @@ func execIotaGeneric[T PODNumericConstraints](params ...any) any {
 }
 
 func init() {
-	dispatchIota.Register(dtypes.BFloat16, priorityTyped, execIotaBFloat16)
-	dispatchIota.Register(dtypes.Float16, priorityTyped, execIotaFloat16)
+	dispatchIota.Register(dtypes.BFloat16, PriorityTyped, execIotaBFloat16)
+	dispatchIota.Register(dtypes.Float16, PriorityTyped, execIotaFloat16)
 }
 
 func execIotaBFloat16(params ...any) any {
 	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	flatIdx := 0
 	var value float32
 	for range batchSize {
@@ -947,7 +947,7 @@ func execIotaBFloat16(params ...any) any {
 
 func execIotaFloat16(params ...any) any {
 	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.flat.([]float16.Float16)
+	outputFlat := output.Flat.([]float16.Float16)
 	flatIdx := 0
 	var value float32
 	for range batchSize {
@@ -969,12 +969,12 @@ func execIotaFloat16(params ...any) any {
 func execGather(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs.
 	operand, startIndices := inputs[0], inputs[1]
-	gatherParams := node.data.(*gatherNode)
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	gatherParams := node.Data.(*gatherNode)
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
+	output.RawShape = node.Shape
 
 	// Where to read/write the data.
 	operandBytes, err := operand.mutableBytes()
@@ -988,10 +988,10 @@ func execGather(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bo
 
 	// Outer-loop: loop over the start indices and outputBytesIdx to gather from:
 	gatherIt := newGatherIterator(
-		startIndices.shape, gatherParams.indexVectorAxis,
-		output.shape, gatherParams.offsetOutputAxes)
+		startIndices.RawShape, gatherParams.indexVectorAxis,
+		output.RawShape, gatherParams.offsetOutputAxes)
 	indirectStartIndices := make([]int, len(gatherParams.startIndexMap))
-	operandShape := operand.shape
+	operandShape := operand.RawShape
 	operandRank := operandShape.Rank()
 	dataSize := operandShape.DType.Size()
 	operandStartIndices := make([]int, operandRank)
@@ -1038,10 +1038,10 @@ func execGather(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bo
 		}
 	}
 
-	dispatchGather.Dispatch(startIndices.shape.DType,
+	dispatchGather.Dispatch(startIndices.RawShape.DType,
 		gatherParams,
 		operandBytes, outputBytes, dataSize,
-		gatherIt, indirectStartIndices, startIndices.flat,
+		gatherIt, indirectStartIndices, startIndices.Flat,
 		operandStartIndices, operandByteStrides,
 		slicesSize, sliceOutputBytesStride,
 		operandShape.Dimensions,
@@ -1252,19 +1252,19 @@ func (it *gatherIterator) Next(startIndicesFlatIndices []int, outputByteIdx *int
 
 // execConcatenate implements the Concatenate op using direct byte copying with offsets and strides.
 func execConcatenate(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	axis := node.data.(int) // Renamed from dimension
-	outputShape := node.shape
+	axis := node.Data.(int) // Renamed from dimension
+	outputShape := node.Shape
 	dtype := outputShape.DType
 	elemSize := dtype.Size()
 	rank := outputShape.Rank()
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// Allocate output buffer.
-	output, err := backend.getBuffer(dtype, outputShape.Size())
+	output, err := backend.GetBuffer(dtype, outputShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = outputShape
+	output.RawShape = outputShape
 	outputBytes, err := output.mutableBytes()
 	if err != nil {
 		return nil, err
@@ -1290,7 +1290,7 @@ func execConcatenate(backend *Backend, node *Node, inputs []*Buffer, inputsOwned
 	outputAxisOffsetBytes := 0
 
 	for _, inputBuf := range inputs {
-		inputShape := inputBuf.shape
+		inputShape := inputBuf.RawShape
 		inputDims := inputShape.Dimensions
 		inputBytes, err := inputBuf.mutableBytes() // Use mutableBytes() for input
 		if err != nil {
@@ -1330,9 +1330,9 @@ func execConcatenate(backend *Backend, node *Node, inputs []*Buffer, inputsOwned
 // execScatter implements the Scatter operation (Max, Min, Sum variants).
 func execScatter(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	operand, indices, updates := inputs[0], inputs[1], inputs[2]
-	scatterParams, ok := node.data.(*scatterNode)
+	scatterParams, ok := node.Data.(*scatterNode)
 	if !ok {
-		return nil, errors.Errorf("internal error: node.data for Scatter op is not *scatterData, but %T", node.data)
+		return nil, errors.Errorf("internal error: node.data for Scatter op is not *scatterData, but %T", node.Data)
 	}
 
 	// Output starts as a copy of the operand.
@@ -1348,17 +1348,17 @@ func execScatter(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 			return nil, err
 		}
 	}
-	output.shape = node.shape // Output shape is the same as operand shape.
+	output.RawShape = node.Shape // Output shape is the same as operand shape.
 
 	// Dispatch to a type-specific scatter loop based on the operation type.
-	dtype := output.shape.DType
+	dtype := output.RawShape.DType
 	type scatterFnT = func(opType compute.OpType, output, indices, updates *Buffer, scatterParams *scatterNode) error
 	tmpAny, tmpErr := scatterDTypeMap.Get(dtype)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
 	scatterFn := tmpAny.(scatterFnT)
-	err = scatterFn(node.opType, output, indices, updates, scatterParams)
+	err = scatterFn(node.OpType, output, indices, updates, scatterParams)
 	if err != nil {
 		return nil, err
 	}
@@ -1371,7 +1371,7 @@ var scatterDTypeMap = NewDTypeMap("ScatterMax")
 func execScatterGeneric[T SupportedTypesConstraints](opType compute.OpType, output, indices, updates *Buffer,
 	scatterParams *scatterNode) error {
 	// Get combineFn for operand's dtype.
-	dtype := output.shape.DType
+	dtype := output.RawShape.DType
 	type combineFnT = func(a, b T) T
 	var combineFn combineFnT
 	switch opType { //nolint:exhaustive
@@ -1398,25 +1398,25 @@ func execScatterGeneric[T SupportedTypesConstraints](opType compute.OpType, outp
 	}
 	_ = combineFn
 
-	outputShape := output.shape
-	outputFlat := output.flat.([]T) //nolint:errcheck  // it will panic
-	indicesFlat := indices.flat
-	updatesShape := updates.shape
-	updatesFlat := updates.flat.([]T) //nolint:errcheck  // it will panic
+	outputShape := output.RawShape
+	outputFlat := output.Flat.([]T) //nolint:errcheck  // it will panic
+	indicesFlat := indices.Flat
+	updatesShape := updates.RawShape
+	updatesFlat := updates.Flat.([]T) //nolint:errcheck  // it will panic
 
 	// Initialize gather of the scatter indices.
-	indicesShape := indices.shape
+	indicesShape := indices.RawShape
 	tmpAny, tmpErr := dereferenceIntsDTypeMap.Get(indicesShape.DType)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
 	deferenceIndicesFn := tmpAny.(func(flat any, in, out []int))
 	_, _ = indicesFlat, deferenceIndicesFn
-	indicesIt := newSubIndicesIterator(indices.shape, scatterParams.indexVectorAxis)
+	indicesIt := newSubIndicesIterator(indices.RawShape, scatterParams.indexVectorAxis)
 	indexVectorStride := 1
 	indexVectorSize := 1
 	if scatterParams.indexVectorAxis != indicesShape.Rank() {
-		indexVectorSize = indices.shape.Dimensions[scatterParams.indexVectorAxis]
+		indexVectorSize = indices.RawShape.Dimensions[scatterParams.indexVectorAxis]
 		indexVectorStride = indicesIt.PerAxisStride[scatterParams.indexVectorAxis]
 	}
 	indirectScatterIndices := make([]int, indexVectorSize)
@@ -1563,9 +1563,9 @@ var (
 )
 
 func init() {
-	combineMaxDTypeMap.Register(dtypes.BFloat16, priorityTyped, combineForScatterMaxBFloat16)
-	combineMinDTypeMap.Register(dtypes.BFloat16, priorityTyped, combineForScatterMinBFloat16)
-	combineSumDTypeMap.Register(dtypes.BFloat16, priorityTyped, combineForScatterSumBFloat16)
+	combineMaxDTypeMap.Register(dtypes.BFloat16, PriorityTyped, combineForScatterMaxBFloat16)
+	combineMinDTypeMap.Register(dtypes.BFloat16, PriorityTyped, combineForScatterMinBFloat16)
+	combineSumDTypeMap.Register(dtypes.BFloat16, PriorityTyped, combineForScatterSumBFloat16)
 }
 
 func combineForScatterMaxGeneric[T PODNumericConstraints](a, b T) T {
@@ -1597,22 +1597,22 @@ func combineForScatterSumBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 // execSlice is the executor function registered for compute.OpTypeSlice.
 func execSlice(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	operand := inputs[0]
-	sliceParams, ok := node.data.(*sliceNode)
+	sliceParams, ok := node.Data.(*sliceNode)
 	if !ok {
 		// Assuming node.data holds the necessary slice parameters.
 		// If Builder.Slice stores data differently, this needs adjustment.
-		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.data)
+		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.Data)
 	}
 
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
+	output.RawShape = node.Shape
 
 	// Dispatch to the generic implementation based on DType.
 	// Note: limits are not used in the generic exec function but passed for potential future use or consistency.
-	tmpAny, tmpErr := sliceDTypeMap.Get(node.shape.DType)
+	tmpAny, tmpErr := sliceDTypeMap.Get(node.Shape.DType)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
@@ -1627,13 +1627,13 @@ var sliceDTypeMap = NewDTypeMap("Slice")
 // It iterates through the output buffer coordinates, calculates the corresponding coordinate
 // in the operand buffer using starts and strides, and copies the value.
 func execSliceGeneric[T SupportedTypesConstraints](operand, output *Buffer, params *sliceNode) {
-	rank := operand.shape.Rank()
-	outputFlat := output.flat.([]T)
-	operandFlat := operand.flat.([]T)
+	rank := operand.RawShape.Rank()
+	outputFlat := output.Flat.([]T)
+	operandFlat := operand.Flat.([]T)
 
 	// Find operandFlatIdx start value.
 	var operandFlatIdx int
-	operandFlatStrides := calculateStrides(operand.shape.Dimensions)
+	operandFlatStrides := calculateStrides(operand.RawShape.Dimensions)
 	for axis, idx := range params.starts {
 		operandFlatIdx += operandFlatStrides[axis] * idx
 
@@ -1642,7 +1642,7 @@ func execSliceGeneric[T SupportedTypesConstraints](operand, output *Buffer, para
 	}
 
 	operandPerAxisIdx := make([]int, rank)
-	operandPerAxisSize := output.shape.Dimensions
+	operandPerAxisSize := output.RawShape.Dimensions
 
 	for outputFlatIdx := range outputFlat {
 		// Copy value at current position.
@@ -1675,14 +1675,14 @@ func execSliceGeneric[T SupportedTypesConstraints](operand, output *Buffer, para
 // execRNGBitGenerator is the executor function registered for compute.OpTypeRngBitGenerator.
 func execRNGBitGenerator(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) ([]*Buffer, error) {
 	state := inputs[0]
-	stateFlat := state.flat.([]uint64)
+	stateFlat := state.Flat.([]uint64)
 
 	// Reserved outputs:
-	rngData, err := backend.getBuffer(node.multiOutputsShapes[1].DType, node.multiOutputsShapes[1].Size())
+	rngData, err := backend.GetBuffer(node.MultiOutputsShapes[1].DType, node.MultiOutputsShapes[1].Size())
 	if err != nil {
 		return nil, err
 	}
-	rngData.shape = node.multiOutputsShapes[1].Clone()
+	rngData.RawShape = node.MultiOutputsShapes[1].Clone()
 	rngDataBytes, err := rngData.mutableBytes()
 	if err != nil {
 		return nil, err
@@ -1705,13 +1705,13 @@ func execRNGBitGenerator(backend *Backend, node *Node, inputs []*Buffer, inputsO
 		// We re-use the current state.
 		inputs[0] = nil
 	} else {
-		state.shape = node.multiOutputsShapes[0]
-		state, err = backend.getBuffer(state.shape.DType, state.shape.Size())
+		state.RawShape = node.MultiOutputsShapes[0]
+		state, err = backend.GetBuffer(state.RawShape.DType, state.RawShape.Size())
 		if err != nil {
 			return nil, err
 		}
 	}
-	stateFlat = state.flat.([]uint64)
+	stateFlat = state.Flat.([]uint64)
 
 	// See details on Go source code src/math/rand/v2/pcg.go:
 	rngState, err := rng.MarshalBinary()
@@ -1735,16 +1735,16 @@ const MaxArgMinMaxReductionSize = 0x8000_0000
 // execArgMinMax is the executor function registered for compute.OpTypeArgMinMax.
 func execArgMinMax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	operand := inputs[0]
-	reduceAxis := node.data.(*argMinMaxNode).axis
-	isMin := node.data.(*argMinMaxNode).isMin
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	reduceAxis := node.Data.(*argMinMaxNode).axis
+	isMin := node.Data.(*argMinMaxNode).isMin
+	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
+	output.RawShape = node.Shape
 
 	// There are 3 sizes to iterate over: before and after the reduceAxis, and the size (dimension) of the reduced axis itself.
-	operandDims := operand.shape.Dimensions
+	operandDims := operand.RawShape.Dimensions
 	operandRank := len(operandDims)
 	suffixSize := 1
 	for axis := reduceAxis + 1; axis < operandRank; axis++ {
@@ -1752,17 +1752,17 @@ func execArgMinMax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*B
 	}
 	prefixSize := 1
 	for axis := range reduceAxis {
-		prefixSize *= operand.shape.Dimensions[axis]
+		prefixSize *= operand.RawShape.Dimensions[axis]
 	}
 	reduceSize := operandDims[reduceAxis]
 	if reduceSize >= MaxArgMinMaxReductionSize {
 		// If we need larger, change buildArgMinMax to use int64 instead of int32.
 		return nil, errors.Errorf("ArgMaxMin implementation only supports reduction on dimensions < %d, got operand shaped %s and reduce axis is %d",
-			MaxArgMinMaxReductionSize, operand.shape, reduceAxis)
+			MaxArgMinMaxReductionSize, operand.RawShape, reduceAxis)
 	}
 
 	// Instantiate the function to copy over results from ints:
-	tmpAny, tmpErr := argMinMaxCopyIntsDTypeMap.Get(output.shape.DType)
+	tmpAny, tmpErr := argMinMaxCopyIntsDTypeMap.Get(output.RawShape.DType)
 	if tmpErr != nil {
 		return nil, tmpErr
 	}
@@ -1770,7 +1770,7 @@ func execArgMinMax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*B
 	copyIntsFn := buildCopyIntsFn(output)
 
 	// Dispatch to the generic implementation based on DType.
-	tmpAny2, tmpErr2 := argMinMaxDTypeMap.Get(operand.shape.DType)
+	tmpAny2, tmpErr2 := argMinMaxDTypeMap.Get(operand.RawShape.DType)
 	if tmpErr2 != nil {
 		return nil, tmpErr2
 	}
@@ -1787,7 +1787,7 @@ var (
 // buildArgMinMaxCopyIntsFn creates a "copyInts" function to copy the given values starting at the flatIdx to
 // the output buffer.
 func buildArgMinMaxCopyIntsFn[T PODIntegerConstraints](output *Buffer) func(flatIdx int, values []int32) {
-	outputFlat := output.flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(flatIdx int, values []int32) {
 		for _, value := range values {
 			outputFlat[flatIdx] = T(value)
@@ -1800,14 +1800,14 @@ func buildArgMinMaxCopyIntsFn[T PODIntegerConstraints](output *Buffer) func(flat
 func execArgMinMaxGeneric[T PODNumericConstraints](
 	backend *Backend, operand *Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
-	operandFlat := operand.flat.([]T)
+	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.getBuffer(operand.shape.DType, suffixSize)
+	currentBestBuffer, _ := backend.GetBuffer(operand.RawShape.DType, suffixSize)
 
-	currentBest := currentBestBuffer.flat.([]T)
-	currentArgBestBuffer, _ := backend.getBuffer(dtypes.Int32, suffixSize)
-	currentArgBest := currentArgBestBuffer.flat.([]int32)
+	currentBest := currentBestBuffer.Flat.([]T)
+	currentArgBestBuffer, _ := backend.GetBuffer(dtypes.Int32, suffixSize)
+	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0
 	operandFlatIdx := 0
@@ -1857,20 +1857,20 @@ func execArgMinMaxGeneric[T PODNumericConstraints](
 }
 
 func init() {
-	argMinMaxDTypeMap.Register(dtypes.BFloat16, priorityTyped, execArgMinMaxGenericBFloat16)
+	argMinMaxDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execArgMinMaxGenericBFloat16)
 }
 
 // TODO: handle the error condition
 func execArgMinMaxGenericBFloat16(
 	backend *Backend, operand *Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.getBuffer(operand.shape.DType, suffixSize)
-	currentBest := currentBestBuffer.flat.([]bfloat16.BFloat16)
-	currentArgBestBuffer, _ := backend.getBuffer(dtypes.Int32, suffixSize)
-	currentArgBest := currentArgBestBuffer.flat.([]int32)
+	currentBestBuffer, _ := backend.GetBuffer(operand.RawShape.DType, suffixSize)
+	currentBest := currentBestBuffer.Flat.([]bfloat16.BFloat16)
+	currentArgBestBuffer, _ := backend.GetBuffer(dtypes.Int32, suffixSize)
+	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0
 	operandFlatIdx := 0
@@ -1922,15 +1922,15 @@ func execArgMinMaxGenericBFloat16(
 // =================================================================================================================
 func execReduceWindow(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	operand := inputs[0]
-	operandShape := operand.shape
+	operandShape := operand.RawShape
 	rank := operandShape.Rank()
 	dtype := operandShape.DType
-	outputShape := node.shape
+	outputShape := node.Shape
 	output, err := backend.getBufferForShape(outputShape)
 	if err != nil {
 		return nil, err
 	}
-	opData := node.data.(*reduceWindowNode)
+	opData := node.Data.(*reduceWindowNode)
 
 	// resolve the effective parameters, assuming shapeinference.ReduceWindowOp handled nils by defaulting them:
 	// - windowDimensions is guaranteed non-nil by the builder.
@@ -2067,25 +2067,25 @@ var (
 )
 
 func init() {
-	reduceWindowMaxDTypeMap.Register(dtypes.BFloat16, priorityTyped, reduceWindowMaxBuildUpdateFnBFloat16)
-	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, priorityTyped, reduceWindowMinBuildUpdateFnBFloat16)
-	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, priorityTyped, reduceWindowSumBuildUpdateFnBFloat16)
-	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, priorityTyped, reduceWindowProductBuildUpdateFnBFloat16)
+	reduceWindowMaxDTypeMap.Register(dtypes.BFloat16, PriorityTyped, reduceWindowMaxBuildUpdateFnBFloat16)
+	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, PriorityTyped, reduceWindowMinBuildUpdateFnBFloat16)
+	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, PriorityTyped, reduceWindowSumBuildUpdateFnBFloat16)
+	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, PriorityTyped, reduceWindowProductBuildUpdateFnBFloat16)
 }
 
 // Generic functions that build a function that will update the output at outputFlatIdx from the operand at operandFlatIdx.
 
 func reduceWindowMaxBuildUpdateFn[T PODNumericConstraints](operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]T)
-	outputFlat := output.flat.([]T)
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = max(outputFlat[outputFlatIdx], operandFlat[operandFlatIdx])
 	}
 }
 
 func reduceWindowMaxBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
 			max(outputFlat[outputFlatIdx].Float32(), operandFlat[operandFlatIdx].Float32()))
@@ -2093,16 +2093,16 @@ func reduceWindowMaxBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowU
 }
 
 func reduceWindowMinBuildUpdateFn[T PODNumericConstraints](operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]T)
-	outputFlat := output.flat.([]T)
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = min(outputFlat[outputFlatIdx], operandFlat[operandFlatIdx])
 	}
 }
 
 func reduceWindowMinBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
 			min(outputFlat[outputFlatIdx].Float32(), operandFlat[operandFlatIdx].Float32()))
@@ -2110,16 +2110,16 @@ func reduceWindowMinBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowU
 }
 
 func reduceWindowSumBuildUpdateFn[T PODNumericConstraints](operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]T)
-	outputFlat := output.flat.([]T)
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] += operandFlat[operandFlatIdx]
 	}
 }
 
 func reduceWindowSumBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
 			outputFlat[outputFlatIdx].Float32() + operandFlat[operandFlatIdx].Float32())
@@ -2127,16 +2127,16 @@ func reduceWindowSumBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowU
 }
 
 func reduceWindowProductBuildUpdateFn[T PODNumericConstraints](operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]T)
-	outputFlat := output.flat.([]T)
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] *= operandFlat[operandFlatIdx]
 	}
 }
 
 func reduceWindowProductBuildUpdateFnBFloat16(operand, output *Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.flat.([]bfloat16.BFloat16)
-	outputFlat := output.flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
 			outputFlat[outputFlatIdx].Float32() * operandFlat[operandFlatIdx].Float32())
@@ -2147,17 +2147,17 @@ func execPad(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer,
 	operand := inputs[0]
 	fillValue := inputs[1]
 
-	if node.shape.DType.Size() < 1 {
-		return nil, errors.Errorf("Pad operation does not support sub-byte types like %s", node.shape.DType)
+	if node.Shape.DType.Size() < 1 {
+		return nil, errors.Errorf("Pad operation does not support sub-byte types like %s", node.Shape.DType)
 	}
-	elementSize := node.shape.DType.Size()
+	elementSize := node.Shape.DType.Size()
 
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
 
-	params := node.data.(*padNode)
+	params := node.Data.(*padNode)
 	axesConfig := params.axesConfig
 
 	operandBytes, err := operand.mutableBytes()
@@ -2210,14 +2210,14 @@ func execPad(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer,
 		return config.Start == 0 && config.End == 0 && config.Interior == 0
 	}
 
-	rank := operand.shape.Rank()
+	rank := operand.RawShape.Rank()
 	for i := 0; i < rank; {
 		if i >= len(axesConfig) || isUntouched(axesConfig[i]) {
 			// Find how many consecutive untouched axes there are
-			operandDim := operand.shape.Dimensions[i]
+			operandDim := operand.RawShape.Dimensions[i]
 			j := i + 1
 			for j < rank && (j >= len(axesConfig) || isUntouched(axesConfig[j])) {
-				operandDim *= operand.shape.Dimensions[j]
+				operandDim *= operand.RawShape.Dimensions[j]
 				j++
 			}
 			mergedAxes = append(mergedAxes, mergedAxis{
@@ -2227,12 +2227,12 @@ func execPad(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer,
 			})
 			i = j
 		} else {
-			outDim := operand.shape.Dimensions[i] + axesConfig[i].Start + axesConfig[i].End
-			if operand.shape.Dimensions[i] > 0 {
-				outDim += (operand.shape.Dimensions[i] - 1) * axesConfig[i].Interior
+			outDim := operand.RawShape.Dimensions[i] + axesConfig[i].Start + axesConfig[i].End
+			if operand.RawShape.Dimensions[i] > 0 {
+				outDim += (operand.RawShape.Dimensions[i] - 1) * axesConfig[i].Interior
 			}
 			mergedAxes = append(mergedAxes, mergedAxis{
-				operandDim: operand.shape.Dimensions[i],
+				operandDim: operand.RawShape.Dimensions[i],
 				outputDim:  outDim,
 				config:     axesConfig[i],
 			})

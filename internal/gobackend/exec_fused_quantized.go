@@ -12,8 +12,8 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeFusedQuantizedDense, priorityTyped, execFusedQuantizedDense)
-	setNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, priorityTyped, execQuantizedEmbeddingLookup)
+	setNodeExecutor(compute.OpTypeFusedQuantizedDense, PriorityTyped, execFusedQuantizedDense)
+	setNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, PriorityTyped, execQuantizedEmbeddingLookup)
 }
 
 // execFusedQuantizedDense implements scalar dequant + matmul + bias + activation.
@@ -24,7 +24,7 @@ func init() {
 // produced by Bitcast, or unpacked ([]int8/[]uint8, one value per element) when
 // produced by ConvertDType. Both forms are supported.
 func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	data := node.data.(*nodeFusedQuantizedDense)
+	data := node.Data.(*nodeFusedQuantizedDense)
 
 	// GGML has a different input layout: [x, weights, bias?] (no scales/zeroPoints).
 	if data.scheme == compute.QuantGGML {
@@ -47,31 +47,31 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 		biasBuf = inputs[nextIdx]
 	}
 
-	if xBuf.shape.DType != dtypes.Float32 {
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: only float32 input supported, got %s", xBuf.shape.DType)
+	if xBuf.RawShape.DType != dtypes.Float32 {
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: only float32 input supported, got %s", xBuf.RawShape.DType)
 	}
 
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	x := xBuf.flat.([]float32)
-	scales := sBuf.flat.([]float32)
-	out := output.flat.([]float32)
+	x := xBuf.Flat.([]float32)
+	scales := sBuf.Flat.([]float32)
+	out := output.Flat.([]float32)
 
-	K := xBuf.shape.Dimensions[xBuf.shape.Rank()-1]
-	N := wBuf.shape.Dimensions[1]
-	M := xBuf.shape.Size() / K
+	K := xBuf.RawShape.Dimensions[xBuf.RawShape.Rank()-1]
+	N := wBuf.RawShape.Dimensions[1]
+	M := xBuf.RawShape.Size() / K
 	blockSize := data.blockSize
 	numBlocks := (N + blockSize - 1) / blockSize
 
 	var bias []float32
 	if biasBuf != nil {
-		bias = biasBuf.flat.([]float32)
+		bias = biasBuf.Flat.([]float32)
 	}
 	var zeroPoints []float32
 	if zeroPointsBuf != nil {
-		zeroPoints = zeroPointsBuf.flat.([]float32)
+		zeroPoints = zeroPointsBuf.Flat.([]float32)
 	}
 
 	// For packed sub-byte weights (from Bitcast), unpack nibbles via the buffer pool
@@ -83,7 +83,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 	if isUnpackedOwned {
 		defer backend.putBuffer(unpackedBuf)
 	}
-	wFlat := unpackedBuf.flat
+	wFlat := unpackedBuf.Flat
 
 	switch data.scheme {
 	case compute.QuantNF4:
@@ -121,7 +121,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 // (caller must putBuffer), and any error.
 func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error) {
 	var targetDType dtypes.DType
-	switch wBuf.shape.DType {
+	switch wBuf.RawShape.DType {
 	case dtypes.Int4, dtypes.Int2:
 		targetDType = dtypes.Int8
 	case dtypes.Uint4, dtypes.Uint2:
@@ -130,13 +130,13 @@ func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error
 		return wBuf, false, nil
 	}
 
-	outBuf, err := backend.getBuffer(targetDType, wBuf.shape.Size())
+	outBuf, err := backend.GetBuffer(targetDType, wBuf.RawShape.Size())
 	if err != nil {
 		return nil, false, err
 	}
-	outBuf.shape = shapes.Make(targetDType, wBuf.shape.Dimensions...)
+	outBuf.RawShape = shapes.Make(targetDType, wBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := convertDTypePairMap.Get(wBuf.shape.DType, targetDType)
+	convertFnAny, err := convertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
 	if err != nil {
 		backend.putBuffer(outBuf)
 		return nil, false, err
@@ -150,19 +150,19 @@ func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error
 // Inputs: [data, indices]. Data is [vocabSize, bytesPerRow] Uint8.
 // Indices are integer with last dim = 1. Output is [batch..., K] Float32.
 func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
-	data := node.data.(*nodeQuantizedEmbeddingLookup)
+	data := node.Data.(*nodeQuantizedEmbeddingLookup)
 	dataBuf := inputs[0]
 	indicesBuf := inputs[1]
 
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
 
-	dataBytes := dataBuf.flat.([]uint8)
-	out := output.flat.([]float32)
+	dataBytes := dataBuf.Flat.([]uint8)
+	out := output.Flat.([]float32)
 	K := data.ggmlK
-	bytesPerRow := dataBuf.shape.Dimensions[1]
+	bytesPerRow := dataBuf.RawShape.Dimensions[1]
 
 	dequantFn, err := ggmlDequantFunc(data.ggmlType)
 	if err != nil {
@@ -170,7 +170,7 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 	}
 
 	// Last dim is pre-validated to be 1, so total elements == number of indices.
-	numIndices := indicesBuf.shape.Size()
+	numIndices := indicesBuf.RawShape.Size()
 
 	// Convert indices to int64 via the buffer pool and ConvertDType infrastructure.
 	idxBuf, isIdxOwned, err := convertIndicesToInt64(backend, indicesBuf)
@@ -180,9 +180,9 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 	if isIdxOwned {
 		defer backend.putBuffer(idxBuf)
 	}
-	indices := idxBuf.flat.([]int64)
+	indices := idxBuf.Flat.([]int64)
 
-	vocabSize := int64(dataBuf.shape.Dimensions[0])
+	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
 	for i, rowIdx := range indices[:numIndices] {
 		if rowIdx < 0 || rowIdx >= vocabSize {
 			return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rowIdx, vocabSize)
@@ -202,16 +202,16 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 // Returns the (possibly new) buffer, whether it was allocated from the pool
 // (caller must putBuffer), and any error.
 func convertIndicesToInt64(backend *Backend, indicesBuf *Buffer) (*Buffer, bool, error) {
-	if indicesBuf.shape.DType == dtypes.Int64 {
+	if indicesBuf.RawShape.DType == dtypes.Int64 {
 		return indicesBuf, false, nil
 	}
-	outBuf, err := backend.getBuffer(dtypes.Int64, indicesBuf.shape.Size())
+	outBuf, err := backend.GetBuffer(dtypes.Int64, indicesBuf.RawShape.Size())
 	if err != nil {
 		return nil, false, err
 	}
-	outBuf.shape = shapes.Make(dtypes.Int64, indicesBuf.shape.Dimensions...)
+	outBuf.RawShape = shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := convertDTypePairMap.Get(indicesBuf.shape.DType, dtypes.Int64)
+	convertFnAny, err := convertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
 	if err != nil {
 		backend.putBuffer(outBuf)
 		return nil, false, err

@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-// gobackend_generator auto-generates parts of the SimpleGo backend:
+// gobackend_generator auto-generates parts of the Go backend:
 //
 // - exec_binary.go: binary ops execution, e.g.: Add, Mul, Div, Sub, Pow, etc.
 package main

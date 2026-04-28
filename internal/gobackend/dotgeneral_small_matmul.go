@@ -205,6 +205,6 @@ var dotGeneralSmallMatMulDTypeMap = NewDTypeMap("DotGeneralSmallMatMul")
 func init() {
 	// BFloat16 and Float16 need float32 accumulation and output to float32 buffer.
 	// The caller (execDotGeneral) handles conversion back to native dtype.
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.BFloat16, priorityTyped, execDotGeneralSmallMatMulBFloat16)
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float16, priorityTyped, execDotGeneralSmallMatMulFloat16)
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execDotGeneralSmallMatMulBFloat16)
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float16, PriorityTyped, execDotGeneralSmallMatMulFloat16)
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeBitcast, priorityGeneric, execBitcast)
+	setNodeExecutor(compute.OpTypeBitcast, PriorityGeneric, execBitcast)
 }
 
 // execBitcast implements Bitcast as a pure bit reinterpretation: the raw bytes are
@@ -24,8 +24,8 @@ func init() {
 // use ConvertDType (e.g. ConvertDType(Int4 → Int8)).
 func execBitcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	src := inputs[0]
-	targetDType := node.shape.DType
-	srcDType := src.shape.DType
+	targetDType := node.Shape.DType
+	srcDType := src.RawShape.DType
 	sameBitWidth := srcDType.Bits() == targetDType.Bits()
 
 	// Reuse owned buffer only when the flat slice's Go element type is compatible
@@ -42,13 +42,13 @@ func execBitcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 			// For different-bit-width bitcasts, reuse only when both source and
 			// target use the same underlying Go storage type. Sub-byte types
 			// (Int2, Uint2, Int4, Uint4) all store as []uint8.
-			_, srcIsUint8 := src.flat.([]uint8)
+			_, srcIsUint8 := src.Flat.([]uint8)
 			tgtIsUint8 := targetDType.GoType().Kind() == reflect.Uint8
 			canReuse = srcIsUint8 && tgtIsUint8
 		}
 	}
 	if canReuse {
-		src.shape = node.shape
+		src.RawShape = node.Shape
 		inputs[0] = nil // signal to executor that input buffer was reused
 		return src, nil
 	}
@@ -56,7 +56,7 @@ func execBitcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 	// Not owned or Go type mismatch: allocate via the standard pool and copy
 	// raw bytes. For sub-byte types, getBufferForShape allocates packed storage
 	// (e.g. Int4[2N] gets []byte of length N), matching the source byte count.
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}

@@ -128,17 +128,17 @@ func dgNormalizeShape[T interface {
 	}
 
 	// Create the output buffer.
-	outputShape := shapes.Make(source.shape.DType, batchSize, crossSize, contractingSize)
+	outputShape := shapes.Make(source.RawShape.DType, batchSize, crossSize, contractingSize)
 	output, _ = backend.getBufferForShape(outputShape)
 	outputStrides := [3]int{crossSize * contractingSize, contractingSize, 1}
 	var outputIdx [3]int
 
-	sourceDims := source.shape.Dimensions
-	rank := source.shape.Rank()
+	sourceDims := source.RawShape.Dimensions
+	rank := source.RawShape.Rank()
 
 	// Indices we are going to iterate.
-	sourceData := source.flat.([]T) //nolint:errcheck
-	outputData := output.flat.([]T) //nolint:errcheck
+	sourceData := source.Flat.([]T) //nolint:errcheck
+	outputData := output.Flat.([]T) //nolint:errcheck
 	sourceIdx := make([]int, rank)
 	for sourceFlatIdx := range sourceData {
 		// Copy value at current index:
@@ -172,7 +172,7 @@ func dgNormalizeShape[T interface {
 // execDotGeneralNormalized executes the dot general operation for normalized shapes:
 // both rhs and lhs are shaped [batchSize, crossSize, contractingSize].
 func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGeneralNodeData, output *Buffer) error {
-	dtype := lhs.shape.DType
+	dtype := lhs.RawShape.DType
 	normalizeFnAny, err := dotGeneralNormalizeShapeDTypeMap.Get(dtype)
 	if err != nil {
 		return err
@@ -251,7 +251,7 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 
 	// If we created a temporary float32 output, convert it back to the original dtype.
 	if castToFloat32 {
-		convertFnAny, err := convertDTypePairMap.Get(dtypes.Float32, output.shape.DType) //nolint:errcheck
+		convertFnAny, err := convertDTypePairMap.Get(dtypes.Float32, output.RawShape.DType) //nolint:errcheck
 		if err != nil {
 			return err
 		}
@@ -269,6 +269,6 @@ var dotGeneralNormalizedDTypeMap = NewDTypeMap("DotGeneralNormalized")
 //go:generate go run ../../internal/cmd/alternates_generator -base=dotgeneral_normalized_alt_base.go -tags=bf16,f16
 
 func init() {
-	dotGeneralNormalizedDTypeMap.Register(dtypes.BFloat16, priorityTyped, execNormalizedDotGeneralBFloat16)
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Float16, priorityTyped, execNormalizedDotGeneralFloat16)
+	dotGeneralNormalizedDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execNormalizedDotGeneralBFloat16)
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Float16, PriorityTyped, execNormalizedDotGeneralFloat16)
 }

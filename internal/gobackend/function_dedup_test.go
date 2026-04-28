@@ -1,12 +1,13 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package gobackend_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -15,7 +16,7 @@ type mockComparableData struct {
 	value int
 }
 
-func (m *mockComparableData) EqualNodeData(other nodeDataComparable) bool {
+func (m *mockComparableData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return m.value == other.(*mockComparableData).value
 }
 
@@ -25,59 +26,59 @@ type mockNonComparableData struct {
 }
 
 func TestMakeNodeDedupKey(t *testing.T) {
-	be, err := New("")
+	be, err := gobackend.New("")
 	if err != nil {
 		t.Fatalf("Failed to create backend: %v", err)
 	}
 	defer be.Finalize()
-	b := be.Builder("test").(*Builder)
-	mainFn := b.Main().(*Function)
+	b := be.Builder("test").(*gobackend.Builder)
+	mainFn := b.Main().(*gobackend.Function)
 	shape := shapes.Make(dtypes.F32, 2, 3)
 
-	node1 := mainFn.newNode(compute.OpTypeAdd, shape)
-	node2 := mainFn.newNode(compute.OpTypeMul, shape)
+	node1 := mainFn.NewNode(compute.OpTypeAdd, shape)
+	node2 := mainFn.NewNode(compute.OpTypeMul, shape)
 
 	tests := []struct {
 		name       string
 		opType     compute.OpType
-		inputs     []*Node
+		inputs     []*gobackend.Node
 		wantCount  int
 		wantHasPtr bool // whether firstInput should be non-zero
 	}{
 		{"no inputs", compute.OpTypeConstant, nil, 0, false},
-		{"empty inputs", compute.OpTypeConstant, []*Node{}, 0, false},
-		{"one input", compute.OpTypeNeg, []*Node{node1}, 1, true},
-		{"two inputs", compute.OpTypeAdd, []*Node{node1, node2}, 2, true},
+		{"empty inputs", compute.OpTypeConstant, []*gobackend.Node{}, 0, false},
+		{"one input", compute.OpTypeNeg, []*gobackend.Node{node1}, 1, true},
+		{"two inputs", compute.OpTypeAdd, []*gobackend.Node{node1, node2}, 2, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key := makeNodeDedupKey(tt.opType, tt.inputs)
+			key := gobackend.MakeNodeDedupKey(tt.opType, tt.inputs)
 
-			if key.opType != tt.opType {
-				t.Errorf("opType = %v, want %v", key.opType, tt.opType)
+			if key.OpType != tt.opType {
+				t.Errorf("OpType = %v, want %v", key.OpType, tt.opType)
 			}
-			if key.inputCount != tt.wantCount {
-				t.Errorf("inputCount = %v, want %v", key.inputCount, tt.wantCount)
+			if key.InputCount != tt.wantCount {
+				t.Errorf("InputCount = %v, want %v", key.InputCount, tt.wantCount)
 			}
-			if tt.wantHasPtr && key.firstInput == nil {
-				t.Error("firstInput should be non-nil")
+			if tt.wantHasPtr && key.FirstInput == nil {
+				t.Error("FirstInput should be non-nil")
 			}
-			if !tt.wantHasPtr && key.firstInput != nil {
-				t.Error("firstInput should be nil")
+			if !tt.wantHasPtr && key.FirstInput != nil {
+				t.Error("FirstInput should be nil")
 			}
 		})
 	}
 
 	// Verify same inputs produce same key
-	key1 := makeNodeDedupKey(compute.OpTypeAdd, []*Node{node1, node2})
-	key2 := makeNodeDedupKey(compute.OpTypeAdd, []*Node{node1, node2})
+	key1 := gobackend.MakeNodeDedupKey(compute.OpTypeAdd, []*gobackend.Node{node1, node2})
+	key2 := gobackend.MakeNodeDedupKey(compute.OpTypeAdd, []*gobackend.Node{node1, node2})
 	if key1 != key2 {
 		t.Error("same inputs should produce identical keys")
 	}
 
 	// Verify different first input produces different key
-	key3 := makeNodeDedupKey(compute.OpTypeAdd, []*Node{node2, node1})
+	key3 := gobackend.MakeNodeDedupKey(compute.OpTypeAdd, []*gobackend.Node{node2, node1})
 	if key1 == key3 {
 		t.Error("different first input should produce different key")
 	}
@@ -86,13 +87,13 @@ func TestMakeNodeDedupKey(t *testing.T) {
 func TestDedup(t *testing.T) {
 	t.Run("BinaryOp", func(t *testing.T) {
 		// Create a backend and builder
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Create two input parameters
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
@@ -121,20 +122,20 @@ func TestDedup(t *testing.T) {
 
 		// Verify the node count hasn't increased unnecessarily
 		// We expect: 2 parameters + 1 Add node = 3 nodes
-		if len(mainFn.nodes) != 3 {
-			t.Errorf("Expected 3 nodes (2 params + 1 Add), got %d", len(mainFn.nodes))
+		if len(mainFn.Nodes) != 3 {
+			t.Errorf("Expected 3 nodes (2 params + 1 Add), got %d", len(mainFn.Nodes))
 		}
 	})
 
 	t.Run("UnaryOp", func(t *testing.T) {
 		// Create a backend and builder
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Create an input parameter
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
@@ -159,20 +160,20 @@ func TestDedup(t *testing.T) {
 
 		// Verify the node count
 		// We expect: 1 parameter + 1 Neg node = 2 nodes
-		if len(mainFn.nodes) != 2 {
-			t.Errorf("Expected 2 nodes (1 param + 1 Neg), got %d", len(mainFn.nodes))
+		if len(mainFn.Nodes) != 2 {
+			t.Errorf("Expected 2 nodes (1 param + 1 Neg), got %d", len(mainFn.Nodes))
 		}
 	})
 
 	t.Run("SliceOp", func(t *testing.T) {
 		// Create a backend and builder
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Create an input parameter
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 5, 4), nil)
@@ -196,13 +197,14 @@ func TestDedup(t *testing.T) {
 
 		// Verify they are the same node (deduplicated)
 		if slice1 != slice2 {
-			t.Errorf("Duplicate Slice operations should return the same node: slice1=%p, slice2=%p", slice1, slice2)
+			t.Errorf("Duplicate Slice operations should return the same node: slice1=%p, slice2=%p",
+				slice1, slice2)
 		}
 
 		// Verify the node count
 		// We expect: 1 parameter + 1 Slice node = 2 nodes
-		if len(mainFn.nodes) != 2 {
-			t.Errorf("Expected 2 nodes (1 param + 1 Slice), got %d", len(mainFn.nodes))
+		if len(mainFn.Nodes) != 2 {
+			t.Errorf("Expected 2 nodes (1 param + 1 Slice), got %d", len(mainFn.Nodes))
 		}
 
 		// Verify that different slice parameters create different nodes
@@ -220,13 +222,13 @@ func TestDedup(t *testing.T) {
 
 func TestNoDedup(t *testing.T) {
 	t.Run("DifferentParameters", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Create two parameters with different names - they should NOT be deduplicated
 		param1, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
@@ -258,13 +260,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentShapes", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -292,13 +294,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentConstants", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Create constants with different values - they should NOT be deduplicated
 		const1, err := mainFn.Constant([]float32{1, 2, 3}, 3)
@@ -326,13 +328,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentIotaAxes", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		shape := shapes.Make(dtypes.F32, 2, 3)
 		iota1, err := mainFn.Iota(shape, 0)
@@ -360,13 +362,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentTransposePermutations", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3, 4), nil)
 		if err != nil {
@@ -398,13 +400,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentReduceAxes", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3, 4), nil)
 		if err != nil {
@@ -436,13 +438,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentInputs", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -469,13 +471,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentBroadcastDims", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -507,13 +509,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("SameParameterTwice", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		// Even if we create a parameter with the same name and shape twice,
 		// they should NOT be deduplicated because they have different inputIdx
@@ -533,21 +535,21 @@ func TestNoDedup(t *testing.T) {
 		}
 
 		// Verify they have different inputIdx
-		data1 := param1.(*Node).data.(*nodeParameter)
-		data2 := param2.(*Node).data.(*nodeParameter)
-		if data1.inputIdx == data2.inputIdx {
-			t.Errorf("Parameters should have different inputIdx: both have %d", data1.inputIdx)
+		data1 := param1.(*gobackend.Node).Data.(*gobackend.NodeParameter)
+		data2 := param2.(*gobackend.Node).Data.(*gobackend.NodeParameter)
+		if data1.InputIdx == data2.InputIdx {
+			t.Errorf("Parameters should have different inputIdx: both have %d", data1.InputIdx)
 		}
 	})
 
 	t.Run("ConcatenateDifferentAxis", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -583,13 +585,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("ReshapeDifferentDims", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -622,13 +624,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("BroadcastInDimDifferentAxes", func(t *testing.T) {
-		backend, err := New("")
+		backend, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer backend.Finalize()
-		builder := backend.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := backend.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2), nil)
 		if err != nil {
@@ -661,13 +663,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentOpTypes", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {
@@ -708,13 +710,13 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("OperationsWithNilData", func(t *testing.T) {
-		be, err := New("")
+		be, err := gobackend.New("")
 		if err != nil {
 			t.Fatalf("Failed to create backend: %v", err)
 		}
 		defer be.Finalize()
-		builder := be.Builder("test").(*Builder)
-		mainFn := builder.Main().(*Function)
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
 		if err != nil {

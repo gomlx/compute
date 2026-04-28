@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package gobackend_test
 
 import (
 	"fmt"
@@ -8,18 +8,16 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/compute/support/backendtest"
 	"k8s.io/klog/v2"
+
+	// Registers all the ops.
+	_ "github.com/gomlx/compute/internal/gobackend/ops"
 )
 
 var backend compute.Backend
-
-// TestCompliance runs all compute.Backend compliance tests.
-func TestCompliance(t *testing.T) {
-	backendtest.RunAll(t, backend, nil)
-}
 
 func init() {
 	klog.InitFlags(nil)
@@ -94,7 +92,7 @@ func buildGraph(inputShapes []shapes.Shape, inputDatas []any,
 // testBackend builds, compiles, and executes a single-input, single-output backend graph.
 func testBackend(t *testing.T, inputShape shapes.Shape, inputData any,
 	buildFn func(f compute.Function, param compute.Value) (compute.Value, error),
-) *Buffer {
+) *gobackend.Buffer {
 	t.Helper()
 	return testBackendMultiInput(t, []shapes.Shape{inputShape}, []any{inputData},
 		func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -106,7 +104,7 @@ func testBackend(t *testing.T, inputShape shapes.Shape, inputData any,
 // testBackendMultiInput builds, compiles, and executes a multi-input, single-output backend graph.
 func testBackendMultiInput(t *testing.T, inputShapes []shapes.Shape, inputDatas []any,
 	buildFn func(f compute.Function, params []compute.Value) (compute.Value, error),
-) *Buffer {
+) *gobackend.Buffer {
 	t.Helper()
 	exec, inputBufs, err := buildGraph(inputShapes, inputDatas, buildFn)
 	if err != nil {
@@ -119,5 +117,5 @@ func testBackendMultiInput(t *testing.T, inputShapes []shapes.Shape, inputDatas 
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	return outputs[0].(*Buffer)
+	return outputs[0].(*gobackend.Buffer)
 }

@@ -43,7 +43,7 @@ func (e *Executable) Finalize() {
 
 // Inputs returns the list of parameters names and shapes, in order created by the Builder.Parameter calls.
 func (e *Executable) Inputs() (names []string, inputShapes []shapes.Shape) {
-	params := e.builder.mainFn.parameters
+	params := e.builder.MainFn.Parameters
 	numInputs := len(params)
 	if numInputs == 0 {
 		return
@@ -51,23 +51,23 @@ func (e *Executable) Inputs() (names []string, inputShapes []shapes.Shape) {
 	names = make([]string, numInputs)
 	inputShapes = make([]shapes.Shape, numInputs)
 	for ii, node := range params {
-		parameter := node.data.(*nodeParameter)
-		names[ii] = parameter.name
-		inputShapes[ii] = node.shape
+		parameter := node.Data.(*NodeParameter)
+		names[ii] = parameter.Name
+		inputShapes[ii] = node.Shape
 	}
 	return
 }
 
 // Outputs returns the output shapes of the computation, in order given to the Builder.Compile call.
 func (e *Executable) Outputs() (outputShapes []shapes.Shape) {
-	outputs := e.builder.mainFn.outputs
+	outputs := e.builder.MainFn.Outputs
 	numOutputs := len(outputs)
 	if numOutputs == 0 {
 		return
 	}
 	outputShapes = make([]shapes.Shape, numOutputs)
 	for ii, node := range outputs {
-		outputShapes[ii] = node.shape
+		outputShapes[ii] = node.Shape
 	}
 	return outputShapes
 }
@@ -77,7 +77,7 @@ func (e *Executable) Outputs() (outputShapes []shapes.Shape) {
 // duplicate output handling in Builder.Compile()).
 func newExecutable(builder *Builder, mainFn *FunctionExecutable) *Executable {
 	return &Executable{
-		backend: builder.backend,
+		backend: builder.Backend,
 		builder: builder,
 		mainFn:  mainFn,
 	}
@@ -132,10 +132,10 @@ var (
 type RegisterPriority int
 
 const (
-	priorityGeneric RegisterPriority = 0
-	priorityTyped   RegisterPriority = 1   // Specialized typed implementation.
-	priorityArch    RegisterPriority = 10  // Specialized architecture implementation.
-	priorityUser    RegisterPriority = 100 // Custom user overrides.
+	PriorityGeneric RegisterPriority = 0
+	PriorityTyped   RegisterPriority = 1   // Specialized typed implementation.
+	PriorityArch    RegisterPriority = 10  // Specialized architecture implementation.
+	PriorityUser    RegisterPriority = 100 // Custom user overrides.
 )
 
 // setNodeExecutor sets the node executor for the given operation type with the specified priority.
@@ -172,7 +172,7 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 	defer e.backend.numLiveExecutions.Add(-1)
 
 	// Check inputs length
-	params := e.builder.mainFn.parameters
+	params := e.builder.MainFn.Parameters
 	if len(inputs) != len(params) {
 		return nil, errors.Errorf("Execute: expected %d inputs, got %d", len(params), len(inputs))
 	}
@@ -190,21 +190,21 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 		}
 		inputBuffer, ok := input.(*Buffer)
 		if !ok {
-			return nil, errors.Errorf("Execute: input buffer #%d is not from SimpleGo backend", ii)
+			return nil, errors.Errorf("Execute: input buffer #%d is not from Go backend", ii)
 		}
-		if !inputBuffer.inUse {
+		if !inputBuffer.InUse {
 			return nil, errors.Errorf(
 				"Execute: input buffer (%p) #%d is not valid, likely it is being used after being released",
 				inputBuffer, ii)
 		}
-		if inputBuffer.flat == nil {
+		if inputBuffer.Flat == nil {
 			return nil, errors.Errorf("Execute: input buffer #%d flat data is set to nil (!?)", ii)
 		}
 		nodeInput := params[ii]
-		if !inputBuffer.shape.Equal(nodeInput.shape) {
-			paramName := nodeInput.data.(*nodeParameter).name
+		if !inputBuffer.RawShape.Equal(nodeInput.Shape) {
+			paramName := nodeInput.Data.(*NodeParameter).Name
 			return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected shape %s, got %s",
-				paramName, ii, e.builder.name, nodeInput.shape, inputBuffer.shape)
+				paramName, ii, e.builder.name, nodeInput.Shape, inputBuffer.RawShape)
 		}
 		bufInputs[ii] = inputBuffer
 	}

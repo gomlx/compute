@@ -115,7 +115,7 @@ type blockForDotGeneralData struct {
 }
 
 // EqualNodeData implements nodeDataComparable for de-duplication.
-func (d *blockForDotGeneralData) EqualNodeData(other nodeDataComparable) bool {
+func (d *blockForDotGeneralData) EqualNodeData(other NodeDataComparable) bool {
 	o, ok := other.(*blockForDotGeneralData)
 	if !ok {
 		return false
@@ -130,10 +130,10 @@ func (d *blockForDotGeneralData) EqualNodeData(other nodeDataComparable) bool {
 }
 
 // Compile-time check that blockForDotGeneralData implements nodeDataComparable.
-var _ nodeDataComparable = (*blockForDotGeneralData)(nil)
+var _ NodeDataComparable = (*blockForDotGeneralData)(nil)
 
 func init() {
-	setNodeExecutor(compute.OpTypeBlockForDotGeneral, priorityGeneric, execBlockForDotGeneral)
+	setNodeExecutor(compute.OpTypeBlockForDotGeneral, PriorityGeneric, execBlockForDotGeneral)
 }
 
 // blockForDotGeneral returns a BlockForDotGeneral node for the given input tensor.
@@ -149,7 +149,7 @@ func (f *Function) blockForDotGeneral(input *Node,
 	contractingAxes, batchAxes []int,
 	batchSize, axesASize, axesBSize int) *Node {
 
-	dtype := input.shape.DType
+	dtype := input.Shape.DType
 	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
 	blockedShape := dgCreateBlockedShape(dtype, batchSize, axesASize, axesBSize, blockLog2Dim)
 
@@ -163,7 +163,7 @@ func (f *Function) blockForDotGeneral(input *Node,
 		batchAxes:       slices.Clone(batchAxes),
 	}
 
-	blocked, _ := f.getOrCreateNode(compute.OpTypeBlockForDotGeneral, blockedShape, []*Node{input}, data)
+	blocked, _ := f.GetOrCreateNode(compute.OpTypeBlockForDotGeneral, blockedShape, []*Node{input}, data)
 	return blocked
 }
 
@@ -172,16 +172,16 @@ func (f *Function) blockForDotGeneral(input *Node,
 // for efficient DotGeneral execution.
 func execBlockForDotGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	input := inputs[0]
-	data := node.data.(*blockForDotGeneralData)
+	data := node.Data.(*blockForDotGeneralData)
 
-	dtype := input.shape.DType
+	dtype := input.RawShape.DType
 
 	// Allocate output buffer for blocked data
-	output, err := backend.getBuffer(dtype, data.blockedShape.Size())
+	output, err := backend.GetBuffer(dtype, data.blockedShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = data.blockedShape
+	output.RawShape = data.blockedShape
 	// output.Zeros()
 
 	// Copy data from flat to blocked format using the generic copy function
@@ -215,17 +215,17 @@ func execBlockForDotGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []
 //   - output: output buffer in flat format
 func execDotGeneralBlocked(backend *Backend, lhsBlocks, rhsBlocks *Buffer, hasBatch bool, params *dotGeneralNodeData,
 	output *Buffer) error {
-	dtype := lhsBlocks.shape.DType
+	dtype := lhsBlocks.RawShape.DType
 	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtype]
 
 	// Allocate output buffer in blocked format.
 	// Use params.outputBlockedShape.DType which is the accumulator type (Float32 for FP16/BF16).
 	accumulatorDType := params.outputBlockedShape.DType
-	outputBlocks, err := backend.getBuffer(accumulatorDType, params.outputBlockedShape.Size())
+	outputBlocks, err := backend.GetBuffer(accumulatorDType, params.outputBlockedShape.Size())
 	if err != nil {
 		return err
 	}
-	outputBlocks.shape = params.outputBlockedShape
+	outputBlocks.RawShape = params.outputBlockedShape
 	outputBlocks.Zeros()
 
 	// Set up recursive data for kernel execution
@@ -241,15 +241,15 @@ func execDotGeneralBlocked(backend *Backend, lhsBlocks, rhsBlocks *Buffer, hasBa
 	recursive.kernelFn = kernelBuilder(lhsBlocks, rhsBlocks, outputBlocks, blockDim)
 
 	// Set block counts from blocked buffer dimensions
-	recursive.lhsCrossBlocks = lhsBlocks.shape.Dimensions[1]
-	recursive.rhsCrossBlocks = rhsBlocks.shape.Dimensions[1]
-	recursive.contractBlocks = lhsBlocks.shape.Dimensions[2]
+	recursive.lhsCrossBlocks = lhsBlocks.RawShape.Dimensions[1]
+	recursive.rhsCrossBlocks = rhsBlocks.RawShape.Dimensions[1]
+	recursive.contractBlocks = lhsBlocks.RawShape.Dimensions[2]
 
 	// Execute the batch loop with parallelism
 	runDotGeneralBatchLoop(backend, &recursive, params.batchSize, hasBatch)
 
 	// Copy output from blocked to flat format
-	finalOutputDType := output.shape.DType
+	finalOutputDType := output.RawShape.DType
 	copyOutputBlockToFlatAny, err := dotGeneralOutputBlockToFlatDTypeMap.Get(finalOutputDType)
 	if err != nil {
 		return err
@@ -278,8 +278,8 @@ func dgCopyFlatToBlockShape[T interface {
 	PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
 }](
 	source, blkOutput *Buffer, contractingAxes, batchAxes []int, batchSize, crossSize, contractingSize, blkLog2Dim int) {
-	rank := source.shape.Rank()
-	sourceDims := source.shape.Dimensions
+	rank := source.RawShape.Rank()
+	sourceDims := source.RawShape.Dimensions
 
 	// Calculate source strides (standard row-major).
 	sourceStrides := make([]int, rank)
@@ -345,8 +345,8 @@ func dgCopyFlatToBlockShape[T interface {
 	contractOffsets := buildOffsets(contractingAxes, contractingSize)
 
 	// Output Pointers
-	sourceData := source.flat.([]T)
-	outputData := blkOutput.flat.([]T)
+	sourceData := source.Flat.([]T)
+	outputData := blkOutput.Flat.([]T)
 
 	blkDim := 1 << blkLog2Dim
 	crossBlocks := (crossSize + blkDim - 1) / blkDim
@@ -393,8 +393,8 @@ func dgCopyFlatToBlockShape[T interface {
 var dotGeneralOutputBlockToFlatDTypeMap = NewDTypeMap("DotGeneralNormalizedBlockToFlat")
 
 func init() {
-	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.BFloat16, priorityTyped, dgCopyOutputBlockToFlatF32ToBF16)
-	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.Float16, priorityTyped, dgCopyOutputBlockToFlatF32ToF16)
+	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.BFloat16, PriorityTyped, dgCopyOutputBlockToFlatF32ToBF16)
+	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.Float16, PriorityTyped, dgCopyOutputBlockToFlatF32ToF16)
 }
 
 // ============================================================================
@@ -554,6 +554,6 @@ var dotGeneralKernelDTypeMap = NewDTypeMap("DotGeneralKernel")
 type kernelFuncType func(lhsBlockIdx, rhsBlockIdx, outputBlockIdx int)
 
 func init() {
-	dotGeneralKernelDTypeMap.Register(dtypes.BFloat16, priorityTyped, buildDotGeneralKernelBFloat16)
-	dotGeneralKernelDTypeMap.Register(dtypes.Float16, priorityTyped, buildDotGeneralKernelFloat16)
+	dotGeneralKernelDTypeMap.Register(dtypes.BFloat16, PriorityTyped, buildDotGeneralKernelBFloat16)
+	dotGeneralKernelDTypeMap.Register(dtypes.Float16, PriorityTyped, buildDotGeneralKernelFloat16)
 }

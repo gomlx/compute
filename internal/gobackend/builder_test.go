@@ -1,10 +1,11 @@
-package gobackend
+package gobackend_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
@@ -45,16 +46,16 @@ func TestDuplicatedOutputNodes(t *testing.T) {
 	}
 
 	// Verify that the two output buffers are different (not the same pointer)
-	output0 := outputs[0].(*Buffer)
-	output1 := outputs[1].(*Buffer)
+	output0 := outputs[0].(*gobackend.Buffer)
+	output1 := outputs[1].(*gobackend.Buffer)
 	if output0 == output1 {
 		t.Errorf("duplicated output nodes should yield different buffers")
 	}
 
 	// Verify that the underlying flat data slices are also different
 	// (they may have the same values but should be different slices)
-	flat0 := output0.flat.([]float32)
-	flat1 := output1.flat.([]float32)
+	flat0 := output0.Flat.([]float32)
+	flat1 := output1.Flat.([]float32)
 	if &flat0[0] == &flat1[0] {
 		t.Errorf("duplicated output nodes should have different underlying data slices")
 	}

@@ -32,12 +32,12 @@ import (
 // BackendName to be used in GOMLX_BACKEND to specify this backend.
 const BackendName = "go"
 
-// Registers New() as the default constructor for "xla" backend.
+// Registers New() as the default constructor for "go" backend.
 func init() {
 	compute.Register(BackendName, New)
 }
 
-// GetBackend returns a singleton backend for SimpleGo, created with the default configuration.
+// GetBackend returns a singleton backend for Go backend, created with the default configuration.
 // The backend is only created at the first call of the function.
 //
 // The singleton is never destroyed.
@@ -49,7 +49,7 @@ var GetBackend = sync.OnceValue(func() compute.Backend {
 	return backend
 })
 
-// New constructs a new SimpleGo Backend.
+// New constructs a new Go backend.
 // There are no configurations, the string is simply ignored.
 func New(config string) (compute.Backend, error) {
 	b := newDefaultBackend()
@@ -65,10 +65,10 @@ func New(config string) (compute.Backend, error) {
 			vInt, err := strconv.Atoi(value)
 			if err != nil {
 				return nil, errors.Wrapf(err,
-					"invalid value for %q in SimpleGo backend config: needs an int, got %q", key, value)
+					"invalid value for %q in Go backend config: needs an int, got %q", key, value)
 			}
 			b.workers.SetMaxParallelism(vInt)
-			fmt.Printf("SimpleGo backend: parallelism set to %d\n", vInt)
+			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
 		case "packgemm":
 			// Enable packgemm algorithm choice.
 			b.enablePackgemm = true
@@ -186,18 +186,18 @@ func (b *Backend) Builder(name string) compute.Builder {
 		Builder: notimplemented.Builder{
 			ErrFn: notImplementedError,
 		},
-		backend: b,
+		Backend: b,
 		name:    name,
 	}
 
 	// Create the main function
-	builder.mainFn = &Function{
+	builder.MainFn = &Function{
 		Function: notimplemented.Function{
 			ErrFn: notImplementedError,
 		},
-		builder:   builder,
+		Builder:   builder,
 		name:      "main",
-		nodeDedup: make(map[nodeDedupKey][]*Node),
+		nodeDedup: make(map[NodeDedupKey][]*Node),
 	}
 	// Set the "not implemented" custom message:
 	return builder

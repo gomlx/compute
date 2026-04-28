@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package gobackend_test
 
 import (
 	"strings"
@@ -8,11 +8,12 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
 
-// TestFunctionCapabilities verifies that the SimpleGo backend reports Functions capability.
+// TestFunctionCapabilities verifies that the Go backend reports Functions capability.
 func TestFunctionCapabilities(t *testing.T) {
 	caps := backend.Capabilities()
 	if !caps.Functions {
@@ -379,8 +380,8 @@ func TestClosurePreCompilation(t *testing.T) {
 	}
 
 	// Before Return, compiled should be nil
-	closureFn := closure.(*Function)
-	if closureFn.compiled != nil {
+	closureFn := closure.(*gobackend.Function)
+	if closureFn.Compiled != nil {
 		t.Errorf("Closure should not be compiled before Return()")
 	}
 
@@ -391,20 +392,20 @@ func TestClosurePreCompilation(t *testing.T) {
 	}
 
 	// After Return, compiled should be set
-	if closureFn.compiled == nil {
+	if closureFn.Compiled == nil {
 		t.Errorf("Closure should be compiled after Return()")
 	}
 
 	// Verify compiled closure properties
-	cc := closureFn.compiled
-	if cc.numNodesToProcess <= 0 {
+	cc := closureFn.Compiled
+	if cc.NumNodesToProcess <= 0 {
 		t.Errorf("Should have nodes to process")
 	}
-	if len(cc.outputNodes) != 1 {
-		t.Errorf("Expected 1 output, got %d", len(cc.outputNodes))
+	if len(cc.OutputNodes) != 1 {
+		t.Errorf("Expected 1 output, got %d", len(cc.OutputNodes))
 	}
-	if cc.numUses == nil {
-		t.Errorf("Should have numUses")
+	if cc.NumUses == nil {
+		t.Errorf("Should have NumUses")
 	}
 }
 
@@ -440,27 +441,27 @@ func TestCompiledClosureExecute(t *testing.T) {
 	}
 
 	// Get the compiled closure
-	closureFn := closure.(*Function)
-	cc := closureFn.Compiled()
+	closureFn := closure.(*gobackend.Function)
+	cc := closureFn.Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
 	// Create input buffers
-	xBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 3),
-		flat:  []float32{1.0, 2.0, 3.0},
-		inUse: true,
+	xBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 3),
+		Flat:     []float32{1.0, 2.0, 3.0},
+		InUse:    true,
 	}
-	yBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 3),
-		flat:  []float32{10.0, 20.0, 30.0},
-		inUse: true,
+	yBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 3),
+		Flat:     []float32{10.0, 20.0, 30.0},
+		InUse:    true,
 	}
 
 	// Execute the closure
-	b := backend.(*Backend)
-	outputs, err := cc.Execute(b, []*Buffer{xBuf, yBuf}, nil, nil, nil)
+	b := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(b, []*gobackend.Buffer{xBuf, yBuf}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -473,11 +474,11 @@ func TestCompiledClosureExecute(t *testing.T) {
 	if result == nil {
 		t.Fatalf("result is nil")
 	}
-	if !result.shape.Equal(shapes.Make(dtypes.Float32, 3)) {
+	if !result.RawShape.Equal(shapes.Make(dtypes.Float32, 3)) {
 		t.Errorf("result shape mismatch")
 	}
 
-	resultFlat := result.flat.([]float32)
+	resultFlat := result.Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{11.0, 22.0, 33.0}, resultFlat); !ok {
 		t.Errorf("result mismatch:\n%s", diff)
 	}
@@ -514,12 +515,12 @@ func TestCompiledClosureMultipleExecutions(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	cc := closure.(*Function).Compiled()
+	cc := closure.(*gobackend.Function).Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
-	b := backend.(*Backend)
+	b := backend.(*gobackend.Backend)
 
 	// Execute multiple times with different inputs
 	testCases := []struct {
@@ -532,13 +533,13 @@ func TestCompiledClosureMultipleExecutions(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		inputBuf := &Buffer{
-			shape: shapes.Make(dtypes.Float32, 2),
-			flat:  tc.input,
-			inUse: true,
+		inputBuf := &gobackend.Buffer{
+			RawShape: shapes.Make(dtypes.Float32, 2),
+			Flat:     tc.input,
+			InUse:    true,
 		}
 
-		outputs, err := cc.Execute(b, []*Buffer{inputBuf}, nil, nil, nil)
+		outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("Execution %d failed: %+v", i, err)
 		}
@@ -546,7 +547,7 @@ func TestCompiledClosureMultipleExecutions(t *testing.T) {
 			t.Fatalf("Execution %d expected 1 output, got %d", i, len(outputs))
 		}
 
-		resultFlat := outputs[0].flat.([]float32)
+		resultFlat := outputs[0].Flat.([]float32)
 		if ok, diff := testutil.IsEqual(tc.expected, resultFlat); !ok {
 			t.Errorf("Execution %d result mismatch:\n%s", i, diff)
 		}
@@ -584,14 +585,14 @@ func TestCompiledClosureWithConstants(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	cc := closure.(*Function).Compiled()
+	cc := closure.(*gobackend.Function).Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
 	// Execute with no inputs
-	simpleGoBackend := backend.(*Backend)
-	outputs, err := cc.Execute(simpleGoBackend, []*Buffer{}, nil, nil, nil)
+	goBackend := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -599,7 +600,7 @@ func TestCompiledClosureWithConstants(t *testing.T) {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
 
-	resultFlat := outputs[0].flat.([]float32)
+	resultFlat := outputs[0].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{3.0}, resultFlat); !ok {
 		t.Errorf("result mismatch:\n%s", diff)
 	}
@@ -646,19 +647,19 @@ func TestCompiledClosureMultipleOutputs(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	cc := closure.(*Function).Compiled()
+	cc := closure.(*gobackend.Function).Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
-	inputBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{5.0, 10.0},
-		inUse: true,
+	inputBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{5.0, 10.0},
+		InUse:    true,
 	}
 
-	b := backend.(*Backend)
-	outputs, err := cc.Execute(b, []*Buffer{inputBuf}, nil, nil, nil)
+	b := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -667,13 +668,13 @@ func TestCompiledClosureMultipleOutputs(t *testing.T) {
 	}
 
 	// First output: x + 1 = [6, 11]
-	result0 := outputs[0].flat.([]float32)
+	result0 := outputs[0].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{6.0, 11.0}, result0); !ok {
 		t.Errorf("output 0 mismatch:\n%s", diff)
 	}
 
 	// Second output: x * 2 = [10, 20]
-	result1 := outputs[1].flat.([]float32)
+	result1 := outputs[1].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{10.0, 20.0}, result1); !ok {
 		t.Errorf("output 1 mismatch:\n%s", diff)
 	}
@@ -730,7 +731,7 @@ func TestCompiledClosureChainedOperations(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	cc := closure.(*Function).Compiled()
+	cc := closure.(*gobackend.Function).Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
@@ -739,14 +740,14 @@ func TestCompiledClosureChainedOperations(t *testing.T) {
 	// (x + 1) = [2, 3]
 	// (x + 1) * 2 = [4, 6]
 	// (x + 1) * 2 - 3 = [1, 3]
-	inputBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{1.0, 2.0},
-		inUse: true,
+	inputBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{1.0, 2.0},
+		InUse:    true,
 	}
 
-	simpleGoBackend := backend.(*Backend)
-	outputs, err := cc.Execute(simpleGoBackend, []*Buffer{inputBuf}, nil, nil, nil)
+	goBackend := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -754,7 +755,7 @@ func TestCompiledClosureChainedOperations(t *testing.T) {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
 
-	resultFlat := outputs[0].flat.([]float32)
+	resultFlat := outputs[0].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{1.0, 3.0}, resultFlat); !ok {
 		t.Errorf("result mismatch:\n%s", diff)
 	}
@@ -791,22 +792,22 @@ func TestCompiledClosureInputValidation(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	cc := closure.(*Function).Compiled()
+	cc := closure.(*gobackend.Function).Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
 	// Try to execute with wrong number of inputs
-	xBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{1.0, 2.0},
-		inUse: true,
+	xBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{1.0, 2.0},
+		InUse:    true,
 	}
 
-	simpleGoBackend := backend.(*Backend)
+	goBackend := backend.(*gobackend.Backend)
 
 	// Too few inputs
-	_, err = cc.Execute(simpleGoBackend, []*Buffer{xBuf}, nil, nil, nil)
+	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf}, nil, nil, nil)
 	if err == nil {
 		t.Errorf("Expected error for too few inputs")
 	} else if !strings.Contains(err.Error(), "expects 2 inputs, got 1") {
@@ -814,7 +815,7 @@ func TestCompiledClosureInputValidation(t *testing.T) {
 	}
 
 	// Too many inputs
-	_, err = cc.Execute(simpleGoBackend, []*Buffer{xBuf, xBuf, xBuf}, nil, nil, nil)
+	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf, xBuf, xBuf}, nil, nil, nil)
 	if err == nil {
 		t.Errorf("Expected error for too many inputs")
 	} else if !strings.Contains(err.Error(), "expects 2 inputs, got 3") {
@@ -839,8 +840,8 @@ func TestMainFunctionNotCompiled(t *testing.T) {
 	}
 
 	// Main function should not have a compiled closure
-	mainFnImpl := mainFn.(*Function)
-	if mainFnImpl.compiled != nil {
+	mainFnImpl := mainFn.(*gobackend.Function)
+	if mainFnImpl.Compiled != nil {
 		t.Errorf("Main function should not be pre-compiled")
 	}
 }
@@ -885,12 +886,12 @@ func TestClosureCapturingParentNode(t *testing.T) {
 	}
 
 	// Verify the closure has captured the parent node
-	closureFn := closure.(*Function)
-	if len(closureFn.capturedParentNodes) != 1 {
-		t.Errorf("Expected 1 captured parent node, got %d", len(closureFn.capturedParentNodes))
+	closureFn := closure.(*gobackend.Function)
+	if len(closureFn.CapturedParentNodes) != 1 {
+		t.Errorf("Expected 1 captured parent node, got %d", len(closureFn.CapturedParentNodes))
 	}
-	if len(closureFn.capturedLocalNodes) != 1 {
-		t.Errorf("Expected 1 captured local node, got %d", len(closureFn.capturedLocalNodes))
+	if len(closureFn.CapturedLocalNodes) != 1 {
+		t.Errorf("Expected 1 captured local node, got %d", len(closureFn.CapturedLocalNodes))
 	}
 }
 
@@ -932,34 +933,34 @@ func TestClosureExecuteWithCapturedValues(t *testing.T) {
 	}
 
 	// Get the compiled closure
-	closureFn := closure.(*Function)
-	if len(closureFn.capturedParentNodes) != 1 {
-		t.Errorf("Expected 1 captured parent node, got %d", len(closureFn.capturedParentNodes))
+	closureFn := closure.(*gobackend.Function)
+	if len(closureFn.CapturedParentNodes) != 1 {
+		t.Errorf("Expected 1 captured parent node, got %d", len(closureFn.CapturedParentNodes))
 	}
 
-	cc := closureFn.Compiled()
+	cc := closureFn.Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
 	// Prepare the captured value buffer (simulating what an If/While executor would do)
-	capturedBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{10.0, 20.0}, // The captured constant value
-		inUse: true,
+	capturedBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{10.0, 20.0}, // The captured constant value
+		InUse:    true,
 	}
 
 	// Prepare the input parameter buffer: y = [1, 2]
-	inputBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{1.0, 2.0},
-		inUse: true,
+	inputBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{1.0, 2.0},
+		InUse:    true,
 	}
 
 	// Execute the closure with captured values
 	// Expected: [10, 20] + [1, 2] = [11, 22]
-	simpleGoBackend := backend.(*Backend)
-	outputs, err := cc.Execute(simpleGoBackend, []*Buffer{inputBuf}, nil, []*Buffer{capturedBuf}, nil)
+	goBackend := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -967,7 +968,7 @@ func TestClosureExecuteWithCapturedValues(t *testing.T) {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
 
-	resultFlat := outputs[0].flat.([]float32)
+	resultFlat := outputs[0].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{11.0, 22.0}, resultFlat); !ok {
 		t.Errorf("result mismatch:\n%s", diff)
 	}
@@ -1016,46 +1017,46 @@ func TestClosureExecuteWithNestedCapturedValues(t *testing.T) {
 	}
 
 	// Verify capture chain: grandparent -> parent capture -> child capture
-	closure1Fn := closure1.(*Function)
-	closure2Fn := closure2.(*Function)
+	closure1Fn := closure1.(*gobackend.Function)
+	closure2Fn := closure2.(*gobackend.Function)
 
 	// Parent closure should capture the grandparent value
-	if len(closure1Fn.capturedParentNodes) != 1 {
+	if len(closure1Fn.CapturedParentNodes) != 1 {
 		t.Errorf("Parent closure should capture grandparent")
 	}
 
 	// Child closure should capture from parent (the parent's capture node)
-	if len(closure2Fn.capturedParentNodes) != 1 {
+	if len(closure2Fn.CapturedParentNodes) != 1 {
 		t.Errorf("Child closure should capture from parent")
 	}
-	if closure1Fn.capturedLocalNodes[0] != closure2Fn.capturedParentNodes[0] {
+	if closure1Fn.CapturedLocalNodes[0] != closure2Fn.CapturedParentNodes[0] {
 		t.Errorf("Child should capture parent's capture node, not grandparent directly")
 	}
 
 	// Get the compiled closure
-	cc := closure2Fn.Compiled()
+	cc := closure2Fn.Compiled
 	if cc == nil {
 		t.Fatalf("compiled closure is nil")
 	}
 
 	// Prepare the captured value buffer (the grandparent constant value)
-	capturedBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{100.0, 200.0},
-		inUse: true,
+	capturedBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{100.0, 200.0},
+		InUse:    true,
 	}
 
 	// Prepare the input parameter buffer: y = [2, 3]
-	inputBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 2),
-		flat:  []float32{2.0, 3.0},
-		inUse: true,
+	inputBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 2),
+		Flat:     []float32{2.0, 3.0},
+		InUse:    true,
 	}
 
 	// Execute the nested closure with captured values
 	// Expected: [100, 200] * [2, 3] = [200, 600]
-	simpleGoBackend := backend.(*Backend)
-	outputs, err := cc.Execute(simpleGoBackend, []*Buffer{inputBuf}, nil, []*Buffer{capturedBuf}, nil)
+	goBackend := backend.(*gobackend.Backend)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -1063,7 +1064,7 @@ func TestClosureExecuteWithNestedCapturedValues(t *testing.T) {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
 
-	resultFlat := outputs[0].flat.([]float32)
+	resultFlat := outputs[0].Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{200.0, 600.0}, resultFlat); !ok {
 		t.Errorf("result mismatch:\n%s", diff)
 	}
@@ -1115,12 +1116,12 @@ func TestClosureCapturingGrandparentNode(t *testing.T) {
 	}
 
 	// Verify the nested closure has captured the grandparent node
-	closure2Fn := closure2.(*Function)
-	if len(closure2Fn.capturedParentNodes) != 1 {
-		t.Errorf("Expected 1 captured parent node, got %d", len(closure2Fn.capturedParentNodes))
+	closure2Fn := closure2.(*gobackend.Function)
+	if len(closure2Fn.CapturedParentNodes) != 1 {
+		t.Errorf("Expected 1 captured parent node, got %d", len(closure2Fn.CapturedParentNodes))
 	}
-	if len(closure2Fn.capturedLocalNodes) != 1 {
-		t.Errorf("Expected 1 captured local node, got %d", len(closure2Fn.capturedLocalNodes))
+	if len(closure2Fn.CapturedLocalNodes) != 1 {
+		t.Errorf("Expected 1 captured local node, got %d", len(closure2Fn.CapturedLocalNodes))
 	}
 }
 
@@ -1198,20 +1199,20 @@ func TestCapturedParentNodesPropagation(t *testing.T) {
 	}
 
 	// Verify the closure's captured values
-	closureFn := closure.(*Function)
-	if len(closureFn.capturedParentNodes) != 1 {
+	closureFn := closure.(*gobackend.Function)
+	if len(closureFn.CapturedParentNodes) != 1 {
 		t.Errorf("Expected 1 captured parent node")
 	}
-	if closureFn.capturedParentNodes[0] != parentValue.(*Node) {
+	if closureFn.CapturedParentNodes[0] != parentValue.(*gobackend.Node) {
 		t.Errorf("captured parent node mismatch")
 	}
 
 	// Verify that CapturedParentNodes() returns the list
-	captured := closureFn.CapturedParentNodes()
+	captured := closureFn.CapturedParentNodes
 	if len(captured) != 1 {
 		t.Errorf("Expected 1 captured parent node from CapturedParentNodes()")
 	}
-	if captured[0] != parentValue.(*Node) {
+	if captured[0] != parentValue.(*gobackend.Node) {
 		t.Errorf("CapturedParentNodes mismatch")
 	}
 }
@@ -1220,7 +1221,7 @@ func TestCapturedParentNodesPropagation(t *testing.T) {
 // captured inputs on a node for DAG tracking.
 func TestAddNodeCapturedInputs(t *testing.T) {
 	builder := backend.Builder("test_add_node_captured_inputs")
-	mainFnImpl := builder.Main().(*Function)
+	mainFnImpl := builder.Main().(*gobackend.Function)
 
 	// Create a value in the main function
 	parentValue, err := mainFnImpl.Constant([]float32{1.0, 2.0}, 2)
@@ -1249,26 +1250,26 @@ func TestAddNodeCapturedInputs(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	closureFn := closure.(*Function)
+	closureFn := closure.(*gobackend.Function)
 
 	// Create a dummy node (simulating an If/While op that uses the closure)
-	dummyNode := &Node{
-		idx:      999,
-		opType:   compute.OpTypeIdentity,
-		function: mainFnImpl,
+	dummyNode := &gobackend.Node{
+		Index:    999,
+		OpType:   compute.OpTypeIdentity,
+		Function: mainFnImpl,
 	}
 
 	// Add captured inputs to the node
 	dummyNode.AddNodeCapturedInputs(closureFn)
 
 	// Verify the node has captured inputs (one closure with one captured value)
-	if len(dummyNode.capturedInputs) != 1 {
-		t.Errorf("Expected 1 captured input, got %d", len(dummyNode.capturedInputs))
+	if len(dummyNode.CapturedInputs) != 1 {
+		t.Errorf("Expected 1 captured input, got %d", len(dummyNode.CapturedInputs))
 	}
-	if len(dummyNode.capturedInputs[0]) != 1 {
-		t.Errorf("Expected 1 captured input in closure 0, got %d", len(dummyNode.capturedInputs[0]))
+	if len(dummyNode.CapturedInputs[0]) != 1 {
+		t.Errorf("Expected 1 captured input in closure 0, got %d", len(dummyNode.CapturedInputs[0]))
 	}
-	if dummyNode.capturedInputs[0][0] != parentValue.(*Node) {
+	if dummyNode.CapturedInputs[0][0] != parentValue.(*gobackend.Node) {
 		t.Errorf("Captured input mismatch")
 	}
 }
@@ -1317,21 +1318,21 @@ func TestNestedClosureCaptureChain(t *testing.T) {
 
 	// Verify the chain:
 	// 1. Parent closure (closure1) should capture the grandparent value
-	closure1Fn := closure1.(*Function)
-	if len(closure1Fn.capturedParentNodes) != 1 {
+	closure1Fn := closure1.(*gobackend.Function)
+	if len(closure1Fn.CapturedParentNodes) != 1 {
 		t.Errorf("Expected parent to capture grandparent")
 	}
-	if closure1Fn.capturedParentNodes[0] != grandparentValue.(*Node) {
+	if closure1Fn.CapturedParentNodes[0] != grandparentValue.(*gobackend.Node) {
 		t.Errorf("captured parent node mismatch")
 	}
 
 	// 2. Child closure (closure2) should capture the parent's capture node
-	closure2Fn := closure2.(*Function)
-	if len(closure2Fn.capturedParentNodes) != 1 {
+	closure2Fn := closure2.(*gobackend.Function)
+	if len(closure2Fn.CapturedParentNodes) != 1 {
 		t.Errorf("Expected child to capture from parent")
 	}
 	// The captured value should be the parent's capture node, not the original
-	if closure2Fn.capturedParentNodes[0] != closure1Fn.capturedLocalNodes[0] {
+	if closure2Fn.CapturedParentNodes[0] != closure1Fn.CapturedLocalNodes[0] {
 		t.Errorf("Child should capture parent's capture node, not grandparent directly")
 	}
 }
@@ -1396,7 +1397,7 @@ func TestIfOperation(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	trueInput := &Buffer{shape: shapes.Make(dtypes.Bool), flat: []bool{true}, inUse: true}
+	trueInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{true}, InUse: true}
 	outputs, err := exec.Execute([]compute.Buffer{trueInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1404,12 +1405,12 @@ func TestIfOperation(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	if ok, diff := testutil.IsEqual([]int32{10}, outputs[0].(*Buffer).flat); !ok {
+	if ok, diff := testutil.IsEqual([]int32{10}, outputs[0].(*gobackend.Buffer).Flat); !ok {
 		t.Errorf("true branch output mismatch:\n%s", diff)
 	}
 
 	// Execute with false
-	falseInput := &Buffer{shape: shapes.Make(dtypes.Bool), flat: []bool{false}, inUse: true}
+	falseInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{false}, InUse: true}
 	outputs, err = exec.Execute([]compute.Buffer{falseInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1417,7 +1418,7 @@ func TestIfOperation(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	if ok, diff := testutil.IsEqual([]int32{20}, outputs[0].(*Buffer).flat); !ok {
+	if ok, diff := testutil.IsEqual([]int32{20}, outputs[0].(*gobackend.Buffer).Flat); !ok {
 		t.Errorf("false branch output mismatch:\n%s", diff)
 	}
 }
@@ -1505,7 +1506,7 @@ func TestWhileOperation(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	if ok, diff := testutil.IsEqual([]int32{5}, outputs[0].(*Buffer).flat); !ok {
+	if ok, diff := testutil.IsEqual([]int32{5}, outputs[0].(*gobackend.Buffer).Flat); !ok {
 		t.Errorf("while result mismatch:\n%s", diff)
 	}
 }
@@ -1564,10 +1565,10 @@ func TestSortOperation(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	inputBuf := &Buffer{
-		shape: shapes.Make(dtypes.Float32, 5),
-		flat:  []float32{5.0, 2.0, 8.0, 1.0, 3.0},
-		inUse: true,
+	inputBuf := &gobackend.Buffer{
+		RawShape: shapes.Make(dtypes.Float32, 5),
+		Flat:     []float32{5.0, 2.0, 8.0, 1.0, 3.0},
+		InUse:    true,
 	}
 	outputs, err := exec.Execute([]compute.Buffer{inputBuf}, nil, 0)
 	if err != nil {
@@ -1576,7 +1577,7 @@ func TestSortOperation(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	if ok, diff := testutil.IsEqual([]float32{1.0, 2.0, 3.0, 5.0, 8.0}, outputs[0].(*Buffer).flat); !ok {
+	if ok, diff := testutil.IsEqual([]float32{1.0, 2.0, 3.0, 5.0, 8.0}, outputs[0].(*gobackend.Buffer).Flat); !ok {
 		t.Errorf("sort result mismatch:\n%s", diff)
 	}
 }
@@ -1657,7 +1658,7 @@ func TestClosureCaptureExecutionWithIf(t *testing.T) {
 	}
 
 	// Test with pred = true
-	trueInput := &Buffer{shape: shapes.Make(dtypes.Bool), flat: []bool{true}, inUse: true}
+	trueInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{true}, InUse: true}
 	outputs, err := exec.Execute([]compute.Buffer{trueInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1665,13 +1666,13 @@ func TestClosureCaptureExecutionWithIf(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	resultFlat := outputs[0].(*Buffer).flat.([]float32)
+	resultFlat := outputs[0].(*gobackend.Buffer).Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{20.0, 40.0}, resultFlat); !ok {
 		t.Errorf("True branch output mismatch:\n%s", diff)
 	}
 
 	// Test with pred = false
-	falseInput := &Buffer{shape: shapes.Make(dtypes.Bool), flat: []bool{false}, inUse: true}
+	falseInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{false}, InUse: true}
 	outputs, err = exec.Execute([]compute.Buffer{falseInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1679,7 +1680,7 @@ func TestClosureCaptureExecutionWithIf(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	resultFlat = outputs[0].(*Buffer).flat.([]float32)
+	resultFlat = outputs[0].(*gobackend.Buffer).Flat.([]float32)
 	if ok, diff := testutil.IsEqual([]float32{5.0, 10.0}, resultFlat); !ok {
 		t.Errorf("False branch output mismatch:\n%s", diff)
 	}
@@ -1763,7 +1764,7 @@ func TestClosureCaptureExecutionWithWhile(t *testing.T) {
 	}
 
 	// Test with initial counter = 0 (scalar)
-	counterInput := &Buffer{shape: shapes.Make(dtypes.Float32), flat: []float32{0.0}, inUse: true}
+	counterInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Float32), Flat: []float32{0.0}, InUse: true}
 	outputs, err := exec.Execute([]compute.Buffer{counterInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1771,7 +1772,7 @@ func TestClosureCaptureExecutionWithWhile(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("Expected 1 output, got %d", len(outputs))
 	}
-	resultFlat := outputs[0].(*Buffer).flat.([]float32)
+	resultFlat := outputs[0].(*gobackend.Buffer).Flat.([]float32)
 	// Should loop until counter >= 5.0, so 0+1+1+1+1+1 = 5
 	if ok, diff := testutil.IsEqual([]float32{5.0}, resultFlat); !ok {
 		t.Errorf("While result mismatch:\n%s", diff)

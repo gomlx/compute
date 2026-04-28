@@ -15,7 +15,7 @@ type nodeFusedSoftmax struct {
 	axis int
 }
 
-func (d *nodeFusedSoftmax) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedSoftmax) EqualNodeData(other NodeDataComparable) bool {
 	return d.axis == other.(*nodeFusedSoftmax).axis
 }
 
@@ -24,7 +24,7 @@ type nodeFusedLayerNorm struct {
 	epsilon float64
 }
 
-func (d *nodeFusedLayerNorm) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedLayerNorm) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*nodeFusedLayerNorm)
 	if d.epsilon != o.epsilon || len(d.axes) != len(o.axes) {
 		return false
@@ -41,7 +41,7 @@ type nodeFusedGelu struct {
 	exact bool
 }
 
-func (d *nodeFusedGelu) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedGelu) EqualNodeData(other NodeDataComparable) bool {
 	return d.exact == other.(*nodeFusedGelu).exact
 }
 
@@ -49,7 +49,7 @@ type nodeFusedDense struct {
 	activation compute.ActivationType
 }
 
-func (d *nodeFusedDense) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedDense) EqualNodeData(other NodeDataComparable) bool {
 	return d.activation == other.(*nodeFusedDense).activation
 }
 
@@ -62,7 +62,7 @@ type nodeFusedScaledDotProductAttention struct {
 	options    *compute.ScaledDotProductAttentionConfig
 }
 
-func (d *nodeFusedScaledDotProductAttention) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedScaledDotProductAttention) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*nodeFusedScaledDotProductAttention)
 	return d.numHeads == o.numHeads && d.numKVHeads == o.numKVHeads &&
 		d.axesLayout == o.axesLayout && d.scale == o.scale && d.causal == o.causal &&
@@ -111,7 +111,7 @@ type nodeFusedQuantizedDense struct {
 	ggmlK    int                   // Input features (logical columns). Only for QuantGGML.
 }
 
-func (d *nodeFusedQuantizedDense) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeFusedQuantizedDense) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*nodeFusedQuantizedDense)
 	return d.scheme == o.scheme && d.blockAxis == o.blockAxis &&
 		d.blockSize == o.blockSize && d.activation == o.activation &&
@@ -128,13 +128,13 @@ func (f *Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error
 	}
 	xNode := inputs[0]
 
-	rank := xNode.shape.Rank()
+	rank := xNode.Shape.Rank()
 	if axis < 0 || axis >= rank {
 		return nil, errors.Errorf("FusedSoftmax: axis %d out of range for rank %d", axis, rank)
 	}
 
 	data := &nodeFusedSoftmax{axis: axis}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedSoftmax, xNode.shape.Clone(), []*Node{xNode}, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedSoftmax, xNode.Shape.Clone(), []*Node{xNode}, data)
 	return node, nil
 }
 
@@ -154,7 +154,7 @@ func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, 
 	xNode := inputs[0]
 
 	// Normalize negative axes.
-	rank := xNode.shape.Rank()
+	rank := xNode.Shape.Rank()
 	normalizedAxes := make([]int, len(axes))
 	for i, a := range axes {
 		if a < 0 {
@@ -167,7 +167,7 @@ func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, 
 	}
 
 	data := &nodeFusedLayerNorm{axes: normalizedAxes, epsilon: epsilon}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedLayerNorm, xNode.shape.Clone(), inputs, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedLayerNorm, xNode.Shape.Clone(), inputs, data)
 	return node, nil
 }
 
@@ -181,7 +181,7 @@ func (f *Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error)
 	xNode := inputs[0]
 
 	data := &nodeFusedGelu{exact: exact}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedGelu, xNode.shape.Clone(), []*Node{xNode}, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedGelu, xNode.Shape.Clone(), []*Node{xNode}, data)
 	return node, nil
 }
 
@@ -204,23 +204,23 @@ func (f *Function) FusedDense(x, weight, bias compute.Value, activation compute.
 	xNode := inputs[0]
 	wNode := inputs[1]
 
-	if xNode.shape.Rank() < 1 || wNode.shape.Rank() < 2 {
+	if xNode.Shape.Rank() < 1 || wNode.Shape.Rank() < 2 {
 		return nil, errors.Errorf("FusedDense: x must have rank >= 1 (got %d), weight must have rank >= 2 (got %d)",
-			xNode.shape.Rank(), wNode.shape.Rank())
+			xNode.Shape.Rank(), wNode.Shape.Rank())
 	}
-	inFeatures := xNode.shape.Dimensions[xNode.shape.Rank()-1]
-	if inFeatures != wNode.shape.Dimensions[0] {
+	inFeatures := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
+	if inFeatures != wNode.Shape.Dimensions[0] {
 		return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's first dim (%d)",
-			inFeatures, wNode.shape.Dimensions[0])
+			inFeatures, wNode.Shape.Dimensions[0])
 	}
 
-	outDims := make([]int, xNode.shape.Rank()-1+wNode.shape.Rank()-1)
-	copy(outDims, xNode.shape.Dimensions[:xNode.shape.Rank()-1])
-	copy(outDims[xNode.shape.Rank()-1:], wNode.shape.Dimensions[1:])
-	outShape := shapes.Make(xNode.shape.DType, outDims...)
+	outDims := make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
+	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
+	copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[1:])
+	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
 	// Build DotGeneral sub-node for the matmul: contract x's last axis with weight's first.
-	dotResult, err := f.DotGeneral(xNode, []int{xNode.shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
+	dotResult, err := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
 	if err != nil {
 		return nil, errors.WithMessagef(err, "FusedDense: DotGeneral")
 	}
@@ -236,7 +236,7 @@ func (f *Function) FusedDense(x, weight, bias compute.Value, activation compute.
 	}
 
 	data := &nodeFusedDense{activation: activation}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedDense, outShape, fusedInputs, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedDense, outShape, fusedInputs, data)
 	return node, nil
 }
 
@@ -289,34 +289,34 @@ func (f *Function) FusedQuantizedDense(x, weights, bias compute.Value,
 	sNode := inputs[2]
 
 	// Validate x dtype: only float32 is supported.
-	if xNode.shape.DType != dtypes.Float32 {
-		return nil, errors.Errorf("FusedQuantizedDense: x must be float32, got %s", xNode.shape.DType)
+	if xNode.Shape.DType != dtypes.Float32 {
+		return nil, errors.Errorf("FusedQuantizedDense: x must be float32, got %s", xNode.Shape.DType)
 	}
 
 	// Validate x shape: [batch..., K]
-	if xNode.shape.Rank() < 1 {
-		return nil, errors.Errorf("FusedQuantizedDense: x must have rank >= 1, got %d", xNode.shape.Rank())
+	if xNode.Shape.Rank() < 1 {
+		return nil, errors.Errorf("FusedQuantizedDense: x must have rank >= 1, got %d", xNode.Shape.Rank())
 	}
-	K := xNode.shape.Dimensions[xNode.shape.Rank()-1]
+	K := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
 
 	// Derive N from weights shape. The weights dtype reflects the storage type.
-	if wNode.shape.Rank() != 2 || wNode.shape.Dimensions[0] != K {
-		return nil, errors.Errorf("FusedQuantizedDense: weights must be [%d, N], got %v", K, wNode.shape.Dimensions)
+	if wNode.Shape.Rank() != 2 || wNode.Shape.Dimensions[0] != K {
+		return nil, errors.Errorf("FusedQuantizedDense: weights must be [%d, N], got %v", K, wNode.Shape.Dimensions)
 	}
-	N := wNode.shape.Dimensions[1]
+	N := wNode.Shape.Dimensions[1]
 
 	// Validate scales shape: [K, numBlocks]
 	numBlocks := (N + blockSize - 1) / blockSize
-	if sNode.shape.Rank() != 2 || sNode.shape.Dimensions[0] != K || sNode.shape.Dimensions[1] != numBlocks {
+	if sNode.Shape.Rank() != 2 || sNode.Shape.Dimensions[0] != K || sNode.Shape.Dimensions[1] != numBlocks {
 		return nil, errors.Errorf("FusedQuantizedDense: scales must be [%d, %d], got %v",
-			K, numBlocks, sNode.shape.Dimensions)
+			K, numBlocks, sNode.Shape.Dimensions)
 	}
 
 	// Output shape: [batch..., N]
-	outDims := make([]int, xNode.shape.Rank())
-	copy(outDims, xNode.shape.Dimensions[:xNode.shape.Rank()-1])
-	outDims[xNode.shape.Rank()-1] = N
-	outShape := shapes.Make(xNode.shape.DType, outDims...)
+	outDims := make([]int, xNode.Shape.Rank())
+	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
+	outDims[xNode.Shape.Rank()-1] = N
+	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
 	// Only blockAxis=1 (output-features axis) is currently supported.
 	if blockAxis != 1 {
@@ -336,7 +336,7 @@ func (f *Function) FusedQuantizedDense(x, weights, bias compute.Value,
 		hasZeroPoint: zeroPoints != nil,
 		hasBias:      bias != nil,
 	}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
 	return node, nil
 }
 
@@ -393,20 +393,20 @@ func (f *Function) fusedQuantizedDenseGGML(x, weights, bias compute.Value,
 	wNode := inputs[1]
 
 	// Validate x dtype: only float32 is supported.
-	if xNode.shape.DType != dtypes.Float32 {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must be float32, got %s", xNode.shape.DType)
+	if xNode.Shape.DType != dtypes.Float32 {
+		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must be float32, got %s", xNode.Shape.DType)
 	}
-	if xNode.shape.Rank() < 1 {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must have rank >= 1, got %d", xNode.shape.Rank())
+	if xNode.Shape.Rank() < 1 {
+		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must have rank >= 1, got %d", xNode.Shape.Rank())
 	}
 
 	// GGML weights: [N, bytesPerRow] Uint8.
-	if wNode.shape.Rank() != 2 || wNode.shape.DType != dtypes.Uint8 {
+	if wNode.Shape.Rank() != 2 || wNode.Shape.DType != dtypes.Uint8 {
 		return nil, errors.Errorf("FusedQuantizedDense(GGML): weights must be [N, bytesPerRow] Uint8, got %v %s",
-			wNode.shape.Dimensions, wNode.shape.DType)
+			wNode.Shape.Dimensions, wNode.Shape.DType)
 	}
-	N := wNode.shape.Dimensions[0]
-	bytesPerRow := wNode.shape.Dimensions[1]
+	N := wNode.Shape.Dimensions[0]
+	bytesPerRow := wNode.Shape.Dimensions[1]
 
 	ggmlType := wq.GGMLType
 	if err := validateGGMLTypeSupported("FusedQuantizedDense(GGML)", ggmlType); err != nil {
@@ -418,7 +418,7 @@ func (f *Function) fusedQuantizedDenseGGML(x, weights, bias compute.Value,
 	}
 
 	// Validate that x's last dimension matches K.
-	xK := xNode.shape.Dimensions[xNode.shape.Rank()-1]
+	xK := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
 	if xK != K {
 		return nil, errors.Errorf("FusedQuantizedDense(GGML): x's last dim (%d) must match K=%d derived from weights", xK, K)
 	}
@@ -429,10 +429,10 @@ func (f *Function) fusedQuantizedDenseGGML(x, weights, bias compute.Value,
 	}
 
 	// Output shape: [batch..., N]
-	outDims := make([]int, xNode.shape.Rank())
-	copy(outDims, xNode.shape.Dimensions[:xNode.shape.Rank()-1])
-	outDims[xNode.shape.Rank()-1] = N
-	outShape := shapes.Make(xNode.shape.DType, outDims...)
+	outDims := make([]int, xNode.Shape.Rank())
+	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
+	outDims[xNode.Shape.Rank()-1] = N
+	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
 	data := &nodeFusedQuantizedDense{
 		scheme:     compute.QuantGGML,
@@ -442,7 +442,7 @@ func (f *Function) fusedQuantizedDenseGGML(x, weights, bias compute.Value,
 		ggmlN:      N,
 		ggmlK:      K,
 	}
-	node, _ := f.getOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
 	return node, nil
 }
 
@@ -452,7 +452,7 @@ type nodeQuantizedEmbeddingLookup struct {
 	ggmlK    int // Logical embedding dimension (valuesPerBlock * numBlocks).
 }
 
-func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other nodeDataComparable) bool {
+func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*nodeQuantizedEmbeddingLookup)
 	return d.ggmlType == o.ggmlType && d.ggmlK == o.ggmlK
 }
@@ -479,18 +479,18 @@ func (f *Function) QuantizedEmbeddingLookup(data, indices compute.Value,
 	iNode := inputs[1]
 
 	// Validate data: [vocabSize, bytesPerRow] Uint8.
-	if dNode.shape.Rank() != 2 || dNode.shape.DType != dtypes.Uint8 {
+	if dNode.Shape.Rank() != 2 || dNode.Shape.DType != dtypes.Uint8 {
 		return nil, errors.Errorf("QuantizedEmbeddingLookup: data must be [vocabSize, bytesPerRow] Uint8, got %v %s",
-			dNode.shape.Dimensions, dNode.shape.DType)
+			dNode.Shape.Dimensions, dNode.Shape.DType)
 	}
-	bytesPerRow := dNode.shape.Dimensions[1]
+	bytesPerRow := dNode.Shape.Dimensions[1]
 
 	// Validate indices: must be integer, last dim = 1.
-	if !iNode.shape.DType.IsInt() {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices must be integer, got %s", iNode.shape.DType)
+	if !iNode.Shape.DType.IsInt() {
+		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices must be integer, got %s", iNode.Shape.DType)
 	}
-	if iNode.shape.Rank() < 1 || iNode.shape.Dimensions[iNode.shape.Rank()-1] != 1 {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices last dim must be 1, got shape %v", iNode.shape.Dimensions)
+	if iNode.Shape.Rank() < 1 || iNode.Shape.Dimensions[iNode.Shape.Rank()-1] != 1 {
+		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices last dim must be 1, got shape %v", iNode.Shape.Dimensions)
 	}
 
 	ggmlType := wq.GGMLType
@@ -506,8 +506,8 @@ func (f *Function) QuantizedEmbeddingLookup(data, indices compute.Value,
 
 	// Output shape: [batch..., K] Float32.
 	// indices shape is [batch..., 1]. Output replaces the last dim with K.
-	outDims := make([]int, iNode.shape.Rank())
-	copy(outDims, iNode.shape.Dimensions)
+	outDims := make([]int, iNode.Shape.Rank())
+	copy(outDims, iNode.Shape.Dimensions)
 	outDims[len(outDims)-1] = K
 	outShape := shapes.Make(dtypes.Float32, outDims...)
 
@@ -515,7 +515,7 @@ func (f *Function) QuantizedEmbeddingLookup(data, indices compute.Value,
 		ggmlType: ggmlType,
 		ggmlK:    K,
 	}
-	node, _ := f.getOrCreateNode(compute.OpTypeQuantizedEmbeddingLookup, outShape, inputs, nodeData)
+	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedEmbeddingLookup, outShape, inputs, nodeData)
 	return node, nil
 }
 
@@ -534,15 +534,15 @@ func (f *Function) buildSDPANode(opType compute.OpType, opName string,
 	}
 	qNode := inputs[0]
 
-	if qNode.shape.Rank() != 4 {
-		return nil, errors.Errorf("%s: query must have rank 4, got %d", opName, qNode.shape.Rank())
+	if qNode.Shape.Rank() != 4 {
+		return nil, errors.Errorf("%s: query must have rank 4, got %d", opName, qNode.Shape.Rank())
 	}
 	if numHeads <= 0 || numKVHeads <= 0 || numHeads%numKVHeads != 0 {
 		return nil, errors.Errorf("%s: numHeads (%d) must be positive and divisible by numKVHeads (%d)", opName, numHeads, numKVHeads)
 	}
 
 	data := &nodeFusedScaledDotProductAttention{numHeads: numHeads, numKVHeads: numKVHeads, axesLayout: axesLayout, scale: scale, causal: causal, options: options}
-	node, _ := f.getOrCreateNode(opType, qNode.shape.Clone(), inputs, data)
+	node, _ := f.GetOrCreateNode(opType, qNode.Shape.Clone(), inputs, data)
 	return node, nil
 }
 
@@ -569,11 +569,11 @@ func (f *Function) FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV comp
 	xNode := inputs[0]
 	wNode := inputs[1]
 
-	if xNode.shape.Rank() < 1 {
-		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: x must have rank >= 1, got %d", xNode.shape.Rank())
+	if xNode.Shape.Rank() < 1 {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: x must have rank >= 1, got %d", xNode.Shape.Rank())
 	}
 
-	batchDims := xNode.shape.Dimensions[:xNode.shape.Rank()-1]
+	batchDims := xNode.Shape.Dimensions[:xNode.Shape.Rank()-1]
 	qDims := make([]int, len(batchDims)+1)
 	copy(qDims, batchDims)
 	qDims[len(batchDims)] = queryDim
@@ -581,13 +581,13 @@ func (f *Function) FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV comp
 	copy(kvDims, batchDims)
 	kvDims[len(batchDims)] = keyValueDim
 
-	qShape := shapes.Make(xNode.shape.DType, qDims...)
-	kShape := shapes.Make(xNode.shape.DType, kvDims...)
-	vShape := shapes.Make(xNode.shape.DType, kvDims...)
+	qShape := shapes.Make(xNode.Shape.DType, qDims...)
+	kShape := shapes.Make(xNode.Shape.DType, kvDims...)
+	vShape := shapes.Make(xNode.Shape.DType, kvDims...)
 
 	// Build DotGeneral sub-node for the matmul: x @ wQKV.
 	// This delegates to the optimized matmul infrastructure (blocked, packgemm, highway, etc.).
-	dotResult, dotErr := f.DotGeneral(xNode, []int{xNode.shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
+	dotResult, dotErr := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
 	if dotErr != nil {
 		return nil, nil, nil, errors.WithMessagef(dotErr, "FusedAttentionQKVProjection: DotGeneral")
 	}
@@ -600,9 +600,9 @@ func (f *Function) FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV comp
 
 	data := &nodeFusedAttentionQKVProjection{qDim: queryDim, kvDim: keyValueDim, hasBiasQ: biasQ != nil, hasBiasK: biasK != nil, hasBiasV: biasV != nil}
 	node := f.newMultiOutputsNode(compute.OpTypeFusedAttentionQKVProjection, []shapes.Shape{qShape, kShape, vShape}, fusedInputs...)
-	node.data = data
-	queryOut = node.multiOutputsNodes[0]
-	keyOut = node.multiOutputsNodes[1]
-	valueOut = node.multiOutputsNodes[2]
+	node.Data = data
+	queryOut = node.MultiOutputsNodes[0]
+	keyOut = node.MultiOutputsNodes[1]
+	valueOut = node.MultiOutputsNodes[2]
 	return
 }

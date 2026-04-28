@@ -60,27 +60,27 @@ func execFusedQuantizedDenseGGML(backend *Backend, node *Node, inputs []*Buffer,
 		biasBuf = inputs[2]
 	}
 
-	if xBuf.shape.DType != dtypes.Float32 {
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense(GGML): only float32 input supported, got %s", xBuf.shape.DType)
+	if xBuf.RawShape.DType != dtypes.Float32 {
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense(GGML): only float32 input supported, got %s", xBuf.RawShape.DType)
 	}
 
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	x := xBuf.flat.([]float32)
-	weights := wBuf.flat.([]uint8)
-	out := output.flat.([]float32)
+	x := xBuf.Flat.([]float32)
+	weights := wBuf.Flat.([]uint8)
+	out := output.Flat.([]float32)
 
 	N := data.ggmlN
 	K := data.ggmlK
-	M := xBuf.shape.Size() / K
-	bytesPerRow := wBuf.shape.Dimensions[1]
+	M := xBuf.RawShape.Size() / K
+	bytesPerRow := wBuf.RawShape.Dimensions[1]
 	ggmlType := data.ggmlType
 
 	var bias []float32
 	if biasBuf != nil {
-		bias = biasBuf.flat.([]float32)
+		bias = biasBuf.Flat.([]float32)
 	}
 
 	if err := quantizedDenseGGML(backend, x, weights, bias, out, M, K, N, bytesPerRow, ggmlType); err != nil {

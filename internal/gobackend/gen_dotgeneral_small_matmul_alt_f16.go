@@ -46,9 +46,9 @@ func execDotGeneralSmallMatMulFloat16( //alt:f16
 	//alt:bf16  lhsFlat := lhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16  rhsFlat := rhs.flat.([]bfloat16.BFloat16)
 	//alt:bf16  outputFlat := output.flat.([]bfloat16.BFloat16)
-	lhsFlat := lhs.flat.([]float16.Float16)       //alt:f16
-	rhsFlat := rhs.flat.([]float16.Float16)       //alt:f16
-	outputFlat := output.flat.([]float16.Float16) //alt:f16
+	lhsFlat := lhs.Flat.([]float16.Float16)       //alt:f16
+	rhsFlat := rhs.Flat.([]float16.Float16)       //alt:f16
+	outputFlat := output.Flat.([]float16.Float16) //alt:f16
 
 	batchSize := params.batchSize
 	lhsCrossSize := params.lhsCrossSize       // M

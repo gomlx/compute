@@ -20,7 +20,7 @@ import (
 
 func init() {
 	if archsimd.X86.AVX512() {
-		dotGeneralKernelDTypeMap.Register(dtypes.Float32, priorityArch, buildDotGeneralBlockKernel_avx512_float32)
+		dotGeneralKernelDTypeMap.Register(dtypes.Float32, PriorityArch, buildDotGeneralBlockKernel_avx512_float32)
 		// Adjust block-size: we can be more aggressive with AVX512 support:
 		setDotGeneralTargetBlockSize(16 * 1024)
 		DotGeneralBlockedPathThreshold = 8
@@ -45,9 +45,9 @@ func reduceSumFloat32x16(x16 archsimd.Float32x16) float32 {
 // It uses AVX512 instructions to perform the multiplication.
 func buildDotGeneralBlockKernel_avx512_float32(
 	lhs, rhs, output *Buffer, blockDim int) kernelFuncType {
-	lhsFlat := lhs.flat.([]float32)
-	rhsFlat := rhs.flat.([]float32)
-	outputFlat := output.flat.([]float32)
+	lhsFlat := lhs.Flat.([]float32)
+	rhsFlat := rhs.Flat.([]float32)
+	outputFlat := output.Flat.([]float32)
 
 	blockSize := blockDim * blockDim
 

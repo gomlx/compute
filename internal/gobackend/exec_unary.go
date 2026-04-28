@@ -15,28 +15,28 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeNeg, priorityGeneric, execNeg)
-	setNodeExecutor(compute.OpTypeAbs, priorityGeneric, execAbs)
-	setNodeExecutor(compute.OpTypeSign, priorityGeneric, execSign)
-	setNodeExecutor(compute.OpTypeLogicalNot, priorityGeneric, execLogicalNot)
-	setNodeExecutor(compute.OpTypeBitwiseNot, priorityGeneric, execBitwiseNot)
-	setNodeExecutor(compute.OpTypeBitCount, priorityGeneric, execBitCount)
-	setNodeExecutor(compute.OpTypeClz, priorityGeneric, execClz)
-	setNodeExecutor(compute.OpTypeExp, priorityGeneric, execExp)
-	setNodeExecutor(compute.OpTypeExpm1, priorityGeneric, execExpm1)
-	setNodeExecutor(compute.OpTypeLog, priorityGeneric, execLog)
-	setNodeExecutor(compute.OpTypeLog1p, priorityGeneric, execLog1p)
-	setNodeExecutor(compute.OpTypeCeil, priorityGeneric, execCeil)
-	setNodeExecutor(compute.OpTypeFloor, priorityGeneric, execFloor)
-	setNodeExecutor(compute.OpTypeRound, priorityGeneric, execRound)
-	setNodeExecutor(compute.OpTypeRsqrt, priorityGeneric, execRsqrt)
-	setNodeExecutor(compute.OpTypeSqrt, priorityGeneric, execSqrt)
-	setNodeExecutor(compute.OpTypeCos, priorityGeneric, execCos)
-	setNodeExecutor(compute.OpTypeSin, priorityGeneric, execSin)
-	setNodeExecutor(compute.OpTypeTanh, priorityGeneric, execTanh)
-	setNodeExecutor(compute.OpTypeIsFinite, priorityGeneric, execIsFinite)
-	setNodeExecutor(compute.OpTypeLogistic, priorityGeneric, execLogistic)
-	setNodeExecutor(compute.OpTypeErf, priorityGeneric, execErf)
+	setNodeExecutor(compute.OpTypeNeg, PriorityGeneric, execNeg)
+	setNodeExecutor(compute.OpTypeAbs, PriorityGeneric, execAbs)
+	setNodeExecutor(compute.OpTypeSign, PriorityGeneric, execSign)
+	setNodeExecutor(compute.OpTypeLogicalNot, PriorityGeneric, execLogicalNot)
+	setNodeExecutor(compute.OpTypeBitwiseNot, PriorityGeneric, execBitwiseNot)
+	setNodeExecutor(compute.OpTypeBitCount, PriorityGeneric, execBitCount)
+	setNodeExecutor(compute.OpTypeClz, PriorityGeneric, execClz)
+	setNodeExecutor(compute.OpTypeExp, PriorityGeneric, execExp)
+	setNodeExecutor(compute.OpTypeExpm1, PriorityGeneric, execExpm1)
+	setNodeExecutor(compute.OpTypeLog, PriorityGeneric, execLog)
+	setNodeExecutor(compute.OpTypeLog1p, PriorityGeneric, execLog1p)
+	setNodeExecutor(compute.OpTypeCeil, PriorityGeneric, execCeil)
+	setNodeExecutor(compute.OpTypeFloor, PriorityGeneric, execFloor)
+	setNodeExecutor(compute.OpTypeRound, PriorityGeneric, execRound)
+	setNodeExecutor(compute.OpTypeRsqrt, PriorityGeneric, execRsqrt)
+	setNodeExecutor(compute.OpTypeSqrt, PriorityGeneric, execSqrt)
+	setNodeExecutor(compute.OpTypeCos, PriorityGeneric, execCos)
+	setNodeExecutor(compute.OpTypeSin, PriorityGeneric, execSin)
+	setNodeExecutor(compute.OpTypeTanh, PriorityGeneric, execTanh)
+	setNodeExecutor(compute.OpTypeIsFinite, PriorityGeneric, execIsFinite)
+	setNodeExecutor(compute.OpTypeLogistic, PriorityGeneric, execLogistic)
+	setNodeExecutor(compute.OpTypeErf, PriorityGeneric, execErf)
 }
 
 // unaryOperandAndOutput is a convenience function to get the input and output -- which may be the reuse of the input
@@ -47,11 +47,11 @@ func unaryOperandAndOutput(backend *Backend, inputs []*Buffer, inputsOwned []boo
 		inputs[0] = nil // This tells the executor that we took over the buffer.
 		return
 	}
-	output, err = backend.getBuffer(input.shape.DType, input.shape.Size())
+	output, err = backend.GetBuffer(input.RawShape.DType, input.RawShape.Size())
 	if err != nil {
 		return input, nil, err // as output is nil
 	}
-	output.shape = input.shape.Clone()
+	output.RawShape = input.RawShape.Clone()
 	return input, output, nil
 }
 
@@ -61,23 +61,23 @@ func execNeg(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execNegGeneric[int8](input.flat.([]int8), output.flat.([]int8))
+		execNegGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execNegGeneric[int16](input.flat.([]int16), output.flat.([]int16))
+		execNegGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execNegGeneric[int32](input.flat.([]int32), output.flat.([]int32))
+		execNegGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execNegGeneric[int64](input.flat.([]int64), output.flat.([]int64))
+		execNegGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Float32:
-		execNegGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execNegGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execNegGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execNegGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execNegBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execNegBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -100,15 +100,15 @@ func execAbs(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execAbsGeneric[int8](input.flat.([]int8), output.flat.([]int8))
+		execAbsGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execAbsGeneric[int16](input.flat.([]int16), output.flat.([]int16))
+		execAbsGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execAbsGeneric[int32](input.flat.([]int32), output.flat.([]int32))
+		execAbsGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execAbsGeneric[int64](input.flat.([]int64), output.flat.([]int64))
+		execAbsGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Uint8:
 		execAbsUnsignedGeneric[uint8](input, output)
 	case dtypes.Uint16:
@@ -118,13 +118,13 @@ func execAbs(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	case dtypes.Uint64:
 		execAbsUnsignedGeneric[uint64](input, output)
 	case dtypes.Float32:
-		execAbsGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execAbsGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execAbsGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execAbsGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execAbsBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execAbsBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -143,7 +143,7 @@ func execAbsUnsignedGeneric[T PODUnsignedConstraints](input, output *Buffer) {
 	if input == output {
 		return
 	}
-	copy(output.flat.([]T), input.flat.([]T))
+	copy(output.Flat.([]T), input.Flat.([]T))
 }
 
 func execAbsBF16(inputs, outputs []bfloat16.BFloat16) {
@@ -163,31 +163,31 @@ func execSign(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execSignGeneric[int8](input.flat.([]int8), output.flat.([]int8))
+		execSignGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execSignGeneric[int16](input.flat.([]int16), output.flat.([]int16))
+		execSignGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execSignGeneric[int32](input.flat.([]int32), output.flat.([]int32))
+		execSignGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execSignGeneric[int64](input.flat.([]int64), output.flat.([]int64))
+		execSignGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Uint8:
-		execSignForUnsignedGeneric[uint8](input.flat.([]uint8), output.flat.([]uint8))
+		execSignForUnsignedGeneric[uint8](input.Flat.([]uint8), output.Flat.([]uint8))
 	case dtypes.Uint16:
-		execSignForUnsignedGeneric[uint16](input.flat.([]uint16), output.flat.([]uint16))
+		execSignForUnsignedGeneric[uint16](input.Flat.([]uint16), output.Flat.([]uint16))
 	case dtypes.Uint32:
-		execSignForUnsignedGeneric[uint32](input.flat.([]uint32), output.flat.([]uint32))
+		execSignForUnsignedGeneric[uint32](input.Flat.([]uint32), output.Flat.([]uint32))
 	case dtypes.Uint64:
-		execSignForUnsignedGeneric[uint64](input.flat.([]uint64), output.flat.([]uint64))
+		execSignForUnsignedGeneric[uint64](input.Flat.([]uint64), output.Flat.([]uint64))
 	case dtypes.Float32:
-		execSignGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execSignGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execSignGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execSignGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execSignBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execSignBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -235,11 +235,11 @@ func execLogicalNot(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 	if err != nil {
 		return nil, err
 	}
-	if input.shape.DType != dtypes.Bool {
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+	if input.RawShape.DType != dtypes.Bool {
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
-	for ii, val := range input.flat.([]bool) {
-		output.flat.([]bool)[ii] = !val
+	for ii, val := range input.Flat.([]bool) {
+		output.Flat.([]bool)[ii] = !val
 	}
 	return output, nil
 }
@@ -250,25 +250,25 @@ func execBitwiseNot(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execBitwiseNotGeneric[int8](input.flat.([]int8), output.flat.([]int8))
+		execBitwiseNotGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execBitwiseNotGeneric[int16](input.flat.([]int16), output.flat.([]int16))
+		execBitwiseNotGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execBitwiseNotGeneric[int32](input.flat.([]int32), output.flat.([]int32))
+		execBitwiseNotGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execBitwiseNotGeneric[int64](input.flat.([]int64), output.flat.([]int64))
+		execBitwiseNotGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Uint8:
-		execBitwiseNotGeneric[uint8](input.flat.([]uint8), output.flat.([]uint8))
+		execBitwiseNotGeneric[uint8](input.Flat.([]uint8), output.Flat.([]uint8))
 	case dtypes.Uint16:
-		execBitwiseNotGeneric[uint16](input.flat.([]uint16), output.flat.([]uint16))
+		execBitwiseNotGeneric[uint16](input.Flat.([]uint16), output.Flat.([]uint16))
 	case dtypes.Uint32:
-		execBitwiseNotGeneric[uint32](input.flat.([]uint32), output.flat.([]uint32))
+		execBitwiseNotGeneric[uint32](input.Flat.([]uint32), output.Flat.([]uint32))
 	case dtypes.Uint64:
-		execBitwiseNotGeneric[uint64](input.flat.([]uint64), output.flat.([]uint64))
+		execBitwiseNotGeneric[uint64](input.Flat.([]uint64), output.Flat.([]uint64))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -285,25 +285,25 @@ func execBitCount(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execBitCountGeneric8[int8](input.flat.([]int8), output.flat.([]int8))
+		execBitCountGeneric8[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execBitCountGeneric16[int16](input.flat.([]int16), output.flat.([]int16))
+		execBitCountGeneric16[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execBitCountGeneric32[int32](input.flat.([]int32), output.flat.([]int32))
+		execBitCountGeneric32[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execBitCountGeneric64[int64](input.flat.([]int64), output.flat.([]int64))
+		execBitCountGeneric64[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Uint8:
-		execBitCountGeneric8[uint8](input.flat.([]uint8), output.flat.([]uint8))
+		execBitCountGeneric8[uint8](input.Flat.([]uint8), output.Flat.([]uint8))
 	case dtypes.Uint16:
-		execBitCountGeneric16[uint16](input.flat.([]uint16), output.flat.([]uint16))
+		execBitCountGeneric16[uint16](input.Flat.([]uint16), output.Flat.([]uint16))
 	case dtypes.Uint32:
-		execBitCountGeneric32[uint32](input.flat.([]uint32), output.flat.([]uint32))
+		execBitCountGeneric32[uint32](input.Flat.([]uint32), output.Flat.([]uint32))
 	case dtypes.Uint64:
-		execBitCountGeneric64[uint64](input.flat.([]uint64), output.flat.([]uint64))
+		execBitCountGeneric64[uint64](input.Flat.([]uint64), output.Flat.([]uint64))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -338,25 +338,25 @@ func execClz(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execClzGeneric8[int8](input.flat.([]int8), output.flat.([]int8))
+		execClzGeneric8[int8](input.Flat.([]int8), output.Flat.([]int8))
 	case dtypes.Int16:
-		execClzGeneric16[int16](input.flat.([]int16), output.flat.([]int16))
+		execClzGeneric16[int16](input.Flat.([]int16), output.Flat.([]int16))
 	case dtypes.Int32:
-		execClzGeneric32[int32](input.flat.([]int32), output.flat.([]int32))
+		execClzGeneric32[int32](input.Flat.([]int32), output.Flat.([]int32))
 	case dtypes.Int64:
-		execClzGeneric64[int64](input.flat.([]int64), output.flat.([]int64))
+		execClzGeneric64[int64](input.Flat.([]int64), output.Flat.([]int64))
 	case dtypes.Uint8:
-		execClzGeneric8[uint8](input.flat.([]uint8), output.flat.([]uint8))
+		execClzGeneric8[uint8](input.Flat.([]uint8), output.Flat.([]uint8))
 	case dtypes.Uint16:
-		execClzGeneric16[uint16](input.flat.([]uint16), output.flat.([]uint16))
+		execClzGeneric16[uint16](input.Flat.([]uint16), output.Flat.([]uint16))
 	case dtypes.Uint32:
-		execClzGeneric32[uint32](input.flat.([]uint32), output.flat.([]uint32))
+		execClzGeneric32[uint32](input.Flat.([]uint32), output.Flat.([]uint32))
 	case dtypes.Uint64:
-		execClzGeneric64[uint64](input.flat.([]uint64), output.flat.([]uint64))
+		execClzGeneric64[uint64](input.Flat.([]uint64), output.Flat.([]uint64))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -391,15 +391,15 @@ func execExp(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execExpGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execExpGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execExpGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execExpGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execExpBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execExpBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -422,15 +422,15 @@ func execExpm1(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execExpm1Generic[float32](input.flat.([]float32), output.flat.([]float32))
+		execExpm1Generic[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execExpm1Generic[float64](input.flat.([]float64), output.flat.([]float64))
+		execExpm1Generic[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execExpm1BF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execExpm1BF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -453,15 +453,15 @@ func execLog(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLogGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execLogGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execLogGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execLogGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execLogBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execLogBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -484,15 +484,15 @@ func execLog1p(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLog1pGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execLog1pGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execLog1pGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execLog1pGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execLog1pBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execLog1pBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -515,15 +515,15 @@ func execCeil(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execCeilGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execCeilGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execCeilGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execCeilGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execCeilBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execCeilBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -546,15 +546,15 @@ func execFloor(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execFloorGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execFloorGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execFloorGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execFloorGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execFloorBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execFloorBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -577,15 +577,15 @@ func execRound(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execRoundGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execRoundGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execRoundGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execRoundGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execRoundBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execRoundBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -608,15 +608,15 @@ func execRsqrt(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execRsqrtGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execRsqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execRsqrtGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execRsqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execRsqrtBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execRsqrtBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -639,17 +639,17 @@ func execSqrt(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execSqrtGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execSqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execSqrtGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execSqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execSqrtBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execSqrtBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	case dtypes.Float16:
-		execSqrtF16(input.flat.([]float16.Float16), output.flat.([]float16.Float16))
+		execSqrtF16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -678,15 +678,15 @@ func execCos(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execCosGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execCosGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execCosGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execCosGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execCosBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execCosBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -709,15 +709,15 @@ func execSin(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execSinGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execSinGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execSinGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execSinGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execSinBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execSinBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -740,15 +740,15 @@ func execLogistic(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLogisticGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execLogisticGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execLogisticGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execLogisticGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execLogisticBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execLogisticBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -784,15 +784,15 @@ func execTanh(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execTanhGeneric[float32](input.flat.([]float32), output.flat.([]float32))
+		execTanhGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execTanhGeneric[float64](input.flat.([]float64), output.flat.([]float64))
+		execTanhGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execTanhBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execTanhBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -813,20 +813,20 @@ func execTanhBF16(inputs, outputs []bfloat16.BFloat16) {
 func execIsFinite(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	input := inputs[0]
 	// Output has the same shape as the input, but different dtypes: it is a bool.
-	output, err := backend.getBuffer(dtypes.Bool, input.shape.Size())
+	output, err := backend.GetBuffer(dtypes.Bool, input.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
-	output.shape = node.shape
-	switch input.shape.DType {
+	output.RawShape = node.Shape
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execIsFiniteGeneric[float32](input.flat.([]float32), output.flat.([]bool))
+		execIsFiniteGeneric[float32](input.Flat.([]float32), output.Flat.([]bool))
 	case dtypes.Float64:
-		execIsFiniteGeneric[float64](input.flat.([]float64), output.flat.([]bool))
+		execIsFiniteGeneric[float64](input.Flat.([]float64), output.Flat.([]bool))
 	case dtypes.BFloat16:
-		execIsFiniteBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bool))
+		execIsFiniteBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bool))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
@@ -850,15 +850,15 @@ func execErf(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool)
 	if err != nil {
 		return nil, err
 	}
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execErfGeneric[float32](backend, input.flat.([]float32), output.flat.([]float32))
+		execErfGeneric[float32](backend, input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execErfGeneric[float64](backend, input.flat.([]float64), output.flat.([]float64))
+		execErfGeneric[float64](backend, input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execErfBF16(input.flat.([]bfloat16.BFloat16), output.flat.([]bfloat16.BFloat16))
+		execErfBF16(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.shape.DType, node.opType)
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }

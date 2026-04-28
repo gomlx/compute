@@ -5,9 +5,9 @@ package gobackend
 import "github.com/gomlx/compute"
 
 func init() {
-	setNodeExecutor(compute.OpTypeShiftLeft, priorityGeneric, execShiftLeft)
-	setNodeExecutor(compute.OpTypeShiftRightArithmetic, priorityGeneric, execShiftRightArithmetic)
-	setNodeExecutor(compute.OpTypeShiftRightLogical, priorityGeneric, execShiftRightLogical)
+	setNodeExecutor(compute.OpTypeShiftLeft, PriorityGeneric, execShiftLeft)
+	setNodeExecutor(compute.OpTypeShiftRightArithmetic, PriorityGeneric, execShiftRightArithmetic)
+	setNodeExecutor(compute.OpTypeShiftRightLogical, PriorityGeneric, execShiftRightLogical)
 }
 
 var (
@@ -18,8 +18,8 @@ var (
 
 // execShiftLeft executes lhs << rhs for integer types.
 func execShiftLeft(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.shape)
-	dtype := lhs.shape.DType
+	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	dtype := lhs.RawShape.DType
 	fnAny, err := shiftLeftDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {
 		return nil, err
@@ -31,8 +31,8 @@ func execShiftLeft(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 
 // execShiftRightArithmetic executes arithmetic right shift (preserves sign bit for signed types).
 func execShiftRightArithmetic(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.shape)
-	dtype := lhs.shape.DType
+	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	dtype := lhs.RawShape.DType
 	fnAny, err := shiftRightArithmeticDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {
 		return nil, err
@@ -45,8 +45,8 @@ func execShiftRightArithmetic(backend *Backend, node *Node, inputs []*Buffer, in
 // execShiftRightLogical executes logical right shift (zero-fills from the left, ignoring sign).
 // For signed types, we reinterpret as unsigned, shift, then reinterpret back.
 func execShiftRightLogical(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.shape)
-	dtype := lhs.shape.DType
+	lhs, rhs, output, _, _ := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	dtype := lhs.RawShape.DType
 	fnAny, err := shiftRightLogicalDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func execShiftRightLogical(backend *Backend, node *Node, inputs []*Buffer, input
 // shiftLeftGeneric performs lhs << rhs with broadcasting support.
 // The operation is inlined to avoid per-element closure overhead.
 func shiftLeftGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf *Buffer) {
-	lhs, rhs, output := lhsBuf.flat.([]T), rhsBuf.flat.([]T), outputBuf.flat.([]T)
+	lhs, rhs, output := lhsBuf.Flat.([]T), rhsBuf.Flat.([]T), outputBuf.Flat.([]T)
 
 	switch {
 	case len(rhs) == 1:
@@ -72,13 +72,13 @@ func shiftLeftGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf *Buffer
 		for i, v := range rhs {
 			output[i] = c << uint(v)
 		}
-	case lhsBuf.shape.Equal(rhsBuf.shape):
+	case lhsBuf.RawShape.Equal(rhsBuf.RawShape):
 		for i, v := range lhs {
 			output[i] = v << uint(rhs[i])
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.shape, outputBuf.shape)
-		rhsIter := newBroadcastIterator(rhsBuf.shape, outputBuf.shape)
+		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
 		for i := range output {
 			output[i] = lhs[lhsIter.Next()] << uint(rhs[rhsIter.Next()])
 		}
@@ -90,7 +90,7 @@ func shiftLeftGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf *Buffer
 // For unsigned types, Go's >> is already a logical (zero-fill) shift, so this
 // function is also used by shiftRightLogicalGeneric for unsigned dispatch.
 func shiftRightArithmeticGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf *Buffer) {
-	lhs, rhs, output := lhsBuf.flat.([]T), rhsBuf.flat.([]T), outputBuf.flat.([]T)
+	lhs, rhs, output := lhsBuf.Flat.([]T), rhsBuf.Flat.([]T), outputBuf.Flat.([]T)
 	switch {
 	case len(rhs) == 1:
 		c := rhs[0]
@@ -102,13 +102,13 @@ func shiftRightArithmeticGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, output
 		for i, v := range rhs {
 			output[i] = c >> uint(v)
 		}
-	case lhsBuf.shape.Equal(rhsBuf.shape):
+	case lhsBuf.RawShape.Equal(rhsBuf.RawShape):
 		for i, v := range lhs {
 			output[i] = v >> uint(rhs[i])
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.shape, outputBuf.shape)
-		rhsIter := newBroadcastIterator(rhsBuf.shape, outputBuf.shape)
+		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
 		for i := range output {
 			output[i] = lhs[lhsIter.Next()] >> uint(rhs[rhsIter.Next()])
 		}
@@ -137,7 +137,7 @@ func shiftRightLogicalGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf
 // T is the signed type, U is the corresponding unsigned type.
 func shiftRightLogicalSignedGeneric[T ~int8 | ~int16 | ~int32 | ~int64, U ~uint8 | ~uint16 | ~uint32 | ~uint64](
 	lhsBuf, rhsBuf, outputBuf *Buffer) {
-	lhs, rhs, output := lhsBuf.flat.([]T), rhsBuf.flat.([]T), outputBuf.flat.([]T)
+	lhs, rhs, output := lhsBuf.Flat.([]T), rhsBuf.Flat.([]T), outputBuf.Flat.([]T)
 	switch {
 	case len(rhs) == 1:
 		c := rhs[0]
@@ -149,13 +149,13 @@ func shiftRightLogicalSignedGeneric[T ~int8 | ~int16 | ~int32 | ~int64, U ~uint8
 		for i, v := range rhs {
 			output[i] = T(U(c) >> uint(v))
 		}
-	case lhsBuf.shape.Equal(rhsBuf.shape):
+	case lhsBuf.RawShape.Equal(rhsBuf.RawShape):
 		for i, v := range lhs {
 			output[i] = T(U(v) >> uint(rhs[i]))
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.shape, outputBuf.shape)
-		rhsIter := newBroadcastIterator(rhsBuf.shape, outputBuf.shape)
+		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
 		for i := range output {
 			output[i] = T(U(lhs[lhsIter.Next()]) >> uint(rhs[rhsIter.Next()]))
 		}

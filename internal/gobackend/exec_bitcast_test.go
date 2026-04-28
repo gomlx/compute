@@ -22,22 +22,22 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{shape: srcShape, flat: srcData, inUse: true}
+	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Uint4, 4)
-	node := &Node{shape: dstShape}
+	node := &Node{Shape: dstShape}
 
 	// Not owned: should copy bytes without unpacking.
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
-	if !result.shape.Equal(dstShape) {
-		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	if !result.RawShape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.RawShape)
 	}
 
 	// Raw bytes should be identical to source.
-	resultData := result.flat.([]byte)
+	resultData := result.Flat.([]byte)
 	if ok, diff := testutil.IsEqual([]byte(srcData), resultData); !ok {
 		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
 	}
@@ -53,21 +53,21 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{shape: srcShape, flat: srcData, inUse: true}
+	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
-	node := &Node{shape: dstShape}
+	node := &Node{Shape: dstShape}
 
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
-	if !result.shape.Equal(dstShape) {
-		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	if !result.RawShape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.RawShape)
 	}
 
 	// Raw bytes should be identical — Bitcast doesn't unpack.
-	resultData := result.flat.([]byte)
+	resultData := result.Flat.([]byte)
 	if ok, diff := testutil.IsEqual([]byte(srcData), resultData); !ok {
 		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
 	}
@@ -77,23 +77,23 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 	// When owned, Bitcast should reuse the buffer.
 	srcData := []uint8{0xAB, 0xCD}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{shape: srcShape, flat: srcData, inUse: true}
+	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
-	node := &Node{shape: dstShape}
+	node := &Node{Shape: dstShape}
 
 	result, err := execBitcast(nil, node, []*Buffer{srcBuf}, []bool{true})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
-	if !result.shape.Equal(dstShape) {
-		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	if !result.RawShape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.RawShape)
 	}
 	// Should be the exact same buffer (reused).
 	if result != srcBuf {
 		t.Errorf("Expected buffer reuse, but got different buffer")
 	}
-	if ok, diff := testutil.IsEqual([]byte(srcData), result.flat.([]byte)); !ok {
+	if ok, diff := testutil.IsEqual([]byte(srcData), result.Flat.([]byte)); !ok {
 		t.Errorf("Result data mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -108,21 +108,21 @@ func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 
 	srcData := []uint8{0xFF, 0x80, 0x01}
 	srcShape := shapes.Make(dtypes.Uint8, 3)
-	srcBuf := &Buffer{shape: srcShape, flat: srcData, inUse: true}
+	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int8, 3)
-	node := &Node{shape: dstShape}
+	node := &Node{Shape: dstShape}
 
 	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
-	if !result.shape.Equal(dstShape) {
-		t.Errorf("Expected shape %s, got %s", dstShape, result.shape)
+	if !result.RawShape.Equal(dstShape) {
+		t.Errorf("Expected shape %s, got %s", dstShape, result.RawShape)
 	}
 
 	// Verify byte-level identity.
-	resultData := result.flat.([]int8)
+	resultData := result.Flat.([]int8)
 	if resultData[0] != int8(-1) {
 		t.Errorf("Expected resultData[0] to be -1, got %d", resultData[0])
 	}

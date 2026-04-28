@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeConvGeneral, priorityGeneric, execConvGeneral)
+	setNodeExecutor(compute.OpTypeConvGeneral, PriorityGeneric, execConvGeneral)
 }
 
 // Auto-generate alternate specialized versions of execConvGeneral, with small changes.
@@ -53,15 +53,15 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 	input, kernel := inputs[0], inputs[1]
 
 	// Run shape inference.
-	outputShape, err := shapeinference.ConvGeneralOp(input.shape, kernel.shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+	outputShape, err := shapeinference.ConvGeneralOp(input.Shape, kernel.Shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 	if err != nil {
 		err = errors.WithMessagef(err, "ConvGeneral: input=%s, kernel=%s, output=%s, axes=%+v, strides=%v, paddings=%v, inputDilations=%v, kernelDilations=%v, channelGroupCount=%d, batchGroupCount=%d\n",
-			input.shape, kernel.shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+			input.Shape, kernel.Shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 		return nil, err
 	}
 
 	// Sanitize parameters.
-	spatialRank := input.shape.Rank() - 2
+	spatialRank := input.Shape.Rank() - 2
 	if len(strides) == 0 {
 		strides = xslices.SliceWithValue(spatialRank, 1)
 	} else {
@@ -102,8 +102,8 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 
 		hasInputDilations:       len(inputDilations) > 0 && slices.Max(inputDilations) > 1,
 		hasKernelDilations:      len(kernelDilations) > 0 && slices.Max(kernelDilations) > 1,
-		inputStrides:            input.shape.Strides(),
-		kernelStrides:           kernel.shape.Strides(),
+		inputStrides:            input.Shape.Strides(),
+		kernelStrides:           kernel.Shape.Strides(),
 		dilatedInputSpatialDims: outputShape.Dimensions,
 	}
 
@@ -122,12 +122,12 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 	params.inputSpatialStrides = make([]int, spatialRank)
 	for spatialIdx, inputAxis := range axes.InputSpatial {
 		params.inputSpatialStrides[spatialIdx] = params.inputStrides[inputAxis]
-		dim := input.shape.Dimensions[inputAxis]
+		dim := input.Shape.Dimensions[inputAxis]
 		if dim > 0 {
 			params.dilatedInputSpatialDims[spatialIdx] = (dim-1)*inputDilations[spatialIdx] + 1
 		}
 	}
-	node, _ := f.getOrCreateNode(opType, outputShape, []*Node{input, kernel}, params)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{input, kernel}, params)
 	return node, nil
 }
 
@@ -149,7 +149,7 @@ type convNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for convNode.
-func (c *convNode) EqualNodeData(other nodeDataComparable) bool {
+func (c *convNode) EqualNodeData(other NodeDataComparable) bool {
 	o := other.(*convNode)
 	if c.channelGroupCount != o.channelGroupCount ||
 		c.batchGroupCount != o.batchGroupCount ||
@@ -193,9 +193,9 @@ func (f *Function) ConvGeneralDilated(inputOp, kernelOp compute.Value, axes comp
 // execConvGeneral executes the DotGeneral by first normalizing and repackaging the tensors into blocks.
 func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	input, kernel := inputs[0], inputs[1]
-	params := node.data.(*convNode)
-	outputShape := node.shape
-	dtype := input.shape.DType
+	params := node.Data.(*convNode)
+	outputShape := node.Shape
+	dtype := input.RawShape.DType
 	output, err := backend.getBufferForShape(outputShape)
 	if err != nil {
 		return nil, err
@@ -213,11 +213,11 @@ func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
 	plan := convGeneralExecPlan{
 		backend:     backend,
 		dtype:       dtype,
-		inputFlat:   input.flat,
-		inputShape:  input.shape,
-		kernelFlat:  kernel.flat,
-		kernelShape: kernel.shape,
-		outputFlat:  output.flat,
+		inputFlat:   input.Flat,
+		inputShape:  input.RawShape,
+		kernelFlat:  kernel.Flat,
+		kernelShape: kernel.RawShape,
+		outputFlat:  output.Flat,
 		outputShape: outputShape,
 		params:      params,
 	}
@@ -257,6 +257,6 @@ var (
 )
 
 func init() {
-	convNoDilationDTypeMap.Register(dtypes.BFloat16, priorityTyped, execConvNoDilationBFloat16)
-	convDTypeMap.Register(dtypes.BFloat16, priorityTyped, execConvBFloat16)
+	convNoDilationDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execConvNoDilationBFloat16)
+	convDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execConvBFloat16)
 }

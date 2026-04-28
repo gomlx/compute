@@ -27,8 +27,8 @@ func dgCopyOutputBlockToFlatF32ToBF16( //alt:bf16
 	//alt:f16  func dgCopyOutputBlockToFlatF32ToF16(
 
 	blockSource, output *Buffer) {
-	sourceDims := blockSource.shape.Dimensions
-	outputDims := output.shape.Dimensions
+	sourceDims := blockSource.RawShape.Dimensions
+	outputDims := output.RawShape.Dimensions
 
 	batchSize := sourceDims[0]
 	lhsBlockCross := sourceDims[1]
@@ -49,8 +49,8 @@ func dgCopyOutputBlockToFlatF32ToBF16( //alt:bf16
 
 	//alt:base sourceData := blockSource.flat.([]T)
 	//alt:base outputData := output.flat.([]T)
-	sourceData := blockSource.flat.([]float32)      //alt:bf16|f16
-	outputData := output.flat.([]bfloat16.BFloat16) //alt:bf16
+	sourceData := blockSource.Flat.([]float32)      //alt:bf16|f16
+	outputData := output.Flat.([]bfloat16.BFloat16) //alt:bf16
 	//alt:f16  outputData := output.flat.([]float16.Float16)
 
 	for batch := range batchSize {
@@ -96,11 +96,11 @@ func buildDotGeneralKernelBFloat16( //alt:bf16
 	//alt:base lhsFlat := lhs.flat.([]T)
 	//alt:base rhsFlat := rhs.flat.([]T)
 	//alt:base outputFlat := output.flat.([]T)
-	lhsFlat := lhs.flat.([]bfloat16.BFloat16) //alt:bf16
-	rhsFlat := rhs.flat.([]bfloat16.BFloat16) //alt:bf16
+	lhsFlat := lhs.Flat.([]bfloat16.BFloat16) //alt:bf16
+	rhsFlat := rhs.Flat.([]bfloat16.BFloat16) //alt:bf16
 	//alt:f16  lhsFlat := lhs.flat.([]float16.Float16)
 	//alt:f16  rhsFlat := rhs.flat.([]float16.Float16)
-	outputFlat := output.flat.([]float32) //alt:bf16|f16
+	outputFlat := output.Flat.([]float32) //alt:bf16|f16
 
 	blockSize := blockDim * blockDim
 

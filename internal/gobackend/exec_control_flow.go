@@ -21,13 +21,13 @@ func init() {
 // closureInputs[0] = true branch captured values, closureInputs[1] = false branch captured values.
 func execIf(backend *Backend, node *Node, inputs []*Buffer, _ []bool, closureInputs []ClosureInputs) ([]*Buffer, error) {
 	predBuffer := inputs[0]
-	predFlat := predBuffer.flat.([]bool) //nolint:errcheck
+	predFlat := predBuffer.Flat.([]bool) //nolint:errcheck
 	if len(predFlat) != 1 {
 		return nil, errors.Errorf("If: predicate must be scalar, got %d elements", len(predFlat))
 	}
 	pred := predFlat[0]
 
-	data := node.data.(*ifNode) //nolint:errcheck
+	data := node.Data.(*ifNode) //nolint:errcheck
 
 	// Select the branch to execute based on predicate
 	var branchFn *Function
@@ -44,7 +44,7 @@ func execIf(backend *Backend, node *Node, inputs []*Buffer, _ []bool, closureInp
 	}
 
 	// Execute the branch with proper donation of captured values
-	outputs, err := branchFn.compiled.Execute(backend, nil, nil, capturedInputs, donateCaptures)
+	outputs, err := branchFn.Compiled.Execute(backend, nil, nil, capturedInputs, donateCaptures)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "If: executing branch")
 	}
@@ -59,7 +59,7 @@ func execIf(backend *Backend, node *Node, inputs []*Buffer, _ []bool, closureInp
 // Note on captured input donation: Captured values are reused across all iterations,
 // so we never donate them to the closure calls. The executor handles freeing them.
 func execWhile(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool, closureInputs []ClosureInputs) ([]*Buffer, error) {
-	data := node.data.(*whileNode) //nolint:errcheck
+	data := node.Data.(*whileNode) //nolint:errcheck
 	condFn := data.cond
 	bodyFn := data.body
 
@@ -91,13 +91,13 @@ func execWhile(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	// Loop while condition is true
 	for iter := 0; ; iter++ {
 		// Evaluate condition - DON'T donate state or captured buffers since we may need them
-		condOutputs, err := condFn.compiled.Execute(backend, state, nil, condCaptured, nil)
+		condOutputs, err := condFn.Compiled.Execute(backend, state, nil, condCaptured, nil)
 		if err != nil {
 			return nil, errors.WithMessagef(err, "While: evaluating condition at iteration %d", iter)
 		}
 
 		// Check condition result
-		condResult := condOutputs[0].flat.([]bool)[0] //nolint:errcheck
+		condResult := condOutputs[0].Flat.([]bool)[0] //nolint:errcheck
 		backend.putBuffer(condOutputs[0])
 
 		if !condResult {
@@ -116,7 +116,7 @@ func execWhile(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 
 		// Execute body to get new state
 		// DON'T donate captured buffers - they're reused across iterations
-		newState, err := bodyFn.compiled.Execute(backend, state, donateState, bodyCaptured, nil)
+		newState, err := bodyFn.Compiled.Execute(backend, state, donateState, bodyCaptured, nil)
 		// After bodyFn, all donated state is consumed.
 		donateState = donateAll // After first iteration, we always own everything
 
@@ -136,7 +136,7 @@ func execWhile(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 // sorting, so we never donate captured inputs. The executor handles freeing them.
 func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool,
 	closureInputs []ClosureInputs) ([]*Buffer, error) {
-	data := node.data.(*sortNode) //nolint:errcheck
+	data := node.Data.(*sortNode) //nolint:errcheck
 	axis := data.axis
 	isStable := data.isStable
 	compFn := data.comparator
@@ -154,7 +154,7 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	}
 
 	// Get shape info from first input
-	shape := tensorInputs[0].shape
+	shape := tensorInputs[0].RawShape
 	rank := shape.Rank()
 	axisSize := shape.Dimensions[axis]
 
@@ -193,19 +193,19 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	// Create temporary buffers for comparator inputs (2 scalars per input tensor)
 	compInputs := make([]*Buffer, 2*len(outputs))
 	for i, output := range outputs {
-		compInputs[2*i], err = backend.getBuffer(output.shape.DType, 1)
+		compInputs[2*i], err = backend.GetBuffer(output.RawShape.DType, 1)
 		if err != nil {
 			return nil, err
 		}
-		compInputs[2*i].shape = output.shape.Clone()
-		compInputs[2*i].shape.Dimensions = nil // scalar
+		compInputs[2*i].RawShape = output.RawShape.Clone()
+		compInputs[2*i].RawShape.Dimensions = nil // scalar
 
-		compInputs[2*i+1], err = backend.getBuffer(output.shape.DType, 1)
+		compInputs[2*i+1], err = backend.GetBuffer(output.RawShape.DType, 1)
 		if err != nil {
 			return nil, err
 		}
-		compInputs[2*i+1].shape = output.shape.Clone()
-		compInputs[2*i+1].shape.Dimensions = nil // scalar
+		compInputs[2*i+1].RawShape = output.RawShape.Clone()
+		compInputs[2*i+1].RawShape.Dimensions = nil // scalar
 	}
 	defer func() {
 		for _, buf := range compInputs {
@@ -247,17 +247,17 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 
 					// Set comparator inputs
 					for k, output := range outputs {
-						setScalarFromFlat(compInputs[2*k], output.flat, offsetI)
-						setScalarFromFlat(compInputs[2*k+1], output.flat, offsetJ)
+						setScalarFromFlat(compInputs[2*k], output.Flat, offsetI)
+						setScalarFromFlat(compInputs[2*k+1], output.Flat, offsetJ)
 					}
 
 					// Execute comparator - DON'T donate captured inputs, they're reused
-					compOutputs, err := compFn.compiled.Execute(backend, compInputs, nil, compCaptured, nil)
+					compOutputs, err := compFn.Compiled.Execute(backend, compInputs, nil, compCaptured, nil)
 					if err != nil {
 						panic(err) // Abort sort immediately
 					}
 
-					result := compOutputs[0].flat.([]bool)[0] //nolint:errcheck
+					result := compOutputs[0].Flat.([]bool)[0] //nolint:errcheck
 					backend.putBuffer(compOutputs[0])
 					return result
 				}
@@ -293,7 +293,7 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 // setScalarFromFlat sets a scalar buffer's value from a flat array at the given offset.
 func setScalarFromFlat(scalar *Buffer, flat any, offset int) {
 	value := reflect.ValueOf(flat).Index(offset)
-	reflect.ValueOf(scalar.flat).Index(0).Set(value)
+	reflect.ValueOf(scalar.Flat).Index(0).Set(value)
 }
 
 // applyPermutationDTypeMap dispatches applyPermutation by dtype.
@@ -301,7 +301,7 @@ var applyPermutationDTypeMap = NewDTypeMap("ApplyPermutation")
 
 // applyPermutation reorders elements along the sort axis according to the given indices.
 func applyPermutation(buf *Buffer, indices []int, baseOffset, axisStride, axisSize int) error {
-	fnAny, err := applyPermutationDTypeMap.Get(buf.shape.DType) //nolint:errcheck
+	fnAny, err := applyPermutationDTypeMap.Get(buf.RawShape.DType) //nolint:errcheck
 	if err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func applyPermutation(buf *Buffer, indices []int, baseOffset, axisStride, axisSi
 }
 
 func applyPermutationGeneric[T SupportedTypesConstraints](buf *Buffer, indices []int, baseOffset, axisStride, axisSize int) {
-	flat := buf.flat.([]T) //nolint:errcheck
+	flat := buf.Flat.([]T) //nolint:errcheck
 	// Extract values to temp slice
 	temp := make([]T, axisSize)
 	for i := range axisSize {
@@ -327,10 +327,10 @@ func applyPermutationGeneric[T SupportedTypesConstraints](buf *Buffer, indices [
 // execCall executes a Call operation by running the target function with the given inputs.
 // Regular inputs are the arguments to the called function.
 func execCall(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) ([]*Buffer, error) {
-	data := node.data.(*callNode) //nolint:errcheck
+	data := node.Data.(*callNode) //nolint:errcheck
 	targetFn := data.target
 
-	outputs, err := targetFn.compiled.Execute(backend, inputs, inputsOwned, nil, nil)
+	outputs, err := targetFn.Compiled.Execute(backend, inputs, inputsOwned, nil, nil)
 	// Mark donated inputs as consumed.
 	for i, owned := range inputsOwned {
 		if owned {

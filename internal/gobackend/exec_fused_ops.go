@@ -13,11 +13,11 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeFusedSoftmax, priorityTyped, execFusedSoftmax)
-	setNodeExecutor(compute.OpTypeFusedGelu, priorityTyped, execFusedGelu)
-	setNodeExecutor(compute.OpTypeFusedLayerNorm, priorityTyped, execFusedLayerNorm)
-	setNodeExecutor(compute.OpTypeFusedDense, priorityTyped, execFusedDense)
-	setNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, priorityTyped, execFusedScaledDotProductAttention)
+	setNodeExecutor(compute.OpTypeFusedSoftmax, PriorityTyped, execFusedSoftmax)
+	setNodeExecutor(compute.OpTypeFusedGelu, PriorityTyped, execFusedGelu)
+	setNodeExecutor(compute.OpTypeFusedLayerNorm, PriorityTyped, execFusedLayerNorm)
+	setNodeExecutor(compute.OpTypeFusedDense, PriorityTyped, execFusedDense)
+	setNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, PriorityTyped, execFusedScaledDotProductAttention)
 	// Quantized fused executors registered in exec_fused_quantized.go init().
 	multiOutputsNodeExecutors[compute.OpTypeFusedAttentionQKVProjection] = execFusedAttentionQKVProjection
 }
@@ -27,21 +27,21 @@ func init() {
 // execFusedSoftmax implements optimized softmax with better cache locality.
 // Three passes over the axis: find max, compute exp(x-max) and sum, then normalize.
 func execFusedSoftmax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
-	data := node.data.(*nodeFusedSoftmax)
+	data := node.Data.(*nodeFusedSoftmax)
 	axis := data.axis
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
 
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
-		fusedSoftmax(input.flat.([]float32), output.flat.([]float32), axis, node.shape)
+		fusedSoftmax(input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape)
 	case dtypes.Float64:
-		fusedSoftmax(input.flat.([]float64), output.flat.([]float64), axis, node.shape)
+		fusedSoftmax(input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape)
 	default:
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedSoftmax: dtype %s", input.shape.DType)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedSoftmax: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
 }
@@ -102,28 +102,28 @@ func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes
 // If exact is true, uses x * 0.5 * (1 + erf(x / sqrt(2))).
 // Otherwise, uses the tanh approximation: x * 0.5 * (1 + tanh(sqrt(2/pi) * (x + 0.044715*x^3))).
 func execFusedGelu(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
-	data := node.data.(*nodeFusedGelu)
+	data := node.Data.(*nodeFusedGelu)
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
 
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
 		if data.exact {
-			parallelizeChunked(backend, input.flat.([]float32), output.flat.([]float32), geluChunk[float32])
+			parallelizeChunked(backend, input.Flat.([]float32), output.Flat.([]float32), geluChunk[float32])
 		} else {
-			parallelizeChunked(backend, input.flat.([]float32), output.flat.([]float32), geluApproxChunk[float32])
+			parallelizeChunked(backend, input.Flat.([]float32), output.Flat.([]float32), geluApproxChunk[float32])
 		}
 	case dtypes.Float64:
 		if data.exact {
-			parallelizeChunked(backend, input.flat.([]float64), output.flat.([]float64), geluChunk[float64])
+			parallelizeChunked(backend, input.Flat.([]float64), output.Flat.([]float64), geluChunk[float64])
 		} else {
-			parallelizeChunked(backend, input.flat.([]float64), output.flat.([]float64), geluApproxChunk[float64])
+			parallelizeChunked(backend, input.Flat.([]float64), output.Flat.([]float64), geluApproxChunk[float64])
 		}
 	default:
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedGelu: dtype %s", input.shape.DType)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedGelu: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
 }
@@ -172,9 +172,9 @@ func geluApproxChunk[T float32 | float64](input, output []T) {
 // execFusedLayerNorm implements layer normalization.
 // For each sample: y = (x - mean) / sqrt(var + epsilon) * gamma + beta
 func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
-	data := node.data.(*nodeFusedLayerNorm)
+	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.shape)
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -188,22 +188,22 @@ func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool
 		beta = inputs[2]
 	}
 
-	switch input.shape.DType {
+	switch input.RawShape.DType {
 	case dtypes.Float32:
 		layerNorm[float32](input, output, gamma, beta, data.axes, data.epsilon)
 	case dtypes.Float64:
 		layerNorm[float64](input, output, gamma, beta, data.axes, data.epsilon)
 	default:
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedLayerNorm: dtype %s", input.shape.DType)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedLayerNorm: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
 }
 
 // layerNorm dispatches to the trailing-axes fast path or the general case.
 func layerNorm[T float32 | float64](input, output, gamma, beta *Buffer, axes []int, epsilon float64) {
-	inData := input.flat.([]T)
-	outData := output.flat.([]T)
-	dims := input.shape.Dimensions
+	inData := input.Flat.([]T)
+	outData := output.Flat.([]T)
+	dims := input.RawShape.Dimensions
 	rank := len(dims)
 
 	normSize := 1
@@ -222,10 +222,10 @@ func layerNorm[T float32 | float64](input, output, gamma, beta *Buffer, axes []i
 
 	var gammaData, betaData []T
 	if gamma != nil {
-		gammaData = gamma.flat.([]T)
+		gammaData = gamma.Flat.([]T)
 	}
 	if beta != nil {
-		betaData = beta.flat.([]T)
+		betaData = beta.Flat.([]T)
 	}
 
 	if isTrailingAxes {
@@ -360,7 +360,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		bias = inputs[3]
 	}
 
-	data := node.data.(*nodeFusedDense)
+	data := node.Data.(*nodeFusedDense)
 
 	// If no bias and no activation, just return the matmul result directly.
 	if bias == nil && data.activation == compute.ActivationNone {
@@ -368,11 +368,11 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 			inputs[0] = nil // Signal to executor that we reused the input.
 			return matmul, nil
 		}
-		output, err := backend.getBufferForShape(node.shape)
+		output, err := backend.getBufferForShape(node.Shape)
 		if err != nil {
 			return nil, err
 		}
-		copyFlat(output.flat, matmul.flat)
+		copyFlat(output.Flat, matmul.Flat)
 		return output, nil
 	}
 
@@ -383,28 +383,28 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		inputs[0] = nil // Signal to the executor that we reused the input.
 	} else {
 		var err error
-		output, err = backend.getBufferForShape(node.shape)
+		output, err = backend.getBufferForShape(node.Shape)
 		if err != nil {
 			return nil, err
 		}
-		copyFlat(output.flat, matmul.flat)
+		copyFlat(output.Flat, matmul.Flat)
 	}
 
-	switch output.shape.DType {
+	switch output.RawShape.DType {
 	case dtypes.Float32:
-		outData := output.flat.([]float32)
+		outData := output.Flat.([]float32)
 		if bias != nil {
-			fusedDenseAddBias(outData, bias.flat.([]float32))
+			fusedDenseAddBias(outData, bias.Flat.([]float32))
 		}
 		fusedDenseApplyActivation(backend, outData, data.activation)
 	case dtypes.Float64:
-		outData := output.flat.([]float64)
+		outData := output.Flat.([]float64)
 		if bias != nil {
-			fusedDenseAddBias(outData, bias.flat.([]float64))
+			fusedDenseAddBias(outData, bias.Flat.([]float64))
 		}
 		fusedDenseApplyActivation(backend, outData, data.activation)
 	default:
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: dtype %s", output.shape.DType)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: dtype %s", output.RawShape.DType)
 	}
 	return output, nil
 }
@@ -461,7 +461,7 @@ func fusedDenseApplyActivation[T float32 | float64](backend *Backend, data []T, 
 // float32 arithmetic when QuantizedMatmuls is set in the options config.
 func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
 	*Buffer, error) {
-	data := node.data.(*nodeFusedScaledDotProductAttention)
+	data := node.Data.(*nodeFusedScaledDotProductAttention)
 	query := inputs[0]
 	key := inputs[1]
 	value := inputs[2]
@@ -473,7 +473,7 @@ func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*
 	// For rank-4 BSHD masks [batch, seq, heads, kvLen], transpose to BHSD so that
 	// per-head mask data is contiguous [seqLen, kvLen]. The mask is small (no headDim
 	// axis), so this is cheap. Rank ≤ 3 masks have no head dimension and work as-is.
-	if data.axesLayout == compute.AxesLayoutBSHD && mask != nil && mask.shape.Rank() == 4 {
+	if data.axesLayout == compute.AxesLayoutBSHD && mask != nil && mask.RawShape.Rank() == 4 {
 		var err error
 		mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
 		if err != nil {
@@ -481,7 +481,7 @@ func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*
 		}
 	}
 
-	output, err := backend.getBufferForShape(query.shape.Clone())
+	output, err := backend.getBufferForShape(query.RawShape.Clone())
 	if err != nil {
 		return nil, err
 	}
@@ -489,16 +489,16 @@ func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*
 	// Compute mask strides for broadcasting (BHSD convention for the mask).
 	var maskBatchStride, maskHeadStride int
 	if mask != nil {
-		maskBatchStride, maskHeadStride = sdpaComputeMaskStrides(mask.shape.Dimensions)
+		maskBatchStride, maskHeadStride = sdpaComputeMaskStrides(mask.RawShape.Dimensions)
 	}
 
-	switch query.shape.DType {
+	switch query.RawShape.DType {
 	case dtypes.Float32:
 		sdpaMultiHeadGeneric[float32](query, key, value, mask, output, data, maskBatchStride, maskHeadStride)
 	case dtypes.Float64:
 		sdpaMultiHeadGeneric[float64](query, key, value, mask, output, data, maskBatchStride, maskHeadStride)
 	default:
-		return nil, errors.Errorf("FusedScaledDotProductAttention: unsupported dtype %s", query.shape.DType)
+		return nil, errors.Errorf("FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
 	}
 
 	return output, nil
@@ -535,19 +535,19 @@ func sdpaComputeMaskStrides(dims []int) (batchStride, headStride int) {
 // transposeBuffer transposes a buffer according to the given axis permutation,
 // reusing the existing transposeIterator and transposeDTypeMap infrastructure.
 func transposeBuffer(backend *Backend, buf *Buffer, permutations []int) (*Buffer, error) {
-	output, err := backend.getBuffer(buf.shape.DType, buf.shape.Size())
+	output, err := backend.GetBuffer(buf.RawShape.DType, buf.RawShape.Size())
 	if err != nil {
 		return nil, err
 	}
 	// Compute the output shape by permuting dimensions.
-	dims := buf.shape.Dimensions
+	dims := buf.RawShape.Dimensions
 	outDims := make([]int, len(dims))
 	for i, p := range permutations {
 		outDims[i] = dims[p]
 	}
-	output.shape = shapes.Make(buf.shape.DType, outDims...)
-	it := newTransposeIterator(buf.shape, permutations)
-	transposeFnAny, err := transposeDTypeMap.Get(buf.shape.DType)
+	output.RawShape = shapes.Make(buf.RawShape.DType, outDims...)
+	it := newTransposeIterator(buf.RawShape, permutations)
+	transposeFnAny, err := transposeDTypeMap.Get(buf.RawShape.DType)
 	if err != nil {
 		return nil, err
 	}
@@ -699,21 +699,21 @@ func sdpaGeneric[T float32 | float64](
 }
 
 func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *Buffer, data *nodeFusedScaledDotProductAttention, maskBatchStride, maskHeadStride int) {
-	q := query.flat.([]T)
-	k := key.flat.([]T)
-	v := value.flat.([]T)
-	out := output.flat.([]T)
+	q := query.Flat.([]T)
+	k := key.Flat.([]T)
+	v := value.Flat.([]T)
+	out := output.Flat.([]T)
 	var additiveMask []T
 	var booleanMask []bool
 	if mask != nil {
-		if mask.shape.DType == dtypes.Bool {
-			booleanMask = mask.flat.([]bool)
+		if mask.RawShape.DType == dtypes.Bool {
+			booleanMask = mask.Flat.([]bool)
 		} else {
-			additiveMask = mask.flat.([]T)
+			additiveMask = mask.Flat.([]T)
 		}
 	}
 
-	dims := query.shape.Dimensions
+	dims := query.RawShape.Dimensions
 	batchSize := dims[0]
 	numHeads := data.numHeads
 	numKVHeads := data.numKVHeads
@@ -731,7 +731,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 		// [batch, seq, heads, dim]
 		seqLen = dims[1]
 		headDim = dims[3]
-		kvDims := key.shape.Dimensions
+		kvDims := key.RawShape.Dimensions
 		kvLen = kvDims[1]
 		qSeqStride = numHeads * headDim
 		kvSeqStride = numKVHeads * headDim
@@ -743,7 +743,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 		// BHSD: [batch, heads, seq, dim]
 		seqLen = dims[2]
 		headDim = dims[3]
-		kvDims := key.shape.Dimensions
+		kvDims := key.RawShape.Dimensions
 		kvLen = kvDims[2]
 		qSeqStride = headDim
 		kvSeqStride = headDim
@@ -798,7 +798,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 // The matmul (x @ wQKV) is already computed by the DotGeneral sub-node.
 // This executor just splits the combined result into Q/K/V and adds biases.
 func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buffer, _ []bool) ([]*Buffer, error) {
-	data := node.data.(*nodeFusedAttentionQKVProjection)
+	data := node.Data.(*nodeFusedAttentionQKVProjection)
 	combined := inputs[0] // DotGeneral result: [batch, qDim+2*kvDim]
 
 	// Determine bias buffers using flags from node data, not positional indexing.
@@ -816,9 +816,9 @@ func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buf
 		biasV = inputs[biasIdx]
 	}
 
-	qShape := node.multiOutputsShapes[0]
-	kShape := node.multiOutputsShapes[1]
-	vShape := node.multiOutputsShapes[2]
+	qShape := node.MultiOutputsShapes[0]
+	kShape := node.MultiOutputsShapes[1]
+	vShape := node.MultiOutputsShapes[2]
 	qBuf, err := backend.getBufferForShape(qShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", qShape)
@@ -834,13 +834,13 @@ func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buf
 	qDim := data.qDim
 	kvDim := data.kvDim
 
-	switch combined.shape.DType {
+	switch combined.RawShape.DType {
 	case dtypes.Float32:
 		qkvSplitBiasGeneric[float32](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	case dtypes.Float64:
 		qkvSplitBiasGeneric[float64](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	default:
-		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.shape.DType)
+		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.RawShape.DType)
 	}
 
 	return []*Buffer{qBuf, kBuf, vBuf}, nil
@@ -849,19 +849,19 @@ func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buf
 // qkvSplitBiasGeneric splits the pre-computed matmul result [batch, totalOut] into
 // Q [batch, qDim], K [batch, kvDim], V [batch, kvDim] and adds optional biases.
 func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *Buffer, qDim, kvDim int) {
-	src := combined.flat.([]T)
-	q := qBuf.flat.([]T)
-	k := kBuf.flat.([]T)
-	v := vBuf.flat.([]T)
+	src := combined.Flat.([]T)
+	q := qBuf.Flat.([]T)
+	k := kBuf.Flat.([]T)
+	v := vBuf.Flat.([]T)
 	var biasQ, biasK, biasV []T
 	if biasQBuf != nil {
-		biasQ = biasQBuf.flat.([]T)
+		biasQ = biasQBuf.Flat.([]T)
 	}
 	if biasKBuf != nil {
-		biasK = biasKBuf.flat.([]T)
+		biasK = biasKBuf.Flat.([]T)
 	}
 	if biasVBuf != nil {
-		biasV = biasVBuf.flat.([]T)
+		biasV = biasVBuf.Flat.([]T)
 	}
 
 	totalOut := qDim + 2*kvDim
