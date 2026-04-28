@@ -115,7 +115,7 @@ var (
 	// nodeExecutors should be populated with a priority (see setNodeExecutor), which can conctorl whether
 	// to overwrite a nodeExecutors configuration independent of the order of settting.
 	nodeExecutors         [compute.OpTypeLast]nodeExecutor
-	nodeExecutorsPriority [compute.OpTypeLast]registerPriority
+	nodeExecutorsPriority [compute.OpTypeLast]RegisterPriority
 
 	// multiOutputsNodeExecutors should be populated during initialization for the multi-output ops
 	// implemented. E.g.: RNGBitGenerator.
@@ -127,20 +127,20 @@ var (
 	nodeClosureExecutors [compute.OpTypeLast]nodeClosureExecutor
 )
 
-// registerPriority defines the priority of a node executor. Highest priority takes precedence.
+// RegisterPriority defines the priority of a node executor. Highest priority takes precedence.
 // Anything with priority < 0 is ignored.
-type registerPriority int
+type RegisterPriority int
 
 const (
-	priorityGeneric registerPriority = 0
-	priorityTyped   registerPriority = 1   // Specialized typed implementation.
-	priorityArch    registerPriority = 10  // Specialized architecture implementation.
-	priorityUser    registerPriority = 100 // Custom user overrides.
+	priorityGeneric RegisterPriority = 0
+	priorityTyped   RegisterPriority = 1   // Specialized typed implementation.
+	priorityArch    RegisterPriority = 10  // Specialized architecture implementation.
+	priorityUser    RegisterPriority = 100 // Custom user overrides.
 )
 
 // setNodeExecutor sets the node executor for the given operation type with the specified priority.
 // If the priority is lower than the current priority for the operation type, the executor is ignored.
-func setNodeExecutor(opType compute.OpType, priority registerPriority, executor nodeExecutor) {
+func setNodeExecutor(opType compute.OpType, priority RegisterPriority, executor nodeExecutor) {
 	if priority < nodeExecutorsPriority[opType] {
 		// We have soemthing registered with higher priority, ignore.
 		return

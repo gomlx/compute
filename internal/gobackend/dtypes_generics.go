@@ -18,7 +18,7 @@ const MaxDTypes = 32
 type DTypeMap struct {
 	Name     string
 	Map      [MaxDTypes]any
-	Priority [MaxDTypes]registerPriority
+	Priority [MaxDTypes]RegisterPriority
 }
 
 // NewDTypeMap creates a new DTypeMap.
@@ -44,7 +44,7 @@ func (d *DTypeMap) Get(dtype dtypes.DType) (any, error) {
 
 // Register a value for a dtype with the specified priority.
 // If the priority is lower than the current priority for the dtype, the value is ignored.
-func (d *DTypeMap) Register(dtype dtypes.DType, priority registerPriority, value any) {
+func (d *DTypeMap) Register(dtype dtypes.DType, priority RegisterPriority, value any) {
 	if dtype >= MaxDTypes {
 		exceptions.Panicf("dtype %s not supported by %s", dtype, d.Name)
 	}
@@ -70,7 +70,7 @@ type FuncForDispatcher func(params ...any) any
 type DTypeDispatcher struct {
 	Name     string
 	fnMap    [MaxDTypes]FuncForDispatcher
-	Priority [MaxDTypes]registerPriority
+	Priority [MaxDTypes]RegisterPriority
 }
 
 // NewDTypeDispatcher creates a new dispatcher for a class of functions.
@@ -98,7 +98,7 @@ func (d *DTypeDispatcher) Dispatch(dtype dtypes.DType, params ...any) any {
 
 // Register a function to handle a specific dtype with the specified priority.
 // If the priority is lower than the current priority for the dtype, the function is ignored.
-func (d *DTypeDispatcher) Register(dtype dtypes.DType, priority registerPriority, fn FuncForDispatcher) {
+func (d *DTypeDispatcher) Register(dtype dtypes.DType, priority RegisterPriority, fn FuncForDispatcher) {
 	if dtype >= MaxDTypes {
 		exceptions.Panicf("dtype %s not supported by %s", dtype, d.Name)
 	}
@@ -116,7 +116,7 @@ func (d *DTypeDispatcher) Register(dtype dtypes.DType, priority registerPriority
 type DTypePairMap struct {
 	Name     string
 	Map      [MaxDTypes][MaxDTypes]any
-	Priority [MaxDTypes][MaxDTypes]registerPriority
+	Priority [MaxDTypes][MaxDTypes]RegisterPriority
 }
 
 // NewDTypePairMap creates a new DTypePairMap.
@@ -142,7 +142,7 @@ func (d *DTypePairMap) Get(dtype1, dtype2 dtypes.DType) (any, error) {
 
 // Register a value for a dtype pair with the specified priority.
 // If the priority is lower than the current priority for the dtype pair, the value is ignored.
-func (d *DTypePairMap) Register(dtype1, dtype2 dtypes.DType, priority registerPriority, value any) {
+func (d *DTypePairMap) Register(dtype1, dtype2 dtypes.DType, priority RegisterPriority, value any) {
 	if dtype1 >= MaxDTypes || dtype2 >= MaxDTypes {
 		exceptions.Panicf("dtypes %s or %s not supported by %s", dtype1, dtype2, d.Name)
 	}
