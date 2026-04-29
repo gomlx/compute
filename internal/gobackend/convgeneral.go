@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeConvGeneral, PriorityGeneric, execConvGeneral)
+	SetNodeExecutor(compute.OpTypeConvGeneral, PriorityGeneric, execConvGeneral)
 }
 
 // Auto-generate alternate specialized versions of execConvGeneral, with small changes.

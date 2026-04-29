@@ -5,9 +5,9 @@ package gobackend
 import "github.com/gomlx/compute"
 
 func init() {
-	setNodeExecutor(compute.OpTypeShiftLeft, PriorityGeneric, execShiftLeft)
-	setNodeExecutor(compute.OpTypeShiftRightArithmetic, PriorityGeneric, execShiftRightArithmetic)
-	setNodeExecutor(compute.OpTypeShiftRightLogical, PriorityGeneric, execShiftRightLogical)
+	SetNodeExecutor(compute.OpTypeShiftLeft, PriorityGeneric, execShiftLeft)
+	SetNodeExecutor(compute.OpTypeShiftRightArithmetic, PriorityGeneric, execShiftRightArithmetic)
+	SetNodeExecutor(compute.OpTypeShiftRightLogical, PriorityGeneric, execShiftRightLogical)
 }
 
 var (

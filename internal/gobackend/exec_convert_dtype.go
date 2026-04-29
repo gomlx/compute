@@ -12,7 +12,7 @@ import (
 // ConvertDType ====================================================================================================
 
 func init() {
-	setNodeExecutor(compute.OpTypeConvertDType, PriorityGeneric, execConvertDType)
+	SetNodeExecutor(compute.OpTypeConvertDType, PriorityGeneric, execConvertDType)
 }
 
 func execConvertDType(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {

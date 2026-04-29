@@ -49,11 +49,12 @@ var (
 			{"dispatchGather", "execGatherGeneric", makeDTypes(true, true, false, false, false)},
 		},
 		Maps: []MapInfo{
-			{"dotGeneralFlatToBlockDTypeMap", "dgCopyFlatToBlockShape", makeDTypes(true, true, true, true, false)},
-			{"dotGeneralOutputBlockToFlatDTypeMap", "dgCopyOutputBlockToFlat", makeDTypes(true, true, true, false, false)},
-			{"dotGeneralKernelDTypeMap", "buildDotGeneralKernel", makeDTypes(true, true, true, false, false)},
-			{"dotGeneralNormalizeShapeDTypeMap", "dgNormalizeShape", makeDTypes(true, true, true, true, false)},
-			{"dotGeneralNormalizedDTypeMap", "execNormalizedDotGeneralGeneric", makeDTypes(true, true, true, false, false)},
+			// {"dotGeneralFlatToBlockDTypeMap", "dgCopyFlatToBlockShape", makeDTypes(true, true, true, true, false)},
+			// {"dotGeneralOutputBlockToFlatDTypeMap", "dgCopyOutputBlockToFlat", makeDTypes(true, true, true, false, false)},
+			// {"dotGeneralKernelDTypeMap", "buildDotGeneralKernel", makeDTypes(true, true, true, false, false)},
+			// {"dotGeneralNormalizeShapeDTypeMap", "dgNormalizeShape", makeDTypes(true, true, true, true, false)},
+			// {"dotGeneralNormalizedDTypeMap", "execNormalizedDotGeneralGeneric", makeDTypes(true, true, true, false, false)},
+			// {"dotGeneralSmallMatMulDTypeMap", "execDotGeneralSmallMatMulGeneric", makeDTypes(true, true, true, false, false)},
 			{"mutableBytesDTypeMap", "mutableBytesGeneric", makeDTypes(true, true, true, true, true)},
 			{"fillBufferDTypeMap", "fillBufferGeneric", makeDTypes(true, true, true, true, true)},
 			{"reduceMaxDTypeMap", "execReduceMaxGeneric", makeDTypes(true, true, true, false, false)},
@@ -79,7 +80,6 @@ var (
 			{"reduceWindowProductDTypeMap", "reduceWindowProductBuildUpdateFn", makeDTypes(true, true, true, false, false)},
 			{"convNoDilationDTypeMap", "execConvNoDilationGeneric", makeDTypes(true, true, true, false, false)},
 			{"convDTypeMap", "execConvGeneric", makeDTypes(true, true, true, false, false)},
-			{"dotGeneralSmallMatMulDTypeMap", "execDotGeneralSmallMatMulGeneric", makeDTypes(true, true, true, false, false)},
 			{"applyPermutationDTypeMap", "applyPermutationGeneric", makeDTypes(true, true, true, true, true)},
 			{"shiftLeftDTypeMap", "shiftLeftGeneric", makeDTypes(true, true, false, false, false)},
 			{"shiftRightArithmeticDTypeMap", "shiftRightArithmeticGeneric", makeDTypes(true, true, false, false, false)},
@@ -131,7 +131,7 @@ var (
 			//},
 		},
 	}
-	fileName = "gen_register_dtypes.go"
+	fileName = "gen_dtypemaps_registration.go"
 )
 
 var (
@@ -139,7 +139,7 @@ var (
 	dtypesFloat16  = []DTypeInfo{DTypeInfo{"Float16", "float16.Float16"}}
 )
 
-func makeDTypes(ints, uints, floats, floats16, boolean bool) []DTypeInfo {
+func makeDTypes(ints, uints, floats, halfPrecision, boolean bool) []DTypeInfo {
 	dtypes := make([]DTypeInfo, 0, 32)
 	if ints {
 		dtypes = append(dtypes,
@@ -163,7 +163,7 @@ func makeDTypes(ints, uints, floats, floats16, boolean bool) []DTypeInfo {
 			DTypeInfo{"Float64", "float64"},
 		)
 	}
-	if floats16 {
+	if halfPrecision {
 		dtypes = append(dtypes,
 			DTypeInfo{"BFloat16", "bfloat16.BFloat16"},
 			DTypeInfo{"Float16", "float16.Float16"},
@@ -204,7 +204,7 @@ func init() {
 {{- $dispatcher := .Dispatcher }}
 {{- $generic := .Generic }}
 {{- range .DTypes }}
-	{{$dispatcher}}.Register(dtypes.{{.DType}}, priorityGeneric, {{$generic}}[{{.GoType}}])
+	{{$dispatcher}}.Register(dtypes.{{.DType}}, PriorityGeneric, {{$generic}}[{{.GoType}}])
 {{- end }}
 {{- end }}
 
@@ -214,7 +214,7 @@ func init() {
 {{- $mapName := .MapName }}
 {{- $generic := .Generic }}
 {{- range .DTypes }}
-	{{$mapName}}.Register(dtypes.{{.DType}}, priorityGeneric, {{$generic}}[{{.GoType}}])
+	{{$mapName}}.Register(dtypes.{{.DType}}, PriorityGeneric, {{$generic}}[{{.GoType}}])
 {{- end }}
 {{- end }}
 
@@ -228,7 +228,7 @@ func init() {
 {{- $dtype1 := .DType }}
 {{- $goType1 := .GoType }}
 {{- range $dtypes2 }}
-	{{$mapName}}.Register(dtypes.{{$dtype1}}, dtypes.{{.DType}}, priorityGeneric, {{$generic}}[{{$goType1}}, {{.GoType}}])
+	{{$mapName}}.Register(dtypes.{{$dtype1}}, dtypes.{{.DType}}, PriorityGeneric, {{$generic}}[{{$goType1}}, {{.GoType}}])
 {{- end }}
 {{- end }}
 {{- end }}

@@ -15,28 +15,28 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeNeg, PriorityGeneric, execNeg)
-	setNodeExecutor(compute.OpTypeAbs, PriorityGeneric, execAbs)
-	setNodeExecutor(compute.OpTypeSign, PriorityGeneric, execSign)
-	setNodeExecutor(compute.OpTypeLogicalNot, PriorityGeneric, execLogicalNot)
-	setNodeExecutor(compute.OpTypeBitwiseNot, PriorityGeneric, execBitwiseNot)
-	setNodeExecutor(compute.OpTypeBitCount, PriorityGeneric, execBitCount)
-	setNodeExecutor(compute.OpTypeClz, PriorityGeneric, execClz)
-	setNodeExecutor(compute.OpTypeExp, PriorityGeneric, execExp)
-	setNodeExecutor(compute.OpTypeExpm1, PriorityGeneric, execExpm1)
-	setNodeExecutor(compute.OpTypeLog, PriorityGeneric, execLog)
-	setNodeExecutor(compute.OpTypeLog1p, PriorityGeneric, execLog1p)
-	setNodeExecutor(compute.OpTypeCeil, PriorityGeneric, execCeil)
-	setNodeExecutor(compute.OpTypeFloor, PriorityGeneric, execFloor)
-	setNodeExecutor(compute.OpTypeRound, PriorityGeneric, execRound)
-	setNodeExecutor(compute.OpTypeRsqrt, PriorityGeneric, execRsqrt)
-	setNodeExecutor(compute.OpTypeSqrt, PriorityGeneric, execSqrt)
-	setNodeExecutor(compute.OpTypeCos, PriorityGeneric, execCos)
-	setNodeExecutor(compute.OpTypeSin, PriorityGeneric, execSin)
-	setNodeExecutor(compute.OpTypeTanh, PriorityGeneric, execTanh)
-	setNodeExecutor(compute.OpTypeIsFinite, PriorityGeneric, execIsFinite)
-	setNodeExecutor(compute.OpTypeLogistic, PriorityGeneric, execLogistic)
-	setNodeExecutor(compute.OpTypeErf, PriorityGeneric, execErf)
+	SetNodeExecutor(compute.OpTypeNeg, PriorityGeneric, execNeg)
+	SetNodeExecutor(compute.OpTypeAbs, PriorityGeneric, execAbs)
+	SetNodeExecutor(compute.OpTypeSign, PriorityGeneric, execSign)
+	SetNodeExecutor(compute.OpTypeLogicalNot, PriorityGeneric, execLogicalNot)
+	SetNodeExecutor(compute.OpTypeBitwiseNot, PriorityGeneric, execBitwiseNot)
+	SetNodeExecutor(compute.OpTypeBitCount, PriorityGeneric, execBitCount)
+	SetNodeExecutor(compute.OpTypeClz, PriorityGeneric, execClz)
+	SetNodeExecutor(compute.OpTypeExp, PriorityGeneric, execExp)
+	SetNodeExecutor(compute.OpTypeExpm1, PriorityGeneric, execExpm1)
+	SetNodeExecutor(compute.OpTypeLog, PriorityGeneric, execLog)
+	SetNodeExecutor(compute.OpTypeLog1p, PriorityGeneric, execLog1p)
+	SetNodeExecutor(compute.OpTypeCeil, PriorityGeneric, execCeil)
+	SetNodeExecutor(compute.OpTypeFloor, PriorityGeneric, execFloor)
+	SetNodeExecutor(compute.OpTypeRound, PriorityGeneric, execRound)
+	SetNodeExecutor(compute.OpTypeRsqrt, PriorityGeneric, execRsqrt)
+	SetNodeExecutor(compute.OpTypeSqrt, PriorityGeneric, execSqrt)
+	SetNodeExecutor(compute.OpTypeCos, PriorityGeneric, execCos)
+	SetNodeExecutor(compute.OpTypeSin, PriorityGeneric, execSin)
+	SetNodeExecutor(compute.OpTypeTanh, PriorityGeneric, execTanh)
+	SetNodeExecutor(compute.OpTypeIsFinite, PriorityGeneric, execIsFinite)
+	SetNodeExecutor(compute.OpTypeLogistic, PriorityGeneric, execLogistic)
+	SetNodeExecutor(compute.OpTypeErf, PriorityGeneric, execErf)
 }
 
 // unaryOperandAndOutput is a convenience function to get the input and output -- which may be the reuse of the input
@@ -867,13 +867,13 @@ const unaryMinParallelizeChunk = 4096
 
 func execErfGeneric[T float32 | float64](backend *Backend, inputs, outputs []T) {
 	lenInputs := len(inputs)
-	if backend.workers.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
+	if backend.Workers.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
 		// Parallelize operation into chunks.
 		var wg sync.WaitGroup
 		for ii := 0; ii < lenInputs; ii += unaryMinParallelizeChunk {
 			iiEnd := min(ii+unaryMinParallelizeChunk, lenInputs)
 			wg.Add(1)
-			backend.workers.WaitToStart(func() {
+			backend.Workers.WaitToStart(func() {
 				for jj := ii; jj < iiEnd; jj++ {
 					outputs[jj] = T(math.Erf(float64(inputs[jj])))
 				}

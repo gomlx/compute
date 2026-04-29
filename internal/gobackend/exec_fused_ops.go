@@ -13,11 +13,11 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeFusedSoftmax, PriorityTyped, execFusedSoftmax)
-	setNodeExecutor(compute.OpTypeFusedGelu, PriorityTyped, execFusedGelu)
-	setNodeExecutor(compute.OpTypeFusedLayerNorm, PriorityTyped, execFusedLayerNorm)
-	setNodeExecutor(compute.OpTypeFusedDense, PriorityTyped, execFusedDense)
-	setNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, PriorityTyped, execFusedScaledDotProductAttention)
+	SetNodeExecutor(compute.OpTypeFusedSoftmax, PriorityTyped, execFusedSoftmax)
+	SetNodeExecutor(compute.OpTypeFusedGelu, PriorityTyped, execFusedGelu)
+	SetNodeExecutor(compute.OpTypeFusedLayerNorm, PriorityTyped, execFusedLayerNorm)
+	SetNodeExecutor(compute.OpTypeFusedDense, PriorityTyped, execFusedDense)
+	SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, PriorityTyped, execFusedScaledDotProductAttention)
 	// Quantized fused executors registered in exec_fused_quantized.go init().
 	multiOutputsNodeExecutors[compute.OpTypeFusedAttentionQKVProjection] = execFusedAttentionQKVProjection
 }
@@ -136,12 +136,12 @@ const minParallelizeChunk = 4096
 // or n is small.
 func parallelizeChunked[T float32 | float64](backend *Backend, input, output []T, chunkFn func(input, output []T)) {
 	n := len(input)
-	if backend != nil && backend.workers.IsEnabled() && n > minParallelizeChunk {
+	if backend != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
 		var wg sync.WaitGroup
 		for ii := 0; ii < n; ii += minParallelizeChunk {
 			iiEnd := min(ii+minParallelizeChunk, n)
 			wg.Add(1)
-			backend.workers.WaitToStart(func() {
+			backend.Workers.WaitToStart(func() {
 				chunkFn(input[ii:iiEnd], output[ii:iiEnd])
 				wg.Done()
 			})

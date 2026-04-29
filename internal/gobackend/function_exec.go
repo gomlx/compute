@@ -136,7 +136,7 @@ type funcExecBuffers struct {
 	remainingDeps []int
 
 	// opsExecutionType can be sequential or parallel.
-	opsExecutionType opsExecutionType
+	opsExecutionType OpsExecutionType
 
 	// Sequential execution-only: reused for each op.
 	opInputBuffers []*Buffer
@@ -201,19 +201,19 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	}
 
 	// Decide execution mode
-	executionMode := backend.opsExecutionType
-	if executionMode == opsExecutionDynamic {
-		if backend.numLiveExecutions.Load() <= 1 {
-			executionMode = opsExecutionParallel
+	executionMode := backend.OpsExecutionType
+	if executionMode == OpsExecutionDynamic {
+		if backend.NumLiveExecutions.Load() <= 1 {
+			executionMode = OpsExecutionParallel
 		} else {
-			executionMode = opsExecutionSequential
+			executionMode = OpsExecutionSequential
 		}
 	}
 	execBuf.opsExecutionType = executionMode
 
 	// Execute
 	var err error
-	if executionMode == opsExecutionSequential {
+	if executionMode == OpsExecutionSequential {
 		err = fe.executeSequentially(backend, execBuf)
 	} else {
 		err = fe.executeParallel(backend, execBuf)
@@ -382,7 +382,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		}
 
 		wg.Add(1)
-		backend.workers.WaitToStart(nodeExecFn)
+		backend.Workers.WaitToStart(nodeExecFn)
 	}
 
 	// Wait for all nodes to complete before exit (to avoid race condition where some execution
@@ -447,7 +447,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	// It's refactored here is a closure so the code doens't need to be duplicated in the
 	// switch clause below.
 	lockIfNeededFn := func() {
-		if execBuf.opsExecutionType == opsExecutionParallel {
+		if execBuf.opsExecutionType == OpsExecutionParallel {
 			execBuf.mu.Lock()
 		}
 	}
@@ -604,7 +604,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			}
 		}
 	}
-	if execBuf.opsExecutionType == opsExecutionParallel {
+	if execBuf.opsExecutionType == OpsExecutionParallel {
 		// Unlock if it's a parallel execution.
 		execBuf.mu.Unlock()
 	} else {

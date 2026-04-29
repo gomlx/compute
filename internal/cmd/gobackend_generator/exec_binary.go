@@ -40,7 +40,7 @@ import (
 
 func init() {
 {{- range .BinaryOps}}
-	setNodeExecutor(compute.OpType{{.Name}}, priorityGeneric, exec{{.Name}})
+	SetNodeExecutor(compute.OpType{{.Name}}, PriorityGeneric, exec{{.Name}})
 {{- end}}
 }
 
@@ -53,12 +53,11 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 
 {{- if .IsComparison }}
 	lhs, rhs := inputs[0], inputs[1]
-	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.shape.Size() == 1, rhs.shape.Size() == 1
-	output, err := backend.getBuffer(node.shape.DType, node.shape.Size())
+	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {return nil, err}
-	output.shape = node.shape
 {{- else }}
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 {{- end }}
 
 {{- if .IsCommutative}}// Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
@@ -71,7 +70,7 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 {{- end }}
 
-	switch lhs.shape.DType {  //nolint:exhaustive
+	switch lhs.RawShape.DType {  //nolint:exhaustive
 {{- range .Versions}}
 {{- $version := .Name }}
 
@@ -80,8 +79,8 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 {{- range $.IntegerTypes}}
 
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.flat.([]{{.GoType}}), rhs.flat.([]{{.GoType}}), output.flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.shape, rhs.shape, output.shape) //nolint:errcheck // if nok, it would panic
+		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -90,8 +89,8 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 {{- range $.FloatTypes}}
 
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.flat.([]{{.GoType}}), rhs.flat.([]{{.GoType}}), output.flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.shape, rhs.shape, output.shape) //nolint:errcheck // if nok, it would panic
+		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -99,8 +98,8 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 {{- range $.BFloat16Types}}
 
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}BFloat16(lhs.flat.([]{{.GoType}}), rhs.flat.([]{{.GoType}}), output.flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.shape, rhs.shape, output.shape) //nolint:errcheck // if nok, it would panic
+		exec{{$name}}{{$version}}BFloat16(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -108,14 +107,14 @@ func exec{{.Name}}(backend *Backend, node *Node, inputs []*Buffer, inputsOwned [
 	// Boolean:
 {{- range $.BooleanTypes}}
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.flat.([]{{.GoType}}), rhs.flat.([]{{.GoType}}), output.flat.([]{{.GoType}}),
-			lhs.shape, rhs.shape, output.shape) //nolint:errcheck // if nok, it would panic
+		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]{{.GoType}}),
+			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
 {{- end}}
 	default:
-		return nil, errors.Errorf("unsupported data type %s for %s", output.shape.DType, node.opType)
+		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }

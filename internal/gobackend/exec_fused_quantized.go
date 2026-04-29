@@ -12,8 +12,8 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeFusedQuantizedDense, PriorityTyped, execFusedQuantizedDense)
-	setNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, PriorityTyped, execQuantizedEmbeddingLookup)
+	SetNodeExecutor(compute.OpTypeFusedQuantizedDense, PriorityTyped, execFusedQuantizedDense)
+	SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, PriorityTyped, execQuantizedEmbeddingLookup)
 }
 
 // execFusedQuantizedDense implements scalar dequant + matmul + bias + activation.
@@ -225,7 +225,7 @@ func convertIndicesToInt64(backend *Backend, indicesBuf *Buffer) (*Buffer, bool,
 // quantizedDenseParallel will dispatch for the given dimensions.
 func quantizedDenseParallelTileCount(backend *Backend, M, K, N int) int {
 	totalWork := M * K * N
-	if backend == nil || !backend.workers.IsEnabled() || totalWork <= minParallelizeChunk {
+	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= minParallelizeChunk {
 		return M
 	}
 	if M > 1 {
@@ -239,7 +239,7 @@ func quantizedDenseParallelTileCount(backend *Backend, M, K, N int) int {
 // workerIdx is a dense index in [0, quantizedDenseParallelTileCount) identifying the work unit.
 func quantizedDenseParallel(backend *Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
 	totalWork := M * K * N
-	if backend == nil || !backend.workers.IsEnabled() || totalWork <= minParallelizeChunk {
+	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= minParallelizeChunk {
 		for m := range M {
 			rowFn(m, m, 0, N)
 		}
@@ -251,7 +251,7 @@ func quantizedDenseParallel(backend *Backend, M, K, N int, rowFn func(workerIdx,
 		var wg sync.WaitGroup
 		for m := range M {
 			wg.Add(1)
-			backend.workers.WaitToStart(func() {
+			backend.Workers.WaitToStart(func() {
 				rowFn(m, m, 0, N)
 				wg.Done()
 			})
@@ -266,7 +266,7 @@ func quantizedDenseParallel(backend *Backend, M, K, N int, rowFn func(workerIdx,
 			nEnd := min(nStart+tileSize, N)
 			idx := workerIdx
 			wg.Add(1)
-			backend.workers.WaitToStart(func() {
+			backend.Workers.WaitToStart(func() {
 				rowFn(idx, 0, nStart, nEnd)
 				wg.Done()
 			})

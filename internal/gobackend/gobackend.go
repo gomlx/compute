@@ -20,6 +20,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend/workerspool"
 	"github.com/gomlx/compute/notimplemented"
+	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 )
 
@@ -36,6 +37,12 @@ const BackendName = "go"
 func init() {
 	compute.Register(BackendName, New)
 }
+
+// KnownOptionsSetters registers handlers for backend configuration options.
+// These allow any sub-package to register option setters.
+//
+// The key is the name of the option: it can't take any values yet.
+var KnownOptionsSetters = make(map[string]func(b *Backend, key string) error)
 
 // GetBackend returns a singleton backend for Go backend, created with the default configuration.
 // The backend is only created at the first call of the function.
@@ -67,49 +74,36 @@ func New(config string) (compute.Backend, error) {
 				return nil, errors.Wrapf(err,
 					"invalid value for %q in Go backend config: needs an int, got %q", key, value)
 			}
-			b.workers.SetMaxParallelism(vInt)
+			b.Workers.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
 		case "packgemm":
 			// Enable packgemm algorithm choice.
-			b.enablePackgemm = true
+			b.EnablePackgemm = true
 		case "highway":
 			// Enable highway algorithm choice.
-			b.enableHighway = true
-		case "dotgeneral_normalized":
-			// Force DotGeneral to use the normalized path (transpose to [B,Cross,Contract] form).
-			b.dotGeneralForceExecutionPath = normalizedPath
-		case "dotgeneral_blocked":
-			// Force DotGeneral to use the blocked/tiled path (cache-efficient for large matrices).
-			b.dotGeneralForceExecutionPath = blockedPath
-		case "dotgeneral_check":
-			// Run both normalized and blocked paths and compare outputs (for debugging).
-			b.dotGeneralForceExecutionPath = checkPath
-		case "dotgeneral_smallmatmul":
-			// Force DotGeneral to use the SmallMatMul fast path (for small float32 matrices).
-			b.dotGeneralForceExecutionPath = smallMatMulPath
-		case "dotgeneral_packgemm":
-			// Force DotGeneral to use the packgemm for large matmuls.
-			b.enablePackgemm = true
-			b.dotGeneralForceExecutionPath = packgemmPath
-		case "dotgeneral_highway":
-			// Force DotGeneral to use the highway for large matmuls.
-			b.enableHighway = true
-			b.dotGeneralForceExecutionPath = highwayPath
+			b.EnableHighway = true
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
 			// The default is running parallel if it's the only thing executing, otherwise sequentially.
-			b.opsExecutionType = opsExecutionSequential
+			b.OpsExecutionType = OpsExecutionSequential
 		case "ops_parallel":
 			// This will force the ops to be executed in parallel where possible.
 			// The default is running parallel if it's the only thing executing, otherwise sequentially.
-			b.opsExecutionType = opsExecutionParallel
+			b.OpsExecutionType = OpsExecutionParallel
 		case "":
 			// No-op, just skip.
 		default:
-			return nil, errors.Errorf("unknown configuration option %q for SimpleGo (go) backend -- valid configuration options are: "+
-				"parallelism=#workers, dotgeneral_normalized, dotgeneral_blocked, dotgeneral_smallmatmul, dotgeneral_check, ops_sequential, ops_parallel; see code for documentation", key)
+			setter, ok := KnownOptionsSetters[key]
+			if !ok {
+				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
+					"parallelism=#workers, ops_sequential, ops_parallel, %s; see code for documentation", key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
+			}
+			err := setter(b, key)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if b.enablePackgemm && b.enableHighway {
+		if b.EnablePackgemm && b.EnableHighway {
 			return nil, errors.Errorf("cannot enable both packgemm and highway, choose one or the other")
 		}
 	}
@@ -118,7 +112,7 @@ func New(config string) (compute.Backend, error) {
 
 func newDefaultBackend() *Backend {
 	b := &Backend{}
-	b.workers = workerspool.New()
+	b.Workers = workerspool.New()
 	return b
 }
 
@@ -127,23 +121,23 @@ type Backend struct {
 	// bufferPools are a map to pools of buffers that can be reused.
 	// The underlying type is map[bufferPoolKey]*sync.Pool.
 	bufferPools sync.Map
-	workers     *workerspool.Pool
+	Workers     *workerspool.Pool
 
-	numLiveExecutions atomic.Int32
+	NumLiveExecutions atomic.Int32
 
-	// dotGeneralForceExecutionPath forces a specific DotGeneral execution strategy.
+	// DotGeneralForceExecutionPath forces a specific DotGeneral execution strategy.
 	// Default (autoSelectPath, the zero value) selects based on matrix size.
 	// When set to normalizedPath, blockedPath, or checkPath, it overrides the automatic selection.
-	dotGeneralForceExecutionPath dotGeneralExecutionPath
+	DotGeneralForceExecutionPath int
 
-	// opsExecutionType defines how to execute the ops of a computation.
-	opsExecutionType opsExecutionType
+	// OpsExecutionType defines how to execute the ops of a computation.
+	OpsExecutionType OpsExecutionType
 
-	// enablePackgemm is true if packgemm is enabled.
-	enablePackgemm bool
+	// EnablePackgemm is true if packgemm is enabled.
+	EnablePackgemm bool
 
-	// enableHighway is true if highway algorithm is enabled.
-	enableHighway bool
+	// EnableHighway is true if highway algorithm is enabled.
+	EnableHighway bool
 
 	// isFinalized is true if the backend has been isFinalized.
 	isFinalized bool
@@ -154,7 +148,7 @@ var _ compute.Backend = &Backend{}
 
 // Name returns the short name of the backend. E.g.: "xla" for the Xla/PJRT plugin.
 func (b *Backend) Name() string {
-	return "SimpleGo (go)"
+	return "Go Backend"
 }
 
 // String implement compute.Backend.
@@ -162,7 +156,7 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return "Simple Go Portable Backend"
+	return "Go Portable Compute Backend"
 }
 
 // NumDevices return the number of devices available for this Backend.

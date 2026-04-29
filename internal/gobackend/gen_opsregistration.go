@@ -8,6 +8,24 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
+// Stub methods that converts compute.Value to *Node and dispatches to the corresponding op handler.
+func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
+	if RegisterDotGeneral.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DotGeneral(lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
+	}
+	inputNodes, err := f.verifyAndCastValues("DotGeneral", lhs, rhs)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	lhsNode := inputNodes[nodeIdx]
+	nodeIdx++
+	rhsNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterDotGeneral.Fn(f, lhsNode, lhsContractingAxes, lhsBatchAxes, rhsNode, rhsContractingAxes, rhsBatchAxes, config)
+}
+
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
 	if RegisterIota.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -18,286 +36,10 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 
 // Registration variables for the op handlers.
 var (
-	RegisterAbs = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Abs",
-	}
-	RegisterAdd = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Add",
-	}
-	RegisterArgMinMax = OpHandlerRegistration[func(f *Function, x *Node, axis int, outputDType dtypes.DType, isMin bool) (*Node, error)]{
-		Method: "ArgMinMax",
-	}
-	RegisterAtan2 = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Atan2",
-	}
-	RegisterBatchNormForInference = OpHandlerRegistration[func(f *Function, operand *Node, scale *Node, offset *Node, mean *Node, variance *Node, epsilon float32, featureAxis int) (*Node, error)]{
-		Method: "BatchNormForInference",
-	}
-	RegisterBitCount = OpHandlerRegistration[func(f *Function, operand *Node) (*Node, error)]{
-		Method: "BitCount",
-	}
-	RegisterBitcast = OpHandlerRegistration[func(f *Function, operand *Node, targetDType dtypes.DType) (*Node, error)]{
-		Method: "Bitcast",
-	}
-	RegisterBitwiseAnd = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "BitwiseAnd",
-	}
-	RegisterBitwiseNot = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "BitwiseNot",
-	}
-	RegisterBitwiseOr = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "BitwiseOr",
-	}
-	RegisterBitwiseXor = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "BitwiseXor",
-	}
-	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x *Node, outputShape shapes.Shape, broadcastAxes []int) (*Node, error)]{
-		Method: "BroadcastInDim",
-	}
-	RegisterCeil = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Ceil",
-	}
-	RegisterClamp = OpHandlerRegistration[func(f *Function, min *Node, x *Node, max *Node) (*Node, error)]{
-		Method: "Clamp",
-	}
-	RegisterClz = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Clz",
-	}
-	RegisterComplex = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Complex",
-	}
-	RegisterConcatenate = OpHandlerRegistration[func(f *Function, axis int, operands ...*Node) (*Node, error)]{
-		Method: "Concatenate",
-	}
-	RegisterConj = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Conj",
-	}
-	RegisterConvGeneral = OpHandlerRegistration[func(f *Function, input *Node, kernel *Node, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (*Node, error)]{
-		Method: "ConvGeneral",
-	}
-	RegisterConvertDType = OpHandlerRegistration[func(f *Function, x *Node, dtype dtypes.DType) (*Node, error)]{
-		Method: "ConvertDType",
-	}
-	RegisterCos = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Cos",
-	}
-	RegisterDiv = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Div",
-	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs *Node, lhsContractingAxes []int, lhsBatchAxes []int, rhs *Node, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (*Node, error)]{
 		Method: "DotGeneral",
 	}
-	RegisterDynamicSlice = OpHandlerRegistration[func(f *Function, operand *Node, startIndices []*Node, sliceDims []int) (*Node, error)]{
-		Method: "DynamicSlice",
-	}
-	RegisterDynamicUpdateSlice = OpHandlerRegistration[func(f *Function, operand *Node, update *Node, startIndices []*Node) (*Node, error)]{
-		Method: "DynamicUpdateSlice",
-	}
-	RegisterEqual = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Equal",
-	}
-	RegisterEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "EqualTotalOrder",
-	}
-	RegisterErf = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Erf",
-	}
-	RegisterExp = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Exp",
-	}
-	RegisterExpm1 = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Expm1",
-	}
-	RegisterFFT = OpHandlerRegistration[func(f *Function, operand *Node, fftType compute.FFTType, fftLength []int) (*Node, error)]{
-		Method: "FFT",
-	}
-	RegisterFloor = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Floor",
-	}
-	RegisterGather = OpHandlerRegistration[func(f *Function, operand *Node, startIndices *Node, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (*Node, error)]{
-		Method: "Gather",
-	}
-	RegisterGreaterOrEqual = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "GreaterOrEqual",
-	}
-	RegisterGreaterOrEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "GreaterOrEqualTotalOrder",
-	}
-	RegisterGreaterThan = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "GreaterThan",
-	}
-	RegisterGreaterThanTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "GreaterThanTotalOrder",
-	}
-	RegisterIdentity = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Identity",
-	}
-	RegisterImag = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Imag",
-	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (*Node, error)]{
 		Method: "Iota",
-	}
-	RegisterIsFinite = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "IsFinite",
-	}
-	RegisterIsNaN = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "IsNaN",
-	}
-	RegisterLessOrEqual = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LessOrEqual",
-	}
-	RegisterLessOrEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LessOrEqualTotalOrder",
-	}
-	RegisterLessThan = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LessThan",
-	}
-	RegisterLessThanTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LessThanTotalOrder",
-	}
-	RegisterLog = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Log",
-	}
-	RegisterLog1p = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Log1p",
-	}
-	RegisterLogicalAnd = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LogicalAnd",
-	}
-	RegisterLogicalNot = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "LogicalNot",
-	}
-	RegisterLogicalOr = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LogicalOr",
-	}
-	RegisterLogicalXor = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "LogicalXor",
-	}
-	RegisterLogistic = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Logistic",
-	}
-	RegisterMax = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Max",
-	}
-	RegisterMin = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Min",
-	}
-	RegisterMul = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Mul",
-	}
-	RegisterNeg = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Neg",
-	}
-	RegisterNotEqual = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "NotEqual",
-	}
-	RegisterNotEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "NotEqualTotalOrder",
-	}
-	RegisterPad = OpHandlerRegistration[func(f *Function, x *Node, fillValue *Node, axesConfig ...compute.PadAxis) (*Node, error)]{
-		Method: "Pad",
-	}
-	RegisterPow = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Pow",
-	}
-	RegisterReal = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Real",
-	}
-	RegisterReduceBitwiseAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceBitwiseAnd",
-	}
-	RegisterReduceBitwiseOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceBitwiseOr",
-	}
-	RegisterReduceBitwiseXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceBitwiseXor",
-	}
-	RegisterReduceLogicalAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceLogicalAnd",
-	}
-	RegisterReduceLogicalOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceLogicalOr",
-	}
-	RegisterReduceLogicalXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceLogicalXor",
-	}
-	RegisterReduceMax = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceMax",
-	}
-	RegisterReduceMin = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceMin",
-	}
-	RegisterReduceProduct = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceProduct",
-	}
-	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "ReduceSum",
-	}
-	RegisterReduceWindow = OpHandlerRegistration[func(f *Function, input *Node, reductionType compute.ReduceOpType, windowDimensions []int, strides []int, inputDilations []int, windowDilations []int, paddings [][2]int) (*Node, error)]{
-		Method: "ReduceWindow",
-	}
-	RegisterRem = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Rem",
-	}
-	RegisterReshape = OpHandlerRegistration[func(f *Function, x *Node, dimensions ...int) (*Node, error)]{
-		Method: "Reshape",
-	}
-	RegisterReverse = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
-		Method: "Reverse",
-	}
-	RegisterRound = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Round",
-	}
-	RegisterRsqrt = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Rsqrt",
-	}
-	RegisterScatterMax = OpHandlerRegistration[func(f *Function, operand *Node, scatterIndices *Node, updates *Node, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (*Node, error)]{
-		Method: "ScatterMax",
-	}
-	RegisterScatterMin = OpHandlerRegistration[func(f *Function, operand *Node, scatterIndices *Node, updates *Node, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (*Node, error)]{
-		Method: "ScatterMin",
-	}
-	RegisterScatterSum = OpHandlerRegistration[func(f *Function, operand *Node, scatterIndices *Node, updates *Node, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (*Node, error)]{
-		Method: "ScatterSum",
-	}
-	RegisterSelectAndScatterMax = OpHandlerRegistration[func(f *Function, operand *Node, source *Node, windowDimensions []int, windowStrides []int, paddings [][2]int) (*Node, error)]{
-		Method: "SelectAndScatterMax",
-	}
-	RegisterSelectAndScatterMin = OpHandlerRegistration[func(f *Function, operand *Node, source *Node, windowDimensions []int, windowStrides []int, paddings [][2]int) (*Node, error)]{
-		Method: "SelectAndScatterMin",
-	}
-	RegisterShiftLeft = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "ShiftLeft",
-	}
-	RegisterShiftRightArithmetic = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "ShiftRightArithmetic",
-	}
-	RegisterShiftRightLogical = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "ShiftRightLogical",
-	}
-	RegisterSign = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Sign",
-	}
-	RegisterSin = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Sin",
-	}
-	RegisterSlice = OpHandlerRegistration[func(f *Function, x *Node, starts []int, limits []int, strides []int) (*Node, error)]{
-		Method: "Slice",
-	}
-	RegisterSqrt = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Sqrt",
-	}
-	RegisterSub = OpHandlerRegistration[func(f *Function, lhs *Node, rhs *Node) (*Node, error)]{
-		Method: "Sub",
-	}
-	RegisterTanh = OpHandlerRegistration[func(f *Function, x *Node) (*Node, error)]{
-		Method: "Tanh",
-	}
-	RegisterTranspose = OpHandlerRegistration[func(f *Function, x *Node, permutation ...int) (*Node, error)]{
-		Method: "Transpose",
-	}
-	RegisterWhere = OpHandlerRegistration[func(f *Function, condition *Node, onTrue *Node, onFalse *Node) (*Node, error)]{
-		Method: "Where",
 	}
 )

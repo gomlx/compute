@@ -156,25 +156,25 @@ func makeFloat16UnaryWrapper(
 func init() {
 	// Register Float16 unary wrappers with priorityTyped.
 	// These wrap the generic executors (from exec_unary.go) to handle Float16 dtype.
-	setNodeExecutor(compute.OpTypeNeg, PriorityTyped, makeFloat16UnaryWrapper(execNeg, execNegF16))
-	setNodeExecutor(compute.OpTypeAbs, PriorityTyped, makeFloat16UnaryWrapper(execAbs, execAbsF16))
-	setNodeExecutor(compute.OpTypeSign, PriorityTyped, makeFloat16UnaryWrapper(execSign, execSignF16))
-	setNodeExecutor(compute.OpTypeExp, PriorityTyped, makeFloat16UnaryWrapper(execExp, execExpF16))
-	setNodeExecutor(compute.OpTypeExpm1, PriorityTyped, makeFloat16UnaryWrapper(execExpm1, execExpm1F16))
-	setNodeExecutor(compute.OpTypeLog, PriorityTyped, makeFloat16UnaryWrapper(execLog, execLogF16))
-	setNodeExecutor(compute.OpTypeLog1p, PriorityTyped, makeFloat16UnaryWrapper(execLog1p, execLog1pF16))
-	setNodeExecutor(compute.OpTypeCeil, PriorityTyped, makeFloat16UnaryWrapper(execCeil, execCeilF16))
-	setNodeExecutor(compute.OpTypeFloor, PriorityTyped, makeFloat16UnaryWrapper(execFloor, execFloorF16))
-	setNodeExecutor(compute.OpTypeRound, PriorityTyped, makeFloat16UnaryWrapper(execRound, execRoundF16))
-	setNodeExecutor(compute.OpTypeRsqrt, PriorityTyped, makeFloat16UnaryWrapper(execRsqrt, execRsqrtF16))
-	setNodeExecutor(compute.OpTypeCos, PriorityTyped, makeFloat16UnaryWrapper(execCos, execCosF16))
-	setNodeExecutor(compute.OpTypeSin, PriorityTyped, makeFloat16UnaryWrapper(execSin, execSinF16))
-	setNodeExecutor(compute.OpTypeTanh, PriorityTyped, makeFloat16UnaryWrapper(execTanh, execTanhF16))
-	setNodeExecutor(compute.OpTypeLogistic, PriorityTyped, makeFloat16UnaryWrapper(execLogistic, execLogisticF16))
-	setNodeExecutor(compute.OpTypeErf, PriorityTyped, makeFloat16UnaryWrapper(execErf, execErfF16))
+	SetNodeExecutor(compute.OpTypeNeg, PriorityTyped, makeFloat16UnaryWrapper(execNeg, execNegF16))
+	SetNodeExecutor(compute.OpTypeAbs, PriorityTyped, makeFloat16UnaryWrapper(execAbs, execAbsF16))
+	SetNodeExecutor(compute.OpTypeSign, PriorityTyped, makeFloat16UnaryWrapper(execSign, execSignF16))
+	SetNodeExecutor(compute.OpTypeExp, PriorityTyped, makeFloat16UnaryWrapper(execExp, execExpF16))
+	SetNodeExecutor(compute.OpTypeExpm1, PriorityTyped, makeFloat16UnaryWrapper(execExpm1, execExpm1F16))
+	SetNodeExecutor(compute.OpTypeLog, PriorityTyped, makeFloat16UnaryWrapper(execLog, execLogF16))
+	SetNodeExecutor(compute.OpTypeLog1p, PriorityTyped, makeFloat16UnaryWrapper(execLog1p, execLog1pF16))
+	SetNodeExecutor(compute.OpTypeCeil, PriorityTyped, makeFloat16UnaryWrapper(execCeil, execCeilF16))
+	SetNodeExecutor(compute.OpTypeFloor, PriorityTyped, makeFloat16UnaryWrapper(execFloor, execFloorF16))
+	SetNodeExecutor(compute.OpTypeRound, PriorityTyped, makeFloat16UnaryWrapper(execRound, execRoundF16))
+	SetNodeExecutor(compute.OpTypeRsqrt, PriorityTyped, makeFloat16UnaryWrapper(execRsqrt, execRsqrtF16))
+	SetNodeExecutor(compute.OpTypeCos, PriorityTyped, makeFloat16UnaryWrapper(execCos, execCosF16))
+	SetNodeExecutor(compute.OpTypeSin, PriorityTyped, makeFloat16UnaryWrapper(execSin, execSinF16))
+	SetNodeExecutor(compute.OpTypeTanh, PriorityTyped, makeFloat16UnaryWrapper(execTanh, execTanhF16))
+	SetNodeExecutor(compute.OpTypeLogistic, PriorityTyped, makeFloat16UnaryWrapper(execLogistic, execLogisticF16))
+	SetNodeExecutor(compute.OpTypeErf, PriorityTyped, makeFloat16UnaryWrapper(execErf, execErfF16))
 
 	// IsFinite is special - returns bool
-	setNodeExecutor(compute.OpTypeIsFinite, PriorityTyped, func(backend *Backend, node *Node, inputs []*Buffer,
+	SetNodeExecutor(compute.OpTypeIsFinite, PriorityTyped, func(backend *Backend, node *Node, inputs []*Buffer,
 		inputsOwned []bool) (*Buffer, error) {
 		if inputs[0].RawShape.DType != dtypes.Float16 {
 			return execIsFinite(backend, node, inputs, inputsOwned)

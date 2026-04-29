@@ -13,9 +13,9 @@ import (
 // DotGeneral
 // ...
 
-// numericDTypes is the list of numeric data types supported by the Go backend.
+// NumericDTypes is the list of numeric data types supported by the Go backend.
 // This excludes Bool and is used for operations like DotGeneral that only work on numeric types.
-var numericDTypes = []dtypes.DType{
+var NumericDTypes = []dtypes.DType{
 	dtypes.Int8,
 	dtypes.Int16,
 	dtypes.Int32,

@@ -83,11 +83,11 @@ func newExecutable(builder *Builder, mainFn *FunctionExecutable) *Executable {
 	}
 }
 
-// nodeExecutor for the given operation type.
+// NodeExecutor for the given operation type.
 //
 // It is given the buffers for its inputs, and a reserved buffer where to store its output, already
 // with the shape pre-calculated.
-type nodeExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error)
+type NodeExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error)
 
 // nodeMultiOutputExecutor is a version of a node executor when it returns multiple outputs.
 type nodeMultiOutputExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) ([]*Buffer, error)
@@ -114,7 +114,7 @@ var (
 	//
 	// nodeExecutors should be populated with a priority (see setNodeExecutor), which can conctorl whether
 	// to overwrite a nodeExecutors configuration independent of the order of settting.
-	nodeExecutors         [compute.OpTypeLast]nodeExecutor
+	nodeExecutors         [compute.OpTypeLast]NodeExecutor
 	nodeExecutorsPriority [compute.OpTypeLast]RegisterPriority
 
 	// multiOutputsNodeExecutors should be populated during initialization for the multi-output ops
@@ -138,9 +138,9 @@ const (
 	PriorityUser    RegisterPriority = 100 // Custom user overrides.
 )
 
-// setNodeExecutor sets the node executor for the given operation type with the specified priority.
+// SetNodeExecutor sets the node executor for the given operation type with the specified priority.
 // If the priority is lower than the current priority for the operation type, the executor is ignored.
-func setNodeExecutor(opType compute.OpType, priority RegisterPriority, executor nodeExecutor) {
+func SetNodeExecutor(opType compute.OpType, priority RegisterPriority, executor NodeExecutor) {
 	if priority < nodeExecutorsPriority[opType] {
 		// We have soemthing registered with higher priority, ignore.
 		return
@@ -149,12 +149,12 @@ func setNodeExecutor(opType compute.OpType, priority RegisterPriority, executor 
 	nodeExecutors[opType] = executor
 }
 
-type opsExecutionType int
+type OpsExecutionType int
 
 const (
-	opsExecutionDynamic opsExecutionType = iota
-	opsExecutionParallel
-	opsExecutionSequential
+	OpsExecutionDynamic OpsExecutionType = iota
+	OpsExecutionParallel
+	OpsExecutionSequential
 )
 
 // Execute the executable on the default device (0).
@@ -168,8 +168,8 @@ const (
 // If donate is nil, it is assumed to be false for all buffers, and no buffer is donated.
 func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.DeviceNum) ([]compute.Buffer, error) {
 	// Keep the live executions count.
-	e.backend.numLiveExecutions.Add(1)
-	defer e.backend.numLiveExecutions.Add(-1)
+	e.backend.NumLiveExecutions.Add(1)
+	defer e.backend.NumLiveExecutions.Add(-1)
 
 	// Check inputs length
 	params := e.builder.MainFn.Parameters

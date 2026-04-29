@@ -13,27 +13,27 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeAdd, PriorityGeneric, execAdd)
-	setNodeExecutor(compute.OpTypeMul, PriorityGeneric, execMul)
-	setNodeExecutor(compute.OpTypeSub, PriorityGeneric, execSub)
-	setNodeExecutor(compute.OpTypeDiv, PriorityGeneric, execDiv)
-	setNodeExecutor(compute.OpTypeRem, PriorityGeneric, execRem)
-	setNodeExecutor(compute.OpTypePow, PriorityGeneric, execPow)
-	setNodeExecutor(compute.OpTypeAtan2, PriorityGeneric, execAtan2)
-	setNodeExecutor(compute.OpTypeMax, PriorityGeneric, execMax)
-	setNodeExecutor(compute.OpTypeMin, PriorityGeneric, execMin)
-	setNodeExecutor(compute.OpTypeBitwiseAnd, PriorityGeneric, execBitwiseAnd)
-	setNodeExecutor(compute.OpTypeBitwiseOr, PriorityGeneric, execBitwiseOr)
-	setNodeExecutor(compute.OpTypeBitwiseXor, PriorityGeneric, execBitwiseXor)
-	setNodeExecutor(compute.OpTypeLogicalAnd, PriorityGeneric, execLogicalAnd)
-	setNodeExecutor(compute.OpTypeLogicalOr, PriorityGeneric, execLogicalOr)
-	setNodeExecutor(compute.OpTypeLogicalXor, PriorityGeneric, execLogicalXor)
-	setNodeExecutor(compute.OpTypeEqual, PriorityGeneric, execEqual)
-	setNodeExecutor(compute.OpTypeNotEqual, PriorityGeneric, execNotEqual)
-	setNodeExecutor(compute.OpTypeGreaterOrEqual, PriorityGeneric, execGreaterOrEqual)
-	setNodeExecutor(compute.OpTypeGreaterThan, PriorityGeneric, execGreaterThan)
-	setNodeExecutor(compute.OpTypeLessOrEqual, PriorityGeneric, execLessOrEqual)
-	setNodeExecutor(compute.OpTypeLessThan, PriorityGeneric, execLessThan)
+	SetNodeExecutor(compute.OpTypeAdd, PriorityGeneric, execAdd)
+	SetNodeExecutor(compute.OpTypeMul, PriorityGeneric, execMul)
+	SetNodeExecutor(compute.OpTypeSub, PriorityGeneric, execSub)
+	SetNodeExecutor(compute.OpTypeDiv, PriorityGeneric, execDiv)
+	SetNodeExecutor(compute.OpTypeRem, PriorityGeneric, execRem)
+	SetNodeExecutor(compute.OpTypePow, PriorityGeneric, execPow)
+	SetNodeExecutor(compute.OpTypeAtan2, PriorityGeneric, execAtan2)
+	SetNodeExecutor(compute.OpTypeMax, PriorityGeneric, execMax)
+	SetNodeExecutor(compute.OpTypeMin, PriorityGeneric, execMin)
+	SetNodeExecutor(compute.OpTypeBitwiseAnd, PriorityGeneric, execBitwiseAnd)
+	SetNodeExecutor(compute.OpTypeBitwiseOr, PriorityGeneric, execBitwiseOr)
+	SetNodeExecutor(compute.OpTypeBitwiseXor, PriorityGeneric, execBitwiseXor)
+	SetNodeExecutor(compute.OpTypeLogicalAnd, PriorityGeneric, execLogicalAnd)
+	SetNodeExecutor(compute.OpTypeLogicalOr, PriorityGeneric, execLogicalOr)
+	SetNodeExecutor(compute.OpTypeLogicalXor, PriorityGeneric, execLogicalXor)
+	SetNodeExecutor(compute.OpTypeEqual, PriorityGeneric, execEqual)
+	SetNodeExecutor(compute.OpTypeNotEqual, PriorityGeneric, execNotEqual)
+	SetNodeExecutor(compute.OpTypeGreaterOrEqual, PriorityGeneric, execGreaterOrEqual)
+	SetNodeExecutor(compute.OpTypeGreaterThan, PriorityGeneric, execGreaterThan)
+	SetNodeExecutor(compute.OpTypeLessOrEqual, PriorityGeneric, execLessOrEqual)
+	SetNodeExecutor(compute.OpTypeLessThan, PriorityGeneric, execLessThan)
 }
 
 // execAdd executes the binary op Add.
@@ -1523,11 +1523,10 @@ func execLogicalXorBooleanGeneric[T PODBooleanConstraints](lhs, rhs []T, output 
 func execEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
-	}
-	output.RawShape = node.Shape // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -1641,11 +1640,10 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execNotEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
-	}
-	output.RawShape = node.Shape // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -1759,11 +1757,10 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execGreaterOrEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1888,11 +1885,10 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 func execGreaterThan(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -2017,11 +2013,10 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execLessOrEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -2146,11 +2141,10 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execLessThan(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.getBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive

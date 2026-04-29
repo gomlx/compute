@@ -30,7 +30,7 @@ func init() {
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
-	klog.V(1).Info("generating gobackends ops registration")
+	klog.V(1).Info("generating gobackend ops registration variables and stubs.")
 	methods := must.M1(backendparser.ParseBuilder())
 	GenerateOpsRegistration(methods)
 }

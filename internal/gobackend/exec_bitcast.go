@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	setNodeExecutor(compute.OpTypeBitcast, PriorityGeneric, execBitcast)
+	SetNodeExecutor(compute.OpTypeBitcast, PriorityGeneric, execBitcast)
 }
 
 // execBitcast implements Bitcast as a pure bit reinterpretation: the raw bytes are
