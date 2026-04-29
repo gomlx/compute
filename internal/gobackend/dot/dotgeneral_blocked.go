@@ -265,6 +265,7 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 // Data Copy Functions (Flat <-> Blocked)
 // ============================================================================
 
+//gobackend:dtypemap dgCopyFlatToBlockShape ints,uints,floats,half
 var dotGeneralFlatToBlockDTypeMap = gobackend.NewDTypeMap("DotGeneralFlatToBlock")
 
 // dgCopyFlatToBlockShape copies the data from the original (with a non-normalized shape, with the contracting axes
@@ -391,6 +392,7 @@ func dgCopyFlatToBlockShape[T interface {
 	}
 }
 
+//gobackend:dtypemap dgCopyOutputBlockToFlat ints,uints,floats
 var dotGeneralOutputBlockToFlatDTypeMap = gobackend.NewDTypeMap("DotGeneralNormalizedBlockToFlat")
 
 func init() {
@@ -547,6 +549,7 @@ func (r *dotGeneralRecursiveData) apply(
 // Matrix Multiplication Kernels
 // ============================================================================
 
+//gobackend:dtypemap buildDotGeneralKernel ints,uints,floats
 var dotGeneralKernelDTypeMap = NewDTypeMap("DotGeneralKernel")
 
 // kernelFuncType is a function that does a matrix mult of the lhs/rhs and adds it to the output buffer, given the indices of the square blocks.

@@ -105,6 +105,7 @@ func execBroadcastInDim(
 	return output, nil
 }
 
+//gobackend:dtypemap execBroadcastInDimGeneric ints,uints,floats,half,bool
 var broadcastInDimDTypeMap = gobackend.NewDTypeMap("BroadcastInDim")
 
 func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](

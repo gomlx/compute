@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
+//gobackend:dtypemap dgNormalizeShape ints,uints,floats,half
 var dotGeneralNormalizeShapeDTypeMap = NewDTypeMap("DotGeneralNormalizeShape")
 
 // dgNormalizationInfo holds pre-calculated information for dgNormalizeShape.
@@ -262,6 +263,7 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 	return nil
 }
 
+//gobackend:dtypemap execNormalizedDotGeneralGeneric ints,uints,floats
 var dotGeneralNormalizedDTypeMap = NewDTypeMap("DotGeneralNormalized")
 
 // Auto-generate alternate specialized versions of execNormalizedDotGeneral

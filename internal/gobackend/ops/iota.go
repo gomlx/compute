@@ -72,6 +72,7 @@ func execIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	return output, nil
 }
 
+//gobackend:dtypemap execIotaGeneric ints,uints,floats
 var iotaDTypeMap = gobackend.NewDTypeMap("Iota")
 
 func execIotaGeneric[T gobackend.PODNumericConstraints](

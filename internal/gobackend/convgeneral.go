@@ -252,8 +252,10 @@ type convGeneralExecPlan struct {
 }
 
 var (
+	//gobackend:dtypemap execConvNoDilationGeneric ints,uints,floats
 	convNoDilationDTypeMap = NewDTypeMap("ConvNoDilation")
-	convDTypeMap           = NewDTypeMap("ConvGeneral")
+	//gobackend:dtypemap execConvGeneric ints,uints,floats
+	convDTypeMap = NewDTypeMap("ConvGeneral")
 )
 
 func init() {

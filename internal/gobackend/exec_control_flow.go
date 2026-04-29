@@ -297,6 +297,7 @@ func setScalarFromFlat(scalar *Buffer, flat any, offset int) {
 }
 
 // applyPermutationDTypeMap dispatches applyPermutation by dtype.
+//gobackend:dtypemap applyPermutationGeneric ints,uints,floats,half,bool
 var applyPermutationDTypeMap = NewDTypeMap("ApplyPermutation")
 
 // applyPermutation reorders elements along the sort axis according to the given indices.

@@ -34,6 +34,13 @@ func execConvertDType(backend *Backend, node *Node, inputs []*Buffer, inputsOwne
 
 type convertFnType = func(operand, output *Buffer)
 
+//gobackend:dtypemap_pair execConvertDTypeGeneric ints,uints,floats ints,uints,floats
+//gobackend:dtypemap_pair execConvertDTypeToBFloat16 ints,uints,floats bf16
+//gobackend:dtypemap_pair execConvertDTypeFromBFloat16 bf16 ints,uints,floats
+//gobackend:dtypemap_pair execConvertDTypeToFloat16 ints,uints,floats f16
+//gobackend:dtypemap_pair execConvertDTypeFromFloat16 f16 ints,uints,floats
+//gobackend:dtypemap_pair execConvertDTypeToBool ints,uints,floats bool
+//gobackend:dtypemap_pair execConvertDTypeFromBool bool ints,uints,floats
 var convertDTypePairMap = NewDTypePairMap("ConvertDType")
 
 func init() {

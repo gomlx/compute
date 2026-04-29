@@ -78,6 +78,7 @@ func Gather(
 	return node, nil
 }
 
+//gobackend:dtypemap execGatherGeneric ints,uints
 var gatherDTypeMap = gobackend.NewDTypeMap("Gather")
 
 func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (

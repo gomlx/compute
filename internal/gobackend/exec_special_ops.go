@@ -115,6 +115,7 @@ func execWhere(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 	return output, nil
 }
 
+//gobackend:dtypemap execWhereGeneric ints,uints,floats,half,bool
 var whereDTypeMap = NewDTypeMap("Where")
 
 func execWhereGeneric[T SupportedTypesConstraints](conditionBuf, onTrueBuf, onFalseBuf, outputBuf *Buffer) {
@@ -320,6 +321,7 @@ func (it *reduceOutputIterator) next() int {
 	return returnIdx
 }
 
+//gobackend:dtypemap execReduceMaxGeneric ints,uints,floats
 var reduceMaxDTypeMap = NewDTypeMap("ReduceMax")
 
 // execReduceMaxGeneric: use reduceMaxDTypeMap to call it.
@@ -360,6 +362,7 @@ func execReduceMaxBFloat16(operand, output *Buffer, it *reduceOutputIterator, dt
 	}
 }
 
+//gobackend:dtypemap execReduceMinGeneric ints,uints,floats
 var reduceMinDTypeMap = NewDTypeMap("ReduceMin")
 
 func execReduceMinGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
@@ -395,6 +398,7 @@ func execReduceMinBFloat16(operand, output *Buffer, it *reduceOutputIterator, dt
 	}
 }
 
+//gobackend:dtypemap execReduceSumGeneric ints,uints,floats
 var reduceSumDTypeMap = NewDTypeMap("ReduceSum")
 
 func execReduceSumGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
@@ -430,6 +434,7 @@ func execReduceSumBFloat16(operand, output *Buffer, it *reduceOutputIterator, _ 
 	}
 }
 
+//gobackend:dtypemap execReduceProductGeneric ints,uints,floats
 var reduceProductDTypeMap = NewDTypeMap("ReduceProduct")
 
 func execReduceProductGeneric[T PODNumericConstraints](operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
@@ -468,8 +473,11 @@ func execReduceProductBFloat16(operand, output *Buffer, it *reduceOutputIterator
 }
 
 var (
+	//gobackend:dtypemap execReduceBitwiseAndGeneric ints,uints
 	reduceBitwiseAndDTypeMap = NewDTypeMap("ReduceBitwiseAnd")
-	reduceBitwiseOrDTypeMap  = NewDTypeMap("ReduceBitwiseOr")
+	//gobackend:dtypemap execReduceBitwiseOrGeneric ints,uints
+	reduceBitwiseOrDTypeMap = NewDTypeMap("ReduceBitwiseOr")
+	//gobackend:dtypemap execReduceBitwiseXorGeneric ints,uints
 	reduceBitwiseXorDTypeMap = NewDTypeMap("ReduceBitwiseXor")
 )
 
@@ -649,6 +657,7 @@ func (it *transposeIterator) next() int {
 	return nextFlatIdx
 }
 
+//gobackend:dtypemap execTransposeGeneric ints,uints,floats,half,bool
 var transposeDTypeMap = NewDTypeMap("Transpose")
 
 func execTransposeGeneric[T SupportedTypesConstraints](operand, output *Buffer, it *transposeIterator) {
@@ -908,6 +917,7 @@ func execScatter(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 	return output, nil
 }
 
+//gobackend:dtypemap execScatterGeneric ints,uints,floats,half
 var scatterDTypeMap = NewDTypeMap("ScatterMax")
 
 // execScatterGeneric assumes the operand is already copied to the output.
@@ -1090,6 +1100,7 @@ func (it *subIndicesIterator) Increment() bool {
 	return false
 }
 
+//gobackend:dtypemap dereferenceIntsGeneric ints,uints
 var dereferenceIntsDTypeMap = NewDTypeMap("Scatter Indices")
 
 func dereferenceIntsGeneric[T PODIntegerConstraints](flatAny any, indicesIn, indicesOut []int) {
@@ -1100,8 +1111,11 @@ func dereferenceIntsGeneric[T PODIntegerConstraints](flatAny any, indicesIn, ind
 }
 
 var (
+	//gobackend:dtypemap combineForScatterMaxGeneric ints,uints,floats
 	combineMaxDTypeMap = NewDTypeMap("Max(a, b) for ScatterMax")
+	//gobackend:dtypemap combineForScatterMinGeneric ints,uints,floats
 	combineMinDTypeMap = NewDTypeMap("Min(a, b) for ScatterMin")
+	//gobackend:dtypemap combineForScatterSumGeneric ints,uints,floats
 	combineSumDTypeMap = NewDTypeMap("Sum(a, b) for ScatterSum")
 )
 
@@ -1164,6 +1178,7 @@ func execSlice(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffe
 	return output, nil
 }
 
+//gobackend:dtypemap execSliceGeneric ints,uints,floats,half,bool
 var sliceDTypeMap = NewDTypeMap("Slice")
 
 // execSliceGeneric implements the actual slice data copying. It is called via sliceDTypeMap.Dispatch.
@@ -1323,7 +1338,9 @@ func execArgMinMax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*B
 }
 
 var (
-	argMinMaxDTypeMap         = NewDTypeMap("ArgMinMaxRun")
+	//gobackend:dtypemap execArgMinMaxGeneric ints,uints,floats
+	argMinMaxDTypeMap = NewDTypeMap("ArgMinMaxRun")
+	//gobackend:dtypemap buildArgMinMaxCopyIntsFn ints,uints
 	argMinMaxCopyIntsDTypeMap = NewDTypeMap("ArgMinMaxCopyInts")
 )
 
@@ -1603,9 +1620,13 @@ func execReduceWindow(backend *Backend, node *Node, inputs []*Buffer, _ []bool) 
 type reduceWindowUpdateFn func(operandFlatIdx, outputFlatIdx int)
 
 var (
-	reduceWindowMaxDTypeMap     = NewDTypeMap("reduceWindowMaxDTypeMap")
-	reduceWindowMinDTypeMap     = NewDTypeMap("reduceWindowMinDTypeMap")
-	reduceWindowSumDTypeMap     = NewDTypeMap("reduceWindowSumDTypeMap")
+	//gobackend:dtypemap reduceWindowMaxBuildUpdateFn ints,uints,floats
+	reduceWindowMaxDTypeMap = NewDTypeMap("reduceWindowMaxDTypeMap")
+	//gobackend:dtypemap reduceWindowMinBuildUpdateFn ints,uints,floats
+	reduceWindowMinDTypeMap = NewDTypeMap("reduceWindowMinDTypeMap")
+	//gobackend:dtypemap reduceWindowSumBuildUpdateFn ints,uints,floats
+	reduceWindowSumDTypeMap = NewDTypeMap("reduceWindowSumDTypeMap")
+	//gobackend:dtypemap reduceWindowProductBuildUpdateFn ints,uints,floats
 	reduceWindowProductDTypeMap = NewDTypeMap("reduceWindowProductDTypeMap")
 )
 

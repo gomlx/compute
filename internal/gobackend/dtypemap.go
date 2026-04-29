@@ -56,60 +56,6 @@ func (d *DTypeMap) Register(dtype dtypes.DType, priority RegisterPriority, value
 	d.Map[dtype] = value
 }
 
-// DTypeDispatcher --------------------------------------------------------------------------------------------------
-//
-// Deprecated: use DTypeMap instead.
-
-// FuncForDispatcher is type of functions that the DTypeDispatcher can handle.
-type FuncForDispatcher func(params ...any) any
-
-// DTypeDispatcher manages dispatching functions to handle specific DTypes.
-// Often, these functions will be instances of a generic function.
-//
-// Deprecated: use DTypeMap instead.
-type DTypeDispatcher struct {
-	Name     string
-	fnMap    [MaxDTypes]FuncForDispatcher
-	Priority [MaxDTypes]RegisterPriority
-}
-
-// NewDTypeDispatcher creates a new dispatcher for a class of functions.
-//
-// Deprecated: use DTypeMap instead.
-func NewDTypeDispatcher(name string) *DTypeDispatcher {
-	return &DTypeDispatcher{
-		Name: name,
-	}
-}
-
-// Dispatch call the function that matches the dtype.
-func (d *DTypeDispatcher) Dispatch(dtype dtypes.DType, params ...any) any {
-	if dtype >= MaxDTypes {
-		exceptions.Panicf("dtype %s not supported by %s", dtype, d.Name)
-	}
-	fn := d.fnMap[dtype]
-	if fn == nil {
-		exceptions.Panicf("dtype %s not supported by %s -- "+
-			"if you need it, consider creating an issue to add support in github.com/gomlx/gomlx",
-			dtype, d.Name)
-	}
-	return fn(params...)
-}
-
-// Register a function to handle a specific dtype with the specified priority.
-// If the priority is lower than the current priority for the dtype, the function is ignored.
-func (d *DTypeDispatcher) Register(dtype dtypes.DType, priority RegisterPriority, fn FuncForDispatcher) {
-	if dtype >= MaxDTypes {
-		exceptions.Panicf("dtype %s not supported by %s", dtype, d.Name)
-	}
-	if priority < d.Priority[dtype] {
-		// We have something registered with higher priority, ignore.
-		return
-	}
-	d.Priority[dtype] = priority
-	d.fnMap[dtype] = fn
-}
-
 // DTypePairMap --------------------------------------------------------------------------------------------------
 
 // DTypePairMap manages registering of an arbitrary value per dtype pair.

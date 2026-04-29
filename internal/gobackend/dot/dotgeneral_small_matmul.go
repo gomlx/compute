@@ -196,6 +196,7 @@ func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params 
 // dotGeneralSmallMatMulDTypeMap holds the dtype-specific implementations for SmallMatMul.
 // Generic POD types are registered via simplego_dispatcher (gen_register_dtypes.go).
 // BFloat16/Float16 are registered here with specialized implementations that output to float32.
+//gobackend:dtypemap execDotGeneralSmallMatMulGeneric ints,uints,floats
 var dotGeneralSmallMatMulDTypeMap = NewDTypeMap("DotGeneralSmallMatMul")
 
 // Auto-generate alternate specialized versions of execDotGeneralSmallMatMul for BFloat16/Float16

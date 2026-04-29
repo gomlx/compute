@@ -11,9 +11,12 @@ func init() {
 }
 
 var (
-	shiftLeftDTypeMap            = NewDTypeMap("ShiftLeft")
+	//gobackend:dtypemap shiftLeftGeneric ints,uints
+	shiftLeftDTypeMap = NewDTypeMap("ShiftLeft")
+	//gobackend:dtypemap shiftRightArithmeticGeneric ints,uints
 	shiftRightArithmeticDTypeMap = NewDTypeMap("ShiftRightArithmetic")
-	shiftRightLogicalDTypeMap    = NewDTypeMap("ShiftRightLogical")
+	//gobackend:dtypemap shiftRightLogicalGeneric ints,uints
+	shiftRightLogicalDTypeMap = NewDTypeMap("ShiftRightLogical")
 )
 
 // execShiftLeft executes lhs << rhs for integer types.
