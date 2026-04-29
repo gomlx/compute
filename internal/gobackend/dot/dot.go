@@ -1,5 +1,17 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
+// Package dot implements a general-purpose "dot product" ("Einsum") computation.
+//
+// It has various implmentations, each optimized for different circumstances:
+//
+//   - "normalized": the general implementation that works for any shape/dtype.
+//   - "blocked": a cache-tiled algorithm that is faster for larger inputs.
+//   - "smallmatmul": optimized for small matrices.
+//   - "packgemm": uses the "packgemm" library for matrix multiplication.
+//   - "highway": uses the "highway" library for matrix multiplication.
+//   - "check": a debug path that checks all implementations against each other.
+//
+// The actual implementation used is selected at graph-build time based on the input shapes and dtypes.
 package dot
 
 import (
