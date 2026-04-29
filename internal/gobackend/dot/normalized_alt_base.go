@@ -19,7 +19,7 @@ import "github.com/gomlx/compute/internal/gobackend"
 func execNormalizedDotGeneralGeneric[T gobackend.PODNumericConstraints]( //alt:base
 	//alt:bf16 func execNormalizedDotGeneralBFloat16(
 	//alt:f16 func execNormalizedDotGeneralFloat16(
-	lhs, rhs, output *gobackend.Buffer, params *dotGeneralNodeData, batchStartIdx, batchEndIdx int) {
+	lhs, rhs, output *gobackend.Buffer, params *GeneralNodeData, batchStartIdx, batchEndIdx int) {
 	lhsFlat := lhs.Flat.([]T)       //alt:base
 	rhsFlat := rhs.Flat.([]T)       //alt:base
 	outputFlat := output.Flat.([]T) //alt:base
@@ -31,9 +31,9 @@ func execNormalizedDotGeneralGeneric[T gobackend.PODNumericConstraints]( //alt:b
 	//alt:f16 outputFlat := output.Flat.([]float32)
 
 	// Notice we cannot trust lhs.shape and rhs.shape, in case they haven't been transposed or reshaped.
-	contractingSize := params.contractingSize
-	lhsCrossSize := params.lhsCrossSize
-	rhsCrossSize := params.rhsCrossSize
+	contractingSize := params.ContractingSize
+	lhsCrossSize := params.LHSCrossSize
+	rhsCrossSize := params.RHSCrossSize
 
 	// Pre-compute strides to avoid repeated calculations
 	lhsBatchStride := lhsCrossSize * contractingSize

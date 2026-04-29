@@ -12,22 +12,22 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
-//gobackend:dtypemap dgNormalizeShape ints,uints,floats,half
-var dotGeneralNormalizeShapeDTypeMap = gobackend.NewDTypeMap("DotGeneralNormalizeShape")
+//gobackend:dtypemap NormalizeShape ints,uints,floats,half
+var NormalizeShapeDTypeMap = gobackend.NewDTypeMap("NormalizeShape")
 
-// dgNormalizationInfo holds pre-calculated information for dgNormalizeShape.
+// NormalizationInfo holds pre-calculated information for dgNormalizeShape.
 // This is calculated at graph construction time.
-type dgNormalizationInfo struct {
+type NormalizationInfo struct {
 	needsTranspose     bool
 	axisToOutputAxis   []int // For each source axis, which output axis (0=batch, 1=cross, 2=contracting) it maps to.
 	sourceStrides      []int
 	sourceRewindAmount []int
 }
 
-// dgNormalizePrepare pre-calculates the information needed for dgNormalizeShape.
-func dgNormalizePrepare(shape shapes.Shape, contractingAxes, batchAxes []int) *dgNormalizationInfo {
+// NormalizePrepare pre-calculates the information needed for normalizeShape.
+func NormalizePrepare(shape shapes.Shape, contractingAxes, batchAxes []int) *NormalizationInfo {
 	rank := shape.Rank()
-	info := &dgNormalizationInfo{
+	info := &NormalizationInfo{
 		axisToOutputAxis:   make([]int, rank),
 		sourceStrides:      make([]int, rank),
 		sourceRewindAmount: make([]int, rank),
@@ -121,9 +121,9 @@ func dgNormalizePrepare(shape shapes.Shape, contractingAxes, batchAxes []int) *d
 //
 // In the chance that the source needs no transposing, output is returned nil.
 // TODO: handle the error.
-func dgNormalizeShape[T interface {
+func NormalizeShape[T interface {
 	gobackend.PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
-}](backend *gobackend.Backend, source *gobackend.Buffer, info *dgNormalizationInfo, batchSize,
+}](backend *gobackend.Backend, source *gobackend.Buffer, info *NormalizationInfo, batchSize,
 	crossSize, contractingSize int) (output *gobackend.Buffer) {
 	if !info.needsTranspose {
 		return nil
@@ -176,37 +176,37 @@ func dgNormalizeShape[T interface {
 func execDotGeneralNormalized(
 	backend *gobackend.Backend,
 	lhs, rhs *gobackend.Buffer,
-	params *dotGeneralNodeData,
+	params *GeneralNodeData,
 	output *gobackend.Buffer) error {
 	dtype := lhs.RawShape.DType
-	normalizeFnAny, err := dotGeneralNormalizeShapeDTypeMap.Get(dtype)
+	normalizeFnAny, err := NormalizeShapeDTypeMap.Get(dtype)
 	if err != nil {
 		return err
 	}
 	normalizeFn := normalizeFnAny.(func(backend *gobackend.Backend, source *gobackend.Buffer,
-		info *dgNormalizationInfo, batchSize, crossSize, contractingSize int) *gobackend.Buffer)
+		info *NormalizationInfo, batchSize, crossSize, contractingSize int) *gobackend.Buffer)
 
-	batchSize := params.batchSize
-	contractingSize := params.contractingSize
-	lhsCrossSize := params.lhsCrossSize
-	rhsCrossSize := params.rhsCrossSize
+	batchSize := params.BatchSize
+	contractingSize := params.ContractingSize
+	lhsCrossSize := params.LHSCrossSize
+	rhsCrossSize := params.RHSCrossSize
 
 	// Normalize lhs and rhs if needed.
 	lhsNormalized := lhs
 	rhsNormalized := rhs
-	if params.lhsNormalization.needsTranspose {
-		lhsNormalized = normalizeFn(backend, lhs, params.lhsNormalization,
+	if params.LHSNormalization.needsTranspose {
+		lhsNormalized = normalizeFn(backend, lhs, params.LHSNormalization,
 			batchSize, lhsCrossSize, contractingSize)
 	}
-	if params.rhsNormalization.needsTranspose {
-		rhsNormalized = normalizeFn(backend, rhs, params.rhsNormalization,
+	if params.RHSNormalization.needsTranspose {
+		rhsNormalized = normalizeFn(backend, rhs, params.RHSNormalization,
 			batchSize, rhsCrossSize, contractingSize)
 	}
 
 	tmpOutput := output
 	castToFloat32 := dtype == dtypes.BFloat16 || dtype == dtypes.Float16
 	if castToFloat32 {
-		outputShape := shapes.Make(dtypes.Float32, params.batchSize, params.lhsCrossSize, params.rhsCrossSize)
+		outputShape := shapes.Make(dtypes.Float32, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
 		var err error
 		tmpOutput, err = backend.GetBufferForShape(outputShape)
 		if err != nil {
@@ -220,14 +220,14 @@ func execDotGeneralNormalized(
 		return err
 	}
 	normalizeDotGeneral := normalizeDotGeneralAny.(func(lhs, rhs, output *gobackend.Buffer,
-		params *dotGeneralNodeData, batchStartIdx, batchEndIdx int))
+		params *GeneralNodeData, batchStartIdx, batchEndIdx int))
 
 	// Decide on using parallelism across the batch -- each example is started on a separate worker.
 	useBatchParallelism := backend.Workers.IsEnabled()
 	maxParallelism := backend.Workers.MaxParallelism()
 	batchSplitSize := 1
 	if useBatchParallelism && !backend.Workers.IsUnlimited() {
-		batchSplitSize = (params.batchSize + maxParallelism - 1) / maxParallelism
+		batchSplitSize = (params.BatchSize + maxParallelism - 1) / maxParallelism
 	}
 
 	if !useBatchParallelism {

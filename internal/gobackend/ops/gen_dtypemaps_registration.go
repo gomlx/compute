@@ -48,4 +48,97 @@ func init() {
 	iotaDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execIotaGeneric[float32])
 	iotaDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execIotaGeneric[float64])
 
+	// DTypeMap: reduceBitwiseAndDTypeMap
+	reduceBitwiseAndDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceBitwiseAndDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+
+	// DTypeMap: reduceBitwiseOrDTypeMap
+	reduceBitwiseOrDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceBitwiseOrDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+
+	// DTypeMap: reduceBitwiseXorDTypeMap
+	reduceBitwiseXorDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceBitwiseXorDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+
+	// DTypeMap: reduceMaxDTypeMap
+	reduceMaxDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceMaxDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceMaxDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceMaxDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceMaxDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceMaxDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceMaxDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceMaxDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+	reduceMaxDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execReduceMaxGeneric[float32])
+	reduceMaxDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execReduceMaxGeneric[float64])
+
+	// DTypeMap: reduceMinDTypeMap
+	reduceMinDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceMinDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceMinDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceMinDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceMinDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceMinDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceMinDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceMinDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+	reduceMinDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execReduceMaxGeneric[float32])
+	reduceMinDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execReduceMaxGeneric[float64])
+
+	// DTypeMap: reduceProductDTypeMap
+	reduceProductDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceProductDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceProductDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceProductDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceProductDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceProductDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceProductDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceProductDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+	reduceProductDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execReduceMaxGeneric[float32])
+	reduceProductDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execReduceMaxGeneric[float64])
+
+	// DTypeMap: reduceSumDTypeMap
+	reduceSumDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execReduceMaxGeneric[int8])
+	reduceSumDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execReduceMaxGeneric[int16])
+	reduceSumDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execReduceMaxGeneric[int32])
+	reduceSumDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execReduceMaxGeneric[int64])
+	reduceSumDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceMaxGeneric[uint8])
+	reduceSumDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execReduceMaxGeneric[uint16])
+	reduceSumDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execReduceMaxGeneric[uint32])
+	reduceSumDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execReduceMaxGeneric[uint64])
+	reduceSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execReduceMaxGeneric[float32])
+	reduceSumDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execReduceMaxGeneric[float64])
+
+	// DTypeMap: transposeDTypeMap
+	TransposeDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execTransposeGeneric[int8])
+	TransposeDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execTransposeGeneric[int16])
+	TransposeDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execTransposeGeneric[int32])
+	TransposeDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execTransposeGeneric[int64])
+	TransposeDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execTransposeGeneric[uint8])
+	TransposeDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execTransposeGeneric[uint16])
+	TransposeDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execTransposeGeneric[uint32])
+	TransposeDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execTransposeGeneric[uint64])
+	TransposeDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execTransposeGeneric[float32])
+	TransposeDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execTransposeGeneric[float64])
+	TransposeDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execTransposeGeneric[bfloat16.BFloat16])
+	TransposeDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execTransposeGeneric[float16.Float16])
+	TransposeDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execTransposeGeneric[bool])
+
 }

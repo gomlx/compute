@@ -37,7 +37,7 @@ import (
 //alt:base func execDotGeneralSmallMatMulGeneric[T gobackend.PODNumericConstraints](
 func execDotGeneralSmallMatMulBFloat16( //alt:bf16
 	//alt:f16  func execDotGeneralSmallMatMulFloat16(
-	_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *dotGeneralNodeData, output *gobackend.Buffer) {
+	_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *GeneralNodeData, output *gobackend.Buffer) {
 
 	//alt:base lhsFlat := lhs.Flat.([]T)
 	//alt:base rhsFlat := rhs.Flat.([]T)
@@ -49,10 +49,10 @@ func execDotGeneralSmallMatMulBFloat16( //alt:bf16
 	//alt:f16  rhsFlat := rhs.Flat.([]float16.Float16)
 	//alt:f16  outputFlat := output.Flat.([]float16.Float16)
 
-	batchSize := params.batchSize
-	lhsCrossSize := params.lhsCrossSize       // M
-	rhsCrossSize := params.rhsCrossSize       // N
-	contractingSize := params.contractingSize // K
+	batchSize := params.BatchSize
+	lhsCrossSize := params.LHSCrossSize       // M
+	rhsCrossSize := params.RHSCrossSize       // N
+	contractingSize := params.ContractingSize // K
 
 	lhsBatchStride := lhsCrossSize * contractingSize // M * K elements per batch
 	rhsBatchStride := contractingSize * rhsCrossSize // K * N elements per batch (for [B,K,N] layout)

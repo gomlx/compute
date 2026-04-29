@@ -3,32 +3,20 @@
 package ops
 
 import (
+	"slices"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
 )
 
 func init() {
 	gobackend.RegisterTranspose.Register(Transpose, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeTranspose, gobackend.PriorityGeneric, execTranspose)
-
-	// DTypeMap: TransposeDTypeMap
-	gobackend.TransposeDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execTransposeGeneric[int8])
-	gobackend.TransposeDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execTransposeGeneric[int16])
-	gobackend.TransposeDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execTransposeGeneric[int32])
-	gobackend.TransposeDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execTransposeGeneric[int64])
-	gobackend.TransposeDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execTransposeGeneric[uint8])
-	gobackend.TransposeDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execTransposeGeneric[uint16])
-	gobackend.TransposeDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execTransposeGeneric[uint32])
-	gobackend.TransposeDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execTransposeGeneric[uint64])
-	gobackend.TransposeDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execTransposeGeneric[float32])
-	gobackend.TransposeDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execTransposeGeneric[float64])
-	gobackend.TransposeDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execTransposeGeneric[bfloat16.BFloat16])
-	gobackend.TransposeDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execTransposeGeneric[float16.Float16])
-	gobackend.TransposeDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execTransposeGeneric[bool])
 }
 
 // Transpose axes of x.
@@ -45,6 +33,15 @@ func Transpose(f *gobackend.Function, operand *gobackend.Node, permutations ...i
 	return node, nil
 }
 
+// TransposeDTypeMap is used to dispatch Transpose to type-specific implementations.
+// gobackend:dtypemap execTransposeGeneric ints,uints,floats,half,bool
+var TransposeDTypeMap = gobackend.NewDTypeMap("Transpose")
+
+func init() {
+	TransposeDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, execTransposeFloat16)
+	TransposeDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, execTransposeBFloat16)
+}
+
 // execTranspose implements Transpose.
 // The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
 func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
@@ -58,20 +55,103 @@ func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 		return nil, err
 	}
 	output.RawShape = node.Shape
-	it := gobackend.NewTransposeIterator(operand.RawShape, permutations)
+	it := NewTransposeIterator(operand.RawShape, permutations)
 	dtype := node.Shape.DType
-	tmpAny, tmpErr := gobackend.TransposeDTypeMap.Get(dtype)
+	tmpAny, tmpErr := TransposeDTypeMap.Get(dtype)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
-	transposeFn := tmpAny.(func(operand, output *gobackend.Buffer, it *gobackend.TransposeIterator))
+	transposeFn := tmpAny.(func(operand, output *gobackend.Buffer, it *TransposeIterator))
 	transposeFn(operand, output, it)
 	return output, nil
 }
 
-func execTransposeGeneric[T gobackend.SupportedTypesConstraints](operand, output *gobackend.Buffer, it *gobackend.TransposeIterator) {
+// TransposeIterator creates a dynamic iterator that yields output flat indices
+// for the corresponding flat index on the input operand, assuming the operand flat index is moving
+// incrementally.
+type TransposeIterator struct {
+	flatIdx                                int
+	perAxisIdx, perAxisStrides, dimensions []int
+}
+
+// NewTransposeIterator creates a dynamic iterator that yields output flat indices
+// for the corresponding flat index on the input operand, assuming the operand flat index is moving
+// incrementally.
+func NewTransposeIterator(operand shapes.Shape, permutations []int) *TransposeIterator {
+	rank := operand.Rank()
+
+	it := &TransposeIterator{
+		perAxisIdx:     make([]int, rank),
+		perAxisStrides: make([]int, rank),
+		dimensions:     slices.Clone(operand.Dimensions),
+	}
+
+	// First, calculate strides on the output.
+	stridesOnOutput := make([]int, rank)
+	stride := 1
+	reversePermutations := make([]int, rank)
+	for outputAxis := rank - 1; outputAxis >= 0; outputAxis-- {
+		stridesOnOutput[outputAxis] = stride
+		operandAxis := permutations[outputAxis]
+		stride *= operand.Dimensions[operandAxis]
+		reversePermutations[operandAxis] = outputAxis
+	}
+
+	// Calculate per operand axis, what is the stride on the output.
+	for operandAxis := range rank {
+		outputAxis := reversePermutations[operandAxis]
+		it.perAxisStrides[operandAxis] = stridesOnOutput[outputAxis]
+	}
+	return it
+}
+
+// Next returns the next flat index in the output.
+func (it *TransposeIterator) Next() int {
+	// Store current flatIdx first
+	nextFlatIdx := it.flatIdx
+
+	// Cache rank to avoid repeated len() calls
+	rank := len(it.perAxisIdx)
+
+	// Use local variables for array access to avoid repeated indirection
+	perAxisIdx := it.perAxisIdx
+	perAxisStrides := it.perAxisStrides
+	dimensions := it.dimensions
+
+	// Handle remaining axes only when needed
+	for axis := rank - 1; axis >= 0; axis-- {
+		perAxisIdx[axis]++
+		it.flatIdx += perAxisStrides[axis]
+		if perAxisIdx[axis] < dimensions[axis] {
+			// We are done.
+			return nextFlatIdx
+		}
+		perAxisIdx[axis] = 0
+		it.flatIdx -= perAxisStrides[axis] * dimensions[axis]
+	}
+
+	return nextFlatIdx
+}
+
+func execTransposeGeneric[T gobackend.SupportedTypesConstraints](operand, output *gobackend.Buffer, it *TransposeIterator) {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
+	for _, value := range operandFlat {
+		outputFlat[it.Next()] = value
+	}
+}
+
+func execTransposeFloat16(operand, output *gobackend.Buffer, it *TransposeIterator) {
+	operandFlat := operand.Flat.([]float16.Float16)
+	outputFlat := output.Flat.([]float16.Float16)
+	for _, value := range operandFlat {
+		outputFlat[it.Next()] = value
+	}
+}
+
+func execTransposeBFloat16(operand, output *gobackend.Buffer, it *TransposeIterator) {
+	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputFlat[it.Next()] = value
 	}

@@ -33,6 +33,9 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Generate the DTypeMag and DTypePairMap registrations:
+//go:generate go run ../../cmd/gobackend_dtypemap
+
 func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeDotGeneral, gobackend.PriorityGeneric, execDotGeneral)
 	gobackend.RegisterDotGeneral.Register(DotGeneral, gobackend.PriorityGeneric)
@@ -44,34 +47,34 @@ func init() {
 	}
 }
 
-type dotGeneralNodeData struct {
-	lhsContractingAxes, lhsBatchAxes                       []int
-	rhsContractingAxes, rhsBatchAxes                       []int
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int
-	lhsBlockedShape, rhsBlockedShape, outputBlockedShape   shapes.Shape
-	lhsNormalization, rhsNormalization                     *dgNormalizationInfo
+type GeneralNodeData struct {
+	LHSContractingAxes, LHSBatchAxes                       []int
+	RHSContractingAxes, RHSBatchAxes                       []int
+	BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize int
+	LHSBlockedShape, RHSBlockedShape, OutputBlockedShape   shapes.Shape
+	LHSNormalization, RHSNormalization                     *NormalizationInfo
 
 	// execPath determines which execution strategy to use. Decided at graph-build time.
 	execPath ExecutionPath
 }
 
 // EqualNodeData implements nodeDataComparable for dotGeneralNodeData.
-func (d *dotGeneralNodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	o := other.(*dotGeneralNodeData)
-	if d.batchSize != o.batchSize ||
-		d.lhsCrossSize != o.lhsCrossSize ||
-		d.rhsCrossSize != o.rhsCrossSize ||
-		d.contractingSize != o.contractingSize ||
+func (d *GeneralNodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	o := other.(*GeneralNodeData)
+	if d.BatchSize != o.BatchSize ||
+		d.LHSCrossSize != o.LHSCrossSize ||
+		d.RHSCrossSize != o.RHSCrossSize ||
+		d.ContractingSize != o.ContractingSize ||
 		d.execPath != o.execPath {
 		return false
 	}
-	return slices.Equal(d.lhsContractingAxes, o.lhsContractingAxes) &&
-		slices.Equal(d.lhsBatchAxes, o.lhsBatchAxes) &&
-		slices.Equal(d.rhsContractingAxes, o.rhsContractingAxes) &&
-		slices.Equal(d.rhsBatchAxes, o.rhsBatchAxes) &&
-		d.lhsBlockedShape.Equal(o.lhsBlockedShape) &&
-		d.rhsBlockedShape.Equal(o.rhsBlockedShape) &&
-		d.outputBlockedShape.Equal(o.outputBlockedShape)
+	return slices.Equal(d.LHSContractingAxes, o.LHSContractingAxes) &&
+		slices.Equal(d.LHSBatchAxes, o.LHSBatchAxes) &&
+		slices.Equal(d.RHSContractingAxes, o.RHSContractingAxes) &&
+		slices.Equal(d.RHSBatchAxes, o.RHSBatchAxes) &&
+		d.LHSBlockedShape.Equal(o.LHSBlockedShape) &&
+		d.RHSBlockedShape.Equal(o.RHSBlockedShape) &&
+		d.OutputBlockedShape.Equal(o.OutputBlockedShape)
 }
 
 // adjustAxisToRank returns a positive axis, adjusting negative numbers to the correct rank.
@@ -174,16 +177,16 @@ func DotGeneral(f *gobackend.Function,
 
 	lhsRank := lhs.Shape.Rank()
 	rhsRank := rhs.Shape.Rank()
-	params := dotGeneralNodeData{
-		lhsContractingAxes: lhsContractingAxes,
-		lhsBatchAxes:       lhsBatchAxes,
-		rhsContractingAxes: rhsContractingAxes,
-		rhsBatchAxes:       rhsBatchAxes,
+	params := GeneralNodeData{
+		LHSContractingAxes: lhsContractingAxes,
+		LHSBatchAxes:       lhsBatchAxes,
+		RHSContractingAxes: rhsContractingAxes,
+		RHSBatchAxes:       rhsBatchAxes,
 	}
 
 	// Validate and adjust axes.
 	for ii, axis := range lhsContractingAxes {
-		params.lhsContractingAxes[ii], err = adjustAxisToRank(lhsRank, axis)
+		params.LHSContractingAxes[ii], err = adjustAxisToRank(lhsRank, axis)
 		if err != nil {
 			return nil, errors.WithMessagef(err,
 				"while adjusting contractingAxes for DotGeneral(lhs=%s, lhsContractingAxes=%v)",
@@ -191,14 +194,14 @@ func DotGeneral(f *gobackend.Function,
 		}
 	}
 	for ii, axis := range lhsBatchAxes {
-		params.lhsBatchAxes[ii], err = adjustAxisToRank(lhsRank, axis)
+		params.LHSBatchAxes[ii], err = adjustAxisToRank(lhsRank, axis)
 		if err != nil {
 			return nil, errors.WithMessagef(err,
 				"while adjusting batchAxes for DotGeneral(lhs=%s, lhsBatchAxes=%v)", lhs.Shape, lhsBatchAxes)
 		}
 	}
 	for ii, axis := range rhsContractingAxes {
-		params.rhsContractingAxes[ii], err = adjustAxisToRank(rhsRank, axis)
+		params.RHSContractingAxes[ii], err = adjustAxisToRank(rhsRank, axis)
 		if err != nil {
 			return nil, errors.WithMessagef(err,
 				"while adjusting contractingAxes for DotGeneral(rhs=%s, rhsContractingAxes=%v)",
@@ -206,7 +209,7 @@ func DotGeneral(f *gobackend.Function,
 		}
 	}
 	for ii, axis := range rhsBatchAxes {
-		params.rhsBatchAxes[ii], err = adjustAxisToRank(rhsRank, axis)
+		params.RHSBatchAxes[ii], err = adjustAxisToRank(rhsRank, axis)
 		if err != nil {
 			return nil, errors.WithMessagef(err,
 				"while adjusting batchAxes for DotGeneral(rhs=%s, rhsBatchAxes=%v)", rhs.Shape, rhsBatchAxes)
@@ -216,16 +219,16 @@ func DotGeneral(f *gobackend.Function,
 	// Check that batch and contracting dimensions from lhs and rhs match.
 	batchDims := make([]int, len(lhsBatchAxes))
 	contractingDims := make([]int, len(lhsContractingAxes))
-	for ii, lhsAxis := range params.lhsContractingAxes {
-		rhsAxis := params.rhsContractingAxes[ii]
+	for ii, lhsAxis := range params.LHSContractingAxes {
+		rhsAxis := params.RHSContractingAxes[ii]
 		if lhs.Shape.Dimensions[lhsAxis] != rhs.Shape.Dimensions[rhsAxis] {
 			return nil, errors.Errorf("DotGeneral contracting dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
 				lhsAxis, lhs.Shape.Dimensions[lhsAxis], rhsAxis, rhs.Shape.Dimensions[rhsAxis])
 		}
 		contractingDims[ii] = lhs.Shape.Dimensions[lhsAxis]
 	}
-	for ii, lhsAxis := range params.lhsBatchAxes {
-		rhsAxis := params.rhsBatchAxes[ii]
+	for ii, lhsAxis := range params.LHSBatchAxes {
+		rhsAxis := params.RHSBatchAxes[ii]
 		if lhs.Shape.Dimensions[lhsAxis] != rhs.Shape.Dimensions[rhsAxis] {
 			return nil, errors.Errorf("DotGeneral batch dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
 				lhsAxis, lhs.Shape.Dimensions[lhsAxis], rhsAxis, rhs.Shape.Dimensions[rhsAxis])
@@ -235,33 +238,33 @@ func DotGeneral(f *gobackend.Function,
 
 	// Find sizes of the normalized operands ([batchSize, crossSize, contractSize]).
 	var lhsCrossDims, rhsCrossDims []int
-	params.batchSize, params.lhsCrossSize, params.contractingSize, lhsCrossDims = support.DotGeneralFindSizes(
+	params.BatchSize, params.LHSCrossSize, params.ContractingSize, lhsCrossDims = support.DotGeneralFindSizes(
 		lhs.Shape, lhsContractingAxes, lhsBatchAxes)
-	_, params.rhsCrossSize, _, rhsCrossDims = support.DotGeneralFindSizes(rhs.Shape, rhsContractingAxes, rhsBatchAxes)
+	_, params.RHSCrossSize, _, rhsCrossDims = support.DotGeneralFindSizes(rhs.Shape, rhsContractingAxes, rhsBatchAxes)
 
 	// Check that all sizes are positive
-	if params.batchSize <= 0 || params.lhsCrossSize <= 0 || params.contractingSize <= 0 || params.rhsCrossSize <= 0 {
+	if params.BatchSize <= 0 || params.LHSCrossSize <= 0 || params.ContractingSize <= 0 || params.RHSCrossSize <= 0 {
 		return nil, errors.Errorf("DotGeneral sizes must be positive: lhs(batch=%d, cross=%d, contracting=%d), rhs(cross=%d)",
-			params.batchSize, params.lhsCrossSize, params.contractingSize,
-			params.rhsCrossSize)
+			params.BatchSize, params.LHSCrossSize, params.ContractingSize,
+			params.RHSCrossSize)
 	}
 
-	params.lhsNormalization = dgNormalizePrepare(lhs.Shape, params.lhsContractingAxes, params.lhsBatchAxes)
-	params.rhsNormalization = dgNormalizePrepare(rhs.Shape, params.rhsContractingAxes, params.rhsBatchAxes)
+	params.LHSNormalization = NormalizePrepare(lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes)
+	params.RHSNormalization = NormalizePrepare(rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
 
 	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
-	params.lhsBlockedShape = CreateBlockedShape(
-		dtype, params.batchSize, params.lhsCrossSize, params.contractingSize, blockLog2Dim)
-	params.rhsBlockedShape = CreateBlockedShape(
-		dtype, params.batchSize, params.rhsCrossSize, params.contractingSize, blockLog2Dim)
+	params.LHSBlockedShape = CreateBlockedShape(
+		dtype, params.BatchSize, params.LHSCrossSize, params.ContractingSize, blockLog2Dim)
+	params.RHSBlockedShape = CreateBlockedShape(
+		dtype, params.BatchSize, params.RHSCrossSize, params.ContractingSize, blockLog2Dim)
 	outputDType := dtype
 	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
 		// For 16 bits, store the intermediary results as float32 to minimize numerical errors during accumulation.
 		// Notice the blockLog2Dim must be the same, because the block dimensions much match the inputs.
 		outputDType = dtypes.Float32
 	}
-	params.outputBlockedShape = CreateBlockedShape(
-		outputDType, params.batchSize, params.lhsCrossSize, params.rhsCrossSize, blockLog2Dim)
+	params.OutputBlockedShape = CreateBlockedShape(
+		outputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, blockLog2Dim)
 
 	// Select execution path at build time based on problem size and matrix layout.
 	// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
@@ -273,10 +276,10 @@ func DotGeneral(f *gobackend.Function,
 	// the blocking is done once and shared.
 	var lhsBlocked, rhsBlocked *gobackend.Node
 	if params.execPath == BlockedPath || params.execPath == CheckPath {
-		lhsBlocked = blockForDotGeneral(f, lhs, params.lhsContractingAxes, params.lhsBatchAxes,
-			params.batchSize, params.lhsCrossSize, params.contractingSize)
-		rhsBlocked = blockForDotGeneral(f, rhs, params.rhsContractingAxes, params.rhsBatchAxes,
-			params.batchSize, params.rhsCrossSize, params.contractingSize)
+		lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+			params.BatchSize, params.LHSCrossSize, params.ContractingSize)
+		rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
+			params.BatchSize, params.RHSCrossSize, params.ContractingSize)
 	}
 
 	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
@@ -290,7 +293,7 @@ func DotGeneral(f *gobackend.Function,
 	default:
 		inputs = []*gobackend.Node{lhs, rhs}
 	}
-	dotGeneral, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, shapes.Make(dtype, params.batchSize, params.lhsCrossSize, params.rhsCrossSize), inputs, &params)
+	dotGeneral, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, shapes.Make(dtype, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize), inputs, &params)
 
 	// Reshape result to recover batch and cross dimensions.
 	resultingDims := make([]int, 0, len(batchDims)+len(lhsCrossDims)+len(rhsCrossDims))
@@ -338,7 +341,7 @@ const (
 
 // selectExecPath selects the execution path based on problem size and backend configuration.
 // Called at graph-build time from DotGeneral().
-func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape, params *dotGeneralNodeData) ExecutionPath {
+func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape, params *GeneralNodeData) ExecutionPath {
 	dtype := lhsShape.DType
 	outputDType := dtype
 	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
@@ -354,16 +357,16 @@ func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape,
 		var valid bool
 		switch execPath {
 		case SmallMatMulPath:
-			valid = isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-				rhsShape, params.rhsContractingAxes, params.rhsBatchAxes)
+			valid = IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+				rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
 		case PackgemmPath:
 			valid = backend.EnablePackgemm && packgemm.HasDTypeSupport(dtype, outputDType) &&
-				isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-					rhsShape, params.rhsContractingAxes, params.rhsBatchAxes)
+				IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+					rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
 		case HighwayPath:
 			valid = backend.EnableHighway && highway.HasDTypeSupport(dtype, outputDType) &&
-				isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-					rhsShape, params.rhsContractingAxes, params.rhsBatchAxes)
+				IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+					rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
 		default:
 			valid = true
 		}
@@ -375,27 +378,27 @@ func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape,
 
 	// GEMM path:
 	if backend.EnablePackgemm && packgemm.HasDTypeSupport(dtype, outputDType) &&
-		isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-			rhsShape, params.rhsContractingAxes, params.rhsBatchAxes) {
+		IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+			rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
 		return PackgemmPath
 	}
 
 	// Highway path:
 	if backend.EnableHighway && highway.HasDTypeSupport(dtype, outputDType) &&
-		isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-			rhsShape, params.rhsContractingAxes, params.rhsBatchAxes) {
+		IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+			rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
 		return HighwayPath
 	}
 
 	// Check for SmallMatMul fast path first.
 	// SmallMatMul is beneficial for small float32 matrices in standard [M,K]×[K,N] order.
-	if useSmallMatMul(dtype, lhsShape, rhsShape, params) {
+	if UseSmallMatMul(dtype, lhsShape, rhsShape, params) {
 		return SmallMatMulPath
 	}
 
 	// Default selection based on problem size.
 	// For large matrices, the blocked path with cache-tiled algorithm is more efficient.
-	crossesSize := params.rhsCrossSize * params.lhsCrossSize
+	crossesSize := params.RHSCrossSize * params.LHSCrossSize
 	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtype]
 	blockSize := blockDim * blockDim
 	if crossesSize > DotGeneralBlockedPathThreshold*blockSize {
@@ -409,7 +412,7 @@ func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape,
 // For blockedPath, inputs are already pre-blocked at build time.
 func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
-	params := node.Data.(*dotGeneralNodeData)
+	params := node.Data.(*GeneralNodeData)
 	outputShape := node.Shape
 	output, err := backend.GetBufferForShape(outputShape)
 
@@ -463,14 +466,14 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			// Also verify SmallMatMul path for matrices in matmul order
 			rawDType := lhsRaw.RawShape.DType
 			if rawDType < gobackend.MaxDTypes && dotGeneralSmallMatMulDTypeMap.Map[rawDType] != nil &&
-				isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
-					rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) {
+				IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
+					rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) {
 				output2.Zeros()
 				execSmallMatMulFnAny, err := dotGeneralSmallMatMulDTypeMap.Get(rawDType)
 				if err != nil {
 					return nil, err
 				}
-				execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *dotGeneralNodeData, *gobackend.Buffer))
+				execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *GeneralNodeData, *gobackend.Buffer))
 				// BFloat16/Float16 implementations accumulate in float32 internally but write to native output
 				execSmallMatMulFn(backend, lhsRaw, rhsRaw, params, output2)
 				err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
@@ -482,11 +485,11 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 
 			// GEMM specialized executor.
-			if backend.EnablePackgemm && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
-				rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) &&
+			if backend.EnablePackgemm && IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
+				rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) &&
 				packgemm.HasDTypeSupport(inputDType, inputDType) {
 				err = packgemm.GEMM(float32(1), float32(0), lhsRaw.Flat.([]float32), rhsRaw.Flat.([]float32),
-					params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
+					params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
 					output2.Flat.([]float32),
 					getBufAllocator[float32](backend), getBufReleaser(backend), backend.Workers)
 				if err == nil {
@@ -500,11 +503,11 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 
 			// Highway MatMul specialized executor.
-			if backend.EnableHighway && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
-				rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) &&
+			if backend.EnableHighway && IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
+				rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) &&
 				highway.HasDTypeSupport(inputDType, inputDType) {
 				err = highway.MatMulDynamic(inputDType, outputShape.DType, lhsRaw.Flat, rhsRaw.Flat,
-					params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
+					params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
 					output2.Flat,
 					getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
 				if err == nil {
@@ -531,7 +534,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		if err != nil {
 			return nil, err
 		}
-		execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *dotGeneralNodeData, *gobackend.Buffer))
+		execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *GeneralNodeData, *gobackend.Buffer))
 		execSmallMatMulFn(backend, lhs, rhs, params, output)
 		return output, nil
 
@@ -545,7 +548,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		inputDType := lhs.RawShape.DType
 		outputDType := output.RawShape.DType
 		if err = packgemm.GEMMDynamic(inputDType, outputDType, 1, 0, lhs.Flat.([]float32), rhs.Flat.([]float32),
-			params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
+			params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
 			output.Flat.([]float32),
 			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers); err != nil {
 			return nil, err
@@ -557,7 +560,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		inputDType := lhs.RawShape.DType
 		outputDType := output.RawShape.DType
 		err = highway.MatMulDynamic(inputDType, outputDType, lhs.Flat, rhs.Flat,
-			params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
+			params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
 			output.Flat,
 			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
 		return output, nil
@@ -581,7 +584,7 @@ func log2int(x int) int {
 
 var dotGeneralVersionsCheckDelta = 1e-3
 
-func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *dotGeneralNodeData, outputLarge, outputSmall *gobackend.Buffer) error {
+func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *GeneralNodeData, outputLarge, outputSmall *gobackend.Buffer) error {
 	if klog.V(1).Enabled() {
 		var value0 float64
 		dtype := outputLarge.RawShape.DType
@@ -602,11 +605,11 @@ func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, p
 	}
 	fmt.Printf("ERROR: dotGeneral check versions failed:\n")
 	fmt.Printf("\t- lhs=%s, lhsContractingAxes=%v, lhsBatchAxes=%v\n",
-		lhs.RawShape, params.lhsContractingAxes, params.lhsBatchAxes)
+		lhs.RawShape, params.LHSContractingAxes, params.LHSBatchAxes)
 	fmt.Printf("\t- rhs=%s, rhsContractingAxes=%v, rhsBatchAxes=%v\n",
-		rhs.RawShape, params.rhsContractingAxes, params.rhsBatchAxes)
+		rhs.RawShape, params.RHSContractingAxes, params.RHSBatchAxes)
 	fmt.Printf("\t- batchSize=%d, lhsCrossSize=%d, rhsCrossAxes=%d, contractingSize=%d\n",
-		params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize)
+		params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize)
 	fmt.Printf("\t- output=%s\n", outputLarge.RawShape)
 	fmt.Printf("%s\n", strings.Join(messages, "\n"))
 	return err

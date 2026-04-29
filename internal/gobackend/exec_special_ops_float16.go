@@ -14,78 +14,6 @@ import (
 
 // Float16 reduce operations
 
-func init() {
-	reduceMaxDTypeMap.Register(dtypes.Float16, PriorityTyped, execReduceMaxFloat16)
-	reduceMinDTypeMap.Register(dtypes.Float16, PriorityTyped, execReduceMinFloat16)
-	reduceSumDTypeMap.Register(dtypes.Float16, PriorityTyped, execReduceSumFloat16)
-	reduceProductDTypeMap.Register(dtypes.Float16, PriorityTyped, execReduceProductFloat16)
-}
-
-func execReduceMaxFloat16(operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
-	// Initialize with the lowest value.
-	initialValue := dtype.LowestValue().(float16.Float16)
-	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
-
-	// Reduce from operand.
-	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(max(a, b))
-	}
-}
-
-func execReduceMinFloat16(operand, output *Buffer, it *reduceOutputIterator, dtype dtypes.DType) {
-	// Initialize with the highest value.
-	initialValue := dtype.HighestValue().(float16.Float16)
-	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
-
-	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(min(a, b))
-	}
-}
-
-func execReduceSumFloat16(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
-	// Initialize with 0.
-	initialValue := float16.FromFloat32(0)
-	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
-
-	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(a + b)
-	}
-}
-
-func execReduceProductFloat16(operand, output *Buffer, it *reduceOutputIterator, _ dtypes.DType) {
-	// Initialize with 1.
-	initialValue := float16.FromFloat32(1)
-	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
-
-	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(a * b)
-	}
-}
-
 // Float16 conversion functions
 
 // Float16 buffer operations
@@ -155,14 +83,6 @@ func execWhereSetOutputFloat16(outputBuf, valueBuf *Buffer) {
 	}
 }
 
-func execTransposeFloat16(operand, output *Buffer, it *TransposeIterator) {
-	operandFlat := operand.Flat.([]float16.Float16)
-	outputFlat := output.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputFlat[it.Next()] = value
-	}
-}
-
 func execSliceFloat16(operand, output *Buffer, params *sliceNode) {
 	rank := operand.RawShape.Rank()
 	outputFlat := output.Flat.([]float16.Float16)
@@ -211,6 +131,5 @@ func init() {
 	mutableBytesDTypeMap.Register(dtypes.Float16, PriorityTyped, mutableBytesFloat16)
 	fillBufferDTypeMap.Register(dtypes.Float16, PriorityTyped, fillBufferFloat16)
 	whereDTypeMap.Register(dtypes.Float16, PriorityTyped, execWhereFloat16)
-	TransposeDTypeMap.Register(dtypes.Float16, PriorityTyped, execTransposeFloat16)
 	sliceDTypeMap.Register(dtypes.Float16, PriorityTyped, execSliceFloat16)
 }

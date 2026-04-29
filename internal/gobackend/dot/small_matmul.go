@@ -6,7 +6,7 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
-// isMatMulOrder checks if the DotGeneral operands are in standard matrix multiplication order:
+// IsMatMulOrder checks if the DotGeneral operands are in standard matrix multiplication order:
 // LHS: [Batch..., M, K] (contracting dimension last)
 // RHS: [Batch..., K, N] (contracting dimension first after batch)
 //
@@ -36,7 +36,7 @@ import (
 //
 // See also: execDotGeneralSmallNormalized which transposes to [Batch, Cross, Contract] form
 // where BOTH operands have the contracting dimension last (sequential access for both).
-func isMatMulOrder(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes []int,
+func IsMatMulOrder(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes []int,
 	rhsShape shapes.Shape, rhsContractingAxes, rhsBatchAxes []int) bool {
 	lhsRank := lhsShape.Rank()
 	rhsRank := rhsShape.Rank()
@@ -132,25 +132,25 @@ const smallMatMulMaxContractingSizeM1 = 1024
 // very large outputs -- which usually will do better with normalized/blocked paths
 const smallMatMulMaxSize = 256 * 1024 // 256Kb
 
-// useSmallMatMul checks whether the SmallMatMul fast path is beneficial.
+// UseSmallMatMul checks whether the SmallMatMul fast path is beneficial.
 // SmallMatMul skips transpose overhead but has strided RHS access, so it's only
 // beneficial for small matrices in standard [M,K]×[K,N] order.
 // Supports all numeric dtypes (POD types + BFloat16 + Float16).
-func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params *dotGeneralNodeData) bool {
+func UseSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params *GeneralNodeData) bool {
 	// Check if dtype has a registered SmallMatMul implementation
 	if dtype >= gobackend.MaxDTypes || dotGeneralSmallMatMulDTypeMap.Map[dtype] == nil {
 		return false
 	}
 
 	// Check if axes are in standard matmul order
-	if !isMatMulOrder(lhsShape, params.lhsContractingAxes, params.lhsBatchAxes,
-		rhsShape, params.rhsContractingAxes, params.rhsBatchAxes) {
+	if !IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
 		return false
 	}
 
 	// For large batch sizes, the normalized path with batch parallelism is faster.
 	// The small matmul path processes batches sequentially without parallelization.
-	if params.batchSize > smallMatMulMaxBatchSize {
+	if params.BatchSize > smallMatMulMaxBatchSize {
 		return false
 	}
 
@@ -158,13 +158,13 @@ func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params 
 	// dominates when computing just one output row per batch.
 	// BUT we still need to check rhsCrossSize and contractingSize - for M=1 with huge N or K,
 	// the strided access causes cache thrashing.
-	if params.lhsCrossSize == 1 {
+	if params.LHSCrossSize == 1 {
 		// For M=1, use larger thresholds since transpose overhead is more significant
 		// But still cap to avoid catastrophic cache behavior with very large dimensions
-		if params.rhsCrossSize > smallMatMulMaxRhsCrossSizeM1 {
+		if params.RHSCrossSize > smallMatMulMaxRhsCrossSizeM1 {
 			return false
 		}
-		if params.contractingSize > smallMatMulMaxContractingSizeM1 {
+		if params.ContractingSize > smallMatMulMaxContractingSizeM1 {
 			return false
 		}
 		return true
@@ -173,20 +173,20 @@ func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params 
 	// For multi-row operations, check both contracting and RHS cross dimensions.
 	// The RHS is accessed with stride N (rhsCrossSize), so large N causes more cache
 	// misses per contracting step.
-	if params.contractingSize > smallMatMulMaxContractingSize {
+	if params.ContractingSize > smallMatMulMaxContractingSize {
 		return false
 	}
 
 	// Check RHS cross size (N) - large N means large stride in RHS access
-	if params.rhsCrossSize > smallMatMulMaxRhsCrossSize {
+	if params.RHSCrossSize > smallMatMulMaxRhsCrossSize {
 		return false
 	}
 
 	// Larger data size benefit from the blocking done by the blocked and normalized paths.
-	problemSize := /* LHS size */ params.lhsCrossSize*params.contractingSize +
-		/* RHS size */ params.rhsCrossSize*params.contractingSize +
-		/* Output size */ params.lhsCrossSize*params.rhsCrossSize
-	problemSize *= params.batchSize
+	problemSize := /* LHS size */ params.LHSCrossSize*params.ContractingSize +
+		/* RHS size */ params.RHSCrossSize*params.ContractingSize +
+		/* Output size */ params.LHSCrossSize*params.RHSCrossSize
+	problemSize *= params.BatchSize
 	problemSize *= dtype.Size()
 	if problemSize > smallMatMulMaxSize {
 		return false

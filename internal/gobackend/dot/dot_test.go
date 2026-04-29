@@ -109,7 +109,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 			t.Fatalf("Failed: %+v", err)
 		}
 		outBlocks.Zeros()
-		tmpAny, tmpErr := dotGeneralFlatToBlockDTypeMap.Get(dtype)
+		tmpAny, tmpErr := dot.FlatToBlockDTypeMap.Get(dtype)
 		if tmpErr != nil {
 			panic(tmpErr)
 		}
@@ -127,7 +127,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 			blockLog2Dim,
 		)
 
-		outFlat := outBlocks.flat.([]float64)
+		outFlat := outBlocks.Flat.([]float64)
 		// Notice the reversal (transposition) of the batch axes:
 		want := []float64{
 			1, 0, 0, 0,
@@ -146,7 +146,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 }
 
 func TestDotGeneral_SmallNormalize(t *testing.T) {
-	if _, ok := backend.(*Backend); !ok {
+	if _, ok := backend.(*gobackend.Backend); !ok {
 		t.Skip("Skipping test because backend is not a SimpleGo Backend")
 	}
 
@@ -175,19 +175,19 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed: %+v", err)
 		}
-		source := sourceIf.(*Buffer)
+		source := sourceIf.(*gobackend.Buffer)
 		sourceFlat := sourceFlatAny.([]float64)
 		for i := range sourceFlat {
 			sourceFlat[i] = float64(i + 1)
 		}
-		tmpAny, tmpErr := dotGeneralNormalizeShapeDTypeMap.Get(dtype)
+		tmpAny, tmpErr := dot.NormalizeShapeDTypeMap.Get(dtype)
 		if tmpErr != nil {
 			panic(tmpErr)
 		}
-		normalizeFn := tmpAny.(func(backend *Backend, source *Buffer, info *dgNormalizationInfo, batchSize, crossSize, contractingSize int) *Buffer)
-		info := dgNormalizePrepare(source.shape, contractingAxes, batchAxes)
+		normalizeFn := tmpAny.(func(backend *gobackend.Backend, source *gobackend.Buffer, info *dot.NormalizationInfo, batchSize, crossSize, contractingSize int) *gobackend.Buffer)
+		info := dot.NormalizePrepare(source.RawShape, contractingAxes, batchAxes)
 		output := normalizeFn(
-			backend.(*Backend),
+			backend.(*gobackend.Backend),
 			source,
 			info,
 			batchSize,
@@ -207,29 +207,29 @@ func TestDotGeneral_SmallNormalize(t *testing.T) {
 }
 
 func TestDotGeneral_ForcePaths(t *testing.T) {
-	goBackend, ok := backend.(*Backend)
+	goBackend, ok := backend.(*gobackend.Backend)
 	if !ok {
 		t.Skip("Skipping test because backend is not a SimpleGo Backend")
 	}
 
 	// Reset dotGeneralForceExecutionPath at exit to default (auto-select).
 	defer func() {
-		goBackend.dotGeneralForceExecutionPath = autoSelectPath
+		goBackend.DotGeneralForceExecutionPath = int(dot.AutoSelectPath)
 	}()
 
 	lhs := [][][]float32{{{1, 2, 3}}, {{4, 5, 6}}}
 	rhs := [][][]float32{{{1, 1}, {1, 1}, {1, 1}}}
 	want := [][]float32{{1, 4}, {2, 5}, {3, 6}}
 
-	for _, execPath := range []dotGeneralExecutionPath{normalizedPath, blockedPath, smallMatMulPath, packgemmPath, highwayPath, checkPath} {
-		if execPath == packgemmPath && (!goBackend.enablePackgemm || !packgemm.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
+	for _, execPath := range []dot.ExecutionPath{dot.NormalizedPath, dot.BlockedPath, dot.SmallMatMulPath, dot.PackgemmPath, dot.HighwayPath, dot.CheckPath} {
+		if execPath == dot.PackgemmPath && (!goBackend.EnablePackgemm || !packgemm.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
 			continue
 		}
-		if execPath == highwayPath && (!goBackend.enableHighway || !highway.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
+		if execPath == dot.HighwayPath && (!goBackend.EnableHighway || !highway.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
 			continue
 		}
 
-		goBackend.dotGeneralForceExecutionPath = execPath
+		goBackend.DotGeneralForceExecutionPath = int(execPath)
 		t.Run(execPath.String(), func(t *testing.T) {
 			y1, err := testutil.Exec1(backend, []any{lhs, rhs}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.DotGeneral(params[0], []int{1}, []int{2, 0}, params[1], []int{0}, []int{1, 2}, compute.DotGeneralConfig{})
@@ -271,7 +271,7 @@ func TestIsMatMulOrder(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isMatMulOrder(tc.lhsShape, tc.lhsContractingAxes, tc.lhsBatchAxes,
+			got := dot.IsMatMulOrder(tc.lhsShape, tc.lhsContractingAxes, tc.lhsBatchAxes,
 				tc.rhsShape, tc.rhsContractingAxes, tc.rhsBatchAxes)
 			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
 				t.Errorf("Unexpected result (-want +got):\n%s", diff)
@@ -301,18 +301,18 @@ func TestDgUseSmallMatMul(t *testing.T) {
 				lhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.lhsCrossSize, tc.contractingSize)
 				rhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.contractingSize, tc.rhsCrossSize)
 
-				params := &dotGeneralNodeData{
-					lhsContractingAxes: []int{2},
-					lhsBatchAxes:       []int{0},
-					rhsContractingAxes: []int{1},
-					rhsBatchAxes:       []int{0},
-					batchSize:          tc.batchSize,
-					lhsCrossSize:       tc.lhsCrossSize,
-					rhsCrossSize:       tc.rhsCrossSize,
-					contractingSize:    tc.contractingSize,
+				params := &dot.GeneralNodeData{
+					LHSContractingAxes: []int{2},
+					LHSBatchAxes:       []int{0},
+					RHSContractingAxes: []int{1},
+					RHSBatchAxes:       []int{0},
+					BatchSize:          tc.batchSize,
+					LHSCrossSize:       tc.lhsCrossSize,
+					RHSCrossSize:       tc.rhsCrossSize,
+					ContractingSize:    tc.contractingSize,
 				}
 
-				got := dgUseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params)
+				got := dot.UseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params)
 				if got != tc.want {
 					t.Errorf("dgCanUseSmallMatMul with batch=%d, M=%d, N=%d, K=%d: got %v, want %v",
 						tc.batchSize, tc.lhsCrossSize, tc.rhsCrossSize, tc.contractingSize, got, tc.want)

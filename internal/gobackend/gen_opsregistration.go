@@ -65,6 +65,156 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 	return RegisterIota.Fn(f, shape, iotaAxis)
 }
 
+func (f *Function) ReduceBitwiseAnd(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceBitwiseAnd.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceBitwiseAnd(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceBitwiseAnd", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceBitwiseAnd.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceBitwiseOr(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceBitwiseOr.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceBitwiseOr(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceBitwiseOr", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceBitwiseOr.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceBitwiseXor(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceBitwiseXor.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceBitwiseXor(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceBitwiseXor", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceBitwiseXor.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceLogicalAnd(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceLogicalAnd.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceLogicalAnd(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceLogicalAnd", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceLogicalAnd.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceLogicalOr(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceLogicalOr.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceLogicalOr(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceLogicalOr", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceLogicalOr.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceLogicalXor(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceLogicalXor.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceLogicalXor(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceLogicalXor", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceLogicalXor.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceMax(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceMax(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceMax", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceMax.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceMin(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceMin.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceMin(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceMin", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceMin.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceProduct(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceProduct.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceProduct(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceProduct", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceProduct.Fn(f, xNode, axes...)
+}
+
+func (f *Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReduceSum.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceSum(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("ReduceSum", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReduceSum.Fn(f, xNode, axes...)
+}
+
 func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
 	if RegisterReshape.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -123,6 +273,36 @@ var (
 	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (*Node, error)]{
 		Method: "Iota",
+	}
+	RegisterReduceBitwiseAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceBitwiseAnd",
+	}
+	RegisterReduceBitwiseOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceBitwiseOr",
+	}
+	RegisterReduceBitwiseXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceBitwiseXor",
+	}
+	RegisterReduceLogicalAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceLogicalAnd",
+	}
+	RegisterReduceLogicalOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceLogicalOr",
+	}
+	RegisterReduceLogicalXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceLogicalXor",
+	}
+	RegisterReduceMax = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceMax",
+	}
+	RegisterReduceMin = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceMin",
+	}
+	RegisterReduceProduct = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceProduct",
+	}
+	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "ReduceSum",
 	}
 	RegisterReshape = OpHandlerRegistration[func(f *Function, x *Node, dimensions ...int) (*Node, error)]{
 		Method: "Reshape",

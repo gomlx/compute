@@ -10,7 +10,6 @@ import (
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 )
 
@@ -366,75 +365,6 @@ func (f *Function) Where(conditionOp, onTrueOp, onFalseOp compute.Value) (comput
 		return nil, err
 	}
 	node, _ := f.GetOrCreateNode(compute.OpTypeWhere, outputShape, []*Node{condition, onTrue, onFalse}, nil)
-	return node, nil
-}
-
-// ReduceMax implements the compute.Builder interface.
-func (f *Function) ReduceMax(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceMax, operandOp, axis...)
-}
-
-// ReduceMin implements the compute.Builder interface.
-func (f *Function) ReduceMin(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceMin, operandOp, axis...)
-}
-
-// ReduceSum implements the compute.Builder interface.
-func (f *Function) ReduceSum(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceSum, operandOp, axis...)
-}
-
-// ReduceProduct implements the compute.Builder interface.
-func (f *Function) ReduceProduct(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceProduct, operandOp, axis...)
-}
-
-// ReduceBitwiseAnd implements the compute.Builder interface.
-func (f *Function) ReduceBitwiseAnd(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceBitwiseAnd, operandOp, axis...)
-}
-
-// ReduceBitwiseOr implements the compute.Builder interface.
-func (f *Function) ReduceBitwiseOr(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceBitwiseOr, operandOp, axis...)
-}
-
-// ReduceBitwiseXor implements the compute.Builder interface.
-func (f *Function) ReduceBitwiseXor(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceBitwiseXor, operandOp, axis...)
-}
-
-// ReduceLogicalAnd implements the compute.Builder interface.
-func (f *Function) ReduceLogicalAnd(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceLogicalAnd, operandOp, axis...)
-}
-
-// ReduceLogicalOr implements the compute.Builder interface.
-func (f *Function) ReduceLogicalOr(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceLogicalOr, operandOp, axis...)
-}
-
-// ReduceLogicalXor implements the compute.Builder interface.
-func (f *Function) ReduceLogicalXor(operandOp compute.Value, axis ...int) (compute.Value, error) {
-	return f.reduceImpls(compute.OpTypeReduceLogicalXor, operandOp, axis...)
-}
-
-func (f *Function) reduceImpls(reduceOpType compute.OpType, operandOp compute.Value, axes ...int) (compute.Value, error) {
-	inputs, err := f.verifyAndCastValues("ReduceOp", operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	if len(axes) == 0 {
-		// Default if no axes are given, is to reduce all axes.
-		axes = xslices.Iota(0, operand.Shape.Rank())
-	}
-	outputShape, err := shapeinference.ReduceOp(operand.Shape, axes)
-	if err != nil {
-		return nil, err
-	}
-	outputShape.DType = operand.Shape.DType
-	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, []*Node{operand}, axes)
 	return node, nil
 }
 

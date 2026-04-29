@@ -214,19 +214,19 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 //   - lhsBlockData, rhsBlockData: pre-blocking metadata from the input nodes
 //   - params: DotGeneral parameters
 //   - output: output buffer in flat format
-func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gobackend.Buffer, hasBatch bool, params *dotGeneralNodeData,
+func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gobackend.Buffer, hasBatch bool, params *GeneralNodeData,
 	output *gobackend.Buffer) error {
 	dtype := lhsBlocks.RawShape.DType
 	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtype]
 
 	// Allocate output buffer in blocked format.
 	// Use params.outputBlockedShape.DType which is the accumulator type (Float32 for FP16/BF16).
-	accumulatorDType := params.outputBlockedShape.DType
-	outputBlocks, err := backend.GetBuffer(accumulatorDType, params.outputBlockedShape.Size())
+	accumulatorDType := params.OutputBlockedShape.DType
+	outputBlocks, err := backend.GetBuffer(accumulatorDType, params.OutputBlockedShape.Size())
 	if err != nil {
 		return err
 	}
-	outputBlocks.RawShape = params.outputBlockedShape
+	outputBlocks.RawShape = params.OutputBlockedShape
 	outputBlocks.Zeros()
 
 	// Set up recursive data for kernel execution
@@ -247,7 +247,7 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 	recursive.contractBlocks = lhsBlocks.RawShape.Dimensions[2]
 
 	// Execute the batch loop with parallelism
-	runDotGeneralBatchLoop(backend, &recursive, params.batchSize, hasBatch)
+	runDotGeneralBatchLoop(backend, &recursive, params.BatchSize, hasBatch)
 
 	// Copy output from blocked to flat format
 	finalOutputDType := output.RawShape.DType
