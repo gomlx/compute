@@ -138,7 +138,7 @@ const smallMatMulMaxSize = 256 * 1024 // 256Kb
 // Supports all numeric dtypes (POD types + BFloat16 + Float16).
 func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params *dotGeneralNodeData) bool {
 	// Check if dtype has a registered SmallMatMul implementation
-	if dtype >= MaxDTypes || dotGeneralSmallMatMulDTypeMap.Map[dtype] == nil {
+	if dtype >= gobackend.MaxDTypes || dotGeneralSmallMatMulDTypeMap.Map[dtype] == nil {
 		return false
 	}
 

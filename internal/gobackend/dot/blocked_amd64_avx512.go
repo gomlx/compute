@@ -45,7 +45,7 @@ func reduceSumFloat32x16(x16 archsimd.Float32x16) float32 {
 //
 // It uses AVX512 instructions to perform the multiplication.
 func buildDotGeneralBlockKernel_avx512_float32(
-	lhs, rhs, output *Buffer, blockDim int) kernelFuncType {
+	lhs, rhs, output *gobackend.Buffer, blockDim int) kernelFuncType {
 	lhsFlat := lhs.Flat.([]float32)
 	rhsFlat := rhs.Flat.([]float32)
 	outputFlat := output.Flat.([]float32)

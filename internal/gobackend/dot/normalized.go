@@ -13,7 +13,7 @@ import (
 )
 
 //gobackend:dtypemap dgNormalizeShape ints,uints,floats,half
-var dotGeneralNormalizeShapeDTypeMap = NewDTypeMap("DotGeneralNormalizeShape")
+var dotGeneralNormalizeShapeDTypeMap = gobackend.NewDTypeMap("DotGeneralNormalizeShape")
 
 // dgNormalizationInfo holds pre-calculated information for dgNormalizeShape.
 // This is calculated at graph construction time.
@@ -122,16 +122,16 @@ func dgNormalizePrepare(shape shapes.Shape, contractingAxes, batchAxes []int) *d
 // In the chance that the source needs no transposing, output is returned nil.
 // TODO: handle the error.
 func dgNormalizeShape[T interface {
-	PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
-}](backend *Backend, source *Buffer, info *dgNormalizationInfo, batchSize,
-	crossSize, contractingSize int) (output *Buffer) {
+	gobackend.PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
+}](backend *gobackend.Backend, source *gobackend.Buffer, info *dgNormalizationInfo, batchSize,
+	crossSize, contractingSize int) (output *gobackend.Buffer) {
 	if !info.needsTranspose {
 		return nil
 	}
 
 	// Create the output buffer.
 	outputShape := shapes.Make(source.RawShape.DType, batchSize, crossSize, contractingSize)
-	output, _ = backend.getBufferForShape(outputShape)
+	output, _ = backend.GetBufferForShape(outputShape)
 	outputStrides := [3]int{crossSize * contractingSize, contractingSize, 1}
 	var outputIdx [3]int
 
@@ -183,8 +183,8 @@ func execDotGeneralNormalized(
 	if err != nil {
 		return err
 	}
-	normalizeFn := normalizeFnAny.(func(backend *Backend, source *Buffer,
-		info *dgNormalizationInfo, batchSize, crossSize, contractingSize int) *Buffer)
+	normalizeFn := normalizeFnAny.(func(backend *gobackend.Backend, source *gobackend.Buffer,
+		info *dgNormalizationInfo, batchSize, crossSize, contractingSize int) *gobackend.Buffer)
 
 	batchSize := params.batchSize
 	contractingSize := params.contractingSize
@@ -223,10 +223,10 @@ func execDotGeneralNormalized(
 		params *dotGeneralNodeData, batchStartIdx, batchEndIdx int))
 
 	// Decide on using parallelism across the batch -- each example is started on a separate worker.
-	useBatchParallelism := backend.workers.IsEnabled()
-	maxParallelism := backend.workers.MaxParallelism()
+	useBatchParallelism := backend.Workers.IsEnabled()
+	maxParallelism := backend.Workers.MaxParallelism()
 	batchSplitSize := 1
-	if useBatchParallelism && !backend.workers.IsUnlimited() {
+	if useBatchParallelism && !backend.Workers.IsUnlimited() {
 		batchSplitSize = (params.batchSize + maxParallelism - 1) / maxParallelism
 	}
 
@@ -239,7 +239,7 @@ func execDotGeneralNormalized(
 		for batchStartIdx := 0; batchStartIdx < batchSize; batchStartIdx += batchSplitSize {
 			batchEndIdx := min(batchStartIdx+batchSplitSize, batchSize)
 			wg.Add(1)
-			backend.workers.WaitToStart(func() {
+			backend.Workers.WaitToStart(func() {
 				normalizeDotGeneral(lhsNormalized, rhsNormalized, tmpOutput, params, batchStartIdx, batchEndIdx)
 				wg.Done()
 			})
@@ -249,10 +249,10 @@ func execDotGeneralNormalized(
 
 	// Free temporary normalized buffers, if they were used.
 	if lhs != lhsNormalized {
-		backend.putBuffer(lhsNormalized)
+		backend.PutBuffer(lhsNormalized)
 	}
 	if rhs != rhsNormalized {
-		backend.putBuffer(rhsNormalized)
+		backend.PutBuffer(rhsNormalized)
 	}
 
 	// If we created a temporary float32 output, convert it back to the original dtype.
@@ -263,7 +263,7 @@ func execDotGeneralNormalized(
 		}
 		convertFn := convertFnAny.(gobackend.ConvertFnType)
 		convertFn(tmpOutput, output)
-		backend.putBuffer(tmpOutput) // Return the temporary buffer to the pool.
+		backend.PutBuffer(tmpOutput) // Return the temporary buffer to the pool.
 	}
 	return nil
 }

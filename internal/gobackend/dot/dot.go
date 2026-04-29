@@ -23,6 +23,13 @@ import (
 
 func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeDotGeneral, gobackend.PriorityGeneric, execDotGeneral)
+	gobackend.RegisterDotGeneral.Register(DotGeneral, gobackend.PriorityGeneric)
+
+	// Register DotGeneral config options for the backend.
+	for _, option := range []string{"dotgeneral_normalized", "dotgeneral_blocked", "dotgeneral_check",
+		"dotgeneral_smallmatmul", "dotgeneral_packgemm", "dotgeneral_highway"} {
+		gobackend.KnownOptionsSetters[option] = SetBackendOption
+	}
 }
 
 type dotGeneralNodeData struct {
@@ -93,16 +100,6 @@ func SetBackendOption(b *gobackend.Backend, key string) error {
 		return errors.Errorf("unknown configuration option %q for Go backend!? It shouldn't have been registered, please report an issue in GoMLX.", key)
 	}
 	return nil
-}
-
-func init() {
-	// Register DotGeneral config options for the backend.
-	for _, option := range []string{"dotgeneral_normalized", "dotgeneral_blocked", "dotgeneral_check", "dotgeneral_smallmatmul", "dotgeneral_packgemm", "dotgeneral_highway"} {
-		gobackend.KnownOptionsSetters[option] = SetBackendOption
-	}
-
-	// Register DotGeneral handler.
-	gobackend.RegisterDotGeneral.Register(DotGeneral, gobackend.PriorityGeneric)
 }
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
@@ -403,6 +400,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	params := node.Data.(*dotGeneralNodeData)
 	outputShape := node.Shape
 	output, err := backend.GetBufferForShape(outputShape)
+
 	if err != nil {
 		return nil, err
 	}
@@ -413,13 +411,13 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		rhsNode := node.Inputs[1]
 		_, ok := lhsNode.Data.(*blockForDotGeneralData)
 		if !ok {
-			backend.putBuffer(output)
+			backend.PutBuffer(output)
 			return nil, errors.Errorf("blockedPath requires pre-blocked LHS input, got %T (node type: %s)",
 				lhsNode.Data, lhsNode.OpType)
 		}
 		rhsBlockData, ok := rhsNode.Data.(*blockForDotGeneralData)
 		if !ok {
-			backend.putBuffer(output)
+			backend.PutBuffer(output)
 			return nil, errors.Errorf("blockedPath requires pre-blocked RHS input, got %T (node type: %s)",
 				rhsNode.Data, rhsNode.OpType)
 		}
@@ -432,27 +430,27 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			// The "checkPath" is the debug path: it uses the blocked path as a reference and runs all other possible paths
 			// comparing the results.
 			lhsRaw, rhsRaw := inputs[2], inputs[3]
-			output2, err := backend.getBufferForShape(outputShape)
+			output2, err := backend.GetBufferForShape(outputShape)
 			if err != nil {
 				return nil, err
 			}
 			output2.Zeros()
 			err = execDotGeneralNormalized(backend, lhsRaw, rhsRaw, params, output2)
 			if err != nil {
-				backend.putBuffer(output2)
-				backend.putBuffer(output)
+				backend.PutBuffer(output2)
+				backend.PutBuffer(output)
 				return nil, err
 			}
 			err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
 			if err != nil {
-				backend.putBuffer(output2)
-				backend.putBuffer(output)
+				backend.PutBuffer(output2)
+				backend.PutBuffer(output)
 				return nil, err
 			}
 
 			// Also verify SmallMatMul path for matrices in matmul order
 			rawDType := lhsRaw.RawShape.DType
-			if rawDType < MaxDTypes && dotGeneralSmallMatMulDTypeMap.Map[rawDType] != nil &&
+			if rawDType < gobackend.MaxDTypes && dotGeneralSmallMatMulDTypeMap.Map[rawDType] != nil &&
 				isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
 					rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) {
 				output2.Zeros()
@@ -465,49 +463,49 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 				execSmallMatMulFn(backend, lhsRaw, rhsRaw, params, output2)
 				err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
 				if err != nil {
-					backend.putBuffer(output2)
-					backend.putBuffer(output)
+					backend.PutBuffer(output2)
+					backend.PutBuffer(output)
 					return nil, err
 				}
 			}
 
 			// GEMM specialized executor.
-			if backend.enablePackgemm && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
+			if backend.EnablePackgemm && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
 				rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) &&
 				packgemm.HasDTypeSupport(inputDType, inputDType) {
 				err = packgemm.GEMM(float32(1), float32(0), lhsRaw.Flat.([]float32), rhsRaw.Flat.([]float32),
 					params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
 					output2.Flat.([]float32),
-					getBufAllocator[float32](backend), getBufReleaser(backend), backend.workers)
+					getBufAllocator[float32](backend), getBufReleaser(backend), backend.Workers)
 				if err == nil {
 					err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
 				}
 				if err != nil {
-					backend.putBuffer(output2)
-					backend.putBuffer(output)
+					backend.PutBuffer(output2)
+					backend.PutBuffer(output)
 					return nil, err
 				}
 			}
 
 			// Highway MatMul specialized executor.
-			if backend.enableHighway && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
+			if backend.EnableHighway && isMatMulOrder(lhsRaw.RawShape, params.lhsContractingAxes, params.lhsBatchAxes,
 				rhsRaw.RawShape, params.rhsContractingAxes, params.rhsBatchAxes) &&
 				highway.HasDTypeSupport(inputDType, inputDType) {
 				err = highway.MatMulDynamic(inputDType, outputShape.DType, lhsRaw.Flat, rhsRaw.Flat,
 					params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
 					output2.Flat,
-					getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.workers)
+					getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
 				if err == nil {
 					err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
 				}
 				if err != nil {
-					backend.putBuffer(output2)
-					backend.putBuffer(output)
+					backend.PutBuffer(output2)
+					backend.PutBuffer(output)
 					return nil, err
 				}
 			}
 
-			backend.putBuffer(output2) // Discard second output, no longer needed
+			backend.PutBuffer(output2) // Discard second output, no longer needed
 			return output, nil
 		}
 
@@ -537,7 +535,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		if err = packgemm.GEMMDynamic(inputDType, outputDType, 1, 0, lhs.Flat.([]float32), rhs.Flat.([]float32),
 			params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
 			output.Flat.([]float32),
-			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.workers); err != nil {
+			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers); err != nil {
 			return nil, err
 		}
 		return output, nil
@@ -549,7 +547,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		err = highway.MatMulDynamic(inputDType, outputDType, lhs.Flat, rhs.Flat,
 			params.batchSize, params.lhsCrossSize, params.rhsCrossSize, params.contractingSize,
 			output.Flat,
-			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.workers)
+			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
 		return output, nil
 
 	default:
@@ -557,7 +555,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	}
 
 	if err != nil {
-		backend.putBuffer(output)
+		backend.PutBuffer(output)
 		return nil, err
 	}
 	return output, nil
@@ -668,6 +666,6 @@ func getAnyBufAllocator(backend *gobackend.Backend, dtype dtypes.DType) packgemm
 // getBufReleaser returns a buffer releaser for the given numeric type.
 func getBufReleaser(backend *gobackend.Backend) packgemm.BufReleaseFn {
 	return func(ref any) {
-		backend.putBuffer(ref.(*gobackend.Buffer))
+		backend.PutBuffer(ref.(*gobackend.Buffer))
 	}
 }
