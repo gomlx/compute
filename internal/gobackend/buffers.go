@@ -148,9 +148,9 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	pool.Put(buffer)
 }
 
-// copyFlat assumes both flat slices are of the same underlying type.
+// CopyFlat assumes both flat slices are of the same underlying type.
 // Fast paths for common dtypes avoid reflection overhead.
-func copyFlat(flatDst, flatSrc any) {
+func CopyFlat(flatDst, flatSrc any) {
 	// Fast paths for common types to avoid reflection overhead.
 	switch dst := flatDst.(type) {
 	case []float32:
@@ -271,7 +271,7 @@ func (b *Backend) cloneBuffer(buffer *Buffer) (*Buffer, error) {
 		return nil, err
 	}
 	newBuffer.RawShape = buffer.RawShape.Clone()
-	copyFlat(newBuffer.Flat, buffer.Flat)
+	CopyFlat(newBuffer.Flat, buffer.Flat)
 	return newBuffer, nil
 }
 
@@ -337,7 +337,7 @@ func (buffer *Buffer) DeviceNum() (compute.DeviceNum, error) {
 // See also FlatDataToBuffer, BufferShape, and shapes.Shape.Size.
 // ToFlatData transfers the flat values of the buffer to the Go flat array.
 func (buffer *Buffer) ToFlatData(flat any) error {
-	copyFlat(flat, buffer.Flat)
+	CopyFlat(flat, buffer.Flat)
 	return nil
 }
 
@@ -370,7 +370,7 @@ func (b *Backend) BufferFromFlatData(deviceNum compute.DeviceNum, flat any, shap
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 
-	copyFlat(buffer.Flat, flat)
+	CopyFlat(buffer.Flat, flat)
 	return buffer, nil
 }
 

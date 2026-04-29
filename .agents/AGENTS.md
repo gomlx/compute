@@ -1,30 +1,56 @@
+ROLE: You are a senior software developer, expert in Go and in machine learning.
+
 # Compute Backends API: github.com/gomlx/compute
 
-Package `compute` provides a modular API for defining and executing multidimensional computation graphs with pluggable backends.
+Package `compute` provides a modular API for defining and executing
+multidimensional computation graphs with pluggable backends.
 
-It defines `shapes` (tensor shapes) and `dtypes` (data types) and the top-level `compute` package defines a `Backend` API (a series of interfaces), that
-can be used to define a computation graph, JIT-compile it, transfer buffers (raw values) to/from the backend, and execute compiled computations.
+It defines `shapes` (tensor shapes) and `dtypes` (data types) and the top-level
+`compute` package defines a `Backend` API (a series of interfaces), that can be
+used to define a computation graph, JIT-compile it, transfer buffers (raw
+values) to/from the backend, and execute compiled computations.
 
-It powers [GoMLX](https://github.com/gomlx/gomlx), the machine learning framework for Go, but can be used directly also. With the caveat that the `compute.Backend` doesn't aim to be ergonomic, but instead "correct" and "minimal". For a more convenient API for complex computation, and auto-differentiation, use GoMLX instead.
+It powers [GoMLX](https://github.com/gomlx/gomlx), the machine learning
+framework for Go, but can be used directly also. With the caveat that the
+`compute.Backend` doesn't aim to be ergonomic, but instead "correct" and
+"minimal". For a more convenient API for complex computation, and
+auto-differentiation, use GoMLX instead.
 
 ## File Structure
 
-- `github.com/gomlx/compute`, the root directory: defines the `Backend` and related APIs (interfaces).
-- `gobackend`: the "go" backend, purely written in Go: so very portable, nothing needs installing, but slower. The default backend.
-- `dtypes`: define the data types supported generically. Lots of utilities to convert dtypes to Go types and vice-versa.
-  - `dtypes/float16` and `dtypes/bfloat16`: minimal implementations for half-precision types in Go.
+- `github.com/gomlx/compute`, the root directory: defines the `Backend` and
+  related APIs (interfaces).
+- `gobackend`: the "go" backend, purely written in Go: so very portable, nothing
+  needs installing, but slower. The default backend. This package is just a
+  front to the implementation in `./internal/gobackend` and its subdirectories.
+  It also serves to link all the sub-packages that need to be included and it
+  includes the "TestCompliance" suite of tests (implemented in
+  `support/backendtest`).
+- `dtypes`: define the supported data types. Lots of utilities to convert dtypes
+  to Go types and vice-versa.
+  - `dtypes/float16` and `dtypes/bfloat16`: minimal implementations for
+    half-precision types in Go.
 - `shapes`: define shape for "tensors", also known as multi-dimensional arrays.
-- `shapeinferece`: helper that specifies the output of operations given the shapes of inputs.
-- `notimplemented`: a trivial backend "implementation", that always returns a "not implemented" error. 
-  A "base class" that can be used by any backend implementation.
-- `distributed`: types used for distributed execution, modeled after XLA "Shardy". Somewhat experimental for now.
-- `internal/cmd`: mostly "generators" used to automatically generate code for different packages. Referred in `//go:generate ...` in the various packages.
+- `shapeinferece`: helper that specifies the output of operations given the
+  shapes of inputs.
+- `notimplemented`: a trivial backend "implementation", that always returns a
+  "not implemented" error. A "base class" that can be used by any backend
+  implementation.
+- `distributed`: types used for distributed execution, modeled after XLA
+  "Shardy". Somewhat experimental for now.
+- `internal/cmd`: mostly "generators" used to automatically generate code for
+  different packages. Referred in `//go:generate ...` in the various packages.
+- `internal/gobackend`: the implementation of the "go" backend. It consists of
+  buffer and execution logic, and "registration" of ops during build and
+  execution. The implementation of each op is (or is being moved to) in its
+  sub-packages `ops`, `dot`, `conv` and `fusedops` (in works).
 - `support`: generic support libraries.
-  - `support/testutil`: test utilities that can be used by any `compute.Backend` implementation to test. 
-  - `support/backendtest`: Backend conformance tests, that can be run against any backend.
-    Simply call `RunAll(t *testing.T, b compute.Backend)` from your backend tests.
-    These tests always check the capabilities of the backend, and tests not implemented
-    by the backend are skipped.
+  - `support/testutil`: test utilities that can be used by any `compute.Backend`
+    implementation to test. 
+  - `support/backendtest`: Backend compliance tests, that can be run against
+    any backend. Simply call `RunAll(t *testing.T, b compute.Backend)` from your
+    backend tests. These tests always check the capabilities of the backend, and
+    tests not implemented by the backend are skipped.
 
 ## Coding Style In GoMLX projects, including this one.
 

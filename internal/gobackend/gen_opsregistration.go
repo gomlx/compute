@@ -65,6 +65,21 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 	return RegisterIota.Fn(f, shape, iotaAxis)
 }
 
+func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
+	if RegisterReshape.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Reshape(x, dimensions...)
+	}
+	inputNodes, err := f.verifyAndCastValues("Reshape", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReshape.Fn(f, xNode, dimensions...)
+}
+
 // Registration variables for the op handlers.
 var (
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x *Node, outputShape shapes.Shape, broadcastAxes []int) (*Node, error)]{
@@ -78,5 +93,8 @@ var (
 	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (*Node, error)]{
 		Method: "Iota",
+	}
+	RegisterReshape = OpHandlerRegistration[func(f *Function, x *Node, dimensions ...int) (*Node, error)]{
+		Method: "Reshape",
 	}
 )

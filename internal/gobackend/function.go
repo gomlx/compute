@@ -369,24 +369,6 @@ func (f *Function) Where(conditionOp, onTrueOp, onFalseOp compute.Value) (comput
 	return node, nil
 }
 
-// Reshape implements the compute.Builder interface.
-//
-// Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
-func (f *Function) Reshape(operandOp compute.Value, dims ...int) (compute.Value, error) {
-	opType := compute.OpTypeReshape
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	outputShape, err := shapeinference.ReshapeOp(operand.Shape, dims)
-	if err != nil {
-		return nil, err
-	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, nil)
-	return node, nil
-}
-
 // Reverse returns x with the values for the given dimensions reversed, that is,
 // the value indexed at `i` will be swapped with the value at indexed `(dimension_size - 1 - i)`.
 // The shape remains the same.

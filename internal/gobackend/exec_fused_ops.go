@@ -372,7 +372,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		if err != nil {
 			return nil, err
 		}
-		copyFlat(output.Flat, matmul.Flat)
+		CopyFlat(output.Flat, matmul.Flat)
 		return output, nil
 	}
 
@@ -387,7 +387,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		if err != nil {
 			return nil, err
 		}
-		copyFlat(output.Flat, matmul.Flat)
+		CopyFlat(output.Flat, matmul.Flat)
 	}
 
 	switch output.RawShape.DType {

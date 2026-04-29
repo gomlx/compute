@@ -19,7 +19,6 @@ import (
 func init() {
 	SetNodeExecutor(compute.OpTypeIdentity, PriorityGeneric, execIdentity)
 	SetNodeExecutor(compute.OpTypeWhere, PriorityGeneric, execWhere)
-	SetNodeExecutor(compute.OpTypeReshape, PriorityGeneric, execReshape)
 	SetNodeExecutor(compute.OpTypeTranspose, PriorityGeneric, execTranspose)
 	SetNodeExecutor(compute.OpTypeReverse, PriorityGeneric, execReverse)
 	SetNodeExecutor(compute.OpTypeReduceMax, PriorityGeneric, execReduce)
@@ -76,7 +75,7 @@ func execIdentity(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []
 		return nil, err
 	}
 	output.RawShape = operand.RawShape
-	copyFlat(output.Flat, operand.Flat)
+	CopyFlat(output.Flat, operand.Flat)
 	return output, nil
 }
 
@@ -168,29 +167,6 @@ func execWhereSetOutputWithValue[T SupportedTypesConstraints](outputBuf, valueBu
 	for outputIdx := range outputSlice {
 		outputSlice[outputIdx] = c
 	}
-}
-
-// ReshapeOp ====================================================================================================
-
-// execReshape implements Reshape.
-//
-// Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
-func execReshape(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	operand := inputs[0]
-	var output *Buffer
-	var err error
-	if inputsOwned[0] {
-		output = operand
-		inputs[0] = nil
-	} else {
-		output, err = backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
-		if err != nil {
-			return nil, err
-		}
-		copyFlat(output.Flat, operand.Flat)
-	}
-	output.RawShape = node.Shape
-	return output, nil
 }
 
 // Reduce{Max,Min,Sum,Product}Op ======================================================================================
