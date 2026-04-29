@@ -426,44 +426,6 @@ func (f *Function) Transpose(operandOp compute.Value, permutations ...int) (comp
 	return node, nil
 }
 
-// BroadcastInDim broadcasts x to an output with the given shape.
-//
-//   - outputShape will be the new shape after x is broadcast.
-//   - broadcastAxes maps x-axes to the corresponding outputShape axes (len(broadcastAxes) == x.Shape.Rank()),
-//     the i-th axis of x is mapped to the broadcastAxes[i]-th dimension of the output.
-//     broadcastAxes must be also increasing: this operation cannot be used to transpose axes,
-//     it will only broadcast and introduce new axes in-between.
-//     -
-//
-// This also requires that the i-th input axis is either 1 or is the same as the
-// output dimension it's broadcasting into.
-// For example, say operand `x = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
-//   - Specifying []int{1} as broadcastAxes will generate output
-//     {{1, 2},
-//     {1, 2}}
-//   - On the other hand, specifying []int{0} as broadcastAxes
-//     will generate output
-//     {{1 , 1},
-//     {2 , 2}}
-func (f *Function) BroadcastInDim(
-	operandOp compute.Value,
-	outputShape shapes.Shape,
-	broadcastAxes []int,
-) (compute.Value, error) {
-	opType := compute.OpTypeBroadcastInDim
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	err = shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
-	if err != nil {
-		return nil, err
-	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, broadcastAxes)
-	return node, nil
-}
-
 // ReduceMax implements the compute.Builder interface.
 func (f *Function) ReduceMax(operandOp compute.Value, axis ...int) (compute.Value, error) {
 	return f.reduceImpls(compute.OpTypeReduceMax, operandOp, axis...)
@@ -530,63 +492,6 @@ func (f *Function) reduceImpls(reduceOpType compute.OpType, operandOp compute.Va
 	}
 	outputShape.DType = operand.Shape.DType
 	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, []*Node{operand}, axes)
-	return node, nil
-}
-
-type gatherNode struct {
-	indexVectorAxis                                                  int
-	offsetOutputAxes, collapsedSlicesAxes, startIndexMap, sliceSizes []int
-	indicesAreSorted                                                 bool
-}
-
-// EqualNodeData implements nodeDataComparable for gatherNode.
-func (g *gatherNode) EqualNodeData(other NodeDataComparable) bool {
-	o := other.(*gatherNode)
-	if g.indexVectorAxis != o.indexVectorAxis || g.indicesAreSorted != o.indicesAreSorted {
-		return false
-	}
-	return slices.Equal(g.offsetOutputAxes, o.offsetOutputAxes) &&
-		slices.Equal(g.collapsedSlicesAxes, o.collapsedSlicesAxes) &&
-		slices.Equal(g.startIndexMap, o.startIndexMap) &&
-		slices.Equal(g.sliceSizes, o.sliceSizes)
-}
-
-// Gather implements the compute.Builder.
-// It's a complex operation, fully described in the compute.Builder.Gather documentation.
-func (f *Function) Gather(
-	operandOp, startIndicesOp compute.Value,
-	indexVectorAxis int,
-	offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes []int,
-	indicesAreSorted bool,
-) (compute.Value, error) {
-	opType := compute.OpTypeGather
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp, startIndicesOp)
-	if err != nil {
-		return nil, err
-	}
-	operand, startIndices := inputs[0], inputs[1]
-	shape, err := shapeinference.Gather(
-		operand.Shape,
-		startIndices.Shape,
-		indexVectorAxis,
-		offsetOutputAxes,
-		collapsedSliceAxes,
-		startIndexMap,
-		sliceSizes,
-		indicesAreSorted,
-	)
-	if err != nil {
-		return nil, err
-	}
-	data := &gatherNode{
-		indexVectorAxis,
-		offsetOutputAxes,
-		collapsedSliceAxes,
-		startIndexMap,
-		sliceSizes,
-		indicesAreSorted,
-	}
-	node, _ := f.GetOrCreateNode(opType, shape, []*Node{operand, startIndices}, data)
 	return node, nil
 }
 

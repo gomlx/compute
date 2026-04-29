@@ -8,6 +8,21 @@ import (
 )
 
 // Stub methods that converts compute.Value to *Node and dispatches to the corresponding op handler.
+func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
+	if RegisterBroadcastInDim.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BroadcastInDim(x, outputShape, broadcastAxes)
+	}
+	inputNodes, err := f.verifyAndCastValues("BroadcastInDim", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterBroadcastInDim.Fn(f, xNode, outputShape, broadcastAxes)
+}
+
 func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
 	if RegisterDotGeneral.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -25,6 +40,23 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 	return RegisterDotGeneral.Fn(f, lhsNode, lhsContractingAxes, lhsBatchAxes, rhsNode, rhsContractingAxes, rhsBatchAxes, config)
 }
 
+func (f *Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
+	if RegisterGather.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Gather(operand, startIndices, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
+	}
+	inputNodes, err := f.verifyAndCastValues("Gather", operand, startIndices)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	operandNode := inputNodes[nodeIdx]
+	nodeIdx++
+	startIndicesNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterGather.Fn(f, operandNode, startIndicesNode, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
+}
+
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
 	if RegisterIota.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -35,8 +67,14 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 
 // Registration variables for the op handlers.
 var (
+	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x *Node, outputShape shapes.Shape, broadcastAxes []int) (*Node, error)]{
+		Method: "BroadcastInDim",
+	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs *Node, lhsContractingAxes []int, lhsBatchAxes []int, rhs *Node, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (*Node, error)]{
 		Method: "DotGeneral",
+	}
+	RegisterGather = OpHandlerRegistration[func(f *Function, operand *Node, startIndices *Node, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (*Node, error)]{
+		Method: "Gather",
 	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (*Node, error)]{
 		Method: "Iota",

@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -295,12 +296,17 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			sliceSizes := []int{1, 3, 1, 1}
 			return f.Gather(operand, startIndices, startVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, false)
 		}
-		y0, _ := testutil.Exec1(b, []any{[][][]int32{{{0, 1}, {0, 1}, {0, 1}}, {{0, 0}, {0, 0}, {1, 1}}, {{0, 0}, {1, 1}, {0, 0}}}}, buildFn)
+		y0, err := testutil.Exec1(b, []any{[][][]int32{{{0, 1}, {0, 1}, {0, 1}}, {{0, 0}, {0, 0}, {1, 1}}, {{0, 0}, {1, 1}, {0, 0}}}}, buildFn)
+		if err != nil {
+			t.Fatalf("Gather failed: %+v", err)
+		}
 		want := [][][][]float32{
 			{{{0}, {15}}, {{4}, {19}}, {{8}, {23}}},
 			{{{1}, {1}}, {{5}, {5}}, {{9}, {9}}},
 			{{{2}, {2}}, {{6}, {6}}, {{10}, {10}}}}
 		if ok, diff := testutil.IsEqual(want, y0); !ok {
+			fmt.Printf("want: %v\n", want)
+			fmt.Printf("got:  %v\n", y0)
 			t.Fatalf("Gather mismatch:\n%s", diff)
 		}
 	})

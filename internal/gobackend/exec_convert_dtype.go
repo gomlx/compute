@@ -73,10 +73,10 @@ func init() {
 
 	// Register mutableBytes and fillBuffer for sub-byte types.
 	// Packed sub-byte buffers use []byte as the Go storage type.
-	mutableBytesDTypeMap.Register(dtypes.Int4, PriorityTyped, mutableBytesGeneric[byte])
-	mutableBytesDTypeMap.Register(dtypes.Uint4, PriorityTyped, mutableBytesGeneric[byte])
-	mutableBytesDTypeMap.Register(dtypes.Int2, PriorityTyped, mutableBytesGeneric[byte])
-	mutableBytesDTypeMap.Register(dtypes.Uint2, PriorityTyped, mutableBytesGeneric[byte])
+	mutableBytesDTypeMap.Register(dtypes.Int4, PriorityTyped, MutableBytesGeneric[byte])
+	mutableBytesDTypeMap.Register(dtypes.Uint4, PriorityTyped, MutableBytesGeneric[byte])
+	mutableBytesDTypeMap.Register(dtypes.Int2, PriorityTyped, MutableBytesGeneric[byte])
+	mutableBytesDTypeMap.Register(dtypes.Uint2, PriorityTyped, MutableBytesGeneric[byte])
 	fillBufferDTypeMap.Register(dtypes.Int4, PriorityTyped, fillBufferGeneric[byte])
 	fillBufferDTypeMap.Register(dtypes.Uint4, PriorityTyped, fillBufferGeneric[byte])
 	fillBufferDTypeMap.Register(dtypes.Int2, PriorityTyped, fillBufferGeneric[byte])

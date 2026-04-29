@@ -34,18 +34,13 @@ type MapPairInfo struct {
 }
 
 type Data struct {
-	Dispatchers []DispatcherInfo
-	Maps        []MapInfo
-	PairMaps    []MapPairInfo
+	Maps     []MapInfo
+	PairMaps []MapPairInfo
 }
 
 var (
 	// data lists the dispatchers to include, their generic function and with which set of dtypes to support.
 	data = Data{
-		Dispatchers: []DispatcherInfo{
-			{"dispatchIota", "execIotaGeneric", makeDTypes(true, true, true, false, false)},
-			{"dispatchGather", "execGatherGeneric", makeDTypes(true, true, false, false, false)},
-		},
 		Maps: []MapInfo{
 			// {"dotGeneralFlatToBlockDTypeMap", "dgCopyFlatToBlockShape", makeDTypes(true, true, true, true, false)},
 			// {"dotGeneralOutputBlockToFlatDTypeMap", "dgCopyOutputBlockToFlat", makeDTypes(true, true, true, false, false)},
@@ -54,7 +49,9 @@ var (
 			// {"dotGeneralNormalizedDTypeMap", "execNormalizedDotGeneralGeneric", makeDTypes(true, true, true, false, false)},
 			// {"dotGeneralSmallMatMulDTypeMap", "execDotGeneralSmallMatMulGeneric", makeDTypes(true, true, true, false, false)},
 			// {"broadcastInDimDTypeMap", "execBroadcastInDimGeneric", makeDTypes(true, true, true, true, true)},
-			{"mutableBytesDTypeMap", "mutableBytesGeneric", makeDTypes(true, true, true, true, true)},
+			// {"iotaDTypeMap", "execIotaGeneric", makeDTypes(true, true, true, false, false)},
+			// {"gatherDTypeMap", "execGatherGeneric", makeDTypes(true, true, false, false, false)},
+			{"mutableBytesDTypeMap", "MutableBytesGeneric", makeDTypes(true, true, true, true, true)},
 			{"fillBufferDTypeMap", "fillBufferGeneric", makeDTypes(true, true, true, true, true)},
 			{"reduceMaxDTypeMap", "execReduceMaxGeneric", makeDTypes(true, true, true, false, false)},
 			{"reduceMinDTypeMap", "execReduceMinGeneric", makeDTypes(true, true, true, false, false)},
@@ -134,8 +131,8 @@ var (
 )
 
 var (
-	dtypesBFloat16 = []DTypeInfo{DTypeInfo{"BFloat16", "bfloat16.BFloat16"}}
-	dtypesFloat16  = []DTypeInfo{DTypeInfo{"Float16", "float16.Float16"}}
+	dtypesBFloat16 = []DTypeInfo{{"BFloat16", "bfloat16.BFloat16"}}
+	dtypesFloat16  = []DTypeInfo{{"Float16", "float16.Float16"}}
 )
 
 func makeDTypes(ints, uints, floats, halfPrecision, boolean bool) []DTypeInfo {
@@ -197,15 +194,6 @@ import (
 
 
 func init() {
-{{- range .Dispatchers}}
-
-	// DTypeDispatcher: {{.Dispatcher}}
-{{- $dispatcher := .Dispatcher }}
-{{- $generic := .Generic }}
-{{- range .DTypes }}
-	{{$dispatcher}}.Register(dtypes.{{.DType}}, PriorityGeneric, {{$generic}}[{{.GoType}}])
-{{- end }}
-{{- end }}
 
 {{- range .Maps}}
 

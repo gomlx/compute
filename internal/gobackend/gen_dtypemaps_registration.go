@@ -10,30 +10,20 @@ import (
 
 func init() {
 
-	// DTypeDispatcher: dispatchGather
-	dispatchGather.Register(dtypes.Int8, PriorityGeneric, execGatherGeneric[int8])
-	dispatchGather.Register(dtypes.Int16, PriorityGeneric, execGatherGeneric[int16])
-	dispatchGather.Register(dtypes.Int32, PriorityGeneric, execGatherGeneric[int32])
-	dispatchGather.Register(dtypes.Int64, PriorityGeneric, execGatherGeneric[int64])
-	dispatchGather.Register(dtypes.Uint8, PriorityGeneric, execGatherGeneric[uint8])
-	dispatchGather.Register(dtypes.Uint16, PriorityGeneric, execGatherGeneric[uint16])
-	dispatchGather.Register(dtypes.Uint32, PriorityGeneric, execGatherGeneric[uint32])
-	dispatchGather.Register(dtypes.Uint64, PriorityGeneric, execGatherGeneric[uint64])
-
 	// DTypeMap: mutableBytesDTypeMap
-	mutableBytesDTypeMap.Register(dtypes.Int8, PriorityGeneric, mutableBytesGeneric[int8])
-	mutableBytesDTypeMap.Register(dtypes.Int16, PriorityGeneric, mutableBytesGeneric[int16])
-	mutableBytesDTypeMap.Register(dtypes.Int32, PriorityGeneric, mutableBytesGeneric[int32])
-	mutableBytesDTypeMap.Register(dtypes.Int64, PriorityGeneric, mutableBytesGeneric[int64])
-	mutableBytesDTypeMap.Register(dtypes.Uint8, PriorityGeneric, mutableBytesGeneric[uint8])
-	mutableBytesDTypeMap.Register(dtypes.Uint16, PriorityGeneric, mutableBytesGeneric[uint16])
-	mutableBytesDTypeMap.Register(dtypes.Uint32, PriorityGeneric, mutableBytesGeneric[uint32])
-	mutableBytesDTypeMap.Register(dtypes.Uint64, PriorityGeneric, mutableBytesGeneric[uint64])
-	mutableBytesDTypeMap.Register(dtypes.Float32, PriorityGeneric, mutableBytesGeneric[float32])
-	mutableBytesDTypeMap.Register(dtypes.Float64, PriorityGeneric, mutableBytesGeneric[float64])
-	mutableBytesDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, mutableBytesGeneric[bfloat16.BFloat16])
-	mutableBytesDTypeMap.Register(dtypes.Float16, PriorityGeneric, mutableBytesGeneric[float16.Float16])
-	mutableBytesDTypeMap.Register(dtypes.Bool, PriorityGeneric, mutableBytesGeneric[bool])
+	mutableBytesDTypeMap.Register(dtypes.Int8, PriorityGeneric, MutableBytesGeneric[int8])
+	mutableBytesDTypeMap.Register(dtypes.Int16, PriorityGeneric, MutableBytesGeneric[int16])
+	mutableBytesDTypeMap.Register(dtypes.Int32, PriorityGeneric, MutableBytesGeneric[int32])
+	mutableBytesDTypeMap.Register(dtypes.Int64, PriorityGeneric, MutableBytesGeneric[int64])
+	mutableBytesDTypeMap.Register(dtypes.Uint8, PriorityGeneric, MutableBytesGeneric[uint8])
+	mutableBytesDTypeMap.Register(dtypes.Uint16, PriorityGeneric, MutableBytesGeneric[uint16])
+	mutableBytesDTypeMap.Register(dtypes.Uint32, PriorityGeneric, MutableBytesGeneric[uint32])
+	mutableBytesDTypeMap.Register(dtypes.Uint64, PriorityGeneric, MutableBytesGeneric[uint64])
+	mutableBytesDTypeMap.Register(dtypes.Float32, PriorityGeneric, MutableBytesGeneric[float32])
+	mutableBytesDTypeMap.Register(dtypes.Float64, PriorityGeneric, MutableBytesGeneric[float64])
+	mutableBytesDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, MutableBytesGeneric[bfloat16.BFloat16])
+	mutableBytesDTypeMap.Register(dtypes.Float16, PriorityGeneric, MutableBytesGeneric[float16.Float16])
+	mutableBytesDTypeMap.Register(dtypes.Bool, PriorityGeneric, MutableBytesGeneric[bool])
 
 	// DTypeMap: fillBufferDTypeMap
 	fillBufferDTypeMap.Register(dtypes.Int8, PriorityGeneric, fillBufferGeneric[int8])

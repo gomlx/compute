@@ -6,11 +6,13 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
 )
 
 func init() {
+	gobackend.RegisterBroadcastInDim.Register(BroadcastInDim, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeBroadcastInDim, gobackend.PriorityGeneric, execBroadcastInDim)
 
 	// DTypeMap: broadcastInDimDTypeMap
@@ -29,6 +31,41 @@ func init() {
 	broadcastInDimDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execBroadcastInDimGeneric[bool])
 }
 
+// BroadcastInDim broadcasts x to an output with the given shape.
+//
+//   - outputShape will be the new shape after x is broadcast.
+//   - broadcastAxes maps x-axes to the corresponding outputShape axes (len(broadcastAxes) == x.Shape.Rank()),
+//     the i-th axis of x is mapped to the broadcastAxes[i]-th dimension of the output.
+//     broadcastAxes must be also increasing: this operation cannot be used to transpose axes,
+//     it will only broadcast and introduce new axes in-between.
+//     -
+//
+// This also requires that the i-th input axis is either 1 or is the same as the
+// output dimension it's broadcasting into.
+// For example, say operand `x = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
+//   - Specifying []int{1} as broadcastAxes will generate output
+//     {{1, 2},
+//     {1, 2}}
+//   - On the other hand, specifying []int{0} as broadcastAxes
+//     will generate output
+//     {{1 , 1},
+//     {2 , 2}}
+func BroadcastInDim(
+	f *gobackend.Function,
+	operand *gobackend.Node,
+	outputShape shapes.Shape,
+	broadcastAxes []int,
+) (*gobackend.Node, error) {
+	opType := compute.OpTypeBroadcastInDim
+	err := shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
+	if err != nil {
+		return nil, err
+	}
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, broadcastAxes)
+	return node, nil
+}
+
+// execBroadcastInDim executes the BroadcastInDim operation.
 func execBroadcastInDim(
 	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (
 	*gobackend.Buffer, error) {

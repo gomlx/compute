@@ -14,17 +14,21 @@ func init() {
 	gobackend.RegisterIota.Register(Iota, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeIota, gobackend.PriorityGeneric, execIota)
 
-	// DTypeDispatcher: dispatchIota
-	dispatchIota.Register(dtypes.Int8, gobackend.PriorityGeneric, execIotaGeneric[int8])
-	dispatchIota.Register(dtypes.Int16, gobackend.PriorityGeneric, execIotaGeneric[int16])
-	dispatchIota.Register(dtypes.Int32, gobackend.PriorityGeneric, execIotaGeneric[int32])
-	dispatchIota.Register(dtypes.Int64, gobackend.PriorityGeneric, execIotaGeneric[int64])
-	dispatchIota.Register(dtypes.Uint8, gobackend.PriorityGeneric, execIotaGeneric[uint8])
-	dispatchIota.Register(dtypes.Uint16, gobackend.PriorityGeneric, execIotaGeneric[uint16])
-	dispatchIota.Register(dtypes.Uint32, gobackend.PriorityGeneric, execIotaGeneric[uint32])
-	dispatchIota.Register(dtypes.Uint64, gobackend.PriorityGeneric, execIotaGeneric[uint64])
-	dispatchIota.Register(dtypes.Float32, gobackend.PriorityGeneric, execIotaGeneric[float32])
-	dispatchIota.Register(dtypes.Float64, gobackend.PriorityGeneric, execIotaGeneric[float64])
+	// iotaDTypeMap registration:
+	iotaDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execIotaGeneric[int8])
+	iotaDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execIotaGeneric[int16])
+	iotaDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execIotaGeneric[int32])
+	iotaDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execIotaGeneric[int64])
+	iotaDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execIotaGeneric[uint8])
+	iotaDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execIotaGeneric[uint16])
+	iotaDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execIotaGeneric[uint32])
+	iotaDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execIotaGeneric[uint64])
+	iotaDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execIotaGeneric[float32])
+	iotaDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execIotaGeneric[float64])
+
+	// Manual registration for bfloat16 and float16.
+	iotaDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execIotaBFloat16)
+	iotaDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execIotaFloat16)
 }
 
 // Iota creates a constant of the given shape with increasing numbers (starting from 0)
@@ -59,14 +63,19 @@ func execIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 			batchSize *= dim
 		}
 	}
-	dispatchIota.Dispatch(node.Shape.DType, output, batchSize, iotaSize, repeatsSize)
+	fnAny, err := iotaDTypeMap.Get(node.Shape.DType)
+	if err != nil {
+		return nil, err
+	}
+	fn := fnAny.(func(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int))
+	fn(output, batchSize, iotaSize, repeatsSize)
 	return output, nil
 }
 
-var dispatchIota = gobackend.NewDTypeDispatcher("Iota")
+var iotaDTypeMap = gobackend.NewDTypeMap("Iota")
 
-func execIotaGeneric[T gobackend.PODNumericConstraints](params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*gobackend.Buffer), params[1].(int), params[2].(int), params[3].(int)
+func execIotaGeneric[T gobackend.PODNumericConstraints](
+	output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]T)
 	flatIdx := 0
 	var value T
@@ -81,16 +90,9 @@ func execIotaGeneric[T gobackend.PODNumericConstraints](params ...any) any {
 			value++
 		}
 	}
-	return nil
 }
 
-func init() {
-	dispatchIota.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execIotaBFloat16)
-	dispatchIota.Register(dtypes.Float16, gobackend.PriorityGeneric, execIotaFloat16)
-}
-
-func execIotaBFloat16(params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*gobackend.Buffer), params[1].(int), params[2].(int), params[3].(int)
+func execIotaBFloat16(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	flatIdx := 0
 	var value float32
@@ -105,11 +107,9 @@ func execIotaBFloat16(params ...any) any {
 			value++
 		}
 	}
-	return nil
 }
 
-func execIotaFloat16(params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*gobackend.Buffer), params[1].(int), params[2].(int), params[3].(int)
+func execIotaFloat16(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]float16.Float16)
 	flatIdx := 0
 	var value float32
@@ -124,5 +124,4 @@ func execIotaFloat16(params ...any) any {
 			value++
 		}
 	}
-	return nil
 }
