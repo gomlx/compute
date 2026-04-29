@@ -454,7 +454,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 	// Check for closure executor first (If, While, Sort).
 	// Closure executors receive captured inputs separately with explicit ownership tracking.
-	closureExecutor := nodeClosureExecutors[node.OpType]
+	closureExecutor := NodeClosureExecutors[node.OpType]
 	switch {
 	case closureExecutor != nil:
 		// Build []ClosureInputs from node.capturedInputs (already grouped per closure).
@@ -508,7 +508,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 	case node.IsMultiOutputs():
 		// Execute the node
-		multiExecutor := multiOutputsNodeExecutors[node.OpType]
+		multiExecutor := MultiOutputsNodeExecutors[node.OpType]
 		if multiExecutor == nil {
 			return errors.Errorf("no multi-output executor for op %s", node.OpType)
 		}

@@ -1,13 +1,17 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package fusedops
 
 import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
+
+// Generate the DTypeMag and DTypePairMap registrations:
+//go:generate go run ../../cmd/gobackend_dtypemap
 
 // Node data types for fused ops.
 
@@ -15,7 +19,7 @@ type nodeFusedSoftmax struct {
 	axis int
 }
 
-func (d *nodeFusedSoftmax) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedSoftmax) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return d.axis == other.(*nodeFusedSoftmax).axis
 }
 
@@ -24,7 +28,7 @@ type nodeFusedLayerNorm struct {
 	epsilon float64
 }
 
-func (d *nodeFusedLayerNorm) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedLayerNorm) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedLayerNorm)
 	if d.epsilon != o.epsilon || len(d.axes) != len(o.axes) {
 		return false
@@ -41,7 +45,7 @@ type nodeFusedGelu struct {
 	exact bool
 }
 
-func (d *nodeFusedGelu) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedGelu) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return d.exact == other.(*nodeFusedGelu).exact
 }
 
@@ -49,7 +53,7 @@ type nodeFusedDense struct {
 	activation compute.ActivationType
 }
 
-func (d *nodeFusedDense) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return d.activation == other.(*nodeFusedDense).activation
 }
 
@@ -62,7 +66,7 @@ type nodeFusedScaledDotProductAttention struct {
 	options    *compute.ScaledDotProductAttentionConfig
 }
 
-func (d *nodeFusedScaledDotProductAttention) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedScaledDotProductAttention) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedScaledDotProductAttention)
 	return d.numHeads == o.numHeads && d.numKVHeads == o.numKVHeads &&
 		d.axesLayout == o.axesLayout && d.scale == o.scale && d.causal == o.causal &&
@@ -80,7 +84,7 @@ func (d *nodeFusedScaledDotProductAttention) equalOptions(o *nodeFusedScaledDotP
 }
 
 // nodeFusedAttentionQKVProjection stores parameters for the fused QKV projection.
-// It does not implement nodeDataComparable because multi-output nodes are not
+// It does not implement gobackend.NodeDataComparable because multi-output nodes are not
 // de-duplicated (see newMultiOutputsNode).
 type nodeFusedAttentionQKVProjection struct {
 	qDim     int
@@ -111,7 +115,7 @@ type nodeFusedQuantizedDense struct {
 	ggmlK    int                   // Input features (logical columns). Only for QuantGGML.
 }
 
-func (d *nodeFusedQuantizedDense) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedQuantizedDense)
 	return d.scheme == o.scheme && d.blockAxis == o.blockAxis &&
 		d.blockSize == o.blockSize && d.activation == o.activation &&
@@ -452,7 +456,7 @@ type nodeQuantizedEmbeddingLookup struct {
 	ggmlK    int // Logical embedding dimension (valuesPerBlock * numBlocks).
 }
 
-func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other NodeDataComparable) bool {
+func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeQuantizedEmbeddingLookup)
 	return d.ggmlType == o.ggmlType && d.ggmlK == o.ggmlK
 }

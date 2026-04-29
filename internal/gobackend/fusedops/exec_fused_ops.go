@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package fusedops
 
 import (
 	"math"
@@ -8,25 +8,26 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
 
 func init() {
-	SetNodeExecutor(compute.OpTypeFusedSoftmax, PriorityTyped, execFusedSoftmax)
-	SetNodeExecutor(compute.OpTypeFusedGelu, PriorityTyped, execFusedGelu)
-	SetNodeExecutor(compute.OpTypeFusedLayerNorm, PriorityTyped, execFusedLayerNorm)
-	SetNodeExecutor(compute.OpTypeFusedDense, PriorityTyped, execFusedDense)
-	SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, PriorityTyped, execFusedScaledDotProductAttention)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedSoftmax, gobackend.PriorityTyped, execFusedSoftmax)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedGelu, gobackend.PriorityTyped, execFusedGelu)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedLayerNorm, gobackend.PriorityTyped, execFusedLayerNorm)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedDense, gobackend.PriorityTyped, execFusedDense)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, gobackend.PriorityTyped, execFusedScaledDotProductAttention)
 	// Quantized fused executors registered in exec_fused_quantized.go init().
-	multiOutputsNodeExecutors[compute.OpTypeFusedAttentionQKVProjection] = execFusedAttentionQKVProjection
+	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedAttentionQKVProjection] = execFusedAttentionQKVProjection
 }
 
 // FusedSoftmax =====================================================================================================
 
 // execFusedSoftmax implements optimized softmax with better cache locality.
 // Three passes over the axis: find max, compute exp(x-max) and sum, then normalize.
-func execFusedSoftmax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
+func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedSoftmax)
 	axis := data.axis
 	input := inputs[0]

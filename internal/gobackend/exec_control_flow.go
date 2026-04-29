@@ -11,10 +11,10 @@ import (
 )
 
 func init() {
-	nodeClosureExecutors[compute.OpTypeIf] = execIf
-	nodeClosureExecutors[compute.OpTypeWhile] = execWhile
-	nodeClosureExecutors[compute.OpTypeSort] = execSort
-	multiOutputsNodeExecutors[compute.OpTypeCall] = execCall
+	NodeClosureExecutors[compute.OpTypeIf] = execIf
+	NodeClosureExecutors[compute.OpTypeWhile] = execWhile
+	NodeClosureExecutors[compute.OpTypeSort] = execSort
+	MultiOutputsNodeExecutors[compute.OpTypeCall] = execCall
 }
 
 // execIf executes the If operation by evaluating the predicate and running one branch.

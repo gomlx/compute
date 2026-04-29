@@ -117,14 +117,14 @@ var (
 	nodeExecutors         [compute.OpTypeLast]NodeExecutor
 	nodeExecutorsPriority [compute.OpTypeLast]RegisterPriority
 
-	// multiOutputsNodeExecutors should be populated during initialization for the multi-output ops
+	// MultiOutputsNodeExecutors should be populated during initialization for the multi-output ops
 	// implemented. E.g.: RNGBitGenerator.
-	multiOutputsNodeExecutors [compute.OpTypeLast]nodeMultiOutputExecutor
+	MultiOutputsNodeExecutors [compute.OpTypeLast]nodeMultiOutputExecutor
 
-	// nodeClosureExecutors should be populated during initialization for ops that call closures.
+	// NodeClosureExecutors should be populated during initialization for ops that call closures.
 	// E.g.: If, While, Sort.
 	// These executors receive captured inputs separately with explicit ownership tracking.
-	nodeClosureExecutors [compute.OpTypeLast]nodeClosureExecutor
+	NodeClosureExecutors [compute.OpTypeLast]nodeClosureExecutor
 )
 
 // RegisterPriority defines the priority of a node executor. Highest priority takes precedence.

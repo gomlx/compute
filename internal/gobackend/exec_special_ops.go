@@ -30,7 +30,7 @@ func init() {
 	SetNodeExecutor(compute.OpTypePad, PriorityGeneric, execPad)
 
 	// For nodes with multiple outputs:
-	multiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
+	MultiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
 }
 
 // calculateStrides of a tensor assuming row-major order of the flat data.
