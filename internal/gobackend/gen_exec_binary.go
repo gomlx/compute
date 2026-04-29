@@ -103,12 +103,10 @@ func execAddNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] + rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] + rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -135,14 +133,12 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(a + b)
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a + b)
 		}
 		return
 	}
@@ -215,12 +211,10 @@ func execMulNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] * rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] * rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -247,14 +241,12 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(a * b)
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a * b)
 		}
 		return
 	}
@@ -330,12 +322,10 @@ func execSubNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] - rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] - rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -370,14 +360,12 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(a - b)
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a - b)
 		}
 		return
 	}
@@ -453,12 +441,10 @@ func execDivNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] / rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] / rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -493,14 +479,12 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(a / b)
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a / b)
 		}
 		return
 	}
@@ -576,12 +560,10 @@ func execRemIntegerGeneric[T PODIntegerConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] % rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] % rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -612,12 +594,10 @@ func execRemFloatGeneric[T PODFloatConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = T(math.Mod(float64(lhs[lhsIdx]), float64(rhs[rhsIdx])))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = T(math.Mod(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
@@ -652,14 +632,12 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
 		}
 		return
 	}
@@ -735,12 +713,10 @@ func execPowIntegerGeneric[T PODIntegerConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = execScalarPowIntGeneric(lhs[lhsIdx], rhs[rhsIdx])
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = execScalarPowIntGeneric(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
@@ -771,12 +747,10 @@ func execPowFloatGeneric[T PODFloatConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = T(math.Pow(float64(lhs[lhsIdx]), float64(rhs[rhsIdx])))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = T(math.Pow(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
@@ -811,14 +785,12 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
 		}
 		return
 	}
@@ -870,12 +842,10 @@ func execAtan2FloatGeneric[T PODFloatConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = T(math.Atan2(float64(lhs[lhsIdx]), float64(rhs[rhsIdx])))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = T(math.Atan2(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
@@ -910,14 +880,12 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
 		}
 		return
 	}
@@ -990,12 +958,10 @@ func execMaxNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = max(lhs[lhsIdx], rhs[rhsIdx])
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = max(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
@@ -1022,14 +988,12 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(max(a, b))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(max(a, b))
 		}
 		return
 	}
@@ -1102,12 +1066,10 @@ func execMinNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = min(lhs[lhsIdx], rhs[rhsIdx])
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = min(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
@@ -1134,14 +1096,12 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = bfloat16.FromFloat32(min(a, b))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(min(a, b))
 		}
 		return
 	}
@@ -1208,12 +1168,10 @@ func execBitwiseAndIntegerGeneric[T PODIntegerConstraints](lhs, rhs []T, output 
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] & rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] & rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1280,12 +1238,10 @@ func execBitwiseOrIntegerGeneric[T PODIntegerConstraints](lhs, rhs []T, output [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] | rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] | rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1352,12 +1308,10 @@ func execBitwiseXorIntegerGeneric[T PODIntegerConstraints](lhs, rhs []T, output 
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] ^ rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] ^ rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1404,12 +1358,10 @@ func execLogicalAndBooleanGeneric[T PODBooleanConstraints](lhs, rhs []T, output 
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] && rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] && rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1456,12 +1408,10 @@ func execLogicalOrBooleanGeneric[T PODBooleanConstraints](lhs, rhs []T, output [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] || rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] || rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1508,12 +1458,10 @@ func execLogicalXorBooleanGeneric[T PODBooleanConstraints](lhs, rhs []T, output 
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] != rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1591,12 +1539,10 @@ func execEqualNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []boo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] == rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] == rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1623,14 +1569,12 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a == b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a == b
 		}
 		return
 	}
@@ -1708,12 +1652,10 @@ func execNotEqualNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] != rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1740,14 +1682,12 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a != b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a != b
 		}
 		return
 	}
@@ -1828,12 +1768,10 @@ func execGreaterOrEqualNumericGeneric[T PODNumericConstraints](lhs, rhs []T, out
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] >= rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] >= rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1868,14 +1806,12 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a >= b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a >= b
 		}
 		return
 	}
@@ -1956,12 +1892,10 @@ func execGreaterThanNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] > rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] > rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -1996,14 +1930,12 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a > b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a > b
 		}
 		return
 	}
@@ -2084,12 +2016,10 @@ func execLessOrEqualNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] <= rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] <= rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -2124,14 +2054,12 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a <= b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a <= b
 		}
 		return
 	}
@@ -2212,12 +2140,10 @@ func execLessThanNumericGeneric[T PODNumericConstraints](lhs, rhs []T, output []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = lhs[lhsIdx] < rhs[rhsIdx]
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] < rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
@@ -2252,14 +2178,12 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = a < b
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = a < b
 		}
 		return
 	}

@@ -77,10 +77,10 @@ func shiftLeftGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, outputBuf *Buffer
 			output[i] = v << uint(rhs[i])
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for i := range output {
-			output[i] = lhs[lhsIter.Next()] << uint(rhs[rhsIter.Next()])
+		lhsIter := NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] << uint(rhs[indices.RHSFlatIdx])
 		}
 	}
 }
@@ -107,10 +107,10 @@ func shiftRightArithmeticGeneric[T PODIntegerConstraints](lhsBuf, rhsBuf, output
 			output[i] = v >> uint(rhs[i])
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for i := range output {
-			output[i] = lhs[lhsIter.Next()] >> uint(rhs[rhsIter.Next()])
+		lhsIter := NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] >> uint(rhs[indices.RHSFlatIdx])
 		}
 	}
 }
@@ -154,10 +154,10 @@ func shiftRightLogicalSignedGeneric[T ~int8 | ~int16 | ~int32 | ~int64, U ~uint8
 			output[i] = T(U(v) >> uint(rhs[i]))
 		}
 	default:
-		lhsIter := newBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := newBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for i := range output {
-			output[i] = T(U(lhs[lhsIter.Next()]) >> uint(rhs[rhsIter.Next()]))
+		lhsIter := NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
+		rhsIter := NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = T(U(lhs[indices.LHSFlatIdx]) >> uint(rhs[indices.RHSFlatIdx]))
 		}
 	}
 }

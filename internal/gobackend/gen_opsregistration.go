@@ -4,7 +4,6 @@ package gobackend
 
 import (
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 )
 

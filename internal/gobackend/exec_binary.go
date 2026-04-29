@@ -3,9 +3,6 @@
 package gobackend
 
 import (
-	"slices"
-
-	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -27,62 +24,6 @@ func binaryOperandsAndOutput(backend *Backend, inputs []*Buffer, inputsOwned []b
 		inputs[0] = nil
 	default:
 		output, _ = backend.getBufferForShape(outputShape)
-	}
-	return
-}
-
-// broadcastIterator allows one to iterate over the flat indices of tensor that is being broadcast
-// (some dimensions will grow)
-//
-// It is used by implicit broadcasting in binaryOps as well as by the the BroadcastInDim.
-type broadcastIterator struct {
-	flatIdx     int
-	perAxesIdx  []int
-	targetDims  []int
-	isBroadcast []bool
-	strides     []int
-}
-
-// newBroadcastIterator returns an iterator that allows one to iterate over the flat indices of a tensor that is being broadcast,
-// where some dimensions will grow.
-//
-// Pre-requisite: fromShape.Rank() == toShape.Rank().
-//
-// It is used by implicit broadcasting in binaryOps as well as by the the execBroadcastInDim.
-func newBroadcastIterator(fromShape, toShape shapes.Shape) *broadcastIterator {
-	rank := fromShape.Rank() // == toShape.Rank()
-	if rank != toShape.Rank() {
-		exceptions.Panicf("broadcastIterator: rank mismatch fromShape=%s, toShape=%s", fromShape, toShape)
-	}
-	bi := &broadcastIterator{
-		perAxesIdx:  make([]int, rank),
-		targetDims:  slices.Clone(toShape.Dimensions),
-		isBroadcast: make([]bool, rank),
-		strides:     make([]int, rank),
-	}
-	stride := 1
-	for axis := rank - 1; axis >= 0; axis-- {
-		bi.strides[axis] = stride
-		stride *= fromShape.Dimensions[axis]
-		bi.isBroadcast[axis] = fromShape.Dimensions[axis] != toShape.Dimensions[axis]
-	}
-	return bi
-}
-
-func (bi *broadcastIterator) Next() (flatIdx int) {
-	flatIdx = bi.flatIdx
-	bi.flatIdx++
-	rank := len(bi.perAxesIdx)
-	for axis := rank - 1; axis >= 0; axis-- {
-		bi.perAxesIdx[axis]++
-		if bi.perAxesIdx[axis] < bi.targetDims[axis] {
-			if bi.isBroadcast[axis] {
-				// If we are broadcasting on this axis, we need to go back and repeat the same slice of the tensor.
-				bi.flatIdx -= bi.strides[axis]
-			}
-			break
-		}
-		bi.perAxesIdx[axis] = 0
 	}
 	return
 }

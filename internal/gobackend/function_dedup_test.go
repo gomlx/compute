@@ -484,21 +484,21 @@ func TestNoDedup(t *testing.T) {
 			t.Fatalf("Failed to create parameter: %v", err)
 		}
 
-		broadcast1, err := mainFn.Broadcast(x, 2)
+		broadcast1, err := mainFn.BroadcastInDim(x, shapes.Make(dtypes.F32, 2, 2, 3), []int{1, 2})
 		if err != nil {
-			t.Fatalf("Failed to create Broadcast: %v", err)
+			t.Fatalf("Failed to create BroadcastInDim: %v", err)
 		}
-		broadcast2, err := mainFn.Broadcast(x, 3)
+		broadcast2, err := mainFn.BroadcastInDim(x, shapes.Make(dtypes.F32, 2, 2, 3), []int{0, 2})
 		if err != nil {
-			t.Fatalf("Failed to create Broadcast: %v", err)
+			t.Fatalf("Failed to create BroadcastInDim: %v", err)
 		}
 
 		if broadcast1 == broadcast2 {
-			t.Error("Broadcast operations with different prefixDims should NOT be deduplicated")
+			t.Error("BroadcastInDim operations with different axes should NOT be deduplicated")
 		}
 
-		// Same prefixDims should be deduplicated
-		broadcast3, err := mainFn.Broadcast(x, 2)
+		// Same broadcasting axes should be deduplicated
+		broadcast3, err := mainFn.BroadcastInDim(x, shapes.Make(dtypes.F32, 2, 2, 3), []int{1, 2})
 		if err != nil {
 			t.Fatalf("Failed to create Broadcast: %v", err)
 		}

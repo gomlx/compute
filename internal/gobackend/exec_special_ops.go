@@ -23,7 +23,6 @@ func init() {
 	SetNodeExecutor(compute.OpTypeReshape, PriorityGeneric, execReshape)
 	SetNodeExecutor(compute.OpTypeTranspose, PriorityGeneric, execTranspose)
 	SetNodeExecutor(compute.OpTypeReverse, PriorityGeneric, execReverse)
-	SetNodeExecutor(compute.OpTypeBroadcast, PriorityGeneric, execBroadcast)
 	SetNodeExecutor(compute.OpTypeBroadcastInDim, PriorityGeneric, execBroadcastInDim)
 	SetNodeExecutor(compute.OpTypeReduceMax, PriorityGeneric, execReduce)
 	SetNodeExecutor(compute.OpTypeReduceMin, PriorityGeneric, execReduce)
@@ -796,37 +795,6 @@ func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 	return output, nil
 }
 
-// BroadcastOp ====================================================================================================
-
-func execBroadcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	_ = inputsOwned // We don't reuse the inputs.
-	operand := inputs[0]
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
-	if err != nil {
-		return nil, err
-	}
-	output.RawShape = node.Shape
-	prefixDims := node.Data.([]int)
-	repeats := 1
-	for _, dim := range prefixDims {
-		repeats *= dim
-	}
-	dispatchBroadcast.Dispatch(node.Shape.DType, operand.Flat, output.Flat, repeats)
-	return output, nil
-}
-
-var dispatchBroadcast = NewDTypeDispatcher("Broadcast")
-
-func execBroadcastGeneric[T SupportedTypesConstraints](params ...any) any {
-	operandFlat, outputFlat, repeats := params[0].([]T), params[1].([]T), params[2].(int)
-	pos := 0
-	for range repeats {
-		copy(outputFlat[pos:], operandFlat)
-		pos += len(operandFlat)
-	}
-	return nil
-}
-
 // BroadcastInDimsOp ====================================================================================================
 
 func execBroadcastInDim(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
@@ -838,42 +806,58 @@ func execBroadcastInDim(backend *Backend, node *Node, inputs []*Buffer, inputsOw
 	}
 	output.RawShape = node.Shape
 
-	// Special case: if operand is a scalar, we just pass a nil iterator.
+	var iter *BroadcastIterator
+
 	if operand.RawShape.Size() == 1 {
-		dispatchBroadcastInDim.Dispatch(output.RawShape.DType, operand.Flat, output.Flat, nil)
-		return output, nil
+		// Special case 1: just leave iter as nil.
+	} else {
+		// Reshape operand shape: same dimension as the operand on the corresponding axes, 1 elsewhere.
+		// We are only changing the rank, but it stays the same size; hence the flat data doesn't change.
+		dims := xslices.SliceWithValue(output.RawShape.Rank(), 1)
+		broadcastAxes := node.Data.([]int)
+		for operandAxis, outputAxis := range broadcastAxes {
+			dims[outputAxis] = operand.RawShape.Dimensions[operandAxis]
+		}
+		reshapedOperand := shapes.Make(operand.RawShape.DType, dims...)
+
+		// Create broadcasting the iterator: it requires operand and output shapes to have the same rank.
+		iter = NewBroadcastIterator(reshapedOperand, output.RawShape)
 	}
 
-	// Reshape operand shape: same dimension as the operand on the corresponding axes, 1 elsewhere.
-	// Notice they must have the same size; hence the flat data doesn't change.
-	reshapedOperand := shapes.Make(operand.RawShape.DType)
-	reshapedOperand.Dimensions = make([]int, output.RawShape.Rank())
-	xslices.FillSlice(reshapedOperand.Dimensions, 1)
-	broadcastAxes := node.Data.([]int)
-	for operandAxis, outputAxis := range broadcastAxes {
-		reshapedOperand.Dimensions[outputAxis] = operand.RawShape.Dimensions[operandAxis]
+	// Call implementation for corresponding dtype.
+	fnAny, err := broadcastInDimDTypeMap.Get(node.Shape.DType)
+	if err != nil {
+		return nil, err
 	}
-
-	// Create broadcasting the iterator: it requires operand and output shapes to have the same rank.
-	iter := newBroadcastIterator(reshapedOperand, output.RawShape)
-	dispatchBroadcastInDim.Dispatch(output.RawShape.DType, operand.Flat, output.Flat, iter)
+	fnAny.(func(*Buffer, *Buffer, *BroadcastIterator))(operand, output, iter)
 	return output, nil
 }
 
-var dispatchBroadcastInDim = NewDTypeDispatcher("BroadcastInDim")
+var broadcastInDimDTypeMap = NewDTypeMap("BroadcastInDim")
 
-func execBroadcastInDimGeneric[T SupportedTypesConstraints](params ...any) any {
-	operandFlat, outputFlat, operandIterAny := params[0].([]T), params[1].([]T), params[2]
-	if operandIterAny == nil {
-		// Special case, where operand is a scalar that is broadcast everywhere.
-		xslices.FillSlice(outputFlat, operandFlat[0])
-		return nil
+func execBroadcastInDimGeneric[T SupportedTypesConstraints](operand, output *Buffer, iter *BroadcastIterator) {
+	operandFlat, outputFlat := operand.Flat.([]T), output.Flat.([]T)
+	if iter == nil {
+		// Special cases:
+		if len(operandFlat) == 1 {
+			// 1. Where operand is a scalar (or size 1) that is broadcast everywhere.
+			xslices.FillSlice(outputFlat, operandFlat[0])
+		} else {
+			// 2. Where we are simply broadcasting a prefix dimensions:
+			repeats := len(outputFlat) / len(operandFlat)
+			pos := 0
+			for range repeats {
+				copy(outputFlat[pos:], operandFlat)
+				pos += len(operandFlat)
+			}
+		}
+		return
 	}
-	operandIter := operandIterAny.(*broadcastIterator)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = operandFlat[operandIter.Next()]
+
+	// Arbitrary broadcasting using the flexible but slower broadcast iterator:
+	for operandFlatIdx, outputFlatIdx := range iter.IterFlatIndices() {
+		outputFlat[outputFlatIdx] = operandFlat[operandFlatIdx]
 	}
-	return nil
 }
 
 // IotaOp ====================================================================================================

@@ -31,7 +31,6 @@ const (
 	OpTypeBitwiseNot
 	OpTypeBitwiseOr
 	OpTypeBitwiseXor
-	OpTypeBroadcast
 	OpTypeBroadcastInDim
 	OpTypeCall
 	OpTypeClamp

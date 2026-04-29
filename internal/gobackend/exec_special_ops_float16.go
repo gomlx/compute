@@ -10,7 +10,6 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/float16"
-	"github.com/gomlx/compute/support/xslices"
 )
 
 // Float16 reduce operations
@@ -164,30 +163,6 @@ func execTransposeFloat16(operand, output *Buffer, it *transposeIterator) {
 	}
 }
 
-func execBroadcastFloat16(params ...any) any {
-	operandFlat, outputFlat, repeats := params[0].([]float16.Float16), params[1].([]float16.Float16), params[2].(int)
-	pos := 0
-	for range repeats {
-		copy(outputFlat[pos:], operandFlat)
-		pos += len(operandFlat)
-	}
-	return nil
-}
-
-func execBroadcastInDimFloat16(params ...any) any {
-	operandFlat, outputFlat, operandIterAny := params[0].([]float16.Float16), params[1].([]float16.Float16), params[2]
-	if operandIterAny == nil {
-		// Special case, where operand is a scalar that is broadcast everywhere.
-		xslices.FillSlice(outputFlat, operandFlat[0])
-		return nil
-	}
-	operandIter := operandIterAny.(*broadcastIterator)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = operandFlat[operandIter.Next()]
-	}
-	return nil
-}
-
 func execSliceFloat16(operand, output *Buffer, params *sliceNode) {
 	rank := operand.RawShape.Rank()
 	outputFlat := output.Flat.([]float16.Float16)
@@ -237,7 +212,5 @@ func init() {
 	fillBufferDTypeMap.Register(dtypes.Float16, PriorityTyped, fillBufferFloat16)
 	whereDTypeMap.Register(dtypes.Float16, PriorityTyped, execWhereFloat16)
 	transposeDTypeMap.Register(dtypes.Float16, PriorityTyped, execTransposeFloat16)
-	dispatchBroadcast.Register(dtypes.Float16, PriorityTyped, execBroadcastFloat16)
-	dispatchBroadcastInDim.Register(dtypes.Float16, PriorityTyped, execBroadcastInDimFloat16)
 	sliceDTypeMap.Register(dtypes.Float16, PriorityTyped, execSliceFloat16)
 }

@@ -152,12 +152,10 @@ func exec{{$name}}{{$version}}Generic[T POD{{$version}}Constraints](lhs, rhs []T
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			output[outputIdx] = {{ CallOp .Format "lhs[lhsIdx]" "rhs[rhsIdx]" }}
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			output[indices.TgtFlatIdx] = {{ CallOp .Format "lhs[indices.LHSFlatIdx]" "rhs[indices.RHSFlatIdx]" }}
 		}
 		return
 	}
@@ -209,17 +207,15 @@ func exec{{$name}}{{$version}}BFloat16(lhs, rhs []bfloat16.BFloat16, output []{{
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
 		{{- if $is_comparison }}
-			output[outputIdx] = {{CallOp .Format "a" "b"}}
+			output[indices.TgtFlatIdx] = {{CallOp .Format "a" "b"}}
 		{{- else }}
-			output[outputIdx] = bfloat16.FromFloat32({{CallOp .Format "a" "b"}})
+			output[indices.TgtFlatIdx] = bfloat16.FromFloat32({{CallOp .Format "a" "b"}})
 		{{- end }}
 		}
 	return

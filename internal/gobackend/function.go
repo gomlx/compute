@@ -426,30 +426,6 @@ func (f *Function) Transpose(operandOp compute.Value, permutations ...int) (comp
 	return node, nil
 }
 
-// Broadcast prefixes dimensions to an array by duplicating the data in the array.
-// See BroadcastInDim for a broadcast in between the axes.
-// The new dimensions dims are inserted on the left, i.e., if
-// prefixDims has values `{a0, ..., aN}` and the operand shape
-// has dimensions {b0, ..., bM}, then the shape of the output has
-// dimensions {a0, ..., aN, b0, ..., bM}.
-// The new dimensions id into copies of the operand, i.e.
-//
-//	output[i0, ..., iN, j0, ..., jM] = operand[j0, ..., jM]
-func (f *Function) Broadcast(operandOp compute.Value, prefixDims ...int) (compute.Value, error) {
-	opType := compute.OpTypeBroadcast
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	outputShape, err := shapeinference.BroadcastOp(operand.Shape, prefixDims)
-	if err != nil {
-		return nil, err
-	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, prefixDims)
-	return node, nil
-}
-
 // BroadcastInDim broadcasts x to an output with the given shape.
 //
 //   - outputShape will be the new shape after x is broadcast.

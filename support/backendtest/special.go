@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 	"github.com/gomlx/compute/support/xslices"
@@ -16,6 +17,7 @@ import (
 
 func TestSpecialOps(t *testing.T, b compute.Backend) {
 	bf16 := bfloat16.FromFloat32
+	f16 := float16.FromFloat32
 
 	t.Run("Identity", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeIdentity)
@@ -239,19 +241,39 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 	t.Run("BroadcastInDim", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeBroadcastInDim)
-		y0, _ := testutil.Exec1(b, []any{[][]int8{{1, 3}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			return f.BroadcastInDim(p[0], shapes.Make(dtypes.Int8, 2, 3, 2), []int{0, 2})
+		t.Run("Scalar", func(t *testing.T) {
+			theNumber := bf16(42)
+			y1, _ := testutil.Exec1(b, []any{theNumber},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.BroadcastInDim(p[0], shapes.Make(dtypes.BFloat16, 2), []int{})
+				})
+			if ok, diff := testutil.IsEqual([]bfloat16.BFloat16{theNumber, theNumber}, y1); !ok {
+				t.Errorf("BroadcastInDim y1 result mismatch:\n%s", diff)
+			}
 		})
-		if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0); !ok {
-			t.Errorf("BroadcastInDim y0 result mismatch:\n%s", diff)
-		}
 
-		y1, _ := testutil.Exec1(b, []any{bf16(42)}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			return f.BroadcastInDim(p[0], shapes.Make(dtypes.BFloat16, 2), []int{})
+		t.Run("Prefix", func(t *testing.T) {
+			y0, _ := testutil.Exec1(b, []any{[][]int8{{1, 3}}},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.BroadcastInDim(p[0], shapes.Make(dtypes.Int8, 2, 3, 2), []int{0, 2})
+				})
+			if ok, diff := testutil.IsEqual([][][]int8{{{1, 3}, {1, 3}, {1, 3}}, {{1, 3}, {1, 3}, {1, 3}}}, y0); !ok {
+				t.Errorf("BroadcastInDim y0 result mismatch:\n%s", diff)
+			}
 		})
-		if ok, diff := testutil.IsEqual([]bfloat16.BFloat16{bf16(42), bf16(42)}, y1); !ok {
-			t.Errorf("BroadcastInDim y1 result mismatch:\n%s", diff)
-		}
+
+		t.Run("Interspaced", func(t *testing.T) {
+			y1, _ := testutil.Exec1(b, []any{[]float16.Float16{f16(3), f16(5)}},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.BroadcastInDim(p[0], shapes.Make(dtypes.Float16, 2, 2, 2), []int{1})
+				})
+			if ok, diff := testutil.IsEqual([][][]float16.Float16{
+				{{f16(3), f16(3)}, {f16(5), f16(5)}},
+				{{f16(3), f16(3)}, {f16(5), f16(5)}},
+			}, y1); !ok {
+				t.Errorf("BroadcastInDim y1 result mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Gather", func(t *testing.T) {

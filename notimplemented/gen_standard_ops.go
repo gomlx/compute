@@ -48,21 +48,19 @@ func (f Function) BitCount(operand compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeBitCount)
 }
 
-// Bitcast performs an elementwise bit-cast operation from a dtype to another dtype.
+// Bitcast performs an elementwise bitcast operation from a dtype to another dtype.
 //
-// The Bitcast doesn't "convert", rather it just reinterprets the bits from x.DType() to the targetDType.
+// The Bitcast doesn't "convert", rather it just reinterprets the bits from operand.DType() to the targetDType.
 //
-// If x.DType() and targetDType use the same number of bytes (targetDType.Size() == x.DType().Size()),
-// the dimensions are not changed, simply the dtype is changed.
+// If the element sizes (in bytes/bits) differ, the last dimension is adjusted:
+//   - Smaller target: a new trailing axis of size (srcBits / dstBits) is appended, so rank is increased by 1.
+//   - Larger target: the last axis must be equal to (dstBits / srcBits), and the resultign rank is decreased by 1 ("squeezed").
 //
-// If targetDType.Size() > x.DType().Size(), it requires x last axis to have a dimension of
-// targetDType.Size() / x.DType().Size(), and the returned shape will trim the last axis.
+// E.g:
 //
-// If targetDType.Size() < x.DType().Size(), the returned shape will have an extra axis in the end, with dimension of
-// x.DType().Size() / targetDType.Size().
-//
-// E.g: Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
-func (f Function) Bitcast(x compute.Value, targetDType dtypes.DType) (compute.Value, error) {
+//	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
+//	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
+func (f Function) Bitcast(operand compute.Value, targetDType dtypes.DType) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeBitcast)
 }
 
@@ -146,17 +144,31 @@ func (f Function) Conj(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeConj)
 }
 
-// ConvGeneral is a generic Convolution operation with support for:
-// - Arbitrary number of spatial axes.
-// - Arbitrary transposition of axes.
-// - Strides and padding.
-// - Dilations of the input.
-// - Dilations of the kernel, aka. atrous convolution.
-// - Channels grouping (on the input channels).
-// - Batch grouping.
-// Some details in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution.
-// There operand and filter are called lhs and rhs.
-// (XLA documentation is unfortunately poor, much is guess-work).
+// ConvGeneral is a generic Convolution operation with arbitrary number of spatial axes, strides,
+// paddings, dilations, and grouping.
+//
+// Arguments:
+//
+//   - input: it must have one batch and one channel axis, and arbitrary number of spatial axes.
+//   - kernel: its rank must match the input's spatial axes.
+//   - axes: defines how the axes of input and kernel are mapped.
+//   - strides: stride of the convolution window, how it moves. If set, one value per spatial axis,
+//     and values must be >= 1. If not set, strides default to 1.
+//   - paddings: padding applied to the start and end of each axis of the input.
+//     If nil, it defaults to no padding.
+//   - inputDilations: "virtually" expand the input by inserting `2-1` copies of `0` (or whatever
+//     is the reduciton "zero" value) between the elements in each dimension.
+//     If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
+//   - kernelDilations: "virtually" expand the kernel by inserting `2-1` copies of `0` between the
+//     elements in each dimension.
+//     If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
+//     Also known as "atrous convolution".
+//   - channelGroupCount: number of input channels to group together for the convolution.
+//     (aka "grouped convolution"). If <= 1 it's disabled.
+//   - batchGroupCount: number of input batches to group together for the convolution.
+//     If <= 1 it's disabled.
+//
+// There is a more detailed description in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution.
 // Also useful, https://arxiv.org/pdf/1603.07285v1.pdf.
 // Note:
 //   - Another common term for "channels" is "features".

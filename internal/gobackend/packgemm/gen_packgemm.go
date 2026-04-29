@@ -148,7 +148,7 @@ func GEMMDynamic(inputDType, outputDType dtypes.DType,
 			lhsFlat.([]complex128), rhsFlat.([]complex128), batchSize,
 			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]complex128),
 			bufAllocFn, bufReleaseFn, pool)
-	case DTypePair{Input: dtypes.S4, Output: dtypes.S4}:
+	case DTypePair{Input: dtypes.Int4, Output: dtypes.Int4}:
 		bufAllocFn := func(size int) (ref any, data []uint8) {
 			ref, dataAny := bufAllocAnyFn(size)
 			return ref, dataAny.([]uint8)
@@ -157,7 +157,7 @@ func GEMMDynamic(inputDType, outputDType dtypes.DType,
 			lhsFlat.([]uint8), rhsFlat.([]uint8), batchSize,
 			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]uint8),
 			bufAllocFn, bufReleaseFn, pool)
-	case DTypePair{Input: dtypes.U4, Output: dtypes.U4}:
+	case DTypePair{Input: dtypes.Uint4, Output: dtypes.Uint4}:
 		bufAllocFn := func(size int) (ref any, data []uint8) {
 			ref, dataAny := bufAllocAnyFn(size)
 			return ref, dataAny.([]uint8)
@@ -166,7 +166,7 @@ func GEMMDynamic(inputDType, outputDType dtypes.DType,
 			lhsFlat.([]uint8), rhsFlat.([]uint8), batchSize,
 			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]uint8),
 			bufAllocFn, bufReleaseFn, pool)
-	case DTypePair{Input: dtypes.S2, Output: dtypes.S2}:
+	case DTypePair{Input: dtypes.Int2, Output: dtypes.Int2}:
 		bufAllocFn := func(size int) (ref any, data []uint8) {
 			ref, dataAny := bufAllocAnyFn(size)
 			return ref, dataAny.([]uint8)
@@ -175,7 +175,25 @@ func GEMMDynamic(inputDType, outputDType dtypes.DType,
 			lhsFlat.([]uint8), rhsFlat.([]uint8), batchSize,
 			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]uint8),
 			bufAllocFn, bufReleaseFn, pool)
-	case DTypePair{Input: dtypes.U2, Output: dtypes.U2}:
+	case DTypePair{Input: dtypes.Uint2, Output: dtypes.Uint2}:
+		bufAllocFn := func(size int) (ref any, data []uint8) {
+			ref, dataAny := bufAllocAnyFn(size)
+			return ref, dataAny.([]uint8)
+		}
+		return GEMM(uint8(alpha), uint8(beta),
+			lhsFlat.([]uint8), rhsFlat.([]uint8), batchSize,
+			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]uint8),
+			bufAllocFn, bufReleaseFn, pool)
+	case DTypePair{Input: dtypes.Int1, Output: dtypes.Int1}:
+		bufAllocFn := func(size int) (ref any, data []uint8) {
+			ref, dataAny := bufAllocAnyFn(size)
+			return ref, dataAny.([]uint8)
+		}
+		return GEMM(uint8(alpha), uint8(beta),
+			lhsFlat.([]uint8), rhsFlat.([]uint8), batchSize,
+			lhsCrossSize, rhsCrossSize, contractingSize, outputFlat.([]uint8),
+			bufAllocFn, bufReleaseFn, pool)
+	case DTypePair{Input: dtypes.Uint1, Output: dtypes.Uint1}:
 		bufAllocFn := func(size int) (ref any, data []uint8) {
 			ref, dataAny := bufAllocAnyFn(size)
 			return ref, dataAny.([]uint8)

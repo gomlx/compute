@@ -43,14 +43,12 @@ func execBinaryFloat16[OpFn func(a, b float32) float32](opFn OpFn, lhs, rhs []fl
 		}
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = float16.FromFloat32(opFn(a, b))
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = float16.FromFloat32(opFn(a, b))
 		}
 	}
 }
@@ -81,14 +79,12 @@ func execCompareFloat16[OpFn func(a, b float32) bool](opFn OpFn, lhs, rhs []floa
 		}
 	default:
 		// Case 3: Broadcasting.
-		lhsIter := newBroadcastIterator(lhsShape, outputShape)
-		rhsIter := newBroadcastIterator(rhsShape, outputShape)
-		for outputIdx := range output {
-			lhsIdx := lhsIter.Next()
-			rhsIdx := rhsIter.Next()
-			a := lhs[lhsIdx].Float32()
-			b := rhs[rhsIdx].Float32()
-			output[outputIdx] = opFn(a, b)
+		lhsIter := NewBroadcastIterator(lhsShape, outputShape)
+		rhsIter := NewBroadcastIterator(rhsShape, outputShape)
+		for indices := range ZippedBroadcastIterators(lhsIter, rhsIter) {
+			a := lhs[indices.LHSFlatIdx].Float32()
+			b := rhs[indices.RHSFlatIdx].Float32()
+			output[indices.TgtFlatIdx] = opFn(a, b)
 		}
 	}
 }
