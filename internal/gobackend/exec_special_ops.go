@@ -10,7 +10,6 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/sets"
 	"github.com/gomlx/compute/support/xslices"
@@ -23,7 +22,6 @@ func init() {
 	SetNodeExecutor(compute.OpTypeReshape, PriorityGeneric, execReshape)
 	SetNodeExecutor(compute.OpTypeTranspose, PriorityGeneric, execTranspose)
 	SetNodeExecutor(compute.OpTypeReverse, PriorityGeneric, execReverse)
-	SetNodeExecutor(compute.OpTypeBroadcastInDim, PriorityGeneric, execBroadcastInDim)
 	SetNodeExecutor(compute.OpTypeReduceMax, PriorityGeneric, execReduce)
 	SetNodeExecutor(compute.OpTypeReduceMin, PriorityGeneric, execReduce)
 	SetNodeExecutor(compute.OpTypeReduceSum, PriorityGeneric, execReduce)
@@ -34,7 +32,6 @@ func init() {
 	SetNodeExecutor(compute.OpTypeReduceLogicalAnd, PriorityGeneric, execReduce)
 	SetNodeExecutor(compute.OpTypeReduceLogicalOr, PriorityGeneric, execReduce)
 	SetNodeExecutor(compute.OpTypeReduceLogicalXor, PriorityGeneric, execReduce)
-	SetNodeExecutor(compute.OpTypeIota, PriorityGeneric, execIota)
 	SetNodeExecutor(compute.OpTypeGather, PriorityGeneric, execGather)
 	SetNodeExecutor(compute.OpTypeConcatenate, PriorityGeneric, execConcatenate)
 	SetNodeExecutor(compute.OpTypeConvertDType, PriorityGeneric, execConvertDType)
@@ -793,159 +790,6 @@ func execReverse(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 		copy(dstBytes[dstOffset:dstOffset+elementSize], srcBytes[srcOffset:srcOffset+elementSize])
 	}
 	return output, nil
-}
-
-// BroadcastInDimsOp ====================================================================================================
-
-func execBroadcastInDim(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	_ = inputsOwned // We don't reuse the inputs.
-	operand := inputs[0]
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
-	if err != nil {
-		return nil, err
-	}
-	output.RawShape = node.Shape
-
-	var iter *BroadcastIterator
-
-	if operand.RawShape.Size() == 1 {
-		// Special case 1: just leave iter as nil.
-	} else {
-		// Reshape operand shape: same dimension as the operand on the corresponding axes, 1 elsewhere.
-		// We are only changing the rank, but it stays the same size; hence the flat data doesn't change.
-		dims := xslices.SliceWithValue(output.RawShape.Rank(), 1)
-		broadcastAxes := node.Data.([]int)
-		for operandAxis, outputAxis := range broadcastAxes {
-			dims[outputAxis] = operand.RawShape.Dimensions[operandAxis]
-		}
-		reshapedOperand := shapes.Make(operand.RawShape.DType, dims...)
-
-		// Create broadcasting the iterator: it requires operand and output shapes to have the same rank.
-		iter = NewBroadcastIterator(reshapedOperand, output.RawShape)
-	}
-
-	// Call implementation for corresponding dtype.
-	fnAny, err := broadcastInDimDTypeMap.Get(node.Shape.DType)
-	if err != nil {
-		return nil, err
-	}
-	fnAny.(func(*Buffer, *Buffer, *BroadcastIterator))(operand, output, iter)
-	return output, nil
-}
-
-var broadcastInDimDTypeMap = NewDTypeMap("BroadcastInDim")
-
-func execBroadcastInDimGeneric[T SupportedTypesConstraints](operand, output *Buffer, iter *BroadcastIterator) {
-	operandFlat, outputFlat := operand.Flat.([]T), output.Flat.([]T)
-	if iter == nil {
-		// Special cases:
-		if len(operandFlat) == 1 {
-			// 1. Where operand is a scalar (or size 1) that is broadcast everywhere.
-			xslices.FillSlice(outputFlat, operandFlat[0])
-		} else {
-			// 2. Where we are simply broadcasting a prefix dimensions:
-			repeats := len(outputFlat) / len(operandFlat)
-			pos := 0
-			for range repeats {
-				copy(outputFlat[pos:], operandFlat)
-				pos += len(operandFlat)
-			}
-		}
-		return
-	}
-
-	// Arbitrary broadcasting using the flexible but slower broadcast iterator:
-	for operandFlatIdx, outputFlatIdx := range iter.IterFlatIndices() {
-		outputFlat[outputFlatIdx] = operandFlat[operandFlatIdx]
-	}
-}
-
-// IotaOp ====================================================================================================
-
-func execIota(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
-	_, _ = inputs, inputsOwned // There are no inputs.
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
-	if err != nil {
-		return nil, err
-	}
-	output.RawShape = node.Shape
-	iotaAxis := node.Data.(int)
-	iotaSize := node.Shape.Dimensions[iotaAxis]
-	batchSize := 1
-	repeatsSize := 1
-	for axis, dim := range node.Shape.Dimensions {
-		if axis > iotaAxis {
-			repeatsSize *= dim
-		} else if axis < iotaAxis {
-			batchSize *= dim
-		}
-	}
-	dispatchIota.Dispatch(node.Shape.DType, output, batchSize, iotaSize, repeatsSize)
-	return output, nil
-}
-
-var dispatchIota = NewDTypeDispatcher("Iota")
-
-func execIotaGeneric[T PODNumericConstraints](params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.Flat.([]T)
-	flatIdx := 0
-	var value T
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = T(0)
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = value
-				flatIdx++
-			}
-			value++
-		}
-	}
-	return nil
-}
-
-func init() {
-	dispatchIota.Register(dtypes.BFloat16, PriorityTyped, execIotaBFloat16)
-	dispatchIota.Register(dtypes.Float16, PriorityTyped, execIotaFloat16)
-}
-
-func execIotaBFloat16(params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	flatIdx := 0
-	var value float32
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = 0
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = bfloat16.FromFloat32(value)
-				flatIdx++
-			}
-			value++
-		}
-	}
-	return nil
-}
-
-func execIotaFloat16(params ...any) any {
-	output, batchSize, iotaSize, repeatsSize := params[0].(*Buffer), params[1].(int), params[2].(int), params[3].(int)
-	outputFlat := output.Flat.([]float16.Float16)
-	flatIdx := 0
-	var value float32
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = 0
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = float16.FromFloat32(value)
-				flatIdx++
-			}
-			value++
-		}
-	}
-	return nil
 }
 
 // GatherOp ====================================================================================================

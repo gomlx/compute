@@ -4,14 +4,9 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/shapes"
 )
-
-func init() {
-	SetNodeExecutor(compute.OpTypeBroadcastInDim, PriorityGeneric, execBroadcastInDim)
-}
 
 // BroadcastIterator allows iteration over the flat indices of the target shape of a broadcast (where some axis
 // dimensions grow)

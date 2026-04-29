@@ -53,7 +53,7 @@ var (
 			// {"dotGeneralNormalizeShapeDTypeMap", "dgNormalizeShape", makeDTypes(true, true, true, true, false)},
 			// {"dotGeneralNormalizedDTypeMap", "execNormalizedDotGeneralGeneric", makeDTypes(true, true, true, false, false)},
 			// {"dotGeneralSmallMatMulDTypeMap", "execDotGeneralSmallMatMulGeneric", makeDTypes(true, true, true, false, false)},
-			{"broadcastInDimDTypeMap", "execBroadcastInDimGeneric", makeDTypes(true, true, true, true, true)},
+			// {"broadcastInDimDTypeMap", "execBroadcastInDimGeneric", makeDTypes(true, true, true, true, true)},
 			{"mutableBytesDTypeMap", "mutableBytesGeneric", makeDTypes(true, true, true, true, true)},
 			{"fillBufferDTypeMap", "fillBufferGeneric", makeDTypes(true, true, true, true, true)},
 			{"reduceMaxDTypeMap", "execReduceMaxGeneric", makeDTypes(true, true, true, false, false)},

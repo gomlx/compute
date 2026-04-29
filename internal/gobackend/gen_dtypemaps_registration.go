@@ -10,18 +10,6 @@ import (
 
 func init() {
 
-	// DTypeDispatcher: dispatchIota
-	dispatchIota.Register(dtypes.Int8, PriorityGeneric, execIotaGeneric[int8])
-	dispatchIota.Register(dtypes.Int16, PriorityGeneric, execIotaGeneric[int16])
-	dispatchIota.Register(dtypes.Int32, PriorityGeneric, execIotaGeneric[int32])
-	dispatchIota.Register(dtypes.Int64, PriorityGeneric, execIotaGeneric[int64])
-	dispatchIota.Register(dtypes.Uint8, PriorityGeneric, execIotaGeneric[uint8])
-	dispatchIota.Register(dtypes.Uint16, PriorityGeneric, execIotaGeneric[uint16])
-	dispatchIota.Register(dtypes.Uint32, PriorityGeneric, execIotaGeneric[uint32])
-	dispatchIota.Register(dtypes.Uint64, PriorityGeneric, execIotaGeneric[uint64])
-	dispatchIota.Register(dtypes.Float32, PriorityGeneric, execIotaGeneric[float32])
-	dispatchIota.Register(dtypes.Float64, PriorityGeneric, execIotaGeneric[float64])
-
 	// DTypeDispatcher: dispatchGather
 	dispatchGather.Register(dtypes.Int8, PriorityGeneric, execGatherGeneric[int8])
 	dispatchGather.Register(dtypes.Int16, PriorityGeneric, execGatherGeneric[int16])
@@ -31,21 +19,6 @@ func init() {
 	dispatchGather.Register(dtypes.Uint16, PriorityGeneric, execGatherGeneric[uint16])
 	dispatchGather.Register(dtypes.Uint32, PriorityGeneric, execGatherGeneric[uint32])
 	dispatchGather.Register(dtypes.Uint64, PriorityGeneric, execGatherGeneric[uint64])
-
-	// DTypeMap: broadcastInDimDTypeMap
-	broadcastInDimDTypeMap.Register(dtypes.Int8, PriorityGeneric, execBroadcastInDimGeneric[int8])
-	broadcastInDimDTypeMap.Register(dtypes.Int16, PriorityGeneric, execBroadcastInDimGeneric[int16])
-	broadcastInDimDTypeMap.Register(dtypes.Int32, PriorityGeneric, execBroadcastInDimGeneric[int32])
-	broadcastInDimDTypeMap.Register(dtypes.Int64, PriorityGeneric, execBroadcastInDimGeneric[int64])
-	broadcastInDimDTypeMap.Register(dtypes.Uint8, PriorityGeneric, execBroadcastInDimGeneric[uint8])
-	broadcastInDimDTypeMap.Register(dtypes.Uint16, PriorityGeneric, execBroadcastInDimGeneric[uint16])
-	broadcastInDimDTypeMap.Register(dtypes.Uint32, PriorityGeneric, execBroadcastInDimGeneric[uint32])
-	broadcastInDimDTypeMap.Register(dtypes.Uint64, PriorityGeneric, execBroadcastInDimGeneric[uint64])
-	broadcastInDimDTypeMap.Register(dtypes.Float32, PriorityGeneric, execBroadcastInDimGeneric[float32])
-	broadcastInDimDTypeMap.Register(dtypes.Float64, PriorityGeneric, execBroadcastInDimGeneric[float64])
-	broadcastInDimDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, execBroadcastInDimGeneric[bfloat16.BFloat16])
-	broadcastInDimDTypeMap.Register(dtypes.Float16, PriorityGeneric, execBroadcastInDimGeneric[float16.Float16])
-	broadcastInDimDTypeMap.Register(dtypes.Bool, PriorityGeneric, execBroadcastInDimGeneric[bool])
 
 	// DTypeMap: mutableBytesDTypeMap
 	mutableBytesDTypeMap.Register(dtypes.Int8, PriorityGeneric, mutableBytesGeneric[int8])
