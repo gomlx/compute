@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -14,16 +13,6 @@ import (
 func init() {
 	gobackend.RegisterGather.Register(Gather, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeGather, gobackend.PriorityGeneric, execGather)
-
-	// DTypeDispatcher: gatherDTypeMap
-	gatherDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execGatherGeneric[int8])
-	gatherDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execGatherGeneric[int16])
-	gatherDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execGatherGeneric[int32])
-	gatherDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execGatherGeneric[int64])
-	gatherDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execGatherGeneric[uint8])
-	gatherDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execGatherGeneric[uint16])
-	gatherDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execGatherGeneric[uint32])
-	gatherDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execGatherGeneric[uint64])
 }
 
 type gatherNode struct {

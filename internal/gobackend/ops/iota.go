@@ -14,18 +14,6 @@ func init() {
 	gobackend.RegisterIota.Register(Iota, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeIota, gobackend.PriorityGeneric, execIota)
 
-	// iotaDTypeMap registration:
-	iotaDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execIotaGeneric[int8])
-	iotaDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execIotaGeneric[int16])
-	iotaDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execIotaGeneric[int32])
-	iotaDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execIotaGeneric[int64])
-	iotaDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execIotaGeneric[uint8])
-	iotaDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execIotaGeneric[uint16])
-	iotaDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execIotaGeneric[uint32])
-	iotaDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execIotaGeneric[uint64])
-	iotaDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execIotaGeneric[float32])
-	iotaDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execIotaGeneric[float64])
-
 	// Manual registration for bfloat16 and float16.
 	iotaDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execIotaBFloat16)
 	iotaDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execIotaFloat16)

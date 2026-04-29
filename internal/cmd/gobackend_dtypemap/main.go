@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -205,6 +206,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to parse files: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Deterministic order for generated code.
+	slices.SortFunc(data.Maps, func(a, b MapInfo) int {
+		return strings.Compare(a.MapName, b.MapName)
+	})
+	slices.SortFunc(data.PairMaps, func(a, b MapPairInfo) int {
+		return strings.Compare(a.MapName, b.MapName)
+	})
 
 	registerTemplate := template.Must(
 		template.
