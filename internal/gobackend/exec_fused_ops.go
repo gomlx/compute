@@ -546,12 +546,12 @@ func transposeBuffer(backend *Backend, buf *Buffer, permutations []int) (*Buffer
 		outDims[i] = dims[p]
 	}
 	output.RawShape = shapes.Make(buf.RawShape.DType, outDims...)
-	it := newTransposeIterator(buf.RawShape, permutations)
-	transposeFnAny, err := transposeDTypeMap.Get(buf.RawShape.DType)
+	it := NewTransposeIterator(buf.RawShape, permutations)
+	transposeFnAny, err := TransposeDTypeMap.Get(buf.RawShape.DType)
 	if err != nil {
 		return nil, err
 	}
-	transposeFn := transposeFnAny.(func(operand, output *Buffer, it *transposeIterator))
+	transposeFn := transposeFnAny.(func(operand, output *Buffer, it *TransposeIterator))
 	transposeFn(buf, output, it)
 	return output, nil
 }

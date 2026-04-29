@@ -155,11 +155,11 @@ func execWhereSetOutputFloat16(outputBuf, valueBuf *Buffer) {
 	}
 }
 
-func execTransposeFloat16(operand, output *Buffer, it *transposeIterator) {
+func execTransposeFloat16(operand, output *Buffer, it *TransposeIterator) {
 	operandFlat := operand.Flat.([]float16.Float16)
 	outputFlat := output.Flat.([]float16.Float16)
 	for _, value := range operandFlat {
-		outputFlat[it.next()] = value
+		outputFlat[it.Next()] = value
 	}
 }
 
@@ -211,6 +211,6 @@ func init() {
 	mutableBytesDTypeMap.Register(dtypes.Float16, PriorityTyped, mutableBytesFloat16)
 	fillBufferDTypeMap.Register(dtypes.Float16, PriorityTyped, fillBufferFloat16)
 	whereDTypeMap.Register(dtypes.Float16, PriorityTyped, execWhereFloat16)
-	transposeDTypeMap.Register(dtypes.Float16, PriorityTyped, execTransposeFloat16)
+	TransposeDTypeMap.Register(dtypes.Float16, PriorityTyped, execTransposeFloat16)
 	sliceDTypeMap.Register(dtypes.Float16, PriorityTyped, execSliceFloat16)
 }

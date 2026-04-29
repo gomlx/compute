@@ -332,21 +332,6 @@ func init() {
 	sliceDTypeMap.Register(dtypes.Float16, PriorityGeneric, execSliceGeneric[float16.Float16])
 	sliceDTypeMap.Register(dtypes.Bool, PriorityGeneric, execSliceGeneric[bool])
 
-	// DTypeMap: transposeDTypeMap
-	transposeDTypeMap.Register(dtypes.Int8, PriorityGeneric, execTransposeGeneric[int8])
-	transposeDTypeMap.Register(dtypes.Int16, PriorityGeneric, execTransposeGeneric[int16])
-	transposeDTypeMap.Register(dtypes.Int32, PriorityGeneric, execTransposeGeneric[int32])
-	transposeDTypeMap.Register(dtypes.Int64, PriorityGeneric, execTransposeGeneric[int64])
-	transposeDTypeMap.Register(dtypes.Uint8, PriorityGeneric, execTransposeGeneric[uint8])
-	transposeDTypeMap.Register(dtypes.Uint16, PriorityGeneric, execTransposeGeneric[uint16])
-	transposeDTypeMap.Register(dtypes.Uint32, PriorityGeneric, execTransposeGeneric[uint32])
-	transposeDTypeMap.Register(dtypes.Uint64, PriorityGeneric, execTransposeGeneric[uint64])
-	transposeDTypeMap.Register(dtypes.Float32, PriorityGeneric, execTransposeGeneric[float32])
-	transposeDTypeMap.Register(dtypes.Float64, PriorityGeneric, execTransposeGeneric[float64])
-	transposeDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, execTransposeGeneric[bfloat16.BFloat16])
-	transposeDTypeMap.Register(dtypes.Float16, PriorityGeneric, execTransposeGeneric[float16.Float16])
-	transposeDTypeMap.Register(dtypes.Bool, PriorityGeneric, execTransposeGeneric[bool])
-
 	// DTypeMap: whereDTypeMap
 	whereDTypeMap.Register(dtypes.Int8, PriorityGeneric, execWhereGeneric[int8])
 	whereDTypeMap.Register(dtypes.Int16, PriorityGeneric, execWhereGeneric[int16])

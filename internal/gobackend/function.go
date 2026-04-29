@@ -369,45 +369,6 @@ func (f *Function) Where(conditionOp, onTrueOp, onFalseOp compute.Value) (comput
 	return node, nil
 }
 
-// Reverse returns x with the values for the given dimensions reversed, that is,
-// the value indexed at `i` will be swapped with the value at indexed `(dimension_size - 1 - i)`.
-// The shape remains the same.
-func (f *Function) Reverse(operandOp compute.Value, axes ...int) (compute.Value, error) {
-	opType := compute.OpTypeReverse
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	// Validate axes.
-	for _, axis := range axes {
-		if axis < 0 || axis >= operand.Shape.Rank() {
-			return nil, errors.Errorf("Reverse: axis %d out of range for rank %d", axis, operand.Shape.Rank())
-		}
-	}
-	// Output shape is the same as the input shape.
-	node, _ := f.GetOrCreateNode(opType, operand.Shape, []*Node{operand}, axes)
-	return node, nil
-}
-
-// Transpose axes of x.
-// There must be one value in permutations for each axis in the operand.
-// The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
-func (f *Function) Transpose(operandOp compute.Value, permutations ...int) (compute.Value, error) {
-	opType := compute.OpTypeTranspose
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	outputShape, err := shapeinference.TransposeOp(operand.Shape, permutations)
-	if err != nil {
-		panic(err)
-	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, permutations)
-	return node, nil
-}
-
 // ReduceMax implements the compute.Builder interface.
 func (f *Function) ReduceMax(operandOp compute.Value, axis ...int) (compute.Value, error) {
 	return f.reduceImpls(compute.OpTypeReduceMax, operandOp, axis...)

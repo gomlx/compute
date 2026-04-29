@@ -80,6 +80,36 @@ func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, e
 	return RegisterReshape.Fn(f, xNode, dimensions...)
 }
 
+func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) {
+	if RegisterReverse.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Reverse(x, axes...)
+	}
+	inputNodes, err := f.verifyAndCastValues("Reverse", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterReverse.Fn(f, xNode, axes...)
+}
+
+func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value, error) {
+	if RegisterTranspose.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Transpose(x, permutation...)
+	}
+	inputNodes, err := f.verifyAndCastValues("Transpose", x)
+	if err != nil {
+		return nil, err
+	}
+	nodeIdx := 0
+	xNode := inputNodes[nodeIdx]
+	nodeIdx++
+	return RegisterTranspose.Fn(f, xNode, permutation...)
+}
+
 // Registration variables for the op handlers.
 var (
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x *Node, outputShape shapes.Shape, broadcastAxes []int) (*Node, error)]{
@@ -96,5 +126,11 @@ var (
 	}
 	RegisterReshape = OpHandlerRegistration[func(f *Function, x *Node, dimensions ...int) (*Node, error)]{
 		Method: "Reshape",
+	}
+	RegisterReverse = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+		Method: "Reverse",
+	}
+	RegisterTranspose = OpHandlerRegistration[func(f *Function, x *Node, permutation ...int) (*Node, error)]{
+		Method: "Transpose",
 	}
 )

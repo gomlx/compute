@@ -91,6 +91,19 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 	})
 
+	t.Run("Reverse", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeReverse)
+		y0, err := testutil.Exec1(b, []any{[][]float32{{1, 2}, {3, 4}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.Reverse(params[0], 0, 1)
+		})
+		if err != nil {
+			t.Fatalf("Reverse failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([][]float32{{4, 3}, {2, 1}}, y0); !ok {
+			t.Errorf("Reverse mismatch:\n%s", diff)
+		}
+	})
+
 	t.Run("Reduce", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
 		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
