@@ -112,8 +112,8 @@ func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	return buf, nil
 }
 
-// getBufferForShape is a wrapper for getShape that also sets the buffer shape accordingly.
-func (b *Backend) getBufferForShape(shape shapes.Shape) (*Buffer, error) {
+// GetBufferForShape is a wrapper for getShape that also sets the buffer shape accordingly.
+func (b *Backend) GetBufferForShape(shape shapes.Shape) (*Buffer, error) {
 	buf, err := b.GetBuffer(shape.DType, shape.Size())
 	if err != nil {
 		return nil, err
@@ -131,9 +131,9 @@ func (b *Backend) getBufferForShape(shape shapes.Shape) (*Buffer, error) {
 // 	}
 // }
 
-// putBuffer back into the backend pool of buffers.
+// PutBuffer back into the backend pool of buffers.
 // After this any references to buffer should be dropped.
-func (b *Backend) putBuffer(buffer *Buffer) {
+func (b *Backend) PutBuffer(buffer *Buffer) {
 	if b.isFinalized {
 		return
 	}
@@ -315,7 +315,7 @@ func (buffer *Buffer) Finalize() error {
 		return errors.Errorf("Finalize(%p): %s -- buffer was already finalized or back in the pool",
 			buffer, strings.Join(issues, ", "))
 	}
-	buffer.RawBackend.putBuffer(buffer)
+	buffer.RawBackend.PutBuffer(buffer)
 	return nil
 }
 

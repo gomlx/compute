@@ -74,12 +74,12 @@ func setDotGeneralTargetBlockSize(blockSize int) {
 	}
 }
 
-// dgCreateBlockedShape returns a shape that is able to split the original shape into blocks, with extra
+// CreateBlockedShape returns a shape that is able to split the original shape into blocks, with extra
 // padding (zero initialized) to make it fit.
 //
 // Input shape: [batchSize, crossSize, contractingSize]
 // Output shape: [batchSize, crossBlocks * blkDim, contractBlocks * blkDim]
-func dgCreateBlockedShape(dtype dtypes.DType, batchSize, crossSize, contractingSize, blkLog2Dim int) shapes.Shape {
+func CreateBlockedShape(dtype dtypes.DType, batchSize, crossSize, contractingSize, blkLog2Dim int) shapes.Shape {
 	blkDim := 1 << blkLog2Dim
 	newCrossDim := (crossSize + blkDim - 1) / blkDim
 	newContractDim := (contractingSize + blkDim - 1) / blkDim
@@ -152,7 +152,7 @@ func blockForDotGeneral(f *gobackend.Function, input *gobackend.Node,
 
 	dtype := input.Shape.DType
 	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
-	blockedShape := dgCreateBlockedShape(dtype, batchSize, axesASize, axesBSize, blockLog2Dim)
+	blockedShape := CreateBlockedShape(dtype, batchSize, axesASize, axesBSize, blockLog2Dim)
 
 	data := &blockForDotGeneralData{
 		blockLog2Dim:    blockLog2Dim,
@@ -186,7 +186,7 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 	// output.Zeros()
 
 	// Copy data from flat to blocked format using the generic copy function
-	copyFlatToBlockAny, err := dotGeneralFlatToBlockDTypeMap.Get(dtype)
+	copyFlatToBlockAny, err := FlatToBlockDTypeMap.Get(dtype)
 	if err != nil {
 		return nil, err
 	}
@@ -197,9 +197,9 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 	return output, nil
 }
 
-// Auto-generate alternate specialized versions of dgCopyOutputBlockToFlat
+// Auto-generate alternate specialized versions of copyOutputBlockToFlat
 // (that can't easily be refactored into smaller functions due to latency penalities)
-//go:generate go run ../../internal/cmd/alternates_generator -base=dotgeneral_blocked_alt_base.go -tags=bf16,f16
+//go:generate go run ../../cmd/alternates_generator -base=blocked_alt_base.go -tags=bf16,f16
 
 // ============================================================================
 // Blocked DotGeneral Execution
@@ -251,13 +251,13 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 
 	// Copy output from blocked to flat format
 	finalOutputDType := output.RawShape.DType
-	copyOutputBlockToFlatAny, err := dotGeneralOutputBlockToFlatDTypeMap.Get(finalOutputDType)
+	copyOutputBlockToFlatAny, err := OutputBlockToFlatDTypeMap.Get(finalOutputDType)
 	if err != nil {
 		return err
 	}
 	copyOutputBlockToFlat := copyOutputBlockToFlatAny.(func(blockedSource, output *gobackend.Buffer))
 	copyOutputBlockToFlat(outputBlocks, output)
-	backend.putBuffer(outputBlocks)
+	backend.PutBuffer(outputBlocks)
 	return nil
 }
 
@@ -265,10 +265,10 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 // Data Copy Functions (Flat <-> Blocked)
 // ============================================================================
 
-//gobackend:dtypemap dgCopyFlatToBlockShape ints,uints,floats,half
-var dotGeneralFlatToBlockDTypeMap = gobackend.NewDTypeMap("DotGeneralFlatToBlock")
+//gobackend:dtypemap CopyFlatToBlockShapeGeneric ints,uints,floats,half
+var FlatToBlockDTypeMap = gobackend.NewDTypeMap("DotGeneralFlatToBlock")
 
-// dgCopyFlatToBlockShape copies the data from the original (with a non-normalized shape, with the contracting axes
+// copyFlatToBlockShapeGeneric copies the data from the original (with a non-normalized shape, with the contracting axes
 // and batch axes given) to blocked, whose shape is normalized to [batchSize, crossSize, contractingSize] and
 // is organized in blocks (packages) of shape [1, blkDim, blkDim].
 //
@@ -276,7 +276,7 @@ var dotGeneralFlatToBlockDTypeMap = gobackend.NewDTypeMap("DotGeneralFlatToBlock
 //
 // source shape: any combination of batch, cross or contracting dimensions.
 // blkOutput shape: [batchSize, crossBlocks * blkDim, contractBlocks * blkDim]
-func dgCopyFlatToBlockShape[T interface {
+func copyFlatToBlockShapeGeneric[T interface {
 	gobackend.PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
 }](
 	source, blkOutput *gobackend.Buffer, contractingAxes, batchAxes []int, batchSize, crossSize, contractingSize, blkLog2Dim int) {
@@ -392,12 +392,12 @@ func dgCopyFlatToBlockShape[T interface {
 	}
 }
 
-//gobackend:dtypemap dgCopyOutputBlockToFlat ints,uints,floats
-var dotGeneralOutputBlockToFlatDTypeMap = gobackend.NewDTypeMap("DotGeneralNormalizedBlockToFlat")
+//gobackend:dtypemap copyOutputBlockToFlat ints,uints,floats
+var OutputBlockToFlatDTypeMap = gobackend.NewDTypeMap("OutputBlockToFlat")
 
 func init() {
-	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, gobackend.dgCopyOutputBlockToFlatF32ToBF16)
-	dotGeneralOutputBlockToFlatDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, gobackend.dgCopyOutputBlockToFlatF32ToF16)
+	OutputBlockToFlatDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, copyOutputBlockToFlatF32ToBF16)
+	OutputBlockToFlatDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, copyOutputBlockToFlatF32ToF16)
 }
 
 // ============================================================================
@@ -408,10 +408,10 @@ func init() {
 // It handles parallelism across batch examples and within each example.
 func runDotGeneralBatchLoop(backend *gobackend.Backend, recursive *dotGeneralRecursiveData, batchSize int, rhsHasBatch bool) {
 	// Decide on intra-example parallelism: up to which depth we should use a new worker.
-	maxParallelism := backend.workers.MaxParallelism()
+	maxParallelism := backend.Workers.MaxParallelism()
 	recursive.maxDepthParallelization = -1 // Disable sub-batch parallelization.
-	if backend.workers.IsEnabled() {
-		if backend.workers.IsUnlimited() {
+	if backend.Workers.IsEnabled() {
+		if backend.Workers.IsUnlimited() {
 			recursive.maxDepthParallelization = 8 // At most 2^8 = 256 goroutines are spawned.
 		} else {
 			// Use log2 of parallelism to reduce goroutine overhead.
@@ -420,9 +420,9 @@ func runDotGeneralBatchLoop(backend *gobackend.Backend, recursive *dotGeneralRec
 	}
 
 	// Decide on using parallelism across the batch -- each example is started on a separate worker.
-	useBatchParallelism := backend.workers.IsEnabled()
+	useBatchParallelism := backend.Workers.IsEnabled()
 	batchSplitSize := 1
-	if useBatchParallelism && !backend.workers.IsUnlimited() {
+	if useBatchParallelism && !backend.Workers.IsUnlimited() {
 		batchSplitSize = (batchSize + maxParallelism - 1) / maxParallelism
 	}
 
@@ -446,7 +446,7 @@ func runDotGeneralBatchLoop(backend *gobackend.Backend, recursive *dotGeneralRec
 			wg.Done()
 		}
 		if useBatchParallelism {
-			backend.workers.WaitToStart(batchSplitFn)
+			backend.Workers.WaitToStart(batchSplitFn)
 		} else {
 			batchSplitFn()
 		}
@@ -510,7 +510,7 @@ func (r *dotGeneralRecursiveData) apply(
 		// Split on lhs cross dimension.
 		wg.Add(1) // The current plus 1.
 		split := lhsCrossStart + lhsCrossLen/2
-		if !parallelize || !r.backend.workers.StartIfAvailable(func() {
+		if !parallelize || !r.backend.Workers.StartIfAvailable(func() {
 			// If running in a worker:
 			r.apply(lhsCrossStart, split, rhsCrossStart, rhsCrossEnd, contractStart, contractEnd, depth+1, wg)
 		}) {
@@ -522,7 +522,7 @@ func (r *dotGeneralRecursiveData) apply(
 		// Split on rhs cross dimension.
 		wg.Add(1) // The current plus 1.
 		split := rhsCrossStart + rhsCrossLen/2
-		if !parallelize || !r.backend.workers.StartIfAvailable(func() {
+		if !parallelize || !r.backend.Workers.StartIfAvailable(func() {
 			r.apply(lhsCrossStart, lhsCrossEnd, rhsCrossStart, split, contractStart, contractEnd, depth+1, wg)
 		}) {
 			// If not parallelizing, just run the work synchronously.
@@ -535,12 +535,12 @@ func (r *dotGeneralRecursiveData) apply(
 		// This also means we don't increase the depth of the recursion.
 		split := contractStart + contractingLen/2
 		// Create a new working group to force serialization of work here:
-		r.backend.workers.WorkerIsAsleep() // Add temporary extra worker, because we are going to wait.
+		r.backend.Workers.WorkerIsAsleep() // Add temporary extra worker, because we are going to wait.
 		newWg := xsync.NewDynamicWaitGroup()
 		newWg.Add(1)
 		r.apply(lhsCrossStart, lhsCrossEnd, rhsCrossStart, rhsCrossEnd, contractStart, split, depth, newWg)
 		newWg.Wait()
-		r.backend.workers.WorkerRestarted()
+		r.backend.Workers.WorkerRestarted()
 		r.apply(lhsCrossStart, lhsCrossEnd, rhsCrossStart, rhsCrossEnd, split, contractEnd, depth, wg)
 	}
 }
@@ -550,7 +550,7 @@ func (r *dotGeneralRecursiveData) apply(
 // ============================================================================
 
 //gobackend:dtypemap buildDotGeneralKernel ints,uints,floats
-var dotGeneralKernelDTypeMap = NewDTypeMap("DotGeneralKernel")
+var dotGeneralKernelDTypeMap = gobackend.NewDTypeMap("DotGeneralKernel")
 
 // kernelFuncType is a function that does a matrix mult of the lhs/rhs and adds it to the output buffer, given the indices of the square blocks.
 // So output[outputIdx] += lhs[lhsIdx] * rhs[rhsIdx], a block at a time.
@@ -558,6 +558,6 @@ var dotGeneralKernelDTypeMap = NewDTypeMap("DotGeneralKernel")
 type kernelFuncType func(lhsBlockIdx, rhsBlockIdx, outputBlockIdx int)
 
 func init() {
-	dotGeneralKernelDTypeMap.Register(dtypes.BFloat16, PriorityTyped, buildDotGeneralKernelBFloat16)
-	dotGeneralKernelDTypeMap.Register(dtypes.Float16, PriorityTyped, buildDotGeneralKernelFloat16)
+	dotGeneralKernelDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, buildDotGeneralKernelBFloat16)
+	dotGeneralKernelDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, buildDotGeneralKernelFloat16)
 }

@@ -2,25 +2,23 @@
 
 package dot
 
-import ( //alt:base
-	"github.com/gomlx/compute/dtypes/bfloat16" //alt:base
-	"github.com/gomlx/compute/dtypes/float16"  //alt:base
+import (
+	"github.com/gomlx/compute/dtypes/bfloat16" //alt:base,bf16
+	"github.com/gomlx/compute/dtypes/float16"  //alt:base,f16
 	"github.com/gomlx/compute/internal/gobackend"
-) //alt:base
-//alt:bf16 import	"github.com/gomlx/compute/dtypes/bfloat16"
-//alt:f16 import	"github.com/gomlx/compute/dtypes/float16"
+)
 
-// dgCopyOutputBlockToFlat* copies the blocked output to a flat output, removing the padding.
+// copyOutputBlockToFlat* copies the blocked output to a flat output, removing the padding.
 // The base version works for cases where the blockSource and output have the same dtype.
 // (This will not be the case for BFloat16/Float16, as the results are stored in float32 by default)
 //
 // blockedSource shape: [batchSize, lhsCrossBlocks, rhsCrossBlocks, blockDim, blockDim]
 // output shape: [batchSize, lhsCrossSize, rhsCrossSize]
-func dgCopyOutputBlockToFlat[T interface { //alt:base
+func copyOutputBlockToFlat[T interface { //alt:base
 	gobackend.PODNumericConstraints | bfloat16.BFloat16 | float16.Float16 //alt:base
 }]( //alt:base
-	//alt:bf16 func dgCopyOutputBlockToFlatF32ToBF16(
-	//alt:f16 func dgCopyOutputBlockToFlatF32ToF16(
+	//alt:bf16 func copyOutputBlockToFlatF32ToBF16(
+	//alt:f16 func copyOutputBlockToFlatF32ToF16(
 
 	blockSource, output *gobackend.Buffer) {
 	sourceDims := blockSource.RawShape.Dimensions

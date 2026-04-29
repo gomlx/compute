@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -172,7 +173,11 @@ func dgNormalizeShape[T interface {
 
 // execDotGeneralNormalized executes the dot general operation for normalized shapes:
 // both rhs and lhs are shaped [batchSize, crossSize, contractingSize].
-func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGeneralNodeData, output *Buffer) error {
+func execDotGeneralNormalized(
+	backend *gobackend.Backend,
+	lhs, rhs *gobackend.Buffer,
+	params *dotGeneralNodeData,
+	output *gobackend.Buffer) error {
 	dtype := lhs.RawShape.DType
 	normalizeFnAny, err := dotGeneralNormalizeShapeDTypeMap.Get(dtype)
 	if err != nil {
@@ -203,7 +208,7 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 	if castToFloat32 {
 		outputShape := shapes.Make(dtypes.Float32, params.batchSize, params.lhsCrossSize, params.rhsCrossSize)
 		var err error
-		tmpOutput, err = backend.getBufferForShape(outputShape)
+		tmpOutput, err = backend.GetBufferForShape(outputShape)
 		if err != nil {
 			return err
 		}
@@ -214,7 +219,7 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 	if err != nil {
 		return err
 	}
-	normalizeDotGeneral := normalizeDotGeneralAny.(func(lhs, rhs, output *Buffer,
+	normalizeDotGeneral := normalizeDotGeneralAny.(func(lhs, rhs, output *gobackend.Buffer,
 		params *dotGeneralNodeData, batchStartIdx, batchEndIdx int))
 
 	// Decide on using parallelism across the batch -- each example is started on a separate worker.
@@ -252,11 +257,11 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 
 	// If we created a temporary float32 output, convert it back to the original dtype.
 	if castToFloat32 {
-		convertFnAny, err := convertDTypePairMap.Get(dtypes.Float32, output.RawShape.DType) //nolint:errcheck
+		convertFnAny, err := gobackend.ConvertDTypePairMap.Get(dtypes.Float32, output.RawShape.DType) //nolint:errcheck
 		if err != nil {
 			return err
 		}
-		convertFn := convertFnAny.(convertFnType)
+		convertFn := convertFnAny.(gobackend.ConvertFnType)
 		convertFn(tmpOutput, output)
 		backend.putBuffer(tmpOutput) // Return the temporary buffer to the pool.
 	}
@@ -264,13 +269,13 @@ func execDotGeneralNormalized(backend *Backend, lhs, rhs *Buffer, params *dotGen
 }
 
 //gobackend:dtypemap execNormalizedDotGeneralGeneric ints,uints,floats
-var dotGeneralNormalizedDTypeMap = NewDTypeMap("DotGeneralNormalized")
+var dotGeneralNormalizedDTypeMap = gobackend.NewDTypeMap("DotGeneralNormalized")
 
 // Auto-generate alternate specialized versions of execNormalizedDotGeneral
 // (that can't easily be refactored into smaller functions due to latency penalities)
-//go:generate go run ../../internal/cmd/alternates_generator -base=dotgeneral_normalized_alt_base.go -tags=bf16,f16
+//go:generate go run ../../cmd/alternates_generator -base=normalized_alt_base.go -tags=bf16,f16
 
 func init() {
-	dotGeneralNormalizedDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execNormalizedDotGeneralBFloat16)
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Float16, PriorityTyped, execNormalizedDotGeneralFloat16)
+	dotGeneralNormalizedDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, execNormalizedDotGeneralBFloat16)
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, execNormalizedDotGeneralFloat16)
 }

@@ -23,7 +23,7 @@ func binaryOperandsAndOutput(backend *Backend, inputs []*Buffer, inputsOwned []b
 		output = lhs
 		inputs[0] = nil
 	default:
-		output, _ = backend.getBufferForShape(outputShape)
+		output, _ = backend.GetBufferForShape(outputShape)
 	}
 	return
 }

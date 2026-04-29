@@ -2,6 +2,7 @@ package dot
 
 import (
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -196,16 +197,17 @@ func useSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params 
 // dotGeneralSmallMatMulDTypeMap holds the dtype-specific implementations for SmallMatMul.
 // Generic POD types are registered via simplego_dispatcher (gen_register_dtypes.go).
 // BFloat16/Float16 are registered here with specialized implementations that output to float32.
+//
 //gobackend:dtypemap execDotGeneralSmallMatMulGeneric ints,uints,floats
-var dotGeneralSmallMatMulDTypeMap = NewDTypeMap("DotGeneralSmallMatMul")
+var dotGeneralSmallMatMulDTypeMap = gobackend.NewDTypeMap("DotGeneralSmallMatMul")
 
 // Auto-generate alternate specialized versions of execDotGeneralSmallMatMul for BFloat16/Float16
 // (these need float32 accumulation for numerical stability)
-//go:generate go run ../../internal/cmd/alternates_generator -base=dotgeneral_small_matmul_alt_base.go -tags=bf16,f16
+//go:generate go run ../../cmd/alternates_generator -base=small_matmul_alt_base.go -tags=bf16,f16
 
 func init() {
 	// BFloat16 and Float16 need float32 accumulation and output to float32 buffer.
 	// The caller (execDotGeneral) handles conversion back to native dtype.
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execDotGeneralSmallMatMulBFloat16)
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float16, PriorityTyped, execDotGeneralSmallMatMulFloat16)
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, execDotGeneralSmallMatMulBFloat16)
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, execDotGeneralSmallMatMulFloat16)
 }

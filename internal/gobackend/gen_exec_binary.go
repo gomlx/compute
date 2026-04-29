@@ -1471,7 +1471,7 @@ func execLogicalXorBooleanGeneric[T PODBooleanConstraints](lhs, rhs []T, output 
 func execEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
@@ -1584,7 +1584,7 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execNotEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
@@ -1697,7 +1697,7 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execGreaterOrEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -1821,7 +1821,7 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 func execGreaterThan(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -1945,7 +1945,7 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execLessOrEqual(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -2069,7 +2069,7 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 func execLessThan(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}

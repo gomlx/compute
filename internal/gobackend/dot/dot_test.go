@@ -3,17 +3,52 @@
 package dot_test
 
 import (
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	_ "github.com/gomlx/compute/internal/gobackend/defaultpkgs"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/highway"
 	"github.com/gomlx/compute/internal/gobackend/packgemm"
+	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
 	"github.com/gomlx/compute/support/testutil"
+	"k8s.io/klog/v2"
 )
+
+var backend compute.Backend
+
+func init() {
+	klog.InitFlags(nil)
+}
+
+func setup() {
+	fmt.Printf("Available backends: %q\n", compute.List())
+	// Perform your setup logic here
+	if os.Getenv(compute.ConfigEnvVar) == "" {
+		must.M(os.Setenv(compute.ConfigEnvVar, "go"))
+	} else {
+		fmt.Printf("\t$%s=%q\n", compute.ConfigEnvVar, os.Getenv(compute.ConfigEnvVar))
+	}
+	backend = compute.MustNew()
+	fmt.Printf("Backend: %s, %s\n", backend.Name(), backend.Description())
+}
+
+func teardown() {
+	backend.Finalize()
+}
+
+func TestMain(m *testing.M) {
+	setup()
+	code := m.Run() // Run all tests in the file
+	teardown()
+	os.Exit(code)
+}
 
 func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 	if _, ok := backend.(*gobackend.Backend); !ok {
@@ -55,7 +90,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		blockLog2Dim := 1 // block dim is 2^1 = 2.
 		blockDim := 1 << blockLog2Dim
 		be := backend.(*gobackend.Backend)
-		outShape := dgCreateBlockedShape(dtype, batchSize, crossSize, contractingSize, blockLog2Dim)
+		outShape := dot.CreateBlockedShape(dtype, batchSize, crossSize, contractingSize, blockLog2Dim)
 		// outShape = [6 1 1 2 2]
 		if ok, diff := testutil.IsEqual(
 			[]int{
@@ -69,17 +104,18 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
-		outBlocks, err := be.getBuffer(dtype, outShape.Size())
+		outBlocks, err := be.GetBufferForShape(outShape)
 		if err != nil {
 			t.Fatalf("Failed: %+v", err)
 		}
-		outBlocks.shape = outShape
 		outBlocks.Zeros()
 		tmpAny, tmpErr := dotGeneralFlatToBlockDTypeMap.Get(dtype)
 		if tmpErr != nil {
 			panic(tmpErr)
 		}
-		copyFlatToBlock := tmpAny.(func(source, blkOutput *Buffer, contractingAxes, batchAxes []int, batchSize, crossSize, contractingSize, blkLog2Dim int))
+		copyFlatToBlock := tmpAny.(func(
+			source, blkOutput *gobackend.Buffer, contractingAxes, batchAxes []int,
+			batchSize, crossSize, contractingSize, blkLog2Dim int))
 		copyFlatToBlock(
 			source,
 			outBlocks,

@@ -23,16 +23,16 @@ func execConvertDType(backend *Backend, node *Node, inputs []*Buffer, inputsOwne
 		return nil, err
 	}
 	output.RawShape = node.Shape
-	convertFnAny, err := convertDTypePairMap.Get(operand.RawShape.DType, output.RawShape.DType)
+	convertFnAny, err := ConvertDTypePairMap.Get(operand.RawShape.DType, output.RawShape.DType)
 	if err != nil {
 		return nil, err
 	}
-	convertFn := convertFnAny.(convertFnType)
+	convertFn := convertFnAny.(ConvertFnType)
 	convertFn(operand, output)
 	return output, nil
 }
 
-type convertFnType = func(operand, output *Buffer)
+type ConvertFnType = func(operand, output *Buffer)
 
 //gobackend:dtypemap_pair execConvertDTypeGeneric ints,uints,floats ints,uints,floats
 //gobackend:dtypemap_pair execConvertDTypeToBFloat16 ints,uints,floats bf16
@@ -41,7 +41,7 @@ type convertFnType = func(operand, output *Buffer)
 //gobackend:dtypemap_pair execConvertDTypeFromFloat16 f16 ints,uints,floats
 //gobackend:dtypemap_pair execConvertDTypeToBool ints,uints,floats bool
 //gobackend:dtypemap_pair execConvertDTypeFromBool bool ints,uints,floats
-var convertDTypePairMap = NewDTypePairMap("ConvertDType")
+var ConvertDTypePairMap = NewDTypePairMap("ConvertDType")
 
 func init() {
 	// Register sub-byte type conversions (Int4, Uint4).
@@ -53,30 +53,30 @@ func init() {
 	// Both Int4 and Uint4 unpack to []int8 first (int8 is a common denominator
 	// that fits both signed [-8,7] and unsigned [0,15] 4-bit values), then the
 	// shared converter promotes to the target type.
-	convertDTypePairMap.Register(dtypes.Int4, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackInt4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Int4, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackInt4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Int4, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackInt4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Int4, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackInt4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Int4, dtypes.Int8, PriorityTyped, execConvertPackedSubByte[int8](unpackInt4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Uint4, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackUint4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Uint4, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackUint4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Uint4, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackUint4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Uint4, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackUint4Nibbles, 2))
-	convertDTypePairMap.Register(dtypes.Uint4, dtypes.Uint8, PriorityTyped, execConvertPackedSubByte[uint8](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int8, PriorityTyped, execConvertPackedSubByte[int8](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Uint8, PriorityTyped, execConvertPackedSubByte[uint8](unpackUint4Nibbles, 2))
 
 	// Register sub-byte type conversions (Int2, Uint2).
 	// Each byte packs 4 values (2 bits each). Bit layout: bits 0-1 = first value,
 	// bits 2-3 = second, bits 4-5 = third, bits 6-7 = fourth.
-	convertDTypePairMap.Register(dtypes.Int2, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackInt2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Int2, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackInt2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Int2, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackInt2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Int2, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackInt2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Int2, dtypes.Int8, PriorityTyped, execConvertPackedSubByte[int8](unpackInt2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Uint2, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackUint2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Uint2, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackUint2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Uint2, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackUint2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Uint2, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackUint2Bits, 4))
-	convertDTypePairMap.Register(dtypes.Uint2, dtypes.Uint8, PriorityTyped, execConvertPackedSubByte[uint8](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int8, PriorityTyped, execConvertPackedSubByte[int8](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Float32, PriorityTyped, execConvertPackedSubByte[float32](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Float64, PriorityTyped, execConvertPackedSubByte[float64](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Int32, PriorityTyped, execConvertPackedSubByte[int32](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Int64, PriorityTyped, execConvertPackedSubByte[int64](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Uint8, PriorityTyped, execConvertPackedSubByte[uint8](unpackUint2Bits, 4))
 
 	// Register mutableBytes and fillBuffer for sub-byte types.
 	// Packed sub-byte buffers use []byte as the Go storage type.
@@ -90,16 +90,16 @@ func init() {
 	fillBufferDTypeMap.Register(dtypes.Uint2, PriorityTyped, fillBufferGeneric[byte])
 
 	// Manually register bool x bfloat16 conversion functions.
-	convertDTypePairMap.Register(dtypes.BFloat16, dtypes.Bool, PriorityTyped, execConvertDTypeBFloat16ToBool)
-	convertDTypePairMap.Register(dtypes.Bool, dtypes.BFloat16, PriorityTyped, execConvertDTypeBoolToBFloat16)
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Bool, PriorityTyped, execConvertDTypeBFloat16ToBool)
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.BFloat16, PriorityTyped, execConvertDTypeBoolToBFloat16)
 
 	// Manually register bool x float16 conversion functions.
-	convertDTypePairMap.Register(dtypes.Float16, dtypes.Bool, PriorityTyped, execConvertDTypeFloat16ToBool)
-	convertDTypePairMap.Register(dtypes.Bool, dtypes.Float16, PriorityTyped, execConvertDTypeBoolToFloat16)
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Bool, PriorityTyped, execConvertDTypeFloat16ToBool)
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Float16, PriorityTyped, execConvertDTypeBoolToFloat16)
 
 	// Manually register float16 x bfloat16 conversion functions.
-	convertDTypePairMap.Register(dtypes.Float16, dtypes.BFloat16, PriorityTyped, execConvertDTypeFloat16ToBFloat16)
-	convertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float16, PriorityTyped, execConvertDTypeBFloat16ToFloat16)
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.BFloat16, PriorityTyped, execConvertDTypeFloat16ToBFloat16)
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float16, PriorityTyped, execConvertDTypeBFloat16ToFloat16)
 }
 
 func execConvertDTypeGeneric[FromT PODNumericConstraints, ToT PODNumericConstraints](operand, output *Buffer) {
@@ -284,7 +284,7 @@ func unpackUint2Bits(packed []byte, dst []int8) {
 //
 // To avoid allocating a temporary slice as large as the output, we process in
 // fixed-size blocks that stay on the stack.
-func execConvertPackedSubByte[OutT PODNumericConstraints](unpackFn unpackNibblesFn, valuesPerByte int) convertFnType {
+func execConvertPackedSubByte[OutT PODNumericConstraints](unpackFn unpackNibblesFn, valuesPerByte int) ConvertFnType {
 	const dstBlockSize = 64
 	srcBlockSize := dstBlockSize / valuesPerByte
 

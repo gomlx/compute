@@ -20,11 +20,11 @@ func TestConvertPackedInt4ToInt8(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Int8, 4)
 	dstBuf := &Buffer{RawShape: dstShape, Flat: make([]int8, 4), InUse: true}
 
-	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int4, dtypes.Int8)
+	tmpAny, tmpErr := ConvertDTypePairMap.Get(dtypes.Int4, dtypes.Int8)
 	if tmpErr != nil {
 		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
-	convertFn := tmpAny.(convertFnType)
+	convertFn := tmpAny.(ConvertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.Flat.([]int8)
@@ -53,11 +53,11 @@ func TestConvertPackedUint4ToUint8(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Uint8, 4)
 	dstBuf := &Buffer{RawShape: dstShape, Flat: make([]uint8, 4), InUse: true}
 
-	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Uint4, dtypes.Uint8)
+	tmpAny, tmpErr := ConvertDTypePairMap.Get(dtypes.Uint4, dtypes.Uint8)
 	if tmpErr != nil {
 		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
-	convertFn := tmpAny.(convertFnType)
+	convertFn := tmpAny.(ConvertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.Flat.([]uint8)
@@ -84,11 +84,11 @@ func TestConvertPackedInt4ToFloat32(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Float32, 4)
 	dstBuf := &Buffer{RawShape: dstShape, Flat: make([]float32, 4), InUse: true}
 
-	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int4, dtypes.Float32)
+	tmpAny, tmpErr := ConvertDTypePairMap.Get(dtypes.Int4, dtypes.Float32)
 	if tmpErr != nil {
 		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
-	convertFn := tmpAny.(convertFnType)
+	convertFn := tmpAny.(ConvertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.Flat.([]float32)
@@ -116,11 +116,11 @@ func TestConvertPackedInt2ToInt8(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Int8, 4)
 	dstBuf := &Buffer{RawShape: dstShape, Flat: make([]int8, 4), InUse: true}
 
-	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Int2, dtypes.Int8)
+	tmpAny, tmpErr := ConvertDTypePairMap.Get(dtypes.Int2, dtypes.Int8)
 	if tmpErr != nil {
 		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
-	convertFn := tmpAny.(convertFnType)
+	convertFn := tmpAny.(ConvertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.Flat.([]int8)
@@ -148,11 +148,11 @@ func TestConvertPackedUint2ToUint8(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Uint8, 4)
 	dstBuf := &Buffer{RawShape: dstShape, Flat: make([]uint8, 4), InUse: true}
 
-	tmpAny, tmpErr := convertDTypePairMap.Get(dtypes.Uint2, dtypes.Uint8)
+	tmpAny, tmpErr := ConvertDTypePairMap.Get(dtypes.Uint2, dtypes.Uint8)
 	if tmpErr != nil {
 		t.Fatalf("Failed to get convertFn: %+v", tmpErr)
 	}
-	convertFn := tmpAny.(convertFnType)
+	convertFn := tmpAny.(ConvertFnType)
 	convertFn(srcBuf, dstBuf)
 
 	result := dstBuf.Flat.([]uint8)

@@ -245,7 +245,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// Free any remaining owned buffers that weren't outputs
 	for idx, buf := range execBuf.results {
 		if buf != nil && execBuf.owned[idx] {
-			backend.putBuffer(buf)
+			backend.PutBuffer(buf)
 		}
 	}
 
@@ -499,7 +499,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			outputNode := node.MultiOutputsNodes[outputIdx]
 			outputNodeIdx := outputNode.Index
 			if outputNodeIdx >= fe.NumNodesToProcess || fe.NumUses[outputNodeIdx] == 0 {
-				backend.putBuffer(outputBuf)
+				backend.PutBuffer(outputBuf)
 				continue
 			}
 			execBuf.results[outputNodeIdx] = outputBuf
@@ -526,7 +526,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			outputNodeIdx := outputNode.Index
 			if outputNodeIdx >= fe.NumNodesToProcess || fe.NumUses[outputNodeIdx] == 0 {
 				// Output of node is not used by any other node, we can immediately release it.
-				backend.putBuffer(outputBuf)
+				backend.PutBuffer(outputBuf)
 				continue
 			}
 			execBuf.results[outputNodeIdx] = outputBuf
@@ -583,7 +583,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			}
 
 			// Release the input buffer - all users have finished.
-			backend.putBuffer(inputBuffers[i])
+			backend.PutBuffer(inputBuffers[i])
 			execBuf.results[inputIdx] = nil
 		}
 	}
@@ -599,7 +599,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			}
 			if int(newCount) == fe.NumUses[capturedIdx] && execBuf.owned[capturedIdx] {
 				// Release the captured buffer - all uses have finished.
-				backend.putBuffer(capturedBuf)
+				backend.PutBuffer(capturedBuf)
 				execBuf.results[capturedIdx] = nil
 			}
 		}

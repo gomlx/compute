@@ -241,9 +241,9 @@ func DotGeneral(f *gobackend.Function,
 	params.rhsNormalization = dgNormalizePrepare(rhs.Shape, params.rhsContractingAxes, params.rhsBatchAxes)
 
 	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
-	params.lhsBlockedShape = dgCreateBlockedShape(
+	params.lhsBlockedShape = CreateBlockedShape(
 		dtype, params.batchSize, params.lhsCrossSize, params.contractingSize, blockLog2Dim)
-	params.rhsBlockedShape = dgCreateBlockedShape(
+	params.rhsBlockedShape = CreateBlockedShape(
 		dtype, params.batchSize, params.rhsCrossSize, params.contractingSize, blockLog2Dim)
 	outputDType := dtype
 	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
@@ -251,7 +251,7 @@ func DotGeneral(f *gobackend.Function,
 		// Notice the blockLog2Dim must be the same, because the block dimensions much match the inputs.
 		outputDType = dtypes.Float32
 	}
-	params.outputBlockedShape = dgCreateBlockedShape(
+	params.outputBlockedShape = CreateBlockedShape(
 		outputDType, params.batchSize, params.lhsCrossSize, params.rhsCrossSize, blockLog2Dim)
 
 	// Select execution path at build time based on problem size and matrix layout.

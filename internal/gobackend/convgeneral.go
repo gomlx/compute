@@ -196,7 +196,7 @@ func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
 	params := node.Data.(*convNode)
 	outputShape := node.Shape
 	dtype := input.RawShape.DType
-	output, err := backend.getBufferForShape(outputShape)
+	output, err := backend.GetBufferForShape(outputShape)
 	if err != nil {
 		return nil, err
 	}
@@ -231,13 +231,13 @@ func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
 		convFnAny, err = convNoDilationDTypeMap.Get(dtype)
 	}
 	if err != nil {
-		backend.putBuffer(output)
+		backend.PutBuffer(output)
 		return nil, err
 	}
 	convFn := convFnAny.(func(convGeneralExecPlan) error)
 
 	if err := convFn(plan); err != nil {
-		backend.putBuffer(output)
+		backend.PutBuffer(output)
 		return nil, err
 	}
 	return output, nil

@@ -64,7 +64,7 @@ func execFusedQuantizedDenseGGML(backend *Backend, node *Node, inputs []*Buffer,
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense(GGML): only float32 input supported, got %s", xBuf.RawShape.DType)
 	}
 
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}

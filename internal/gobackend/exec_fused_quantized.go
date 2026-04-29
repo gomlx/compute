@@ -51,7 +51,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: only float32 input supported, got %s", xBuf.RawShape.DType)
 	}
 
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 		return nil, err
 	}
 	if isUnpackedOwned {
-		defer backend.putBuffer(unpackedBuf)
+		defer backend.PutBuffer(unpackedBuf)
 	}
 	wFlat := unpackedBuf.Flat
 
@@ -136,12 +136,12 @@ func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error
 	}
 	outBuf.RawShape = shapes.Make(targetDType, wBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := convertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
+	convertFnAny, err := ConvertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
 	if err != nil {
-		backend.putBuffer(outBuf)
+		backend.PutBuffer(outBuf)
 		return nil, false, err
 	}
-	convertFn := convertFnAny.(convertFnType)
+	convertFn := convertFnAny.(ConvertFnType)
 	convertFn(wBuf, outBuf)
 	return outBuf, true, nil
 }
@@ -154,7 +154,7 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 	dataBuf := inputs[0]
 	indicesBuf := inputs[1]
 
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 		return nil, errors.Wrapf(err, "QuantizedEmbeddingLookup")
 	}
 	if isIdxOwned {
-		defer backend.putBuffer(idxBuf)
+		defer backend.PutBuffer(idxBuf)
 	}
 	indices := idxBuf.Flat.([]int64)
 
@@ -211,12 +211,12 @@ func convertIndicesToInt64(backend *Backend, indicesBuf *Buffer) (*Buffer, bool,
 	}
 	outBuf.RawShape = shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := convertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
+	convertFnAny, err := ConvertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
 	if err != nil {
-		backend.putBuffer(outBuf)
+		backend.PutBuffer(outBuf)
 		return nil, false, err
 	}
-	convertFn := convertFnAny.(convertFnType)
+	convertFn := convertFnAny.(ConvertFnType)
 	convertFn(indicesBuf, outBuf)
 	return outBuf, true, nil
 }

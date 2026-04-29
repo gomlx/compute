@@ -30,7 +30,7 @@ func execFusedSoftmax(backend *Backend, node *Node, inputs []*Buffer, _ []bool) 
 	data := node.Data.(*nodeFusedSoftmax)
 	axis := data.axis
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes
 func execFusedGelu(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	data := node.Data.(*nodeFusedGelu)
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func geluApproxChunk[T float32 | float64](input, output []T) {
 func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +368,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 			inputs[0] = nil // Signal to executor that we reused the input.
 			return matmul, nil
 		}
-		output, err := backend.getBufferForShape(node.Shape)
+		output, err := backend.GetBufferForShape(node.Shape)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +383,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		inputs[0] = nil // Signal to the executor that we reused the input.
 	} else {
 		var err error
-		output, err = backend.getBufferForShape(node.Shape)
+		output, err = backend.GetBufferForShape(node.Shape)
 		if err != nil {
 			return nil, err
 		}
@@ -481,7 +481,7 @@ func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*
 		}
 	}
 
-	output, err := backend.getBufferForShape(query.RawShape.Clone())
+	output, err := backend.GetBufferForShape(query.RawShape.Clone())
 	if err != nil {
 		return nil, err
 	}
@@ -819,15 +819,15 @@ func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buf
 	qShape := node.MultiOutputsShapes[0]
 	kShape := node.MultiOutputsShapes[1]
 	vShape := node.MultiOutputsShapes[2]
-	qBuf, err := backend.getBufferForShape(qShape)
+	qBuf, err := backend.GetBufferForShape(qShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", qShape)
 	}
-	kBuf, err := backend.getBufferForShape(kShape)
+	kBuf, err := backend.GetBufferForShape(kShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", kShape)
 	}
-	vBuf, err := backend.getBufferForShape(vShape)
+	vBuf, err := backend.GetBufferForShape(vShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", vShape)
 	}

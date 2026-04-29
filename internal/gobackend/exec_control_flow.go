@@ -98,7 +98,7 @@ func execWhile(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []boo
 
 		// Check condition result
 		condResult := condOutputs[0].Flat.([]bool)[0] //nolint:errcheck
-		backend.putBuffer(condOutputs[0])
+		backend.PutBuffer(condOutputs[0])
 
 		if !condResult {
 			// Condition is false, exit loop.
@@ -209,7 +209,7 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 	}
 	defer func() {
 		for _, buf := range compInputs {
-			backend.putBuffer(buf)
+			backend.PutBuffer(buf)
 		}
 	}()
 
@@ -258,7 +258,7 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 					}
 
 					result := compOutputs[0].Flat.([]bool)[0] //nolint:errcheck
-					backend.putBuffer(compOutputs[0])
+					backend.PutBuffer(compOutputs[0])
 					return result
 				}
 
@@ -272,7 +272,7 @@ func execSort(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool
 
 			if sortErr != nil {
 				for _, buf := range outputs {
-					backend.putBuffer(buf)
+					backend.PutBuffer(buf)
 				}
 				return nil, errors.WithMessagef(sortErr, "Sort: comparator failed")
 			}
@@ -297,6 +297,7 @@ func setScalarFromFlat(scalar *Buffer, flat any, offset int) {
 }
 
 // applyPermutationDTypeMap dispatches applyPermutation by dtype.
+//
 //gobackend:dtypemap applyPermutationGeneric ints,uints,floats,half,bool
 var applyPermutationDTypeMap = NewDTypeMap("ApplyPermutation")
 

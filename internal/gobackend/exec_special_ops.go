@@ -1412,8 +1412,8 @@ func execArgMinMaxGeneric[T PODNumericConstraints](
 		copyIntsFn(outputFlatIdx, currentArgBest)
 		outputFlatIdx += suffixSize
 	}
-	backend.putBuffer(currentBestBuffer)
-	backend.putBuffer(currentArgBestBuffer)
+	backend.PutBuffer(currentBestBuffer)
+	backend.PutBuffer(currentArgBestBuffer)
 }
 
 func init() {
@@ -1473,8 +1473,8 @@ func execArgMinMaxGenericBFloat16(
 		copyIntsFn(outputFlatIdx, currentArgBest)
 		outputFlatIdx += suffixSize
 	}
-	backend.putBuffer(currentBestBuffer)
-	backend.putBuffer(currentArgBestBuffer)
+	backend.PutBuffer(currentBestBuffer)
+	backend.PutBuffer(currentArgBestBuffer)
 }
 
 // =================================================================================================================
@@ -1486,7 +1486,7 @@ func execReduceWindow(backend *Backend, node *Node, inputs []*Buffer, _ []bool) 
 	rank := operandShape.Rank()
 	dtype := operandShape.DType
 	outputShape := node.Shape
-	output, err := backend.getBufferForShape(outputShape)
+	output, err := backend.GetBufferForShape(outputShape)
 	if err != nil {
 		return nil, err
 	}
@@ -1716,7 +1716,7 @@ func execPad(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer,
 	}
 	elementSize := node.Shape.DType.Size()
 
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}

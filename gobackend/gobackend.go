@@ -13,7 +13,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 
 	// Registers all the ops.
-	_ "github.com/gomlx/compute/internal/gobackend/ops"
+	_ "github.com/gomlx/compute/internal/gobackend/defaultpkgs"
 )
 
 // BackendName to be used in GOMLX_BACKEND to specify this backend.

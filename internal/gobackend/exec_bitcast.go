@@ -56,7 +56,7 @@ func execBitcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 	// Not owned or Go type mismatch: allocate via the standard pool and copy
 	// raw bytes. For sub-byte types, getBufferForShape allocates packed storage
 	// (e.g. Int4[2N] gets []byte of length N), matching the source byte count.
-	output, err := backend.getBufferForShape(node.Shape)
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
