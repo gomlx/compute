@@ -40,7 +40,7 @@
 //   - GGML quantization types: https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
 //   - llama.cpp dequant kernels: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-quants.c
 
-package gobackend
+package fusedops
 
 import (
 	"github.com/gomlx/compute"
