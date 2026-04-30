@@ -21,5 +21,5 @@ func (handler *OpHandlerRegistration[FN]) Register(fn FN, priority RegisterPrior
 	handler.Fn = fn
 }
 
-// The registration variables for each Backend method are automatically generated.
+// The registration variables for each Backend as well as the stub methods are automatically generated.
 //go:generate go run ../cmd/gobackend_opsregistration
