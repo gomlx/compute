@@ -17,6 +17,8 @@ into the vaious CPU caches.
 If your model has a bottleneck, and you think you could improve things by fusing
 operations, here's a template to implement your own fused op:
 
+- (Recommended) Measure performance of the computation you are fusing before you
+  start your work, as well as the performance of the model where it is used.
 - Add the signature of the new fused op in `compute.FusedOps` interface, along
   with a new `compute.OpType`.
 - Add the new op to the list of ops to generate registration for, in
@@ -33,6 +35,11 @@ operations, here's a template to implement your own fused op:
   somewhere else) ML libraries to use the fused op if available (and if not
   training: if training, you may want to keep the non-fused op, so that you can
   do the gradient, see how other functions like `nn.Dense` do it)
+- (Recommende) Measure performance of the computation you are fusing after you
+  start your work, as well as the performance of the model where it is used. Add
+  a comment in the source code about the performance improvements ( include the
+  impact on only the computation, and the "diluted impact" on the model as
+  well).
 
 Sounds like a lot, but it's straight forward -- except the actual implementation
 of the fused op, which in some cases is not trivial.
