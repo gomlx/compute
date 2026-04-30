@@ -83,7 +83,7 @@ func (n *Node) AddNodeCapturedInputs(closure *Function) {
 // Call creates nodes representing a call to the target function with the given inputs.
 // The target function must be a named function from the same builder that has been compiled.
 func (f *Function) Call(target compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
-	inputNodes, err := f.verifyAndCastValues("Call", inputs...)
+	inputNodes, err := f.VerifyAndCastValues("Call", inputs...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (f *Function) Call(target compute.Function, inputs ...compute.Value) ([]com
 		target: targetFn,
 	}
 
-	node := f.newMultiOutputsNode(compute.OpTypeCall, outputShapes, inputNodes...)
+	node := f.NewMultiOutputsNode(compute.OpTypeCall, outputShapes, inputNodes...)
 	node.Data = data
 
 	return node.MultiOutputValues(), nil
@@ -178,7 +178,7 @@ func (f *Function) If(pred compute.Value, trueBranch, falseBranch compute.Functi
 	}
 
 	// Validate predicate
-	predNodes, err := f.verifyAndCastValues("If", pred)
+	predNodes, err := f.VerifyAndCastValues("If", pred)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (f *Function) If(pred compute.Value, trueBranch, falseBranch compute.Functi
 
 	// Create multi-output node for If with only the predicate as regular input.
 	// Captured values are tracked separately via AddNodeCapturedInputs.
-	node := f.newMultiOutputsNode(compute.OpTypeIf, outputShapes, predNode)
+	node := f.NewMultiOutputsNode(compute.OpTypeIf, outputShapes, predNode)
 	node.Data = data
 
 	// Add captured values from both branches to node.capturedInputs.
@@ -264,7 +264,7 @@ func (f *Function) While(cond, body compute.Function, initialState ...compute.Va
 	}
 
 	// Validate initial state
-	stateNodes, err := f.verifyAndCastValues("While", initialState...)
+	stateNodes, err := f.VerifyAndCastValues("While", initialState...)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (f *Function) While(cond, body compute.Function, initialState ...compute.Va
 
 	// Create multi-output node for While with only state values as regular inputs.
 	// Captured values are tracked separately via AddNodeCapturedInputs.
-	node := f.newMultiOutputsNode(compute.OpTypeWhile, outputShapes, stateNodes...)
+	node := f.NewMultiOutputsNode(compute.OpTypeWhile, outputShapes, stateNodes...)
 	node.Data = data
 
 	// Add captured values from both closures to node.capturedInputs.

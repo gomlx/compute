@@ -135,13 +135,13 @@ func (f *Function) NewNode(opType compute.OpType, shape shapes.Shape, inputs ...
 	return n
 }
 
-// newMultiOutputsNode creates the multi-outputs node, and its "select nodes", one per output.
+// NewMultiOutputsNode creates the multi-outputs node, and its "select nodes", one per output.
 // The node.multiOutputsNodes will be set with the individual outputs and can be used by the Builder to return
 // to the user.
 // Nodes are added to the function's nodes slice.
 //
 // Note: no de-duplication of multi-output nodes.
-func (f *Function) newMultiOutputsNode(
+func (f *Function) NewMultiOutputsNode(
 	opType compute.OpType,
 	outputShapes []shapes.Shape,
 	inputs ...*Node,
@@ -165,10 +165,10 @@ func (f *Function) newMultiOutputsNode(
 	return node
 }
 
-// verifyAndCastValues sanity checks that the values (compute.Op) are valid and created with this builder.
+// VerifyAndCastValues sanity checks that the values (compute.Op) are valid and created with this builder.
 // If a node belongs to a parent function, it creates a capture node to access the value.
 // It returns the underlying *Node of the values (with capture nodes substituted for parent values).
-func (f *Function) verifyAndCastValues(name string, values ...compute.Value) ([]*Node, error) {
+func (f *Function) VerifyAndCastValues(name string, values ...compute.Value) ([]*Node, error) {
 	if err := f.CheckValid(); err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (f *Function) Parameter(name string, shape shapes.Shape, sharding *compute.
 
 // Constant creates a constant in the function with the given flat values and the shape defined by the dimensions.
 func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
-	_, err := f.verifyAndCastValues("Constant")
+	_, err := f.VerifyAndCastValues("Constant")
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func (f *Function) Return(outputs []compute.Value, shardings []*compute.Sharding
 		return errors.Errorf("sharding or distributed execution are not supported by Go backend")
 	}
 
-	outputNodes, err := f.verifyAndCastValues("Return", outputs...)
+	outputNodes, err := f.VerifyAndCastValues("Return", outputs...)
 	if err != nil {
 		return err
 	}
@@ -344,7 +344,7 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 // Identity implements the compute.Identity interface.
 // This operation is not de-duplicated: if you issue it twice, it will not reuse the previous instance.
 func (f *Function) Identity(operandOp compute.Value) (compute.Value, error) {
-	inputs, err := f.verifyAndCastValues("Reshape", operandOp)
+	inputs, err := f.VerifyAndCastValues("Reshape", operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func (f *Function) Identity(operandOp compute.Value) (compute.Value, error) {
 
 // Where implements the compute.Builder interface.
 func (f *Function) Where(conditionOp, onTrueOp, onFalseOp compute.Value) (compute.Value, error) {
-	inputs, err := f.verifyAndCastValues("Where", conditionOp, onTrueOp, onFalseOp)
+	inputs, err := f.VerifyAndCastValues("Where", conditionOp, onTrueOp, onFalseOp)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (f *Function) Concatenate(axis int, operandOps ...compute.Value) (compute.V
 	if len(operandOps) == 0 {
 		return nil, errors.Errorf("Concatenate requires at least one input tensor")
 	}
-	operands, err := f.verifyAndCastValues("Concatenate", operandOps...)
+	operands, err := f.VerifyAndCastValues("Concatenate", operandOps...)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +408,7 @@ func (f *Function) Concatenate(axis int, operandOps ...compute.Value) (compute.V
 //	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
 func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (compute.Value, error) {
 	opType := compute.OpTypeBitcast
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (c
 // ConvertDType converts operandOp to the given dtype. It implements the compute.Builder interface.
 func (f *Function) ConvertDType(operandOp compute.Value, dtype dtypes.DType) (compute.Value, error) {
 	opType := compute.OpTypeConvertDType
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +530,7 @@ func (f *Function) scatterImpls(
 	indicesAreSorted, uniqueIndices bool,
 ) (
 	compute.Value, error) {
-	inputs, err := f.verifyAndCastValues(scatterOpType.String(), operandOp, scatterIndicesOp, updatesOp)
+	inputs, err := f.VerifyAndCastValues(scatterOpType.String(), operandOp, scatterIndicesOp, updatesOp)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func (s *sliceNode) EqualNodeData(other NodeDataComparable) bool {
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
 func (f *Function) Slice(operandOp compute.Value, starts, limits, strides []int) (compute.Value, error) {
 	opType := compute.OpTypeSlice
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +611,7 @@ func (f *Function) Slice(operandOp compute.Value, starts, limits, strides []int)
 // It returns the new state of the RNG and the generated values (with random bits) with the given shape.
 func (f *Function) RNGBitGenerator(stateOp compute.Value, shape shapes.Shape) (newState, values compute.Value, err error) {
 	opType := compute.OpTypeRNGBitGenerator
-	inputs, err := f.verifyAndCastValues(opType.String(), stateOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), stateOp)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -628,7 +628,7 @@ func (f *Function) RNGBitGenerator(stateOp compute.Value, shape shapes.Shape) (n
 		state.Shape.Clone(),
 		shape.Clone(),
 	}
-	node := f.newMultiOutputsNode(opType, outputShapes, state)
+	node := f.NewMultiOutputsNode(opType, outputShapes, state)
 	newState = node.MultiOutputsNodes[0]
 	values = node.MultiOutputsNodes[1]
 	return
@@ -661,7 +661,7 @@ func (f *Function) ArgMinMax(
 	isMin bool,
 ) (compute.Value, error) {
 	opType := compute.OpTypeArgMinMax
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -720,7 +720,7 @@ func (f *Function) ReduceWindow(
 	paddings [][2]int,
 ) (compute.Value, error) {
 	opType := compute.OpTypeReduceWindow
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -860,7 +860,7 @@ func (f *Function) Erf(operand compute.Value) (compute.Value, error) {
 // IsFinite implements the compute.Builder interface.
 func (f *Function) IsFinite(operandOp compute.Value) (compute.Value, error) {
 	opType := compute.OpTypeIsFinite
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -882,7 +882,7 @@ func (f *Function) IsFinite(operandOp compute.Value) (compute.Value, error) {
 
 // addUnaryOp adds a generic binary op.
 func (f *Function) addUnaryOp(opType compute.OpType, operandOp compute.Value) (*Node, error) {
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
 	if err != nil {
 		return nil, err
 	}
@@ -1019,7 +1019,7 @@ func (f *Function) LessThan(lhsOp, rhsOp compute.Value) (compute.Value, error) {
 
 // addBinaryOp adds a generic binary op.
 func (f *Function) addBinaryOp(opType compute.OpType, lhsOp, rhsOp compute.Value) (*Node, error) {
-	inputs, err := f.verifyAndCastValues(opType.String(), lhsOp, rhsOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), lhsOp, rhsOp)
 	if err != nil {
 		return nil, err
 	}
@@ -1034,7 +1034,7 @@ func (f *Function) addBinaryOp(opType compute.OpType, lhsOp, rhsOp compute.Value
 
 // addComparisonOp adds a generic comparison binary op.
 func (f *Function) addComparisonOp(opType compute.OpType, lhsOp, rhsOp compute.Value) (*Node, error) {
-	inputs, err := f.verifyAndCastValues(opType.String(), lhsOp, rhsOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), lhsOp, rhsOp)
 	if err != nil {
 		return nil, err
 	}
@@ -1093,7 +1093,7 @@ func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, in
 	}
 
 	// Validate inputs
-	inputNodes, err := f.verifyAndCastValues("Sort", inputs...)
+	inputNodes, err := f.VerifyAndCastValues("Sort", inputs...)
 	if err != nil {
 		return nil, err
 	}
@@ -1169,7 +1169,7 @@ func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, in
 
 	// Create multi-output node for Sort with only input tensors as regular inputs.
 	// Captured values are tracked separately via AddNodeCapturedInputs.
-	node := f.newMultiOutputsNode(compute.OpTypeSort, outputShapes, inputNodes...)
+	node := f.NewMultiOutputsNode(compute.OpTypeSort, outputShapes, inputNodes...)
 	node.Data = data
 
 	// Add captured values from comparator to node.capturedInputs.
@@ -1202,7 +1202,7 @@ func shapesEqualDimensions(a, b shapes.Shape) bool {
 // Pad implements the compute.Builder interface.
 func (f *Function) Pad(operandOp, fillValueOp compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
 	opType := compute.OpTypePad
-	inputs, err := f.verifyAndCastValues(opType.String(), operandOp, fillValueOp)
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp, fillValueOp)
 	if err != nil {
 		return nil, err
 	}
