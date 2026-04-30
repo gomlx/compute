@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -102,7 +103,7 @@ func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes
 // execFusedGelu implements GELU activation.
 // If exact is true, uses x * 0.5 * (1 + erf(x / sqrt(2))).
 // Otherwise, uses the tanh approximation: x * 0.5 * (1 + tanh(sqrt(2/pi) * (x + 0.044715*x^3))).
-func execFusedGelu(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
+func execFusedGelu(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedGelu)
 	input := inputs[0]
 	output, err := backend.GetBufferForShape(node.Shape)
@@ -135,7 +136,7 @@ const minParallelizeChunk = 4096
 // parallelizeChunked runs chunkFn over [0, n) in minParallelizeChunk-sized chunks
 // using the backend worker pool. Falls back to sequential if workers are unavailable
 // or n is small.
-func parallelizeChunked[T float32 | float64](backend *Backend, input, output []T, chunkFn func(input, output []T)) {
+func parallelizeChunked[T float32 | float64](backend *gobackend.Backend, input, output []T, chunkFn func(input, output []T)) {
 	n := len(input)
 	if backend != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
 		var wg sync.WaitGroup
@@ -172,7 +173,7 @@ func geluApproxChunk[T float32 | float64](input, output []T) {
 
 // execFusedLayerNorm implements layer normalization.
 // For each sample: y = (x - mean) / sqrt(var + epsilon) * gamma + beta
-func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
+func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
 	output, err := backend.GetBufferForShape(node.Shape)
@@ -181,7 +182,7 @@ func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool
 	}
 
 	// Determine gamma/beta. inputs[0]=x, inputs[1]=gamma (optional), inputs[2]=beta (optional).
-	var gamma, beta *Buffer
+	var gamma, beta *gobackend.Buffer
 	if len(inputs) > 1 {
 		gamma = inputs[1]
 	}
@@ -201,7 +202,7 @@ func execFusedLayerNorm(backend *Backend, node *Node, inputs []*Buffer, _ []bool
 }
 
 // layerNorm dispatches to the trailing-axes fast path or the general case.
-func layerNorm[T float32 | float64](input, output, gamma, beta *Buffer, axes []int, epsilon float64) {
+func layerNorm[T float32 | float64](input, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {
 	inData := input.Flat.([]T)
 	outData := output.Flat.([]T)
 	dims := input.RawShape.Dimensions
@@ -354,9 +355,9 @@ func layerNormArbitraryAxes[T float32 | float64](
 // inputs[0] is the DotGeneral result (matmul already computed by the backend).
 // inputs[1] is x, inputs[2] is weight (unused by this executor).
 // inputs[3] is the optional bias.
-func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
+func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	matmul := inputs[0]
-	var bias *Buffer
+	var bias *gobackend.Buffer
 	if len(inputs) > 3 {
 		bias = inputs[3]
 	}
@@ -373,12 +374,12 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		if err != nil {
 			return nil, err
 		}
-		CopyFlat(output.Flat, matmul.Flat)
+		gobackend.CopyFlat(output.Flat, matmul.Flat)
 		return output, nil
 	}
 
 	// Try to reuse the matmul buffer if owned; otherwise allocate.
-	var output *Buffer
+	var output *gobackend.Buffer
 	if inputsOwned[0] {
 		output = matmul
 		inputs[0] = nil // Signal to the executor that we reused the input.
@@ -388,7 +389,7 @@ func execFusedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned 
 		if err != nil {
 			return nil, err
 		}
-		CopyFlat(output.Flat, matmul.Flat)
+		gobackend.CopyFlat(output.Flat, matmul.Flat)
 	}
 
 	switch output.RawShape.DType {
@@ -419,7 +420,7 @@ func fusedDenseAddBias[T float32 | float64](output, bias []T) {
 	}
 }
 
-func fusedDenseApplyActivation[T float32 | float64](backend *Backend, data []T, activation compute.ActivationType) {
+func fusedDenseApplyActivation[T float32 | float64](backend *gobackend.Backend, data []T, activation compute.ActivationType) {
 	switch activation {
 	case compute.ActivationNone:
 		// No-op.
@@ -460,13 +461,13 @@ func fusedDenseApplyActivation[T float32 | float64](backend *Backend, data []T, 
 // Currently, quantized matmuls are not implemented (awaiting go-highway release),
 // falling back to the non-quantized FusedScaledDotProductAttention using standard
 // float32 arithmetic when QuantizedMatmuls is set in the options config.
-func execFusedScaledDotProductAttention(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (
-	*Buffer, error) {
+func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (
+	*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedScaledDotProductAttention)
 	query := inputs[0]
 	key := inputs[1]
 	value := inputs[2]
-	var mask *Buffer
+	var mask *gobackend.Buffer
 	if len(inputs) > 3 {
 		mask = inputs[3]
 	}
@@ -535,7 +536,7 @@ func sdpaComputeMaskStrides(dims []int) (batchStride, headStride int) {
 
 // transposeBuffer transposes a buffer according to the given axis permutation,
 // reusing the existing transposeIterator and transposeDTypeMap infrastructure.
-func transposeBuffer(backend *Backend, buf *Buffer, permutations []int) (*Buffer, error) {
+func transposeBuffer(backend *gobackend.Backend, buf *gobackend.Buffer, permutations []int) (*gobackend.Buffer, error) {
 	output, err := backend.GetBuffer(buf.RawShape.DType, buf.RawShape.Size())
 	if err != nil {
 		return nil, err
@@ -547,12 +548,12 @@ func transposeBuffer(backend *Backend, buf *Buffer, permutations []int) (*Buffer
 		outDims[i] = dims[p]
 	}
 	output.RawShape = shapes.Make(buf.RawShape.DType, outDims...)
-	it := NewTransposeIterator(buf.RawShape, permutations)
-	transposeFnAny, err := TransposeDTypeMap.Get(buf.RawShape.DType)
+	it := ops.NewTransposeIterator(buf.RawShape, permutations)
+	transposeFnAny, err := ops.TransposeDTypeMap.Get(buf.RawShape.DType)
 	if err != nil {
 		return nil, err
 	}
-	transposeFn := transposeFnAny.(func(operand, output *Buffer, it *TransposeIterator))
+	transposeFn := transposeFnAny.(func(operand, output *gobackend.Buffer, it *ops.TransposeIterator))
 	transposeFn(buf, output, it)
 	return output, nil
 }
@@ -699,7 +700,7 @@ func sdpaGeneric[T float32 | float64](
 	}
 }
 
-func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *Buffer, data *nodeFusedScaledDotProductAttention, maskBatchStride, maskHeadStride int) {
+func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *gobackend.Buffer, data *nodeFusedScaledDotProductAttention, maskBatchStride, maskHeadStride int) {
 	q := query.Flat.([]T)
 	k := key.Flat.([]T)
 	v := value.Flat.([]T)
@@ -798,12 +799,12 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 //
 // The matmul (x @ wQKV) is already computed by the DotGeneral sub-node.
 // This executor just splits the combined result into Q/K/V and adds biases.
-func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buffer, _ []bool) ([]*Buffer, error) {
+func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) ([]*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedAttentionQKVProjection)
 	combined := inputs[0] // DotGeneral result: [batch, qDim+2*kvDim]
 
 	// Determine bias buffers using flags from node data, not positional indexing.
-	var biasQ, biasK, biasV *Buffer
+	var biasQ, biasK, biasV *gobackend.Buffer
 	biasIdx := 1
 	if data.hasBiasQ {
 		biasQ = inputs[biasIdx]
@@ -844,12 +845,12 @@ func execFusedAttentionQKVProjection(backend *Backend, node *Node, inputs []*Buf
 		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.RawShape.DType)
 	}
 
-	return []*Buffer{qBuf, kBuf, vBuf}, nil
+	return []*gobackend.Buffer{qBuf, kBuf, vBuf}, nil
 }
 
 // qkvSplitBiasGeneric splits the pre-computed matmul result [batch, totalOut] into
 // Q [batch, qDim], K [batch, kvDim], V [batch, kvDim] and adds optional biases.
-func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *Buffer, qDim, kvDim int) {
+func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
 	src := combined.Flat.([]T)
 	q := qBuf.Flat.([]T)
 	k := kBuf.Flat.([]T)
