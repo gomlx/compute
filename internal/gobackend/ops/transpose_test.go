@@ -1,22 +1,21 @@
-// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
-
-package gobackend
+package ops_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
 
-func TestExecSpecialOps_transposeIterator(t *testing.T) {
+func TestTransposeIterator(t *testing.T) {
 	operand := shapes.Make(dtypes.Int32, 2, 3, 4)
 	permutations := []int{2, 0, 1}
-	it := newTransposeIterator(operand, permutations)
+	it := ops.NewTransposeIterator(operand, permutations)
 	transposedFlatIndices := make([]int, 0, operand.Size())
 	for range operand.Size() {
-		transposedFlatIndices = append(transposedFlatIndices, it.next())
+		transposedFlatIndices = append(transposedFlatIndices, it.Next())
 	}
 	// fmt.Printf("\ttransposedFlatIndices=%#v\n", transposedFlatIndices)
 	want := []int{

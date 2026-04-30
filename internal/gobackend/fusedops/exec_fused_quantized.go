@@ -12,8 +12,8 @@ import (
 )
 
 func init() {
-	SetNodeExecutor(compute.OpTypeFusedQuantizedDense, PriorityTyped, execFusedQuantizedDense)
-	SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, PriorityTyped, execQuantizedEmbeddingLookup)
+	SetNodeExecutor(compute.OpTypeFusedQuantizedDense, gobackend.PriorityTyped, execFusedQuantizedDense)
+	SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, gobackend.PriorityTyped, execQuantizedEmbeddingLookup)
 }
 
 // execFusedQuantizedDense implements scalar dequant + matmul + bias + activation.
@@ -23,7 +23,7 @@ func init() {
 // Int4/Uint4 weights may be in packed form ([]byte, 2 nibbles per byte) when
 // produced by Bitcast, or unpacked ([]int8/[]uint8, one value per element) when
 // produced by ConvertDType. Both forms are supported.
-func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
+func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedQuantizedDense)
 
 	// GGML has a different input layout: [x, weights, bias?] (no scales/zeroPoints).
@@ -37,7 +37,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 
 	// Determine zeroPoints and bias from remaining inputs using explicit flags.
 	// Inputs: [x, weights, scales, zeroPoints?, bias?]
-	var zeroPointsBuf, biasBuf *Buffer
+	var zeroPointsBuf, biasBuf *gobackend.Buffer
 	nextIdx := 3
 	if data.hasZeroPoint {
 		zeroPointsBuf = inputs[nextIdx]
@@ -119,7 +119,7 @@ func execFusedQuantizedDense(backend *Backend, node *Node, inputs []*Buffer, inp
 //
 // Returns the (possibly new) buffer, whether it was allocated from the pool
 // (caller must putBuffer), and any error.
-func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error) {
+func unpackWeightsToBuffer(backend *gobackend.Backend, wBuf *gobackend.Buffer) (*gobackend.Buffer, bool, error) {
 	var targetDType dtypes.DType
 	switch wBuf.RawShape.DType {
 	case dtypes.Int4, dtypes.Int2:
@@ -149,7 +149,7 @@ func unpackWeightsToBuffer(backend *Backend, wBuf *Buffer) (*Buffer, bool, error
 // execQuantizedEmbeddingLookup performs quantized embedding lookup.
 // Inputs: [data, indices]. Data is [vocabSize, bytesPerRow] Uint8.
 // Indices are integer with last dim = 1. Output is [batch..., K] Float32.
-func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
+func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeQuantizedEmbeddingLookup)
 	dataBuf := inputs[0]
 	indicesBuf := inputs[1]
@@ -201,7 +201,7 @@ func execQuantizedEmbeddingLookup(backend *Backend, node *Node, inputs []*Buffer
 //
 // Returns the (possibly new) buffer, whether it was allocated from the pool
 // (caller must putBuffer), and any error.
-func convertIndicesToInt64(backend *Backend, indicesBuf *Buffer) (*Buffer, bool, error) {
+func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buffer) (*gobackend.Buffer, bool, error) {
 	if indicesBuf.RawShape.DType == dtypes.Int64 {
 		return indicesBuf, false, nil
 	}
@@ -223,7 +223,7 @@ func convertIndicesToInt64(backend *Backend, indicesBuf *Buffer) (*Buffer, bool,
 
 // quantizedDenseParallelTileCount returns the number of parallel work units that
 // quantizedDenseParallel will dispatch for the given dimensions.
-func quantizedDenseParallelTileCount(backend *Backend, M, K, N int) int {
+func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) int {
 	totalWork := M * K * N
 	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= minParallelizeChunk {
 		return M
@@ -237,7 +237,7 @@ func quantizedDenseParallelTileCount(backend *Backend, M, K, N int) int {
 
 // quantizedDenseParallel parallelizes over M rows, or tiles over N columns when M=1.
 // workerIdx is a dense index in [0, quantizedDenseParallelTileCount) identifying the work unit.
-func quantizedDenseParallel(backend *Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
+func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
 	totalWork := M * K * N
 	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= minParallelizeChunk {
 		for m := range M {
@@ -281,7 +281,7 @@ func quantizedDenseParallel(backend *Backend, M, K, N int, rowFn func(workerIdx,
 //
 // Uses cache-friendly (m, k, n) loop order so both weights[k*N+n] and out[m*N+n] are
 // accessed with stride-1 in the innermost loop.
-func quantizedDenseNF4[T int8 | uint8](backend *Backend, x []float32, weights []T, scales, bias, out []float32, M, K, N, blockSize, numBlocks int) {
+func quantizedDenseNF4[T int8 | uint8](backend *gobackend.Backend, x []float32, weights []T, scales, bias, out []float32, M, K, N, blockSize, numBlocks int) {
 	quantizedDenseParallel(backend, M, K, N, func(_, m, nStart, nEnd int) {
 		outSlice := out[m*N+nStart : m*N+nEnd]
 		if bias != nil {
@@ -311,7 +311,7 @@ func quantizedDenseNF4[T int8 | uint8](backend *Backend, x []float32, weights []
 //
 // Uses cache-friendly (m, k, n) loop order so both weights[k*N+n] and out[m*N+n] are
 // accessed with stride-1 in the innermost loop.
-func quantizedDenseLinearInt[T int8 | uint8](backend *Backend, x []float32, weights []T, scales, zeroPoints, bias, out []float32, M, K, N, blockSize, numBlocks int) {
+func quantizedDenseLinearInt[T int8 | uint8](backend *gobackend.Backend, x []float32, weights []T, scales, zeroPoints, bias, out []float32, M, K, N, blockSize, numBlocks int) {
 	quantizedDenseParallel(backend, M, K, N, func(_, m, nStart, nEnd int) {
 		outSlice := out[m*N+nStart : m*N+nEnd]
 		if bias != nil {
