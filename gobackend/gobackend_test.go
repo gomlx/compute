@@ -44,3 +44,11 @@ func TestMain(m *testing.M) {
 	teardown()
 	os.Exit(code)
 }
+
+// BenchmarkStandard runs all standard compute.Backend benchmarks on the given backend.
+// To run:
+//
+//	$ go test -bench=. -benchmem
+func BenchmarkStandard(b *testing.B) {
+	backendtest.RunAllBenchmarks(b, backend)
+}

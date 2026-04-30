@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package fusedops_test
+package backendtest
 
 import (
 	"fmt"
@@ -13,6 +13,24 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
+func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
+	b.Run("Softmax", func(b *testing.B) {
+		BenchmarkSoftmax(b, backend)
+	})
+	b.Run("Gelu", func(b *testing.B) {
+		BenchmarkGelu(b, backend)
+	})
+	b.Run("LayerNorm", func(b *testing.B) {
+		BenchmarkLayerNorm(b, backend)
+	})
+	b.Run("Dense", func(b *testing.B) {
+		BenchmarkDense(b, backend)
+	})
+	b.Run("QuantizedDense", func(b *testing.B) {
+		BenchmarkQuantizedDense(b, backend)
+	})
+}
+
 // benchMust panics on error, used in benchmark setup.
 func benchMust[T any](v T, err error) T {
 	if err != nil {
@@ -23,8 +41,9 @@ func benchMust[T any](v T, err error) T {
 
 // benchExec holds a compiled executable and its input buffers for benchmarking.
 type benchExec struct {
-	exec   compute.Executable
-	inputs []compute.Buffer
+	backend compute.Backend
+	exec    compute.Executable
+	inputs  []compute.Buffer
 }
 
 func (be *benchExec) run(b *testing.B) {
@@ -40,18 +59,61 @@ func (be *benchExec) run(b *testing.B) {
 	}
 }
 
-// buildBenchExec builds, compiles, and prepares inputs for a benchmark.
-func buildBenchExec(inputShapes []shapes.Shape, inputDatas []any,
+// newBenchExec builds, compiles, and prepares inputs for a benchmark.
+func newBenchExec(backend compute.Backend, inputShapes []shapes.Shape, inputDatas []any,
 	buildFn func(f compute.Function, params []compute.Value) (compute.Value, error),
 ) *benchExec {
-	exec, inputs, err := buildGraph(inputShapes, inputDatas, buildFn)
+	exec, inputs, err := buildGraph(backend, inputShapes, inputDatas, buildFn)
 	if err != nil {
 		panic(err)
 	}
-	return &benchExec{exec: exec, inputs: inputs}
+	return &benchExec{backend: backend, exec: exec, inputs: inputs}
 }
 
-// reduceAndKeep performs ReduceMax or ReduceSum and reshapes back to keep dims.
+// buildGraph compiles a backend graph from the given input shapes and build function,
+// and creates input buffers from the provided data. Used by both test and benchmark helpers.
+func buildGraph(backend compute.Backend, inputShapes []shapes.Shape, inputDatas []any,
+	buildFn func(f compute.Function, params []compute.Value) (compute.Value, error),
+) (compute.Executable, []compute.Buffer, error) {
+	builder := backend.Builder("test")
+	mainFn := builder.Main()
+
+	params := make([]compute.Value, len(inputShapes))
+	for i, s := range inputShapes {
+		p, err := mainFn.Parameter(fmt.Sprintf("x%d", i), s, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		params[i] = p
+	}
+
+	out, err := buildFn(mainFn, params)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+		return nil, nil, err
+	}
+
+	exec, err := builder.Compile()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	inputs := make([]compute.Buffer, len(inputDatas))
+	for i, data := range inputDatas {
+		buf, err := backend.BufferFromFlatData(0, data, inputShapes[i])
+		if err != nil {
+			return nil, nil, err
+		}
+		inputs[i] = buf
+	}
+
+	return exec, inputs, nil
+}
+
+// reduceAndKeep performs ReduceMax or ReduceSum, reshapes back to preserve the rank, and finally broadcasts it back to the original shape.
 func reduceAndKeep(f compute.Function, x compute.Value, reduceFn func(compute.Value, ...int) (compute.Value, error), shape shapes.Shape, axis int) compute.Value {
 	reduced := benchMust(reduceFn(x, axis))
 	// Reshape to keep dimension: insert a size-1 at the axis position.
@@ -59,7 +121,9 @@ func reduceAndKeep(f compute.Function, x compute.Value, reduceFn func(compute.Va
 	copy(keepDims, shape.Dimensions)
 	keepDims[axis] = 1
 	reshaped := benchMust(f.Reshape(reduced, keepDims...))
-	// Broadcast back to original shape.
+
+	// Broadcast back to original shape
+	// TODO: improve "implicit broadcasting" of operations: this shouldn't be necessary, but without it, it's much slower.
 	broadcastAxes := make([]int, shape.Rank())
 	for i := range broadcastAxes {
 		broadcastAxes[i] = i
@@ -77,7 +141,7 @@ func randomFloat32(n int) []float32 {
 
 // --- Softmax Benchmarks ---
 
-func BenchmarkSoftmax(b *testing.B) {
+func BenchmarkSoftmax(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
 		name string
 		dims []int
@@ -95,12 +159,12 @@ func BenchmarkSoftmax(b *testing.B) {
 		data := randomFloat32(shape.Size())
 		axis := sz.axis
 
-		fused := buildBenchExec([]shapes.Shape{shape}, []any{data},
+		fused := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedSoftmax(params[0], axis)
 			})
 
-		decomposed := buildBenchExec([]shapes.Shape{shape}, []any{data},
+		decomposed := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
@@ -117,7 +181,7 @@ func BenchmarkSoftmax(b *testing.B) {
 
 // --- GELU Benchmarks ---
 
-func BenchmarkGelu(b *testing.B) {
+func BenchmarkGelu(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
 		name string
 		dims []int
@@ -132,13 +196,13 @@ func BenchmarkGelu(b *testing.B) {
 		shape := shapes.Make(dtypes.Float32, sz.dims...)
 		data := randomFloat32(shape.Size())
 
-		fused := buildBenchExec([]shapes.Shape{shape}, []any{data},
+		fused := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedGelu(params[0], true)
 			})
 
 		// Decomposed GELU: x * 0.5 * (1 + erf(x / sqrt(2)))
-		decomposed := buildBenchExec([]shapes.Shape{shape}, []any{data},
+		decomposed := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				sqrt2Inv := benchMust(f.Constant([]float32{float32(1.0 / 1.4142135623730951)}, 1))
@@ -162,7 +226,7 @@ func BenchmarkGelu(b *testing.B) {
 
 // --- LayerNorm Benchmarks ---
 
-func BenchmarkLayerNorm(b *testing.B) {
+func BenchmarkLayerNorm(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
 		name string
 		dims []int
@@ -187,13 +251,13 @@ func BenchmarkLayerNorm(b *testing.B) {
 		allShapes := []shapes.Shape{shape, gammaShape, betaShape}
 		allDatas := []any{data, gammaData, betaData}
 
-		fused := buildBenchExec(allShapes, allDatas,
+		fused := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedLayerNorm(params[0], []int{axis}, 1e-5, params[1], params[2])
 			})
 
 		// Decomposed: mean, variance, normalize, scale, offset.
-		decomposed := buildBenchExec(allShapes, allDatas,
+		decomposed := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				gamma := params[1]
@@ -247,7 +311,7 @@ func BenchmarkLayerNorm(b *testing.B) {
 
 // --- Dense Benchmarks ---
 
-func BenchmarkDense(b *testing.B) {
+func BenchmarkDense(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
 		name        string
 		batch       int
@@ -272,13 +336,13 @@ func BenchmarkDense(b *testing.B) {
 		allShapes := []shapes.Shape{xShape, wShape, bShape}
 		allDatas := []any{xData, wData, biasData}
 
-		fused := buildBenchExec(allShapes, allDatas,
+		fused := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedDense(params[0], params[1], params[2], compute.ActivationNone)
 			})
 
 		// Decomposed: DotGeneral + bias add.
-		decomposed := buildBenchExec(allShapes, allDatas,
+		decomposed := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				weight := params[1]
@@ -320,7 +384,7 @@ func randomUint8(n int) []uint8 {
 //
 // The decomposed path is only benchmarked for Int8 because the simplego backend
 // does not support bitwise shift ops needed for NF4/Int4 nibble extraction.
-func BenchmarkQuantizedDense(b *testing.B) {
+func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 	sizes := []struct {
 		name        string
 		batch       int
@@ -350,8 +414,7 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		nf4Data := randomUint8(K * N)
 		nf4Shape := shapes.Make(dtypes.Uint8, K, N)
 
-		nf4Fused := buildBenchExec(
-			[]shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
+		nf4Fused := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
 			[]any{xData, nf4Data, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedQuantizedDense(params[0], params[1], params[3],
@@ -364,8 +427,8 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		int4WeightsData := randomInt8(K * N)
 		int4WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int4Fused := buildBenchExec(
-			[]shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
+		int4Fused := newBenchExec(
+			backend, []shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
 			[]any{xData, int4WeightsData, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedQuantizedDense(params[0], params[1], params[3],
@@ -378,8 +441,7 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		int8WeightsData := randomInt8(K * N)
 		int8WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int8Fused := buildBenchExec(
-			[]shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
+		int8Fused := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
 			[]any{xData, int8WeightsData, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedQuantizedDense(params[0], params[1], params[3],
@@ -400,7 +462,7 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		}
 		expandedScalesShape := shapes.Make(dtypes.Float32, K, N)
 
-		int8Decomposed := buildBenchExec(
+		int8Decomposed := newBenchExec(backend,
 			[]shapes.Shape{xShape, int8WeightsShape, expandedScalesShape, biasShape},
 			[]any{xData, int8WeightsData, expandedScalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -426,7 +488,7 @@ func BenchmarkQuantizedDense(b *testing.B) {
 		f32WeightsData := randomFloat32(K * N)
 		f32WeightsShape := shapes.Make(dtypes.Float32, K, N)
 
-		f32Dense := buildBenchExec(
+		f32Dense := newBenchExec(backend,
 			[]shapes.Shape{xShape, f32WeightsShape, biasShape},
 			[]any{xData, f32WeightsData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
