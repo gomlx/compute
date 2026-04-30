@@ -138,9 +138,16 @@ func SetBackendOption(b *gobackend.Backend, key string) error {
 //
 // See execDotGeneral for the implementation.
 func DotGeneral(f *gobackend.Function,
-	lhs *gobackend.Node, lhsContractingAxes, lhsBatchAxes []int,
-	rhs *gobackend.Node, rhsContractingAxes, rhsBatchAxes []int,
-	config compute.DotGeneralConfig) (*gobackend.Node, error) {
+	lhsValue compute.Value, lhsContractingAxes, lhsBatchAxes []int,
+	rhsValue compute.Value, rhsContractingAxes, rhsBatchAxes []int,
+	config compute.DotGeneralConfig) (compute.Value, error) {
+
+	directInputs, err := f.VerifyAndCastValues("DotGeneral", lhsValue, rhsValue)
+	if err != nil {
+		return nil, err
+	}
+	lhs, rhs := directInputs[0], directInputs[1]
+
 	// Parse the inputs.
 	dtype := lhs.Shape.DType
 	if dtype != rhs.Shape.DType {
@@ -151,7 +158,6 @@ func DotGeneral(f *gobackend.Function,
 	// We don't yet support accumulator dtype, so we convert the inputs.
 	// - Exception: Half-Precision types automatically use Float32 for the computation.
 	isHalfPrecisionWithFloat32 := dtype.IsHalfPrecision() && config.AccumulatorDType == dtypes.Float32
-	var err error
 	if !isHalfPrecisionWithFloat32 && config.AccumulatorDType != dtypes.InvalidDType && config.AccumulatorDType != dtype {
 		lhsOp, err := f.ConvertDType(lhs, config.AccumulatorDType)
 		if err != nil {

@@ -37,12 +37,6 @@ var (
 		"ReduceBitwiseAnd", "ReduceBitwiseOr", "ReduceBitwiseXor",
 		"ReduceLogicalAnd", "ReduceLogicalOr", "ReduceLogicalXor",
 		"FusedSoftmax", "FusedGelu", "FusedDense", "QuantizedEmbeddingLookup",
-	)
-
-	// specialMethods are included, but the stub doesn't automatically convert and check the `compute.Value`
-	// to `*gobackend.Node`: important if the method uses optional parameters or `compute.Value` embedded
-	// in structs.
-	specialMethods = sets.MakeWith(
 		"FusedLayerNorm", "FusedScaledDotProductAttention",
 		"FusedQuantizedDense", "FusedAttentionQKVProjection",
 	)
@@ -79,7 +73,6 @@ var (
 // MethodEntry used as input to the template.
 type MethodEntry struct {
 	backendparser.Method
-	IsSpecial        bool
 	HandlerSignature string
 	StubFunction     string // Complete stub function for the standard method.
 }
@@ -93,7 +86,7 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 		if methodsExcluded.Has(method.Name) {
 			continue
 		}
-		if !specialMethods.Has(method.Name) && !methodsIncluded.Has(method.Name) {
+		if !methodsIncluded.Has(method.Name) {
 			continue
 		}
 		if len(method.Outputs) != 2 || method.Outputs[0].Type != "Value" || method.Outputs[1].Type != "error" {
@@ -101,8 +94,7 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 			continue
 		}
 		methodEntry := MethodEntry{
-			Method:    method,
-			IsSpecial: specialMethods.Has(method.Name),
+			Method: method,
 		}
 		normalizeParameterTypes(&methodEntry.Method)
 		generateHandlerSignature(&methodEntry)
@@ -162,7 +154,6 @@ func normalizeParameterTypes(method *backendparser.Method) {
 
 // generateHandlerSignature creates the Go backend handler function signature for the method.
 func generateHandlerSignature(method *MethodEntry) {
-	fmt.Printf("Generating handler signature for %q (isSpecial=%v)\n", method.Name, method.IsSpecial)
 	var sigBuf strings.Builder
 	w := func(s string, args ...any) {
 		sigBuf.WriteString(fmt.Sprintf(s, args...))
@@ -170,16 +161,6 @@ func generateHandlerSignature(method *MethodEntry) {
 	w("func(f *Function")
 	for _, param := range method.Parameters {
 		w(", ")
-		if !method.IsSpecial {
-			switch param.Type {
-			case "compute.Value":
-				param.Type = "*Node"
-			case "...compute.Value":
-				param.Type = "...*Node"
-			case "[]compute.Value":
-				param.Type = "[]*Node"
-			}
-		}
 		w("%s %s", param.Name, param.Type)
 	}
 	w(") ")
@@ -187,24 +168,13 @@ func generateHandlerSignature(method *MethodEntry) {
 		w("(")
 	}
 	for i, output := range method.Outputs {
-		if !method.IsSpecial {
-			switch output.Type {
-			case "Value":
-				output.Type = "*Node"
-			case "...Value":
-				output.Type = "...*Node"
-			case "[]Value":
-				output.Type = "[]*Node"
-			}
-		} else {
-			switch output.Type {
-			case "Value":
-				output.Type = "compute.Value"
-			case "...Value":
-				output.Type = "...compute.Value"
-			case "[]Value":
-				output.Type = "[]compute.Value"
-			}
+		switch output.Type {
+		case "Value":
+			output.Type = "compute.Value"
+		case "...Value":
+			output.Type = "...compute.Value"
+		case "[]Value":
+			output.Type = "[]compute.Value"
 		}
 		if i > 0 {
 			w(", ")
@@ -251,57 +221,11 @@ func generateStubFunction(method *MethodEntry) {
 	}
 	w(")\n\t}\n")
 
-	var valParams []backendparser.NameAndType
-	for _, param := range method.Parameters {
-		if param.Type == "compute.Value" || param.Type == "...compute.Value" || param.Type == "[]compute.Value" {
-			valParams = append(valParams, param)
-		}
-	}
-
-	if len(valParams) > 0 && !method.IsSpecial {
-		w("\tinputNodes, err := f.VerifyAndCastValues(\"%s\"", method.Name)
-		for _, param := range valParams {
-			switch param.Type {
-			case "compute.Value":
-				w(", %s", param.Name)
-			case "...compute.Value":
-				w(", %s...", param.Name)
-			case "[]compute.Value":
-				w(", %s...", param.Name)
-			}
-		}
-		w(")\n")
-		w("\tif err != nil {\n")
-		w("\t\treturn nil, err\n")
-		w("\t}\n")
-
-		w("\tnodeIdx := 0\n")
-		for _, param := range method.Parameters {
-			switch param.Type {
-			case "compute.Value":
-				w("\t%sNode := inputNodes[nodeIdx]\n", param.Name)
-				w("\tnodeIdx++\n")
-			case "...compute.Value":
-				w("\t%sNode := inputNodes[nodeIdx:]\n", param.Name)
-			case "[]compute.Value":
-				w("\t%sNode := inputNodes[nodeIdx : nodeIdx+len(%s)]\n", param.Name, param.Name)
-				w("\tnodeIdx += len(%s)\n", param.Name)
-			}
-		}
-	}
-
 	w("\treturn Register%s.Fn(f", method.Name)
 	for _, param := range method.Parameters {
-		if !method.IsSpecial && (param.Type == "compute.Value" || param.Type == "...compute.Value" || param.Type == "[]compute.Value") {
-			w(", %sNode", param.Name)
-			if param.Type == "...compute.Value" {
-				w("...")
-			}
-		} else {
-			w(", %s", param.Name)
-			if strings.HasPrefix(param.Type, "...") {
-				w("...")
-			}
+		w(", %s", param.Name)
+		if strings.HasPrefix(param.Type, "...") {
+			w("...")
 		}
 	}
 	w(")\n")

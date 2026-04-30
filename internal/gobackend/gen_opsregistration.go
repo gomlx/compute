@@ -13,14 +13,7 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.BroadcastInDim(x, outputShape, broadcastAxes)
 	}
-	inputNodes, err := f.VerifyAndCastValues("BroadcastInDim", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterBroadcastInDim.Fn(f, xNode, outputShape, broadcastAxes)
+	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
 func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
@@ -28,16 +21,7 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.DotGeneral(lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 	}
-	inputNodes, err := f.VerifyAndCastValues("DotGeneral", lhs, rhs)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	lhsNode := inputNodes[nodeIdx]
-	nodeIdx++
-	rhsNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterDotGeneral.Fn(f, lhsNode, lhsContractingAxes, lhsBatchAxes, rhsNode, rhsContractingAxes, rhsBatchAxes, config)
+	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 }
 
 func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
@@ -45,18 +29,7 @@ func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias comput
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedDense(x, weight, bias, activation)
 	}
-	inputNodes, err := f.VerifyAndCastValues("FusedDense", x, weight, bias)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	weightNode := inputNodes[nodeIdx]
-	nodeIdx++
-	biasNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterFusedDense.Fn(f, xNode, weightNode, biasNode, activation)
+	return RegisterFusedDense.Fn(f, x, weight, bias, activation)
 }
 
 func (f *Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error) {
@@ -64,14 +37,7 @@ func (f *Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error)
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedGelu(x, exact)
 	}
-	inputNodes, err := f.VerifyAndCastValues("FusedGelu", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterFusedGelu.Fn(f, xNode, exact)
+	return RegisterFusedGelu.Fn(f, x, exact)
 }
 
 func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error) {
@@ -103,14 +69,7 @@ func (f *Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedSoftmax(x, axis)
 	}
-	inputNodes, err := f.VerifyAndCastValues("FusedSoftmax", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterFusedSoftmax.Fn(f, xNode, axis)
+	return RegisterFusedSoftmax.Fn(f, x, axis)
 }
 
 func (f *Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
@@ -118,16 +77,7 @@ func (f *Function) Gather(operand compute.Value, startIndices compute.Value, ind
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Gather(operand, startIndices, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
 	}
-	inputNodes, err := f.VerifyAndCastValues("Gather", operand, startIndices)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	operandNode := inputNodes[nodeIdx]
-	nodeIdx++
-	startIndicesNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterGather.Fn(f, operandNode, startIndicesNode, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
+	return RegisterGather.Fn(f, operand, startIndices, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
 }
 
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
@@ -143,16 +93,7 @@ func (f *Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.QuantizedEmbeddingLookup(data, indices, dataQuantization)
 	}
-	inputNodes, err := f.VerifyAndCastValues("QuantizedEmbeddingLookup", data, indices)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	dataNode := inputNodes[nodeIdx]
-	nodeIdx++
-	indicesNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterQuantizedEmbeddingLookup.Fn(f, dataNode, indicesNode, dataQuantization)
+	return RegisterQuantizedEmbeddingLookup.Fn(f, data, indices, dataQuantization)
 }
 
 func (f *Function) ReduceBitwiseAnd(x compute.Value, axes ...int) (compute.Value, error) {
@@ -160,14 +101,7 @@ func (f *Function) ReduceBitwiseAnd(x compute.Value, axes ...int) (compute.Value
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceBitwiseAnd(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceBitwiseAnd", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceBitwiseAnd.Fn(f, xNode, axes...)
+	return RegisterReduceBitwiseAnd.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceBitwiseOr(x compute.Value, axes ...int) (compute.Value, error) {
@@ -175,14 +109,7 @@ func (f *Function) ReduceBitwiseOr(x compute.Value, axes ...int) (compute.Value,
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceBitwiseOr(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceBitwiseOr", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceBitwiseOr.Fn(f, xNode, axes...)
+	return RegisterReduceBitwiseOr.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceBitwiseXor(x compute.Value, axes ...int) (compute.Value, error) {
@@ -190,14 +117,7 @@ func (f *Function) ReduceBitwiseXor(x compute.Value, axes ...int) (compute.Value
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceBitwiseXor(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceBitwiseXor", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceBitwiseXor.Fn(f, xNode, axes...)
+	return RegisterReduceBitwiseXor.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceLogicalAnd(x compute.Value, axes ...int) (compute.Value, error) {
@@ -205,14 +125,7 @@ func (f *Function) ReduceLogicalAnd(x compute.Value, axes ...int) (compute.Value
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceLogicalAnd(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceLogicalAnd", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceLogicalAnd.Fn(f, xNode, axes...)
+	return RegisterReduceLogicalAnd.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceLogicalOr(x compute.Value, axes ...int) (compute.Value, error) {
@@ -220,14 +133,7 @@ func (f *Function) ReduceLogicalOr(x compute.Value, axes ...int) (compute.Value,
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceLogicalOr(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceLogicalOr", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceLogicalOr.Fn(f, xNode, axes...)
+	return RegisterReduceLogicalOr.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceLogicalXor(x compute.Value, axes ...int) (compute.Value, error) {
@@ -235,14 +141,7 @@ func (f *Function) ReduceLogicalXor(x compute.Value, axes ...int) (compute.Value
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceLogicalXor(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceLogicalXor", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceLogicalXor.Fn(f, xNode, axes...)
+	return RegisterReduceLogicalXor.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceMax(x compute.Value, axes ...int) (compute.Value, error) {
@@ -250,14 +149,7 @@ func (f *Function) ReduceMax(x compute.Value, axes ...int) (compute.Value, error
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceMax(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceMax", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceMax.Fn(f, xNode, axes...)
+	return RegisterReduceMax.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceMin(x compute.Value, axes ...int) (compute.Value, error) {
@@ -265,14 +157,7 @@ func (f *Function) ReduceMin(x compute.Value, axes ...int) (compute.Value, error
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceMin(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceMin", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceMin.Fn(f, xNode, axes...)
+	return RegisterReduceMin.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceProduct(x compute.Value, axes ...int) (compute.Value, error) {
@@ -280,14 +165,7 @@ func (f *Function) ReduceProduct(x compute.Value, axes ...int) (compute.Value, e
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceProduct(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceProduct", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceProduct.Fn(f, xNode, axes...)
+	return RegisterReduceProduct.Fn(f, x, axes...)
 }
 
 func (f *Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error) {
@@ -295,14 +173,7 @@ func (f *Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.ReduceSum(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("ReduceSum", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReduceSum.Fn(f, xNode, axes...)
+	return RegisterReduceSum.Fn(f, x, axes...)
 }
 
 func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
@@ -310,14 +181,7 @@ func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, e
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Reshape(x, dimensions...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("Reshape", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReshape.Fn(f, xNode, dimensions...)
+	return RegisterReshape.Fn(f, x, dimensions...)
 }
 
 func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) {
@@ -325,14 +189,7 @@ func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) 
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Reverse(x, axes...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("Reverse", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterReverse.Fn(f, xNode, axes...)
+	return RegisterReverse.Fn(f, x, axes...)
 }
 
 func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value, error) {
@@ -340,28 +197,21 @@ func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Transpose(x, permutation...)
 	}
-	inputNodes, err := f.VerifyAndCastValues("Transpose", x)
-	if err != nil {
-		return nil, err
-	}
-	nodeIdx := 0
-	xNode := inputNodes[nodeIdx]
-	nodeIdx++
-	return RegisterTranspose.Fn(f, xNode, permutation...)
+	return RegisterTranspose.Fn(f, x, permutation...)
 }
 
 // Registration variables for the op handlers.
 var (
-	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x *Node, outputShape shapes.Shape, broadcastAxes []int) (*Node, error)]{
+	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
 	}
-	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs *Node, lhsContractingAxes []int, lhsBatchAxes []int, rhs *Node, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (*Node, error)]{
+	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
 	}
-	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x *Node, weight *Node, bias *Node, activation compute.ActivationType) (*Node, error)]{
+	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error)]{
 		Method: "FusedDense",
 	}
-	RegisterFusedGelu = OpHandlerRegistration[func(f *Function, x *Node, exact bool) (*Node, error)]{
+	RegisterFusedGelu = OpHandlerRegistration[func(f *Function, x compute.Value, exact bool) (compute.Value, error)]{
 		Method: "FusedGelu",
 	}
 	RegisterFusedLayerNorm = OpHandlerRegistration[func(f *Function, x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error)]{
@@ -373,55 +223,55 @@ var (
 	RegisterFusedScaledDotProductAttention = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (compute.Value, error)]{
 		Method: "FusedScaledDotProductAttention",
 	}
-	RegisterFusedSoftmax = OpHandlerRegistration[func(f *Function, x *Node, axis int) (*Node, error)]{
+	RegisterFusedSoftmax = OpHandlerRegistration[func(f *Function, x compute.Value, axis int) (compute.Value, error)]{
 		Method: "FusedSoftmax",
 	}
-	RegisterGather = OpHandlerRegistration[func(f *Function, operand *Node, startIndices *Node, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (*Node, error)]{
+	RegisterGather = OpHandlerRegistration[func(f *Function, operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error)]{
 		Method: "Gather",
 	}
-	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (*Node, error)]{
+	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (compute.Value, error)]{
 		Method: "Iota",
 	}
-	RegisterQuantizedEmbeddingLookup = OpHandlerRegistration[func(f *Function, data *Node, indices *Node, dataQuantization *compute.Quantization) (*Node, error)]{
+	RegisterQuantizedEmbeddingLookup = OpHandlerRegistration[func(f *Function, data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error)]{
 		Method: "QuantizedEmbeddingLookup",
 	}
-	RegisterReduceBitwiseAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceBitwiseAnd = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceBitwiseAnd",
 	}
-	RegisterReduceBitwiseOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceBitwiseOr = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceBitwiseOr",
 	}
-	RegisterReduceBitwiseXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceBitwiseXor = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceBitwiseXor",
 	}
-	RegisterReduceLogicalAnd = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceLogicalAnd = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceLogicalAnd",
 	}
-	RegisterReduceLogicalOr = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceLogicalOr = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceLogicalOr",
 	}
-	RegisterReduceLogicalXor = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceLogicalXor = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceLogicalXor",
 	}
-	RegisterReduceMax = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceMax = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceMax",
 	}
-	RegisterReduceMin = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceMin = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceMin",
 	}
-	RegisterReduceProduct = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceProduct = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceProduct",
 	}
-	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceSum",
 	}
-	RegisterReshape = OpHandlerRegistration[func(f *Function, x *Node, dimensions ...int) (*Node, error)]{
+	RegisterReshape = OpHandlerRegistration[func(f *Function, x compute.Value, dimensions ...int) (compute.Value, error)]{
 		Method: "Reshape",
 	}
-	RegisterReverse = OpHandlerRegistration[func(f *Function, x *Node, axes ...int) (*Node, error)]{
+	RegisterReverse = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "Reverse",
 	}
-	RegisterTranspose = OpHandlerRegistration[func(f *Function, x *Node, permutation ...int) (*Node, error)]{
+	RegisterTranspose = OpHandlerRegistration[func(f *Function, x compute.Value, permutation ...int) (compute.Value, error)]{
 		Method: "Transpose",
 	}
 )
