@@ -14,13 +14,18 @@ func init() {
 }
 
 // Reshape reshapes the operand to the given dimensions.
-func Reshape(f *gobackend.Function, operand *gobackend.Node, dims ...int) (*gobackend.Node, error) {
+func Reshape(f *gobackend.Function, operandValue compute.Value, dims ...int) (compute.Value, error) {
+	inputs, err := f.VerifyAndCastValues("Reshape", operandValue)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
 	opType := compute.OpTypeReshape
 	outputShape, err := shapeinference.ReshapeOp(operand.Shape, dims)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, nil)
+	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, nil)
 	return node, nil
 }
 

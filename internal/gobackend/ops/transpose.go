@@ -22,14 +22,20 @@ func init() {
 // Transpose axes of x.
 // There must be one value in permutations for each axis in the operand.
 // The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
-func Transpose(f *gobackend.Function, operand *gobackend.Node, permutations ...int) (*gobackend.Node, error) {
+func Transpose(f *gobackend.Function, operandValue compute.Value, permutations ...int) (compute.Value, error) {
 	opType := compute.OpTypeTranspose
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandValue)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
+
 	outputShape, err := shapeinference.TransposeOp(operand.Shape, permutations)
 	if err != nil {
 		// This should have been validated during graph build, but we check again just in case.
 		return nil, err
 	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, permutations)
+	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, permutations)
 	return node, nil
 }
 

@@ -22,7 +22,7 @@ func init() {
 // Iota creates a constant of the given shape with increasing numbers (starting from 0)
 // on the given axis. So Iota([2,2], 1) returns [[0 1][0 1]], while Iota([2,2], 0)
 // returns [[0 0][1 1]].
-func Iota(f *gobackend.Function, shape shapes.Shape, iotaAxis int) (*gobackend.Node, error) {
+func Iota(f *gobackend.Function, shape shapes.Shape, iotaAxis int) (compute.Value, error) {
 	if shape.Rank() == 0 {
 		return nil, errors.Errorf("Iota: shape must have at least one dimension")
 	}

@@ -52,16 +52,22 @@ func init() {
 //     {2 , 2}}
 func BroadcastInDim(
 	f *gobackend.Function,
-	operand *gobackend.Node,
+	operandValue compute.Value,
 	outputShape shapes.Shape,
 	broadcastAxes []int,
-) (*gobackend.Node, error) {
-	opType := compute.OpTypeBroadcastInDim
-	err := shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
+) (compute.Value, error) {
+	inputs, err := f.VerifyAndCastValues("DotGeneral", operandValue)
 	if err != nil {
 		return nil, err
 	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, broadcastAxes)
+	operand := inputs[0]
+
+	opType := compute.OpTypeBroadcastInDim
+	err = shapeinference.BroadcastInDimOp(operand.Shape, outputShape, broadcastAxes)
+	if err != nil {
+		return nil, err
+	}
+	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, broadcastAxes)
 	return node, nil
 }
 

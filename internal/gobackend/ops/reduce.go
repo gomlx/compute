@@ -39,56 +39,61 @@ func init() {
 }
 
 // ReduceMax reduces the operand by taking the maximum value along the given axes.
-func ReduceMax(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceMax(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceMax, operand, axis...)
 }
 
 // ReduceMin reduces the operand by taking the minimum value along the given axes.
-func ReduceMin(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceMin(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceMin, operand, axis...)
 }
 
 // ReduceSum reduces the operand by taking the sum of values along the given axes.
-func ReduceSum(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceSum(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceSum, operand, axis...)
 }
 
 // ReduceProduct reduces the operand by taking the product of values along the given axes.
-func ReduceProduct(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceProduct(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceProduct, operand, axis...)
 }
 
 // ReduceBitwiseAnd reduces the operand by taking the bitwise AND of values along the given axes.
-func ReduceBitwiseAnd(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceBitwiseAnd(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceBitwiseAnd, operand, axis...)
 }
 
 // ReduceBitwiseOr reduces the operand by taking the bitwise OR of values along the given axes.
-func ReduceBitwiseOr(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceBitwiseOr(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceBitwiseOr, operand, axis...)
 }
 
 // ReduceBitwiseXor reduces the operand by taking the bitwise XOR of values along the given axes.
-func ReduceBitwiseXor(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceBitwiseXor(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceBitwiseXor, operand, axis...)
 }
 
 // ReduceLogicalAnd reduces the operand by taking the logical AND of values along the given axes.
-func ReduceLogicalAnd(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceLogicalAnd(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceLogicalAnd, operand, axis...)
 }
 
 // ReduceLogicalOr reduces the operand by taking the logical OR of values along the given axes.
-func ReduceLogicalOr(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceLogicalOr(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceLogicalOr, operand, axis...)
 }
 
 // ReduceLogicalXor reduces the operand by taking the logical XOR of values along the given axes.
-func ReduceLogicalXor(f *gobackend.Function, operand *gobackend.Node, axis ...int) (*gobackend.Node, error) {
+func ReduceLogicalXor(f *gobackend.Function, operand compute.Value, axis ...int) (compute.Value, error) {
 	return reduceImpls(f, compute.OpTypeReduceLogicalXor, operand, axis...)
 }
 
-func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operand *gobackend.Node, axes ...int) (*gobackend.Node, error) {
+func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operandValue compute.Value, axes ...int) (*gobackend.Node, error) {
+	inputs, err := f.VerifyAndCastValues(reduceOpType.String(), operandValue)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
 	if len(axes) == 0 {
 		// Default if no axes are given, is to reduce all axes.
 		for axis := range operand.Shape.Rank() {
@@ -100,7 +105,7 @@ func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operand *go
 		return nil, err
 	}
 	outputShape.DType = operand.Shape.DType
-	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, []*gobackend.Node{operand}, axes)
+	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, inputs, axes)
 	return node, nil
 }
 
@@ -249,22 +254,22 @@ var (
 	//gobackend:dtypemap execReduceMaxGeneric ints,uints,floats
 	reduceMaxDTypeMap = gobackend.NewDTypeMap("ReduceMax")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints,floats
+	//gobackend:dtypemap execReduceMinGeneric ints,uints,floats
 	reduceMinDTypeMap = gobackend.NewDTypeMap("ReduceMin")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints,floats
+	//gobackend:dtypemap execReduceSumGeneric ints,uints,floats
 	reduceSumDTypeMap = gobackend.NewDTypeMap("ReduceSum")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints,floats
+	//gobackend:dtypemap execReduceProductGeneric ints,uints,floats
 	reduceProductDTypeMap = gobackend.NewDTypeMap("ReduceProduct")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints
+	//gobackend:dtypemap execReduceBitwiseAndGeneric ints,uints
 	reduceBitwiseAndDTypeMap = gobackend.NewDTypeMap("ReduceBitwiseAnd")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints
+	//gobackend:dtypemap execReduceBitwiseOrGeneric ints,uints
 	reduceBitwiseOrDTypeMap = gobackend.NewDTypeMap("ReduceBitwiseOr")
 
-	//gobackend:dtypemap execReduceMaxGeneric ints,uints
+	//gobackend:dtypemap execReduceBitwiseXorGeneric ints,uints
 	reduceBitwiseXorDTypeMap = gobackend.NewDTypeMap("ReduceBitwiseXor")
 )
 

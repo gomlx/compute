@@ -17,8 +17,14 @@ func init() {
 // Reverse returns x with the values for the given dimensions reversed, that is,
 // the value indexed at `i` will be swapped with the value at indexed `(dimension_size - 1 - i)`.
 // The shape remains the same.
-func Reverse(f *gobackend.Function, operand *gobackend.Node, axes ...int) (*gobackend.Node, error) {
+func Reverse(f *gobackend.Function, operandValue compute.Value, axes ...int) (compute.Value, error) {
 	opType := compute.OpTypeReverse
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandValue)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
+
 	// Validate axes.
 	for _, axis := range axes {
 		if axis < 0 || axis >= operand.Shape.Rank() {
@@ -26,7 +32,7 @@ func Reverse(f *gobackend.Function, operand *gobackend.Node, axes ...int) (*goba
 		}
 	}
 	// Output shape is the same as the input shape.
-	node, _ := f.GetOrCreateNode(opType, operand.Shape, []*gobackend.Node{operand}, axes)
+	node, _ := f.GetOrCreateNode(opType, operand.Shape, inputs, axes)
 	return node, nil
 }
 

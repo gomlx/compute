@@ -37,11 +37,17 @@ func (g *gatherNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 // It's a complex operation, fully described in the compute.Builder.Gather documentation.
 func Gather(
 	f *gobackend.Function,
-	operand, startIndices *gobackend.Node,
+	operandValue, startIndicesValue compute.Value,
 	indexVectorAxis int,
 	offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes []int,
 	indicesAreSorted bool,
-) (*gobackend.Node, error) {
+) (compute.Value, error) {
+	inputs, err := f.VerifyAndCastValues("Gather", operandValue, startIndicesValue)
+	if err != nil {
+		return nil, err
+	}
+	operand, startIndices := inputs[0], inputs[1]
+
 	shape, err := shapeinference.Gather(
 		operand.Shape,
 		startIndices.Shape,
@@ -63,7 +69,7 @@ func Gather(
 		sliceSizes,
 		indicesAreSorted,
 	}
-	node, _ := f.GetOrCreateNode(compute.OpTypeGather, shape, []*gobackend.Node{operand, startIndices}, data)
+	node, _ := f.GetOrCreateNode(compute.OpTypeGather, shape, inputs, data)
 	return node, nil
 }
 

@@ -105,62 +105,78 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Reduce", func(t *testing.T) {
-		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
-		testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
-		testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
-		testutil.SkipIfMissing(t, b, compute.OpTypeReduceProduct)
+		t.Run("Min", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
+			y0, _ := testutil.Exec1(b, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
+			if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0); !ok {
+				fmt.Printf("\t- want: %v, got %v\n", []float32{0, 0, 11}, y0)
+				t.Errorf("ReduceMin mismatch:\n%s", diff)
+			}
+		})
 
-		y0, _ := testutil.Exec1(b, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
-		if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0); !ok {
-			t.Errorf("ReduceMin mismatch:\n%s", diff)
-		}
+		t.Run("Max", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
+			y1, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+			if ok, diff := testutil.IsEqual(-1.0e6, y1); !ok {
+				t.Errorf("ReduceMax mismatch:\n%s", diff)
+			}
+		})
 
-		y1, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
-		if ok, diff := testutil.IsEqual(-1.0e6, y1); !ok {
-			t.Errorf("ReduceMax mismatch:\n%s", diff)
-		}
-
-		input2Data := make([][][][][]uint32, 2)
-		idx := uint32(0)
-		for i0 := range input2Data {
-			input2Data[i0] = make([][][][]uint32, 2)
-			for i1 := range input2Data[i0] {
-				input2Data[i0][i1] = make([][][]uint32, 2)
-				for i2 := range input2Data[i0][i1] {
-					input2Data[i0][i1][i2] = make([][]uint32, 2)
-					for i3 := range input2Data[i0][i1][i2] {
-						input2Data[i0][i1][i2][i3] = make([]uint32, 2)
-						for i4 := range input2Data[i0][i1][i2][i3] {
-							input2Data[i0][i1][i2][i3][i4] = idx
-							idx++
+		t.Run("Sum", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
+			input2Data := make([][][][][]uint32, 2)
+			idx := uint32(0)
+			for i0 := range input2Data {
+				input2Data[i0] = make([][][][]uint32, 2)
+				for i1 := range input2Data[i0] {
+					input2Data[i0][i1] = make([][][]uint32, 2)
+					for i2 := range input2Data[i0][i1] {
+						input2Data[i0][i1][i2] = make([][]uint32, 2)
+						for i3 := range input2Data[i0][i1][i2] {
+							input2Data[i0][i1][i2][i3] = make([]uint32, 2)
+							for i4 := range input2Data[i0][i1][i2][i3] {
+								input2Data[i0][i1][i2][i3][i4] = idx
+								idx++
+							}
 						}
 					}
 				}
 			}
-		}
-		y2, _ := testutil.Exec1(b, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			return f.ReduceSum(p[0], 1, 3)
+			y2, _ := testutil.Exec1(b, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.ReduceSum(p[0], 1, 3)
+			})
+			want2 := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
+			if ok, diff := testutil.IsEqual(want2, y2); !ok {
+				t.Errorf("ReduceSum mismatch:\n%s", diff)
+			}
 		})
-		want2 := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
-		if ok, diff := testutil.IsEqual(want2, y2); !ok {
-			t.Errorf("ReduceSum mismatch:\n%s", diff)
-		}
 
-		y3, _ := testutil.Exec1(b, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
-		if ok, diff := testutil.IsEqual(float32(1), y3); !ok {
-			t.Errorf("ReduceMultiply mismatch:\n%s", diff)
-		}
+		t.Run("Product", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceProduct)
+			y3, _ := testutil.Exec1(b, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
+			if ok, diff := testutil.IsEqual(float32(1), y3); !ok {
+				t.Errorf("ReduceMultiply mismatch:\n%s", diff)
+			}
+		})
 
-		y4, _ := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
-		if ok, diff := testutil.IsEqual(bf16(-17), y4); !ok {
-			t.Errorf("ReduceMin (bf16) mismatch:\n%s", diff)
-		}
+		t.Run("MinBFloat16", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
+			testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
+			y4, _ := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
+			if ok, diff := testutil.IsEqual(bf16(-17), y4); !ok {
+				t.Errorf("ReduceMin (bf16) mismatch:\n%s", diff)
+			}
+		})
 
-		// Test full reduction to scalar if no axes are given.
-		y5, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(-11), bf16(-17)}, {bf16(8), bf16(21)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceSum(p[0], 0, 1) })
-		if ok, diff := testutil.IsEqual(bf16(1), y5); !ok {
-			t.Errorf("Full reduction mismatch:\n%s", diff)
-		}
+		t.Run("SumFullReduction", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
+			testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
+			// Test full reduction to scalar if no axes are given.
+			y5, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(-11), bf16(-17)}, {bf16(8), bf16(21)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceSum(p[0], 0, 1) })
+			if ok, diff := testutil.IsEqual(bf16(1), y5); !ok {
+				t.Errorf("Full reduction mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("ReduceBitwise", func(t *testing.T) {
