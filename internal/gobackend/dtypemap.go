@@ -15,6 +15,8 @@ const MaxDTypes = 32
 // DTypeMap --------------------------------------------------------------------------------------------------
 
 // DTypeMap manages registering of an arbitrary value per dtype.
+// See NewDTypeMap for more information, including how to auto-generation registration for various
+// classes of dtypes (ints, uints, floats, half).
 type DTypeMap struct {
 	Name     string
 	Map      [MaxDTypes]any
@@ -22,6 +24,29 @@ type DTypeMap struct {
 }
 
 // NewDTypeMap creates a new DTypeMap.
+//
+// To automatically create code to register Go-generic functions to handle those dtypes, you can use the
+// generator in internal/cmd/gobackend_dtypemap and add annotations (comments) before the
+// DTypeMap variable declaration, like the example:
+//
+//	//gobackend:dtypemap MyGeneric ints,uints,floats,half
+//	var myDTypeMap = gobackend.NewDTypeMap("myDTypeMap")
+//
+// This will automatically trigger the generation of registration calls in `gen_dtypemaps_registration.go` with
+// content like:
+//
+//	myDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, MyGeneric[int8])
+//	myDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, MyGeneric[int16])
+//	myDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, MyGeneric[int32])
+//	myDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, MyGeneric[int64])
+//	myDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, MyGeneric[uint8])
+//	myDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, MyGeneric[uint16])
+//	myDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, MyGeneric[uint32])
+//	myDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, MyGeneric[uint64])
+//	myDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, MyGeneric[float32])
+//	myDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, MyGeneric[float64])
+//	myDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, MyGeneric[bfloat16.BFloat16])
+//	myDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, MyGeneric[float16.Float16])
 func NewDTypeMap(name string) *DTypeMap {
 	return &DTypeMap{
 		Name: name,
