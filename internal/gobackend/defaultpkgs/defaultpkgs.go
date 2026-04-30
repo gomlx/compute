@@ -7,7 +7,7 @@ package defaultpkgs
 
 import (
 	_ "github.com/gomlx/compute/internal/gobackend/dot"
-	_ "github.com/gomlx/compute/internal/gobackend/fusedops"
+	// _ "github.com/gomlx/compute/internal/gobackend/fusedops"
 	_ "github.com/gomlx/compute/internal/gobackend/highway"
 	_ "github.com/gomlx/compute/internal/gobackend/ops"
 	_ "github.com/gomlx/compute/internal/gobackend/packgemm"
