@@ -89,10 +89,6 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 		if !methodsIncluded.Has(method.Name) {
 			continue
 		}
-		if len(method.Outputs) != 2 || method.Outputs[0].Type != "Value" || method.Outputs[1].Type != "error" {
-			// Non-conventional op, skipping.
-			continue
-		}
 		methodEntry := MethodEntry{
 			Method: method,
 		}
@@ -117,37 +113,39 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 
 // normalizeParameterTypes adds the `compute.` package prefix to the corresponding parameter types.
 func normalizeParameterTypes(method *backendparser.Method) {
-	for i := range method.Parameters {
-		param := &method.Parameters[i]
-		switch param.Type {
-		case "Value":
-			param.Type = "compute.Value"
-		case "...Value":
-			param.Type = "...compute.Value"
-		case "[]Value":
-			param.Type = "[]compute.Value"
-		case "Shape":
-			param.Type = "shapes.Shape"
-		case "ReduceOpType":
-			param.Type = "compute.ReduceOpType"
-		case "FFTType":
-			param.Type = "compute.FFTType"
-		case "ConvolveAxesConfig":
-			param.Type = "compute.ConvolveAxesConfig"
-		case "...PadAxis":
-			param.Type = "...compute.PadAxis"
-		case "ActivationType":
-			param.Type = "compute.ActivationType"
-		case "AxesLayout":
-			param.Type = "compute.AxesLayout"
-		case "QuantizationScheme":
-			param.Type = "compute.QuantizationScheme"
-		case "DotGeneralConfig":
-			param.Type = "compute.DotGeneralConfig"
-		case "*Quantization":
-			param.Type = "*compute.Quantization"
-		case "*ScaledDotProductAttentionConfig":
-			param.Type = "*compute.ScaledDotProductAttentionConfig"
+	for _, paramSet := range []*[]backendparser.NameAndType{&method.Parameters, &method.Outputs} {
+		for i := range *paramSet {
+			param := &(*paramSet)[i]
+			switch param.Type {
+			case "Value":
+				param.Type = "compute.Value"
+			case "...Value":
+				param.Type = "...compute.Value"
+			case "[]Value":
+				param.Type = "[]compute.Value"
+			case "Shape":
+				param.Type = "shapes.Shape"
+			case "ReduceOpType":
+				param.Type = "compute.ReduceOpType"
+			case "FFTType":
+				param.Type = "compute.FFTType"
+			case "ConvolveAxesConfig":
+				param.Type = "compute.ConvolveAxesConfig"
+			case "...PadAxis":
+				param.Type = "...compute.PadAxis"
+			case "ActivationType":
+				param.Type = "compute.ActivationType"
+			case "AxesLayout":
+				param.Type = "compute.AxesLayout"
+			case "QuantizationScheme":
+				param.Type = "compute.QuantizationScheme"
+			case "DotGeneralConfig":
+				param.Type = "compute.DotGeneralConfig"
+			case "*Quantization":
+				param.Type = "*compute.Quantization"
+			case "*ScaledDotProductAttentionConfig":
+				param.Type = "*compute.ScaledDotProductAttentionConfig"
+			}
 		}
 	}
 }
@@ -204,7 +202,14 @@ func generateStubFunction(method *MethodEntry) {
 		}
 		w("%s %s", param.Name, param.Type)
 	}
-	w(") (compute.Value, error) {\n")
+	w(") (")
+	for i, output := range method.Outputs {
+		if i > 0 {
+			w(", ")
+		}
+		w("%s %s", output.Name, output.Type)
+	}
+	w(") {\n")
 
 	w("\tif Register%s.Fn == nil {\n", method.Name)
 	w("\t\t// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.\n")

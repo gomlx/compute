@@ -24,6 +24,14 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 }
 
+func (f *Function) FusedAttentionQKVProjection(x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error) {
+	if RegisterFusedAttentionQKVProjection.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedAttentionQKVProjection(x, wQKV, biasQ, biasK, biasV, queryDim, keyValueDim)
+	}
+	return RegisterFusedAttentionQKVProjection.Fn(f, x, wQKV, biasQ, biasK, biasV, queryDim, keyValueDim)
+}
+
 func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
 	if RegisterFusedDense.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -207,6 +215,9 @@ var (
 	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
+	}
+	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{
+		Method: "FusedAttentionQKVProjection",
 	}
 	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error)]{
 		Method: "FusedDense",
