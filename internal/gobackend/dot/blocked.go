@@ -276,7 +276,7 @@ var FlatToBlockDTypeMap = gobackend.NewDTypeMap("DotGeneralFlatToBlock")
 //
 // source shape: any combination of batch, cross or contracting dimensions.
 // blkOutput shape: [batchSize, crossBlocks * blkDim, contractBlocks * blkDim]
-func copyFlatToBlockShapeGeneric[T interface {
+func CopyFlatToBlockShapeGeneric[T interface {
 	gobackend.PODNumericConstraints | bfloat16.BFloat16 | float16.Float16
 }](
 	source, blkOutput *gobackend.Buffer, contractingAxes, batchAxes []int, batchSize, crossSize, contractingSize, blkLog2Dim int) {
