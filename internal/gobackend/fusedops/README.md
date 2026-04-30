@@ -26,9 +26,7 @@ operations, here's a template to implement your own fused op:
 - Regenerate code with `go generate ./...` (enumerations, registrations,
   `notimplemented` entries)
 - Create a new file in this directory (`internal/gobackend/fusedops`) to
-  implement the fused op: follow the pattern from the other files here. There is
-  more auto-generated code, so just in case do `go generate
-  ./internal/gobackend/fusedops`.
+  implement the fused op: follow the pattern from the other files here.
 - Add compliance tests in `support/backendtest/`: these are important, and helps
   other backends to reuse your tests.
 - Modify GoMLX `pkg/core/graph` (or `pkg/ml/nn`, `pkg/ml/layers/...` or

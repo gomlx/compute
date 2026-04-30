@@ -32,13 +32,12 @@ var (
 
 	// methodsIncluded from StandardOps for which we want to generate and register stub methods.
 	// Temporary: until we refactored them all.
+	//
+	// Note: All FusedOps are already included.
 	methodsIncluded = sets.MakeWith("Iota", "DotGeneral", "BroadcastInDim", "Gather", "Reshape", "Reverse", "Transpose",
 		"ReduceMax", "ReduceMin", "ReduceSum", "ReduceProduct",
 		"ReduceBitwiseAnd", "ReduceBitwiseOr", "ReduceBitwiseXor",
 		"ReduceLogicalAnd", "ReduceLogicalOr", "ReduceLogicalXor",
-		"FusedSoftmax", "FusedGelu", "FusedDense", "QuantizedEmbeddingLookup",
-		"FusedLayerNorm", "FusedScaledDotProductAttention",
-		"FusedQuantizedDense", "FusedAttentionQKVProjection",
 	)
 
 	opsRegistrationTemplate = template.Must(template.New(opsRegistrationFile).Parse(
@@ -86,7 +85,8 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 		if methodsExcluded.Has(method.Name) {
 			continue
 		}
-		if !methodsIncluded.Has(method.Name) {
+		// All FusedOps are included.
+		if !methodsIncluded.Has(method.Name) && method.Interface != "FusedOps" {
 			continue
 		}
 		methodEntry := MethodEntry{

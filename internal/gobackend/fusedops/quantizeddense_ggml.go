@@ -46,16 +46,17 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/pkg/errors"
 )
 
 // execFusedQuantizedDenseGGML handles GGML-quantized weights.
 // Inputs: [x, weights, bias?]. Weights are [N, bytesPerRow] Uint8.
-func execFusedQuantizedDenseGGML(backend *Backend, node *Node, inputs []*Buffer, data *nodeFusedQuantizedDense) (*Buffer, error) {
+func execFusedQuantizedDenseGGML(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, data *nodeFusedQuantizedDense) (*gobackend.Buffer, error) {
 	xBuf := inputs[0]
 	wBuf := inputs[1]
 
-	var biasBuf *Buffer
+	var biasBuf *gobackend.Buffer
 	if data.hasBias {
 		biasBuf = inputs[2]
 	}
@@ -87,14 +88,14 @@ func execFusedQuantizedDenseGGML(backend *Backend, node *Node, inputs []*Buffer,
 		return nil, err
 	}
 
-	fusedDenseApplyActivation(backend, out, data.activation)
+	fusedDenseApplyActivation[float32](backend, output, data.activation)
 	return output, nil
 }
 
 // quantizedDenseGGML performs GGML dequant + matmul + bias.
 // Uses quantizedDenseParallel for consistent parallelism with the other quantized paths,
 // including M=1 column tiling for single-token inference.
-func quantizedDenseGGML(backend *Backend, x []float32, weights []uint8, bias, out []float32,
+func quantizedDenseGGML(backend *gobackend.Backend, x []float32, weights []uint8, bias, out []float32,
 	M, K, N, bytesPerRow int, ggmlType compute.GGMLQuantType) error {
 
 	dequantFn, err := ggmlDequantFunc(ggmlType)
