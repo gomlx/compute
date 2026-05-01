@@ -38,6 +38,11 @@ var (
 		"ReduceMax", "ReduceMin", "ReduceSum", "ReduceProduct",
 		"ReduceBitwiseAnd", "ReduceBitwiseOr", "ReduceBitwiseXor",
 		"ReduceLogicalAnd", "ReduceLogicalOr", "ReduceLogicalXor",
+
+		// Binary Operations:
+		"Add", "Mul", "Sub", "Div", "Rem", "Pow", "Atan2", "BitwiseAnd", "BitwiseOr", "BitwiseXor", "ShiftLeft",
+		"ShiftRightArithmetic", "ShiftRightLogical", "LogicalAnd", "LogicalOr", "LogicalXor", "Max", "Min", "Equal",
+		"NotEqual", "GreaterOrEqual", "GreaterThan", "LessOrEqual", "LessThan",
 	)
 
 	opsRegistrationTemplate = template.Must(template.New(opsRegistrationFile).Parse(

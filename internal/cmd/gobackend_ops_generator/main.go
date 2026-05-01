@@ -14,6 +14,6 @@ import (
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
-	klog.V(1).Info("\tinternal/cmd/gobackend_generator:")
+	klog.V(1).Info("\tinternal/cmd/gobackend_ops_generator:")
 	GenerateExecBinary()
 }

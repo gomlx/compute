@@ -209,36 +209,6 @@ func init() {
 	scatterDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, execScatterGeneric[bfloat16.BFloat16])
 	scatterDTypeMap.Register(dtypes.Float16, PriorityGeneric, execScatterGeneric[float16.Float16])
 
-	// DTypeMap: shiftLeftDTypeMap
-	shiftLeftDTypeMap.Register(dtypes.Int8, PriorityGeneric, shiftLeftGeneric[int8])
-	shiftLeftDTypeMap.Register(dtypes.Int16, PriorityGeneric, shiftLeftGeneric[int16])
-	shiftLeftDTypeMap.Register(dtypes.Int32, PriorityGeneric, shiftLeftGeneric[int32])
-	shiftLeftDTypeMap.Register(dtypes.Int64, PriorityGeneric, shiftLeftGeneric[int64])
-	shiftLeftDTypeMap.Register(dtypes.Uint8, PriorityGeneric, shiftLeftGeneric[uint8])
-	shiftLeftDTypeMap.Register(dtypes.Uint16, PriorityGeneric, shiftLeftGeneric[uint16])
-	shiftLeftDTypeMap.Register(dtypes.Uint32, PriorityGeneric, shiftLeftGeneric[uint32])
-	shiftLeftDTypeMap.Register(dtypes.Uint64, PriorityGeneric, shiftLeftGeneric[uint64])
-
-	// DTypeMap: shiftRightArithmeticDTypeMap
-	shiftRightArithmeticDTypeMap.Register(dtypes.Int8, PriorityGeneric, shiftRightArithmeticGeneric[int8])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Int16, PriorityGeneric, shiftRightArithmeticGeneric[int16])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Int32, PriorityGeneric, shiftRightArithmeticGeneric[int32])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Int64, PriorityGeneric, shiftRightArithmeticGeneric[int64])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Uint8, PriorityGeneric, shiftRightArithmeticGeneric[uint8])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Uint16, PriorityGeneric, shiftRightArithmeticGeneric[uint16])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Uint32, PriorityGeneric, shiftRightArithmeticGeneric[uint32])
-	shiftRightArithmeticDTypeMap.Register(dtypes.Uint64, PriorityGeneric, shiftRightArithmeticGeneric[uint64])
-
-	// DTypeMap: shiftRightLogicalDTypeMap
-	shiftRightLogicalDTypeMap.Register(dtypes.Int8, PriorityGeneric, shiftRightLogicalGeneric[int8])
-	shiftRightLogicalDTypeMap.Register(dtypes.Int16, PriorityGeneric, shiftRightLogicalGeneric[int16])
-	shiftRightLogicalDTypeMap.Register(dtypes.Int32, PriorityGeneric, shiftRightLogicalGeneric[int32])
-	shiftRightLogicalDTypeMap.Register(dtypes.Int64, PriorityGeneric, shiftRightLogicalGeneric[int64])
-	shiftRightLogicalDTypeMap.Register(dtypes.Uint8, PriorityGeneric, shiftRightLogicalGeneric[uint8])
-	shiftRightLogicalDTypeMap.Register(dtypes.Uint16, PriorityGeneric, shiftRightLogicalGeneric[uint16])
-	shiftRightLogicalDTypeMap.Register(dtypes.Uint32, PriorityGeneric, shiftRightLogicalGeneric[uint32])
-	shiftRightLogicalDTypeMap.Register(dtypes.Uint64, PriorityGeneric, shiftRightLogicalGeneric[uint64])
-
 	// DTypeMap: sliceDTypeMap
 	sliceDTypeMap.Register(dtypes.Int8, PriorityGeneric, execSliceGeneric[int8])
 	sliceDTypeMap.Register(dtypes.Int16, PriorityGeneric, execSliceGeneric[int16])

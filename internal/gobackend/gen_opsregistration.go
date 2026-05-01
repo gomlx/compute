@@ -8,6 +8,46 @@ import (
 )
 
 // Stub methods that converts compute.Value to *Node and dispatches to the corresponding op handler.
+func (f *Function) Add(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterAdd.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Add(lhs, rhs)
+	}
+	return RegisterAdd.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Atan2(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterAtan2.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Atan2(lhs, rhs)
+	}
+	return RegisterAtan2.Fn(f, lhs, rhs)
+}
+
+func (f *Function) BitwiseAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterBitwiseAnd.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BitwiseAnd(lhs, rhs)
+	}
+	return RegisterBitwiseAnd.Fn(f, lhs, rhs)
+}
+
+func (f *Function) BitwiseOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterBitwiseOr.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BitwiseOr(lhs, rhs)
+	}
+	return RegisterBitwiseOr.Fn(f, lhs, rhs)
+}
+
+func (f *Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterBitwiseXor.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BitwiseXor(lhs, rhs)
+	}
+	return RegisterBitwiseXor.Fn(f, lhs, rhs)
+}
+
 func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
 	if RegisterBroadcastInDim.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -16,12 +56,28 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
+func (f *Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterDiv.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Div(lhs, rhs)
+	}
+	return RegisterDiv.Fn(f, lhs, rhs)
+}
+
 func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
 	if RegisterDotGeneral.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.DotGeneral(lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 	}
 	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
+}
+
+func (f *Function) Equal(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterEqual.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Equal(lhs, rhs)
+	}
+	return RegisterEqual.Fn(f, lhs, rhs)
 }
 
 func (f *Function) FusedAttentionQKVProjection(x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error) {
@@ -88,12 +144,108 @@ func (f *Function) Gather(operand compute.Value, startIndices compute.Value, ind
 	return RegisterGather.Fn(f, operand, startIndices, indexVectorAxis, offsetOutputAxes, collapsedSliceAxes, startIndexMap, sliceSizes, indicesAreSorted)
 }
 
+func (f *Function) GreaterOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterGreaterOrEqual.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.GreaterOrEqual(lhs, rhs)
+	}
+	return RegisterGreaterOrEqual.Fn(f, lhs, rhs)
+}
+
+func (f *Function) GreaterThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterGreaterThan.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.GreaterThan(lhs, rhs)
+	}
+	return RegisterGreaterThan.Fn(f, lhs, rhs)
+}
+
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
 	if RegisterIota.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Iota(shape, iotaAxis)
 	}
 	return RegisterIota.Fn(f, shape, iotaAxis)
+}
+
+func (f *Function) LessOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLessOrEqual.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LessOrEqual(lhs, rhs)
+	}
+	return RegisterLessOrEqual.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LessThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLessThan.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LessThan(lhs, rhs)
+	}
+	return RegisterLessThan.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LogicalAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLogicalAnd.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LogicalAnd(lhs, rhs)
+	}
+	return RegisterLogicalAnd.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LogicalOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLogicalOr.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LogicalOr(lhs, rhs)
+	}
+	return RegisterLogicalOr.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LogicalXor(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLogicalXor.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LogicalXor(lhs, rhs)
+	}
+	return RegisterLogicalXor.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Max(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Max(lhs, rhs)
+	}
+	return RegisterMax.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Min(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterMin.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Min(lhs, rhs)
+	}
+	return RegisterMin.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Mul(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterMul.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Mul(lhs, rhs)
+	}
+	return RegisterMul.Fn(f, lhs, rhs)
+}
+
+func (f *Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterNotEqual.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.NotEqual(lhs, rhs)
+	}
+	return RegisterNotEqual.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterPow.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Pow(lhs, rhs)
+	}
+	return RegisterPow.Fn(f, lhs, rhs)
 }
 
 func (f *Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error) {
@@ -184,6 +336,14 @@ func (f *Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error
 	return RegisterReduceSum.Fn(f, x, axes...)
 }
 
+func (f *Function) Rem(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterRem.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Rem(lhs, rhs)
+	}
+	return RegisterRem.Fn(f, lhs, rhs)
+}
+
 func (f *Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
 	if RegisterReshape.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -200,6 +360,38 @@ func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) 
 	return RegisterReverse.Fn(f, x, axes...)
 }
 
+func (f *Function) ShiftLeft(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterShiftLeft.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ShiftLeft(lhs, rhs)
+	}
+	return RegisterShiftLeft.Fn(f, lhs, rhs)
+}
+
+func (f *Function) ShiftRightArithmetic(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterShiftRightArithmetic.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ShiftRightArithmetic(lhs, rhs)
+	}
+	return RegisterShiftRightArithmetic.Fn(f, lhs, rhs)
+}
+
+func (f *Function) ShiftRightLogical(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterShiftRightLogical.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ShiftRightLogical(lhs, rhs)
+	}
+	return RegisterShiftRightLogical.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Sub(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterSub.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sub(lhs, rhs)
+	}
+	return RegisterSub.Fn(f, lhs, rhs)
+}
+
 func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value, error) {
 	if RegisterTranspose.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -210,11 +402,32 @@ func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value
 
 // Registration variables for the op handlers.
 var (
+	RegisterAdd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Add",
+	}
+	RegisterAtan2 = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Atan2",
+	}
+	RegisterBitwiseAnd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "BitwiseAnd",
+	}
+	RegisterBitwiseOr = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "BitwiseOr",
+	}
+	RegisterBitwiseXor = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "BitwiseXor",
+	}
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
 	}
+	RegisterDiv = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Div",
+	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
+	}
+	RegisterEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Equal",
 	}
 	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{
 		Method: "FusedAttentionQKVProjection",
@@ -240,8 +453,44 @@ var (
 	RegisterGather = OpHandlerRegistration[func(f *Function, operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error)]{
 		Method: "Gather",
 	}
+	RegisterGreaterOrEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "GreaterOrEqual",
+	}
+	RegisterGreaterThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "GreaterThan",
+	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (compute.Value, error)]{
 		Method: "Iota",
+	}
+	RegisterLessOrEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LessOrEqual",
+	}
+	RegisterLessThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LessThan",
+	}
+	RegisterLogicalAnd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LogicalAnd",
+	}
+	RegisterLogicalOr = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LogicalOr",
+	}
+	RegisterLogicalXor = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LogicalXor",
+	}
+	RegisterMax = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Max",
+	}
+	RegisterMin = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Min",
+	}
+	RegisterMul = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Mul",
+	}
+	RegisterNotEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "NotEqual",
+	}
+	RegisterPow = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Pow",
 	}
 	RegisterQuantizedEmbeddingLookup = OpHandlerRegistration[func(f *Function, data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error)]{
 		Method: "QuantizedEmbeddingLookup",
@@ -276,11 +525,26 @@ var (
 	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceSum",
 	}
+	RegisterRem = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Rem",
+	}
 	RegisterReshape = OpHandlerRegistration[func(f *Function, x compute.Value, dimensions ...int) (compute.Value, error)]{
 		Method: "Reshape",
 	}
 	RegisterReverse = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "Reverse",
+	}
+	RegisterShiftLeft = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "ShiftLeft",
+	}
+	RegisterShiftRightArithmetic = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "ShiftRightArithmetic",
+	}
+	RegisterShiftRightLogical = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "ShiftRightLogical",
+	}
+	RegisterSub = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Sub",
 	}
 	RegisterTranspose = OpHandlerRegistration[func(f *Function, x compute.Value, permutation ...int) (compute.Value, error)]{
 		Method: "Transpose",

@@ -19,6 +19,8 @@ operations, here's a template to implement your own fused op:
 
 - (Recommended) Measure performance of the computation you are fusing before you
   start your work, as well as the performance of the model where it is used.
+  See `support/backendtest/benchmarks.go` for benchmarks of benchmarking individual
+  operations (and their composed counterparts).
 - Add the signature of the new fused op in `compute.FusedOps` interface, along
   with a new `compute.OpType`.
 - Add the new op to the list of ops to generate registration for, in
@@ -45,4 +47,6 @@ of the fused op, which in some cases is not trivial.
 ## To Do's
 
 * Add `FusedActivation`: and split it from FusedDense, since it is not fused there.
-
+* The implicit broadcasting is much slower than first doing an explicit broadcast. 
+  You can see in the benchmarks `go test ./gobackend -bench=Standard/Softmax`.
+  This deserves some attention.

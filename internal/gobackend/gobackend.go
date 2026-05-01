@@ -24,9 +24,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Generates some trivial functions (binary and unary operators) automatically.
-//go:generate go run ../../internal/cmd/gobackend_generator
-
 // Registers the various generics function instances.
 //go:generate go run ../../internal/cmd/gobackend_dtypemap
 

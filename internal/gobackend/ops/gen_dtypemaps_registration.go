@@ -141,4 +141,34 @@ func init() {
 	reduceSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execReduceSumGeneric[float32])
 	reduceSumDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execReduceSumGeneric[float64])
 
+	// DTypeMap: shiftLeftDTypeMap
+	shiftLeftDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, shiftLeftGeneric[int8])
+	shiftLeftDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, shiftLeftGeneric[int16])
+	shiftLeftDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, shiftLeftGeneric[int32])
+	shiftLeftDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, shiftLeftGeneric[int64])
+	shiftLeftDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, shiftLeftGeneric[uint8])
+	shiftLeftDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, shiftLeftGeneric[uint16])
+	shiftLeftDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, shiftLeftGeneric[uint32])
+	shiftLeftDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, shiftLeftGeneric[uint64])
+
+	// DTypeMap: shiftRightArithmeticDTypeMap
+	shiftRightArithmeticDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[int8])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[int16])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[int32])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[int64])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[uint8])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[uint16])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[uint32])
+	shiftRightArithmeticDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, shiftRightArithmeticGeneric[uint64])
+
+	// DTypeMap: shiftRightLogicalDTypeMap
+	shiftRightLogicalDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, shiftRightLogicalGeneric[int8])
+	shiftRightLogicalDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, shiftRightLogicalGeneric[int16])
+	shiftRightLogicalDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, shiftRightLogicalGeneric[int32])
+	shiftRightLogicalDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, shiftRightLogicalGeneric[int64])
+	shiftRightLogicalDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint8])
+	shiftRightLogicalDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint16])
+	shiftRightLogicalDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint32])
+	shiftRightLogicalDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint64])
+
 }
