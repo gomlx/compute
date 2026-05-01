@@ -40,7 +40,7 @@ func withinDeltaBase[T ~float32 | ~float64](a, b T, delta float64) bool {
 	return math.Abs(float64(a-b)) < delta
 }
 
-func withinDeltaHalfPrecision[T dtypes.HalfPrecision](a, b T, delta float64) bool {
+func withinDeltaHalfPrecision[T dtypes.HalfPrecision[T]](a, b T, delta float64) bool {
 	return withinDeltaBase(a.Float64(), b.Float64(), delta)
 }
 
@@ -65,7 +65,7 @@ func withinRelativeDeltaBase[T ~float32 | ~float64](a, b T, relDelta float64) bo
 	return delta/mean < relDelta
 }
 
-func withinRelativeDeltaHalfPrecision[T dtypes.HalfPrecision](a, b T, relDelta float64) bool {
+func withinRelativeDeltaHalfPrecision[T dtypes.HalfPrecision[T]](a, b T, relDelta float64) bool {
 	return withinRelativeDeltaBase(a.Float64(), b.Float64(), relDelta)
 }
 
@@ -99,8 +99,17 @@ func Try(f func()) (panicked bool, reason any) {
 // IsEqual returns whether want and got are equal using go-cmp.
 // If they are not equal, it returns the diff using the format "-want +got").
 func IsEqual(want, got any) (ok bool, diff string) {
-	if cmp.Equal(want, got) {
+	// Use float32 `==` operator to handle NaNs Infs and signed zeros properly.
+	opts := []cmp.Option{
+		cmp.Comparer(func(a, b float16.Float16) bool {
+			return a.Float32() == b.Float32()
+		}),
+		cmp.Comparer(func(a, b bfloat16.BFloat16) bool {
+			return a.Float32() == b.Float32()
+		}),
+	}
+	if cmp.Equal(want, got, opts...) {
 		return true, ""
 	}
-	return false, cmp.Diff(want, got)
+	return false, cmp.Diff(want, got, opts...)
 }

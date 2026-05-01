@@ -3,12 +3,24 @@
 package backendtest
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/support/testutil"
+	"github.com/gomlx/compute/support/xslices"
 )
+
+func bf16(v float32) bfloat16.BFloat16 {
+	return bfloat16.FromFloat32(v)
+}
+
+func f16(v float32) float16.Float16 {
+	return float16.FromFloat32(v)
+}
 
 func TestUnaryOps(t *testing.T, b compute.Backend) {
 	t.Run("Neg", func(t *testing.T) {
@@ -23,6 +35,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual(float32(-7), y0); !ok {
 			t.Errorf("Neg float32 mismatch:\n%s", diff)
 		}
+
 		y1, err := testutil.Exec1(b, []any{[]int32{-1, 2}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnNeg(f, params[0])
 		})
@@ -32,6 +45,39 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual([]int32{1, -2}, y1); !ok {
 			t.Errorf("Neg int32 mismatch:\n%s", diff)
 		}
+
+		{
+			y, err := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-7), bf16(13), bf16(0)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnNeg(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Neg: %+v", err)
+			}
+			want := []bfloat16.BFloat16{bf16(7), bf16(-13), bf16(0)}
+			if ok, diff := testutil.IsEqual(want, y); !ok {
+				fmt.Printf("\t- BFloat16: wanted %v, got %v\n",
+					xslices.Map(want, func(b bfloat16.BFloat16) float32 { return b.Float32() }),
+					xslices.Map(y.([]bfloat16.BFloat16), func(b bfloat16.BFloat16) float32 { return b.Float32() }))
+				t.Errorf("Neg bfloat16 mismatch:\n%s", diff)
+			}
+		}
+
+		{
+			y, err := testutil.Exec1(b, []any{[]float16.Float16{f16(-7), f16(13), f16(0)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnNeg(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Neg: %+v", err)
+			}
+			want := []float16.Float16{f16(7), f16(-13), f16(0)}
+			if ok, diff := testutil.IsEqual(want, y); !ok {
+				fmt.Printf("\t- Float16: wanted %v, got %v\n",
+					xslices.Map(want, func(b float16.Float16) float32 { return b.Float32() }),
+					xslices.Map(y.([]float16.Float16), func(b float16.Float16) float32 { return b.Float32() }))
+				t.Errorf("Neg float16 mismatch:\n%s", diff)
+			}
+		}
+
 	})
 	t.Run("Abs", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeAbs)

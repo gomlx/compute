@@ -626,15 +626,20 @@ type GoFloat interface {
 // specifically float16 and bfloat16.
 //
 // It includes the methods to convert to float64 and float32, so it can be used in generic methods.
-type HalfPrecision interface {
+//
+// It's a generic constraint, and usually used like this:
+//
+//	func myGeneric[T HalfPrecision[T]](v T, ...) { ... }
+type HalfPrecision[T any] interface {
 	float16.Float16 | bfloat16.BFloat16
 	Float64() float64
 	Float32() float32
+	Neg() T
 }
 
 // HalfPrecisionPtr is a pointer to a HalfPrecision wrapper type.
 // It is used when one needs to set the value of a HalfPrecision type from a float32 or float64.
-type HalfPrecisionPtr[T HalfPrecision] interface {
+type HalfPrecisionPtr[T HalfPrecision[T]] interface {
 	*T
 	SetFloat32(float32)
 	SetFloat64(float64)

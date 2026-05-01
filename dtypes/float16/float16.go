@@ -178,6 +178,11 @@ func NaN() Float16 {
 	return Float16(0x7C01)
 }
 
+// Neg returns the negative of the current value.
+func (f Float16) Neg() Float16 {
+	return f ^ 0x8000
+}
+
 // SmallestNonzero is the smallest nonzero denormal value for float16.
 // For IEEE 754 binary16, the smallest non-zero denormalized value is 2^-24, which is approximately 5.96e-8.
 const SmallestNonzero = Float16(0x0001)

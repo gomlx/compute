@@ -93,3 +93,8 @@ func NaN() BFloat16 {
 // the smallest denormal value for float32 (1.401298464324817070923729583289916131280e-45).
 // The equivalent formula for float16 is 1 / 2**(15 - 1 + 10). We use Float16(0x0001) to compile as const.
 const SmallestNonzero = BFloat16(0x0001) // 5.9604645e-08 (effectively 0x1p-14 * 0x1p-10)
+
+// Neg returns the negative of the current value.
+func (f BFloat16) Neg() BFloat16 {
+	return f ^ 0x8000
+}

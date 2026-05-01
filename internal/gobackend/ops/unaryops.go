@@ -135,7 +135,7 @@ func execNegGeneric[T gobackend.PODSignedNumericConstraints](inputs, outputs []T
 	}
 }
 
-func execNegHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execNegHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(-input.Float32())
 	}
@@ -206,7 +206,7 @@ func execSignForUnsignedGeneric[T gobackend.PODUnsignedConstraints](inputs, outp
 	}
 }
 
-func execSignHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execSignHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		f := input.Float32()
 		switch {
@@ -279,7 +279,7 @@ func execAbsUnsignedGeneric[T gobackend.PODUnsignedConstraints](input, output *g
 	copy(output.Flat.([]T), input.Flat.([]T))
 }
 
-func execAbsHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execAbsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		f := input.Float32()
 		if f < 0 {
@@ -498,7 +498,7 @@ func execExpGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execExpHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execExpHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Exp(float64(input.Float32()))))
 	}
@@ -536,7 +536,7 @@ func execExpm1Generic[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execExpm1HalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execExpm1HalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Expm1(float64(input.Float32()))))
 	}
@@ -574,7 +574,7 @@ func execLog1pGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execLog1pHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execLog1pHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Log1p(float64(input.Float32()))))
 	}
@@ -612,7 +612,7 @@ func execLogGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execLogHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execLogHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Log(float64(input.Float32()))))
 	}
@@ -655,7 +655,7 @@ func execLogisticGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execLogisticHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execLogisticHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		input64 := float64(input.Float32())
 		var output64 float64
@@ -701,7 +701,7 @@ func execCeilGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execCeilHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execCeilHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Ceil(float64(input.Float32()))))
 	}
@@ -739,7 +739,7 @@ func execFloorGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execFloorHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execFloorHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Floor(float64(input.Float32()))))
 	}
@@ -777,7 +777,7 @@ func execRoundGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execRoundHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execRoundHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.RoundToEven(float64(input.Float32()))))
 	}
@@ -815,7 +815,7 @@ func execRsqrtGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execRsqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execRsqrtHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(1.0 / math.Sqrt(float64(input.Float32()))))
 	}
@@ -853,7 +853,7 @@ func execSqrtGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execSqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execSqrtHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Sqrt(float64(input.Float32()))))
 	}
@@ -891,7 +891,7 @@ func execCosGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execCosHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execCosHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Cos(float64(input.Float32()))))
 	}
@@ -929,7 +929,7 @@ func execSinGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execSinHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execSinHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Sin(float64(input.Float32()))))
 	}
@@ -967,7 +967,7 @@ func execTanhGeneric[T float32 | float64](inputs, outputs []T) {
 	}
 }
 
-func execTanhHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execTanhHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Tanh(float64(input.Float32()))))
 	}
@@ -1026,7 +1026,7 @@ func execErfGeneric[T float32 | float64](backend *gobackend.Backend, inputs, out
 	}
 }
 
-func execErfHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execErfHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Erf(float64(input.Float32()))))
 	}
@@ -1085,7 +1085,7 @@ func execIsFiniteGeneric[T float32 | float64](inputs []T, outputs []bool) {
 	}
 }
 
-func execIsFiniteHalfPrecision[T dtypes.HalfPrecision](inputs []T, outputs []bool) {
+func execIsFiniteHalfPrecision[T dtypes.HalfPrecision[T]](inputs []T, outputs []bool) {
 	for ii, input := range inputs {
 		f := input.Float32()
 		outputs[ii] = !math.IsInf(float64(f), 0) && !math.IsNaN(float64(f))
