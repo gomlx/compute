@@ -25,6 +25,36 @@ type mockNonComparableData struct {
 	value int
 }
 
+func TestDataEqual(t *testing.T) {
+	type someStruct struct {
+		a int
+		b string
+	}
+
+	tests := []struct {
+		name string
+		a    any
+		b    any
+		want bool
+	}{
+		{"equal slices", []int{1, 2, 3}, []int{1, 2, 3}, true},
+		{"unequal slices", []int{1, 2, 3}, []int{1, 2, 4}, false},
+		{"different types: int and float", 1, 1.0, false},
+		{"int and slice", 1, []int{1}, false},
+		{"equal comparable struct pointers", someStruct{1, "a"}, someStruct{1, "a"}, true},
+		{"unequal comparable struct pointers", someStruct{1, "a"}, someStruct{1, "b"}, false},
+		{"equal comparable struct pointers", &someStruct{1, "a"}, &someStruct{1, "a"}, true},
+		{"unequal comparable struct pointers", &someStruct{1, "a"}, &someStruct{1, "b"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := gobackend.DataEqual(tt.a, tt.b); got != tt.want {
+				t.Errorf("DataEqual(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
 func TestMakeNodeDedupKey(t *testing.T) {
 	be, err := gobackend.New("")
 	if err != nil {

@@ -115,7 +115,12 @@ func (f *Function) GetOrCreateNode(
 }
 
 // DataEqual compares node data for equality.
-// Handles nil, NodeDataComparable, primitive types (int, []int), and uncomparable data.
+//
+// If the node data field implements NodeDataComparable interface, it uses the
+// EqualNodeData method for comparison.
+//
+// Otherwise it has fallback for the primitive types int, []int strucs (using shallow equal "==") and
+// pointers to structs.
 func DataEqual(a, b any) bool {
 	if a == nil && b == nil {
 		return true
@@ -142,6 +147,18 @@ func DataEqual(a, b any) bool {
 		return aVal == b.(int)
 	case []int:
 		return slices.Equal(aVal, b.([]int))
+	}
+
+	t := reflect.TypeOf(a)
+	if t != nil {
+		switch {
+		case t.Kind() == reflect.Struct:
+			// Use standard struct comparison
+			return a == b
+		case t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct:
+			// Dereference and use standard struct comparison
+			return reflect.ValueOf(a).Elem().Interface() == reflect.ValueOf(b).Elem().Interface()
+		}
 	}
 
 	// For non-comparable data, don't de-duplicate
