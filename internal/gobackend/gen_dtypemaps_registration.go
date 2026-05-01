@@ -68,30 +68,6 @@ func init() {
 	combineSumDTypeMap.Register(dtypes.Float32, PriorityGeneric, combineForScatterSumGeneric[float32])
 	combineSumDTypeMap.Register(dtypes.Float64, PriorityGeneric, combineForScatterSumGeneric[float64])
 
-	// DTypeMap: convDTypeMap
-	convDTypeMap.Register(dtypes.Int8, PriorityGeneric, execConvGeneric[int8])
-	convDTypeMap.Register(dtypes.Int16, PriorityGeneric, execConvGeneric[int16])
-	convDTypeMap.Register(dtypes.Int32, PriorityGeneric, execConvGeneric[int32])
-	convDTypeMap.Register(dtypes.Int64, PriorityGeneric, execConvGeneric[int64])
-	convDTypeMap.Register(dtypes.Uint8, PriorityGeneric, execConvGeneric[uint8])
-	convDTypeMap.Register(dtypes.Uint16, PriorityGeneric, execConvGeneric[uint16])
-	convDTypeMap.Register(dtypes.Uint32, PriorityGeneric, execConvGeneric[uint32])
-	convDTypeMap.Register(dtypes.Uint64, PriorityGeneric, execConvGeneric[uint64])
-	convDTypeMap.Register(dtypes.Float32, PriorityGeneric, execConvGeneric[float32])
-	convDTypeMap.Register(dtypes.Float64, PriorityGeneric, execConvGeneric[float64])
-
-	// DTypeMap: convNoDilationDTypeMap
-	convNoDilationDTypeMap.Register(dtypes.Int8, PriorityGeneric, execConvNoDilationGeneric[int8])
-	convNoDilationDTypeMap.Register(dtypes.Int16, PriorityGeneric, execConvNoDilationGeneric[int16])
-	convNoDilationDTypeMap.Register(dtypes.Int32, PriorityGeneric, execConvNoDilationGeneric[int32])
-	convNoDilationDTypeMap.Register(dtypes.Int64, PriorityGeneric, execConvNoDilationGeneric[int64])
-	convNoDilationDTypeMap.Register(dtypes.Uint8, PriorityGeneric, execConvNoDilationGeneric[uint8])
-	convNoDilationDTypeMap.Register(dtypes.Uint16, PriorityGeneric, execConvNoDilationGeneric[uint16])
-	convNoDilationDTypeMap.Register(dtypes.Uint32, PriorityGeneric, execConvNoDilationGeneric[uint32])
-	convNoDilationDTypeMap.Register(dtypes.Uint64, PriorityGeneric, execConvNoDilationGeneric[uint64])
-	convNoDilationDTypeMap.Register(dtypes.Float32, PriorityGeneric, execConvNoDilationGeneric[float32])
-	convNoDilationDTypeMap.Register(dtypes.Float64, PriorityGeneric, execConvNoDilationGeneric[float64])
-
 	// DTypeMap: dereferenceIntsDTypeMap
 	dereferenceIntsDTypeMap.Register(dtypes.Int8, PriorityGeneric, dereferenceIntsGeneric[int8])
 	dereferenceIntsDTypeMap.Register(dtypes.Int16, PriorityGeneric, dereferenceIntsGeneric[int16])

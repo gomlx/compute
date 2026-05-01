@@ -38,6 +38,7 @@ var (
 		"ReduceMax", "ReduceMin", "ReduceSum", "ReduceProduct",
 		"ReduceBitwiseAnd", "ReduceBitwiseOr", "ReduceBitwiseXor",
 		"ReduceLogicalAnd", "ReduceLogicalOr", "ReduceLogicalXor",
+		"ConvGeneral",
 
 		// Binary Operations:
 		"Add", "Mul", "Sub", "Div", "Rem", "Pow", "Atan2", "BitwiseAnd", "BitwiseOr", "BitwiseXor", "ShiftLeft",

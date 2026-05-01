@@ -12,7 +12,7 @@ import (
 )
 
 var AllConvGeneralTestDTypes = []dtypes.DType{
-	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Int32, dtypes.Uint64}
+	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Uint64}
 
 func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguration) {
 	testDTypes := AllConvGeneralTestDTypes

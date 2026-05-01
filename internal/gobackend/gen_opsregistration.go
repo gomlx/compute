@@ -104,6 +104,14 @@ func (f *Function) Clz(x compute.Value) (compute.Value, error) {
 	return RegisterClz.Fn(f, x)
 }
 
+func (f *Function) ConvGeneral(input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error) {
+	if RegisterConvGeneral.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ConvGeneral(input, kernel, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+	}
+	return RegisterConvGeneral.Fn(f, input, kernel, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+}
+
 func (f *Function) Cos(x compute.Value) (compute.Value, error) {
 	if RegisterCos.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -645,6 +653,9 @@ var (
 	}
 	RegisterClz = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Clz",
+	}
+	RegisterConvGeneral = OpHandlerRegistration[func(f *Function, input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error)]{
+		Method: "ConvGeneral",
 	}
 	RegisterCos = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Cos",

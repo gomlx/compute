@@ -1,10 +1,11 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package ops
 
-import "github.com/gomlx/compute/dtypes/bfloat16"
-
-type _ = bfloat16.BFloat16
+import (
+	//alt:half|full_half "github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend" //alt:base|full
+)
 
 // This file serves the "base" version of the `execConv*` functions, as well as a template.
 //
@@ -20,21 +21,21 @@ type _ = bfloat16.BFloat16
 // The functions are generated for the following tags:
 //
 // execConvNoDilationGeneric: `base` tag; generics for native Go numeric types, no dilation or grouping handling, but faster.
-// execConvBFloat16: `bf16` tag; supports BFloat16, fast but no dilation or grouping handling.
+// execConvNoDialtionHalf: `half` tag; supports BFloat16 and Float16, fast but no dilation or grouping handling.
 // execConvGeneric: `full`; support dilation and grouping, with a latency penalty.
-// execConvBFloat16: `full_bf16` tag
-func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan) error { //alt:base
-	//alt:bf16 func execConvNoDilationBFloat16(plan convGeneralExecPlan) error {
-	//alt:full func execConvGeneric[T PODNumericConstraints](plan convGeneralExecPlan) error {
-	//alt:full_bf16 func execConvBFloat16(plan convGeneralExecPlan) error {
+// execConvHalf: supports BFloat16 and Float16, fast but no dilation or grouping handling.
+func execConvNoDilationGeneric[T gobackend.PODNumericConstraints](plan convGeneralExecPlan) error { //alt:base
+	//alt:half func execConvNoDilationHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error {
+	//alt:full func execConvGeneric[T gobackend.PODNumericConstraints](plan convGeneralExecPlan) error {
+	//alt:full_half func execConvHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error {
 
 	// Shortcuts (and maybe move these values to the stack for faster access)
 	inputFlat := plan.inputFlat.([]T)   //alt:base|full
 	kernelFlat := plan.kernelFlat.([]T) //alt:base|full
 	outputFlat := plan.outputFlat.([]T) //alt:base|full
-	//alt:bf16|full_bf16 inputFlat := plan.inputFlat.([]bfloat16.BFloat16)
-	//alt:bf16|full_bf16 kernelFlat := plan.kernelFlat.([]bfloat16.BFloat16)
-	//alt:bf16|full_bf16 outputFlat := plan.outputFlat.([]bfloat16.BFloat16)
+	//alt:half|full_half inputFlat := plan.inputFlat.([]T)
+	//alt:half|full_half kernelFlat := plan.kernelFlat.([]T)
+	//alt:half|full_half outputFlat := plan.outputFlat.([]T)
 	inputShape := plan.inputShape
 	kernelShape := plan.kernelShape
 	outputShape := plan.outputShape
@@ -49,13 +50,13 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 	inputChannelsAxis := axes.InputChannels
 	inputSpatialDims := params.dilatedInputSpatialDims
 	inputSpatialStrides := params.inputSpatialStrides
-	//alt:full|full_bf16 inputDilations := params.inputDilations
-	//alt:full|full_bf16 kernelDilations := params.kernelDilations
-	//alt:full|full_bf16 batchGroupCount := params.batchGroupCount
-	//alt:full|full_bf16 outputBatchSize := outputShape.Dimensions[inputBatchAxis]
-	//alt:full|full_bf16 channelGroupCount := params.channelGroupCount
-	//alt:full|full_bf16 numOutputChannelsPerGroup := outputShape.Dimensions[axes.OutputChannels] / channelGroupCount
-	//alt:full|full_bf16 numOutputChannelsPerBatchGroup := outputShape.Dimensions[axes.OutputChannels] / batchGroupCount
+	//alt:full|full_half inputDilations := params.inputDilations
+	//alt:full|full_half kernelDilations := params.kernelDilations
+	//alt:full|full_half batchGroupCount := params.batchGroupCount
+	//alt:full|full_half outputBatchSize := outputShape.Dimensions[inputBatchAxis]
+	//alt:full|full_half channelGroupCount := params.channelGroupCount
+	//alt:full|full_half numOutputChannelsPerGroup := outputShape.Dimensions[axes.OutputChannels] / channelGroupCount
+	//alt:full|full_half numOutputChannelsPerBatchGroup := outputShape.Dimensions[axes.OutputChannels] / batchGroupCount
 
 	outputBatchAxis := axes.OutputBatch
 	outputChannelsAxis := axes.OutputChannels
@@ -79,16 +80,16 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 	for outputFlatIdx, outputIndices = range outputShape.IterOn(outputIndices) {
 		batchIdx := outputIndices[outputBatchAxis]
 		outputChannel := outputIndices[outputChannelsAxis]
-		//alt:full|full_bf16 if batchGroupCount > 1 {
-		//alt:full|full_bf16 subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
-		//alt:full|full_bf16 batchIdx = subBatchIdx*outputBatchSize + batchIdx
-		//alt:full|full_bf16 }
+		//alt:full|full_half if batchGroupCount > 1 {
+		//alt:full|full_half subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
+		//alt:full|full_half batchIdx = subBatchIdx*outputBatchSize + batchIdx
+		//alt:full|full_half }
 		baseInputFlatIdx := batchIdx * inputStrides[inputBatchAxis]
 
 		// Loop over the kernel spatial axes, with the outputChannel given by the output loop.
 		kernelIndices[kernelOutputChannelsAxis] = outputChannel
 		var outputValue T //alt:base|full
-		//alt:bf16|full_bf16 var outputValue float32
+		//alt:half|full_half var outputValue float32
 		var kernelFlatIdx int
 	kernelLoop:
 		for kernelFlatIdx, kernelIndices = range kernelShape.IterOnAxes(kernelSpatialAxes, kernelStrides, kernelIndices) {
@@ -96,33 +97,33 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 			inputFlatIdx := baseInputFlatIdx
 			for spatialIdx, kernelSpatialAxis := range axes.KernelSpatial {
 				kernelIdx := kernelIndices[kernelSpatialAxis]
-				//alt:full|full_bf16 kernelDilation := kernelDilations[spatialIdx]
-				//alt:full|full_bf16 kernelIdx *= kernelDilation
+				//alt:full|full_half kernelDilation := kernelDilations[spatialIdx]
+				//alt:full|full_half kernelIdx *= kernelDilation
 				outputSpatialAxis := outputSpatialAxes[spatialIdx]
 				outputIdx := outputIndices[outputSpatialAxis]
 				inputIdx := outputIdx*convStrides[spatialIdx] + kernelIdx - paddings[spatialIdx][0]
-				//alt:full|full_bf16 inputDilation := inputDilations[spatialIdx]
-				if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] { //alt:base|bf16
-					//alt:full|full_bf16 if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] || (inputDilation > 1 && inputIdx%inputDilation != 0) {
+				//alt:full|full_half inputDilation := inputDilations[spatialIdx]
+				if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] { //alt:base|half
+					//alt:full|full_half if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] || (inputDilation > 1 && inputIdx%inputDilation != 0) {
 					// Index is in the padded area, we can move to the next kernel position.
 					continue kernelLoop
 				}
-				//alt:full|full_bf16 inputIdx /= inputDilation // Make the dilated index back to the original input.
+				//alt:full|full_half inputIdx /= inputDilation // Make the dilated index back to the original input.
 				inputFlatIdx += inputIdx * inputSpatialStrides[spatialIdx]
 			}
 
 			// Accumulate over all the kernel/input channels.
 			inputChannelStride := inputStrides[inputChannelsAxis]
 			kernelChannelStride := kernelStrides[kernelInputChannelsAxis]
-			//alt:full|full_bf16 if channelGroupCount > 1 {
-			//alt:full|full_bf16 featureGroup := outputChannel / numOutputChannelsPerGroup
-			//alt:full|full_bf16 inputFlatIdx += inputChannelStride * (featureGroup*kernelNumInputChannels)
-			//alt:full|full_bf16 }
+			//alt:full|full_half if channelGroupCount > 1 {
+			//alt:full|full_half featureGroup := outputChannel / numOutputChannelsPerGroup
+			//alt:full|full_half inputFlatIdx += inputChannelStride * (featureGroup*kernelNumInputChannels)
+			//alt:full|full_half }
 			for range kernelNumInputChannels {
 				inputValue := inputFlat[inputFlatIdx]
 				kernelValue := kernelFlat[kernelFlatIdx]
 				outputValue += inputValue * kernelValue //alt:base|full
-				//alt:bf16|full_bf16 outputValue += inputValue.Float32() * kernelValue.Float32()
+				//alt:half|full_half outputValue += inputValue.Float32() * kernelValue.Float32()
 				inputFlatIdx += inputChannelStride
 				kernelFlatIdx += kernelChannelStride
 			}
@@ -130,7 +131,7 @@ func execConvNoDilationGeneric[T PODNumericConstraints](plan convGeneralExecPlan
 
 		// Update output with accumulated value from the convolution of the kernel at this position.
 		outputFlat[outputFlatIdx] = outputValue //alt:base|full
-		//alt:bf16|full_bf16 outputFlat[outputFlatIdx] = bfloat16.FromFloat32(outputValue)
+		//alt:half|full_half P(&outputFlat[outputFlatIdx]).SetFloat32(outputValue)
 	}
 	return nil
 }

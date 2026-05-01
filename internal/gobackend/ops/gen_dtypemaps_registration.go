@@ -41,6 +41,38 @@ func init() {
 	broadcastInDimDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[float16.Float16])
 	broadcastInDimDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execBroadcastInDimGeneric[bool])
 
+	// DTypeMap: convDTypeMap
+	convDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvHalf[bfloat16.BFloat16])
+	convDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvHalf[float16.Float16])
+
+	// DTypeMap: convDTypeMap
+	convDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execConvGeneric[int8])
+	convDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execConvGeneric[int16])
+	convDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execConvGeneric[int32])
+	convDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execConvGeneric[int64])
+	convDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execConvGeneric[uint8])
+	convDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execConvGeneric[uint16])
+	convDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execConvGeneric[uint32])
+	convDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execConvGeneric[uint64])
+	convDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execConvGeneric[float32])
+	convDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execConvGeneric[float64])
+
+	// DTypeMap: convNoDilationDTypeMap
+	convNoDilationDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execConvNoDilationGeneric[int8])
+	convNoDilationDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execConvNoDilationGeneric[int16])
+	convNoDilationDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execConvNoDilationGeneric[int32])
+	convNoDilationDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execConvNoDilationGeneric[int64])
+	convNoDilationDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint8])
+	convNoDilationDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint16])
+	convNoDilationDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint32])
+	convNoDilationDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint64])
+	convNoDilationDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execConvNoDilationGeneric[float32])
+	convNoDilationDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execConvNoDilationGeneric[float64])
+
+	// DTypeMap: convNoDilationDTypeMap
+	convNoDilationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvNoDilationHalf[bfloat16.BFloat16])
+	convNoDilationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvNoDilationHalf[float16.Float16])
+
 	// DTypeMap: gatherDTypeMap
 	gatherDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execGatherGeneric[int8])
 	gatherDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execGatherGeneric[int16])

@@ -1,12 +1,13 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package ops
 
 import (
 	"slices"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
@@ -14,30 +15,27 @@ import (
 )
 
 func init() {
-	SetNodeExecutor(compute.OpTypeConvGeneral, PriorityGeneric, execConvGeneral)
+	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityGeneric, execConvGeneral)
+	gobackend.RegisterConvGeneral.Register(ConvGeneral, gobackend.PriorityGeneric)
 }
 
 // Auto-generate alternate specialized versions of execConvGeneral, with small changes.
 // (that can't easily be refactored into smaller functions due to latency penalities)
-//go:generate go run ../../internal/cmd/alternates_generator -base=convgeneral_exec.go -tags=bf16,full,full_bf16
+//go:generate go run ../../cmd/alternates_generator -base=convgeneral_exec_base.go -tags=half,full,full_half
 
 // ConvGeneral is a generic Convolution operation with support for:
 //
-// - Arbitrary number of spatial axes.
-// - Arbitrary transposition of axes.
-// - Strides and padding.
-// - Dilations of the input.
-// - Dilations of the kernel, aka. atrous convolution.
-// - Feature grouping (on the input channels).
-// - Batch grouping.
+// - Arbitrary number of spatial axes. - Arbitrary transposition of axes. - Strides and padding. - Dilations of the
+// input. - Dilations of the kernel, aka. atrous convolution. - Feature grouping (on the input channels). - Batch
+// grouping.
 //
-// Some details in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution.
-// There operand and filter are called lhs and rhs.
-// (XLA documentation is unfortunately poor, much is guess-work).
-// Also useful, https://arxiv.org/pdf/1603.07285v1.pdf.
+// Some details in https://www.tensorflow.org/xla/operation_semantics#convwithgeneralpadding_convolution. There operand
+// and filter are called lhs and rhs. (XLA documentation is unfortunately poor, much is guess-work). Also useful,
+// https://arxiv.org/pdf/1603.07285v1.pdf.
 //
-// Note: input is aka. operand; kernel is aka. "filters". The input and output "channels" are also known as "features dimensions".
-func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.ConvolveAxesConfig,
+// Note: input is aka. operand; kernel is aka. "filters". The input and output "channels" are also known as "features
+// dimensions".
+func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes compute.ConvolveAxesConfig,
 	strides []int, paddings [][2]int,
 	inputDilations, kernelDilations []int,
 	channelGroupCount, batchGroupCount int) (compute.Value, error) {
@@ -127,7 +125,7 @@ func (f *Function) ConvGeneral(inputOp, kernelOp compute.Value, axes compute.Con
 			params.dilatedInputSpatialDims[spatialIdx] = (dim-1)*inputDilations[spatialIdx] + 1
 		}
 	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{input, kernel}, params)
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{input, kernel}, params)
 	return node, nil
 }
 
@@ -149,7 +147,7 @@ type convNode struct {
 }
 
 // EqualNodeData implements nodeDataComparable for convNode.
-func (c *convNode) EqualNodeData(other NodeDataComparable) bool {
+func (c *convNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*convNode)
 	if c.channelGroupCount != o.channelGroupCount ||
 		c.batchGroupCount != o.batchGroupCount ||
@@ -179,19 +177,8 @@ func (c *convNode) EqualNodeData(other NodeDataComparable) bool {
 		slices.Equal(c.dilatedInputSpatialDims, o.dilatedInputSpatialDims)
 }
 
-// ConvGeneralDilated is a deprecated an alias to ConvGeneral.
-//
-// Deprecated: use ConvGeneral instead.
-func (f *Function) ConvGeneralDilated(inputOp, kernelOp compute.Value, axes compute.ConvolveAxesConfig,
-	strides []int, paddings [][2]int,
-	inputDilations, kernelDilations []int,
-	channelGroupCount, batchGroupCount int) (compute.Value, error) {
-	return f.ConvGeneral(inputOp, kernelOp, axes, strides, paddings, inputDilations, kernelDilations,
-		channelGroupCount, batchGroupCount)
-}
-
 // execConvGeneral executes the DotGeneral by first normalizing and repackaging the tensors into blocks.
-func execConvGeneral(backend *Backend, node *Node, inputs []*Buffer, _ []bool) (*Buffer, error) {
+func execConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input, kernel := inputs[0], inputs[1]
 	params := node.Data.(*convNode)
 	outputShape := node.Shape
@@ -253,12 +240,10 @@ type convGeneralExecPlan struct {
 
 var (
 	//gobackend:dtypemap execConvNoDilationGeneric ints,uints,floats
-	convNoDilationDTypeMap = NewDTypeMap("ConvNoDilation")
-	//gobackend:dtypemap execConvGeneric ints,uints,floats
-	convDTypeMap = NewDTypeMap("ConvGeneral")
-)
+	//gobackend:dtypemap execConvNoDilationHalf half
+	convNoDilationDTypeMap = gobackend.NewDTypeMap("ConvNoDilation")
 
-func init() {
-	convNoDilationDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execConvNoDilationBFloat16)
-	convDTypeMap.Register(dtypes.BFloat16, PriorityTyped, execConvBFloat16)
-}
+	//gobackend:dtypemap execConvGeneric ints,uints,floats
+	//gobackend:dtypemap execConvHalf half
+	convDTypeMap = gobackend.NewDTypeMap("ConvGeneral")
+)
