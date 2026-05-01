@@ -100,129 +100,6 @@ func Neg(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
 	return addUnaryOp(f, compute.OpTypeNeg, operand)
 }
 
-// Sign implements the compute.Builder interface.
-func Sign(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeSign, operand)
-}
-
-// Abs implements the compute.Builder interface.
-func Abs(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeAbs, operand)
-}
-
-// LogicalNot implements the compute.Builder interface.
-func LogicalNot(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeLogicalNot, operand)
-}
-
-// BitwiseNot implements the compute.Builder interface.
-func BitwiseNot(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeBitwiseNot, operand)
-}
-
-// BitCount implements the compute.Builder interface.
-func BitCount(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeBitCount, operand)
-}
-
-// Clz implements the compute.Builder interface.
-func Clz(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeClz, operand)
-}
-
-// Exp implements the compute.Builder interface.
-func Exp(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeExp, operand)
-}
-
-// Expm1 implements the compute.Builder interface. It returns e(x)-1.
-func Expm1(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeExpm1, operand)
-}
-
-// Log implements the compute.Builder interface.
-func Log(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeLog, operand)
-}
-
-// Log1p implements the compute.Builder interface.
-func Log1p(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeLog1p, operand)
-}
-
-// Logistic implements the compute.Builder interface. Aka as sigmoid. It returns 1/(1+exp(-x)).
-func Logistic(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeLogistic, operand)
-}
-
-// Ceil implements the compute.Builder interface.
-func Ceil(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeCeil, operand)
-}
-
-// Floor implements the compute.Builder interface.
-func Floor(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeFloor, operand)
-}
-
-// Round implements the compute.Builder interface.
-func Round(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeRound, operand)
-}
-
-// Rsqrt implements the compute.Builder interface.
-func Rsqrt(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeRsqrt, operand)
-}
-
-// Sqrt implements the compute.Builder interface.
-func Sqrt(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeSqrt, operand)
-}
-
-// Cos implements the compute.Builder interface.
-func Cos(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeCos, operand)
-}
-
-// Sin implements the compute.Builder interface.
-func Sin(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeSin, operand)
-}
-
-// Tanh implements the compute.Builder interface.
-func Tanh(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeTanh, operand)
-}
-
-// Erf implements the compute.Builder interface.
-func Erf(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
-	return addUnaryOp(f, compute.OpTypeErf, operand)
-}
-
-// IsFinite implements the compute.Builder interface.
-func IsFinite(f *gobackend.Function, operandOp compute.Value) (compute.Value, error) {
-	opType := compute.OpTypeIsFinite
-	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	dtype := operand.Shape.DType
-	if !dtype.IsFloat() && !dtype.IsComplex() {
-		return nil, errors.Errorf(
-			"the operation IsFinite is only defined for float types (%s), cannot use it",
-			operand.Shape.DType,
-		)
-	}
-
-	// Output will have the same shape but for the dtype that is bool.
-	shape := operand.Shape.Clone()
-	shape.DType = dtypes.Bool
-	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{operand}, nil)
-	return node, nil
-}
-
 // execNeg executes the unary op Neg.
 func execNeg(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
@@ -264,69 +141,9 @@ func execNegHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](
 	}
 }
 
-// execAbs executes the unary op Abs.
-func execAbs(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Int8:
-		execAbsGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
-	case dtypes.Int16:
-		execAbsGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
-	case dtypes.Int32:
-		execAbsGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
-	case dtypes.Int64:
-		execAbsGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
-	case dtypes.Uint8:
-		execAbsUnsignedGeneric[uint8](input, output)
-	case dtypes.Uint16:
-		execAbsUnsignedGeneric[uint16](input, output)
-	case dtypes.Uint32:
-		execAbsUnsignedGeneric[uint32](input, output)
-	case dtypes.Uint64:
-		execAbsUnsignedGeneric[uint64](input, output)
-	case dtypes.Float32:
-		execAbsGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execAbsGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execAbsHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execAbsHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execAbsGeneric[T gobackend.PODSignedNumericConstraints](inputs, outputs []T) {
-	for ii, input := range inputs {
-		if input < 0 {
-			outputs[ii] = -input
-		} else {
-			outputs[ii] = input
-		}
-	}
-}
-
-func execAbsUnsignedGeneric[T gobackend.PODUnsignedConstraints](input, output *gobackend.Buffer) {
-	if input == output {
-		return
-	}
-	copy(output.Flat.([]T), input.Flat.([]T))
-}
-
-func execAbsHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		f := input.Float32()
-		if f < 0 {
-			P(&outputs[ii]).SetFloat32(-f)
-		} else {
-			outputs[ii] = input
-		}
-	}
+// Sign implements the compute.Builder interface.
+func Sign(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeSign, operand)
 }
 
 // execSign executes the unary op Sign.
@@ -403,6 +220,81 @@ func execSignHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]]
 	}
 }
 
+// Abs implements the compute.Builder interface.
+func Abs(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeAbs, operand)
+}
+
+// execAbs executes the unary op Abs.
+func execAbs(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Int8:
+		execAbsGeneric[int8](input.Flat.([]int8), output.Flat.([]int8))
+	case dtypes.Int16:
+		execAbsGeneric[int16](input.Flat.([]int16), output.Flat.([]int16))
+	case dtypes.Int32:
+		execAbsGeneric[int32](input.Flat.([]int32), output.Flat.([]int32))
+	case dtypes.Int64:
+		execAbsGeneric[int64](input.Flat.([]int64), output.Flat.([]int64))
+	case dtypes.Uint8:
+		execAbsUnsignedGeneric[uint8](input, output)
+	case dtypes.Uint16:
+		execAbsUnsignedGeneric[uint16](input, output)
+	case dtypes.Uint32:
+		execAbsUnsignedGeneric[uint32](input, output)
+	case dtypes.Uint64:
+		execAbsUnsignedGeneric[uint64](input, output)
+	case dtypes.Float32:
+		execAbsGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execAbsGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execAbsHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execAbsHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execAbsGeneric[T gobackend.PODSignedNumericConstraints](inputs, outputs []T) {
+	for ii, input := range inputs {
+		if input < 0 {
+			outputs[ii] = -input
+		} else {
+			outputs[ii] = input
+		}
+	}
+}
+
+func execAbsUnsignedGeneric[T gobackend.PODUnsignedConstraints](input, output *gobackend.Buffer) {
+	if input == output {
+		return
+	}
+	copy(output.Flat.([]T), input.Flat.([]T))
+}
+
+func execAbsHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		f := input.Float32()
+		if f < 0 {
+			P(&outputs[ii]).SetFloat32(-f)
+		} else {
+			outputs[ii] = input
+		}
+	}
+}
+
+// LogicalNot implements the compute.Builder interface.
+func LogicalNot(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeLogicalNot, operand)
+}
+
 // execLogicalNot executes the unary op LogicalNot.
 func execLogicalNot(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
@@ -416,6 +308,11 @@ func execLogicalNot(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		output.Flat.([]bool)[ii] = !val
 	}
 	return output, nil
+}
+
+// BitwiseNot implements the compute.Builder interface.
+func BitwiseNot(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeBitwiseNot, operand)
 }
 
 // execBitwiseNot executes the unary op BitwiseNot.
@@ -451,6 +348,11 @@ func execBitwiseNotGeneric[T gobackend.PODIntegerConstraints](inputs, outputs []
 	for ii, input := range inputs {
 		outputs[ii] = ^input
 	}
+}
+
+// BitCount implements the compute.Builder interface.
+func BitCount(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeBitCount, operand)
 }
 
 // execBitCount executes the unary op BitCount.
@@ -506,6 +408,11 @@ func execBitCountGeneric64[T int64 | uint64](inputs, outputs []T) {
 	}
 }
 
+// Clz implements the compute.Builder interface.
+func Clz(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeClz, operand)
+}
+
 // execClz executes the unary op Clz.
 func execClz(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
@@ -559,6 +466,11 @@ func execClzGeneric64[T int64 | uint64](inputs, outputs []T) {
 	}
 }
 
+// Exp implements the compute.Builder interface.
+func Exp(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeExp, operand)
+}
+
 // execExp executes the unary op Exp.
 func execExp(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
@@ -590,6 +502,11 @@ func execExpHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Exp(float64(input.Float32()))))
 	}
+}
+
+// Expm1 implements the compute.Builder interface. It returns e(x)-1.
+func Expm1(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeExpm1, operand)
 }
 
 // execExpm1 executes the unary op Expm1.
@@ -625,37 +542,9 @@ func execExpm1HalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]
 	}
 }
 
-// execLog executes the unary op Log.
-func execLog(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execLogGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execLogGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execLogHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execLogHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execLogGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.Log(float64(input)))
-	}
-}
-
-func execLogHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Log(float64(input.Float32()))))
-	}
+// Log1p implements the compute.Builder interface.
+func Log1p(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeLog1p, operand)
 }
 
 // execLog1p executes the unary op Log1p.
@@ -691,235 +580,47 @@ func execLog1pHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]
 	}
 }
 
-// execCeil executes the unary op Ceil.
-func execCeil(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+// Log implements the compute.Builder interface.
+func Log(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeLog, operand)
+}
+
+// execLog executes the unary op Log.
+func execLog(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
 		return nil, err
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execCeilGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+		execLogGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
 	case dtypes.Float64:
-		execCeilGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+		execLogGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execCeilHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		execLogHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
 	case dtypes.Float16:
-		execCeilHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		execLogHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
 }
 
-func execCeilGeneric[T float32 | float64](inputs, outputs []T) {
+func execLogGeneric[T float32 | float64](inputs, outputs []T) {
 	for ii, input := range inputs {
-		outputs[ii] = T(math.Ceil(float64(input)))
+		outputs[ii] = T(math.Log(float64(input)))
 	}
 }
 
-func execCeilHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+func execLogHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Ceil(float64(input.Float32()))))
+		P(&outputs[ii]).SetFloat32(float32(math.Log(float64(input.Float32()))))
 	}
 }
 
-// execFloor executes the unary op Floor.
-func execFloor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execFloorGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execFloorGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execFloorHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execFloorHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execFloorGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.Floor(float64(input)))
-	}
-}
-
-func execFloorHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Floor(float64(input.Float32()))))
-	}
-}
-
-// execRound executes the unary op Round.
-func execRound(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execRoundGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execRoundGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execRoundHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execRoundHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execRoundGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.RoundToEven(float64(input)))
-	}
-}
-
-func execRoundHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.RoundToEven(float64(input.Float32()))))
-	}
-}
-
-// execRsqrt executes the unary op Rsqrt.
-func execRsqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execRsqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execRsqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execRsqrtHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execRsqrtHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execRsqrtGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(1.0 / math.Sqrt(float64(input)))
-	}
-}
-
-func execRsqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(1.0 / math.Sqrt(float64(input.Float32()))))
-	}
-}
-
-// execSqrt executes the unary op Sqrt.
-func execSqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execSqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execSqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execSqrtHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execSqrtHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execSqrtGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.Sqrt(float64(input)))
-	}
-}
-
-func execSqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Sqrt(float64(input.Float32()))))
-	}
-}
-
-// execCos executes the unary op Cos.
-func execCos(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execCosGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execCosGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execCosHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execCosHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execCosGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.Cos(float64(input)))
-	}
-}
-
-func execCosHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Cos(float64(input.Float32()))))
-	}
-}
-
-// execSin executes the unary op Sin.
-func execSin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
-	if err != nil {
-		return nil, err
-	}
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execSinGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execSinGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execSinHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execSinHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execSinGeneric[T float32 | float64](inputs, outputs []T) {
-	for ii, input := range inputs {
-		outputs[ii] = T(math.Sin(float64(input)))
-	}
-}
-
-func execSinHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
-	for ii, input := range inputs {
-		P(&outputs[ii]).SetFloat32(float32(math.Sin(float64(input.Float32()))))
-	}
+// Logistic implements the compute.Builder interface. Aka as sigmoid. It returns 1/(1+exp(-x)).
+func Logistic(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeLogistic, operand)
 }
 
 // execLogistic executes the unary op Logistic.
@@ -968,6 +669,277 @@ func execLogisticHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr
 	}
 }
 
+// Ceil implements the compute.Builder interface.
+func Ceil(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeCeil, operand)
+}
+
+// execCeil executes the unary op Ceil.
+func execCeil(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execCeilGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execCeilGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execCeilHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execCeilHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execCeilGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.Ceil(float64(input)))
+	}
+}
+
+func execCeilHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.Ceil(float64(input.Float32()))))
+	}
+}
+
+// Floor implements the compute.Builder interface.
+func Floor(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeFloor, operand)
+}
+
+// execFloor executes the unary op Floor.
+func execFloor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execFloorGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execFloorGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execFloorHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execFloorHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execFloorGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.Floor(float64(input)))
+	}
+}
+
+func execFloorHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.Floor(float64(input.Float32()))))
+	}
+}
+
+// Round implements the compute.Builder interface.
+func Round(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeRound, operand)
+}
+
+// execRound executes the unary op Round.
+func execRound(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execRoundGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execRoundGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execRoundHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execRoundHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execRoundGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.RoundToEven(float64(input)))
+	}
+}
+
+func execRoundHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.RoundToEven(float64(input.Float32()))))
+	}
+}
+
+// Rsqrt implements the compute.Builder interface.
+func Rsqrt(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeRsqrt, operand)
+}
+
+// execRsqrt executes the unary op Rsqrt.
+func execRsqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execRsqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execRsqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execRsqrtHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execRsqrtHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execRsqrtGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(1.0 / math.Sqrt(float64(input)))
+	}
+}
+
+func execRsqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(1.0 / math.Sqrt(float64(input.Float32()))))
+	}
+}
+
+// Sqrt implements the compute.Builder interface.
+func Sqrt(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeSqrt, operand)
+}
+
+// execSqrt executes the unary op Sqrt.
+func execSqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execSqrtGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execSqrtGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execSqrtHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execSqrtHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execSqrtGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.Sqrt(float64(input)))
+	}
+}
+
+func execSqrtHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.Sqrt(float64(input.Float32()))))
+	}
+}
+
+// Cos implements the compute.Builder interface.
+func Cos(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeCos, operand)
+}
+
+// execCos executes the unary op Cos.
+func execCos(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execCosGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execCosGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execCosHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execCosHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execCosGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.Cos(float64(input)))
+	}
+}
+
+func execCosHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.Cos(float64(input.Float32()))))
+	}
+}
+
+// Sin implements the compute.Builder interface.
+func Sin(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeSin, operand)
+}
+
+// execSin executes the unary op Sin.
+func execSin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
+	if err != nil {
+		return nil, err
+	}
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execSinGeneric[float32](input.Flat.([]float32), output.Flat.([]float32))
+	case dtypes.Float64:
+		execSinGeneric[float64](input.Flat.([]float64), output.Flat.([]float64))
+	case dtypes.BFloat16:
+		execSinHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+	case dtypes.Float16:
+		execSinHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execSinGeneric[T float32 | float64](inputs, outputs []T) {
+	for ii, input := range inputs {
+		outputs[ii] = T(math.Sin(float64(input)))
+	}
+}
+
+func execSinHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
+	for ii, input := range inputs {
+		P(&outputs[ii]).SetFloat32(float32(math.Sin(float64(input.Float32()))))
+	}
+}
+
+// Tanh implements the compute.Builder interface.
+func Tanh(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeTanh, operand)
+}
+
 // execTanh executes the unary op Tanh.
 func execTanh(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
@@ -1001,41 +973,9 @@ func execTanhHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]]
 	}
 }
 
-// execIsFinite executes the unary op IsFinite.
-func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
-	input := inputs[0]
-	// Output has the same shape as the input, but different dtypes: it is a bool.
-	output, err := backend.GetBuffer(dtypes.Bool, input.RawShape.Size())
-	if err != nil {
-		return nil, err
-	}
-	output.RawShape = node.Shape
-	switch input.RawShape.DType {
-	case dtypes.Float32:
-		execIsFiniteGeneric[float32](input.Flat.([]float32), output.Flat.([]bool))
-	case dtypes.Float64:
-		execIsFiniteGeneric[float64](input.Flat.([]float64), output.Flat.([]bool))
-	case dtypes.BFloat16:
-		execIsFiniteHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bool))
-	case dtypes.Float16:
-		execIsFiniteHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]bool))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
-	}
-	return output, nil
-}
-
-func execIsFiniteGeneric[T float32 | float64](inputs []T, outputs []bool) {
-	for ii, input := range inputs {
-		outputs[ii] = !math.IsInf(float64(input), 0) && !math.IsNaN(float64(input))
-	}
-}
-
-func execIsFiniteHalfPrecision[T dtypes.HalfPrecision](inputs []T, outputs []bool) {
-	for ii, input := range inputs {
-		f := input.Float32()
-		outputs[ii] = !math.IsInf(float64(f), 0) && !math.IsNaN(float64(f))
-	}
+// Erf implements the compute.Builder interface.
+func Erf(f *gobackend.Function, operand compute.Value) (compute.Value, error) {
+	return addUnaryOp(f, compute.OpTypeErf, operand)
 }
 
 // execErf executes the unary op Erf.
@@ -1089,5 +1029,65 @@ func execErfGeneric[T float32 | float64](backend *gobackend.Backend, inputs, out
 func execErfHalfPrecision[T dtypes.HalfPrecision, P dtypes.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
 		P(&outputs[ii]).SetFloat32(float32(math.Erf(float64(input.Float32()))))
+	}
+}
+
+// IsFinite implements the compute.Builder interface.
+func IsFinite(f *gobackend.Function, operandOp compute.Value) (compute.Value, error) {
+	opType := compute.OpTypeIsFinite
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
+	dtype := operand.Shape.DType
+	if !dtype.IsFloat() && !dtype.IsComplex() {
+		return nil, errors.Errorf(
+			"the operation IsFinite is only defined for float types (%s), cannot use it",
+			operand.Shape.DType,
+		)
+	}
+
+	// Output will have the same shape but for the dtype that is bool.
+	shape := operand.Shape.Clone()
+	shape.DType = dtypes.Bool
+	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{operand}, nil)
+	return node, nil
+}
+
+// execIsFinite executes the unary op IsFinite.
+func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+	input := inputs[0]
+	// Output has the same shape as the input, but different dtypes: it is a bool.
+	output, err := backend.GetBuffer(dtypes.Bool, input.RawShape.Size())
+	if err != nil {
+		return nil, err
+	}
+	output.RawShape = node.Shape
+	switch input.RawShape.DType {
+	case dtypes.Float32:
+		execIsFiniteGeneric[float32](input.Flat.([]float32), output.Flat.([]bool))
+	case dtypes.Float64:
+		execIsFiniteGeneric[float64](input.Flat.([]float64), output.Flat.([]bool))
+	case dtypes.BFloat16:
+		execIsFiniteHalfPrecision[bfloat16.BFloat16](input.Flat.([]bfloat16.BFloat16), output.Flat.([]bool))
+	case dtypes.Float16:
+		execIsFiniteHalfPrecision[float16.Float16](input.Flat.([]float16.Float16), output.Flat.([]bool))
+	default:
+		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	}
+	return output, nil
+}
+
+func execIsFiniteGeneric[T float32 | float64](inputs []T, outputs []bool) {
+	for ii, input := range inputs {
+		outputs[ii] = !math.IsInf(float64(input), 0) && !math.IsNaN(float64(input))
+	}
+}
+
+func execIsFiniteHalfPrecision[T dtypes.HalfPrecision](inputs []T, outputs []bool) {
+	for ii, input := range inputs {
+		f := input.Float32()
+		outputs[ii] = !math.IsInf(float64(f), 0) && !math.IsNaN(float64(f))
 	}
 }
