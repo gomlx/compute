@@ -8,6 +8,14 @@ import (
 )
 
 // Stub methods that converts compute.Value to *Node and dispatches to the corresponding op handler.
+func (f *Function) Abs(x compute.Value) (compute.Value, error) {
+	if RegisterAbs.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Abs(x)
+	}
+	return RegisterAbs.Fn(f, x)
+}
+
 func (f *Function) Add(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterAdd.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -24,12 +32,28 @@ func (f *Function) Atan2(lhs compute.Value, rhs compute.Value) (compute.Value, e
 	return RegisterAtan2.Fn(f, lhs, rhs)
 }
 
+func (f *Function) BitCount(operand compute.Value) (compute.Value, error) {
+	if RegisterBitCount.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BitCount(operand)
+	}
+	return RegisterBitCount.Fn(f, operand)
+}
+
 func (f *Function) BitwiseAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterBitwiseAnd.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.BitwiseAnd(lhs, rhs)
 	}
 	return RegisterBitwiseAnd.Fn(f, lhs, rhs)
+}
+
+func (f *Function) BitwiseNot(x compute.Value) (compute.Value, error) {
+	if RegisterBitwiseNot.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BitwiseNot(x)
+	}
+	return RegisterBitwiseNot.Fn(f, x)
 }
 
 func (f *Function) BitwiseOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -56,6 +80,30 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
+func (f *Function) Ceil(x compute.Value) (compute.Value, error) {
+	if RegisterCeil.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Ceil(x)
+	}
+	return RegisterCeil.Fn(f, x)
+}
+
+func (f *Function) Clz(x compute.Value) (compute.Value, error) {
+	if RegisterClz.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Clz(x)
+	}
+	return RegisterClz.Fn(f, x)
+}
+
+func (f *Function) Cos(x compute.Value) (compute.Value, error) {
+	if RegisterCos.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Cos(x)
+	}
+	return RegisterCos.Fn(f, x)
+}
+
 func (f *Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterDiv.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -78,6 +126,38 @@ func (f *Function) Equal(lhs compute.Value, rhs compute.Value) (compute.Value, e
 		return f.Function.Equal(lhs, rhs)
 	}
 	return RegisterEqual.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Erf(x compute.Value) (compute.Value, error) {
+	if RegisterErf.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Erf(x)
+	}
+	return RegisterErf.Fn(f, x)
+}
+
+func (f *Function) Exp(x compute.Value) (compute.Value, error) {
+	if RegisterExp.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Exp(x)
+	}
+	return RegisterExp.Fn(f, x)
+}
+
+func (f *Function) Expm1(x compute.Value) (compute.Value, error) {
+	if RegisterExpm1.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Expm1(x)
+	}
+	return RegisterExpm1.Fn(f, x)
+}
+
+func (f *Function) Floor(x compute.Value) (compute.Value, error) {
+	if RegisterFloor.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Floor(x)
+	}
+	return RegisterFloor.Fn(f, x)
 }
 
 func (f *Function) FusedAttentionQKVProjection(x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error) {
@@ -168,6 +248,14 @@ func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error)
 	return RegisterIota.Fn(f, shape, iotaAxis)
 }
 
+func (f *Function) IsFinite(x compute.Value) (compute.Value, error) {
+	if RegisterIsFinite.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.IsFinite(x)
+	}
+	return RegisterIsFinite.Fn(f, x)
+}
+
 func (f *Function) LessOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterLessOrEqual.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -184,12 +272,36 @@ func (f *Function) LessThan(lhs compute.Value, rhs compute.Value) (compute.Value
 	return RegisterLessThan.Fn(f, lhs, rhs)
 }
 
+func (f *Function) Log(x compute.Value) (compute.Value, error) {
+	if RegisterLog.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Log(x)
+	}
+	return RegisterLog.Fn(f, x)
+}
+
+func (f *Function) Log1p(x compute.Value) (compute.Value, error) {
+	if RegisterLog1p.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Log1p(x)
+	}
+	return RegisterLog1p.Fn(f, x)
+}
+
 func (f *Function) LogicalAnd(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterLogicalAnd.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.LogicalAnd(lhs, rhs)
 	}
 	return RegisterLogicalAnd.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LogicalNot(x compute.Value) (compute.Value, error) {
+	if RegisterLogicalNot.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LogicalNot(x)
+	}
+	return RegisterLogicalNot.Fn(f, x)
 }
 
 func (f *Function) LogicalOr(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -206,6 +318,14 @@ func (f *Function) LogicalXor(lhs compute.Value, rhs compute.Value) (compute.Val
 		return f.Function.LogicalXor(lhs, rhs)
 	}
 	return RegisterLogicalXor.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Logistic(x compute.Value) (compute.Value, error) {
+	if RegisterLogistic.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Logistic(x)
+	}
+	return RegisterLogistic.Fn(f, x)
 }
 
 func (f *Function) Max(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -230,6 +350,14 @@ func (f *Function) Mul(lhs compute.Value, rhs compute.Value) (compute.Value, err
 		return f.Function.Mul(lhs, rhs)
 	}
 	return RegisterMul.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Neg(x compute.Value) (compute.Value, error) {
+	if RegisterNeg.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Neg(x)
+	}
+	return RegisterNeg.Fn(f, x)
 }
 
 func (f *Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -360,6 +488,22 @@ func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) 
 	return RegisterReverse.Fn(f, x, axes...)
 }
 
+func (f *Function) Round(x compute.Value) (compute.Value, error) {
+	if RegisterRound.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Round(x)
+	}
+	return RegisterRound.Fn(f, x)
+}
+
+func (f *Function) Rsqrt(x compute.Value) (compute.Value, error) {
+	if RegisterRsqrt.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Rsqrt(x)
+	}
+	return RegisterRsqrt.Fn(f, x)
+}
+
 func (f *Function) ShiftLeft(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterShiftLeft.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -384,12 +528,44 @@ func (f *Function) ShiftRightLogical(lhs compute.Value, rhs compute.Value) (comp
 	return RegisterShiftRightLogical.Fn(f, lhs, rhs)
 }
 
+func (f *Function) Sign(x compute.Value) (compute.Value, error) {
+	if RegisterSign.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sign(x)
+	}
+	return RegisterSign.Fn(f, x)
+}
+
+func (f *Function) Sin(x compute.Value) (compute.Value, error) {
+	if RegisterSin.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sin(x)
+	}
+	return RegisterSin.Fn(f, x)
+}
+
+func (f *Function) Sqrt(x compute.Value) (compute.Value, error) {
+	if RegisterSqrt.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sqrt(x)
+	}
+	return RegisterSqrt.Fn(f, x)
+}
+
 func (f *Function) Sub(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterSub.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Sub(lhs, rhs)
 	}
 	return RegisterSub.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Tanh(x compute.Value) (compute.Value, error) {
+	if RegisterTanh.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Tanh(x)
+	}
+	return RegisterTanh.Fn(f, x)
 }
 
 func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value, error) {
@@ -402,14 +578,23 @@ func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value
 
 // Registration variables for the op handlers.
 var (
+	RegisterAbs = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Abs",
+	}
 	RegisterAdd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Add",
 	}
 	RegisterAtan2 = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Atan2",
 	}
+	RegisterBitCount = OpHandlerRegistration[func(f *Function, operand compute.Value) (compute.Value, error)]{
+		Method: "BitCount",
+	}
 	RegisterBitwiseAnd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "BitwiseAnd",
+	}
+	RegisterBitwiseNot = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "BitwiseNot",
 	}
 	RegisterBitwiseOr = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "BitwiseOr",
@@ -420,6 +605,15 @@ var (
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
 	}
+	RegisterCeil = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Ceil",
+	}
+	RegisterClz = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Clz",
+	}
+	RegisterCos = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Cos",
+	}
 	RegisterDiv = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Div",
 	}
@@ -428,6 +622,18 @@ var (
 	}
 	RegisterEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Equal",
+	}
+	RegisterErf = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Erf",
+	}
+	RegisterExp = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Exp",
+	}
+	RegisterExpm1 = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Expm1",
+	}
+	RegisterFloor = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Floor",
 	}
 	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{
 		Method: "FusedAttentionQKVProjection",
@@ -462,20 +668,35 @@ var (
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (compute.Value, error)]{
 		Method: "Iota",
 	}
+	RegisterIsFinite = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "IsFinite",
+	}
 	RegisterLessOrEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LessOrEqual",
 	}
 	RegisterLessThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LessThan",
 	}
+	RegisterLog = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Log",
+	}
+	RegisterLog1p = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Log1p",
+	}
 	RegisterLogicalAnd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LogicalAnd",
+	}
+	RegisterLogicalNot = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "LogicalNot",
 	}
 	RegisterLogicalOr = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LogicalOr",
 	}
 	RegisterLogicalXor = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LogicalXor",
+	}
+	RegisterLogistic = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Logistic",
 	}
 	RegisterMax = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Max",
@@ -485,6 +706,9 @@ var (
 	}
 	RegisterMul = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Mul",
+	}
+	RegisterNeg = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Neg",
 	}
 	RegisterNotEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "NotEqual",
@@ -534,6 +758,12 @@ var (
 	RegisterReverse = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "Reverse",
 	}
+	RegisterRound = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Round",
+	}
+	RegisterRsqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Rsqrt",
+	}
 	RegisterShiftLeft = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "ShiftLeft",
 	}
@@ -543,8 +773,20 @@ var (
 	RegisterShiftRightLogical = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "ShiftRightLogical",
 	}
+	RegisterSign = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Sign",
+	}
+	RegisterSin = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Sin",
+	}
+	RegisterSqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Sqrt",
+	}
 	RegisterSub = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Sub",
+	}
+	RegisterTanh = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Tanh",
 	}
 	RegisterTranspose = OpHandlerRegistration[func(f *Function, x compute.Value, permutation ...int) (compute.Value, error)]{
 		Method: "Transpose",

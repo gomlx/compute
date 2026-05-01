@@ -43,6 +43,10 @@ var (
 		"Add", "Mul", "Sub", "Div", "Rem", "Pow", "Atan2", "BitwiseAnd", "BitwiseOr", "BitwiseXor", "ShiftLeft",
 		"ShiftRightArithmetic", "ShiftRightLogical", "LogicalAnd", "LogicalOr", "LogicalXor", "Max", "Min", "Equal",
 		"NotEqual", "GreaterOrEqual", "GreaterThan", "LessOrEqual", "LessThan",
+
+		// Unary Operations:
+		"Neg", "Abs", "Sign", "LogicalNot", "BitwiseNot", "BitCount", "Clz", "Exp", "Expm1", "Log", "Log1p", "Ceil",
+		"Floor", "Round", "Rsqrt", "Sqrt", "Cos", "Sin", "Tanh", "IsFinite", "Logistic", "Erf",
 	)
 
 	opsRegistrationTemplate = template.Must(template.New(opsRegistrationFile).Parse(
