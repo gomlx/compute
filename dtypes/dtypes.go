@@ -621,3 +621,13 @@ type NumberNotComplex interface {
 type GoFloat interface {
 	float32 | float64
 }
+
+// HalfPrecision is an interface that represents half-precision floating point numbers,
+// specifically float16 and bfloat16.
+//
+// It includes the methods to convert to float64 and float32, so it can be used in generic methods.
+type HalfPrecision interface {
+	float16.Float16 | bfloat16.BFloat16
+	Float64() float64
+	Float32() float32
+}

@@ -15,6 +15,7 @@ package testutil
 import (
 	"math"
 
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/google/go-cmp/cmp"
@@ -39,12 +40,7 @@ func withinDeltaBase[T ~float32 | ~float64](a, b T, delta float64) bool {
 	return math.Abs(float64(a-b)) < delta
 }
 
-type halfFloat interface {
-	float16.Float16 | bfloat16.BFloat16
-	Float64() float64
-}
-
-func withinDeltaHalfPrecision[T halfFloat](a, b T, delta float64) bool {
+func withinDeltaHalfPrecision[T dtypes.HalfPrecision](a, b T, delta float64) bool {
 	return withinDeltaBase(a.Float64(), b.Float64(), delta)
 }
 
@@ -69,7 +65,7 @@ func withinRelativeDeltaBase[T ~float32 | ~float64](a, b T, relDelta float64) bo
 	return delta/mean < relDelta
 }
 
-func withinRelativeDeltaHalfPrecision[T halfFloat](a, b T, relDelta float64) bool {
+func withinRelativeDeltaHalfPrecision[T dtypes.HalfPrecision](a, b T, relDelta float64) bool {
 	return withinRelativeDeltaBase(a.Float64(), b.Float64(), relDelta)
 }
 
