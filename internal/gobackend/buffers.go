@@ -247,8 +247,8 @@ func (b *Buffer) Ones() *Buffer {
 	return b
 }
 
-// cloneBuffer using the pool to allocate a new one.
-func (b *Backend) cloneBuffer(buffer *Buffer) (*Buffer, error) {
+// CloneBuffer using the pool to allocate a new one.
+func (b *Backend) CloneBuffer(buffer *Buffer) (*Buffer, error) {
 	if buffer == nil {
 		return nil, errors.Errorf("cloneBuffer(%p): buffer was nil -- buffer was already isFinalized", buffer)
 	}

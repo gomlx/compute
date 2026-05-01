@@ -198,7 +198,7 @@ func (f *Function) VerifyAndCastValues(name string, values ...compute.Value) ([]
 		}
 		if isFromAncestor {
 			// Create or reuse a capture node for this parent value
-			nodes[idx] = f.getOrCreateCaptureNode(node)
+			nodes[idx] = f.GetOrCreateCaptureNode(node)
 		} else {
 			// Node from a completely different function (not an ancestor)
 			return nil, errors.Errorf(
@@ -757,127 +757,6 @@ func (f *Function) AllReduce(_ []compute.Value, _ compute.ReduceOpType, _ [][]in
 	return nil, errors.Wrapf(
 		notimplemented.NotImplementedError,
 		"AllReduce not supported for %q builder", BackendName)
-}
-
-// Sort sorts one or more tensors along the specified axis using a comparator closure.
-//
-// The comparator closure takes 2*N scalar parameters (lhs_0, rhs_0, lhs_1, rhs_1, ...)
-// where N is the number of input tensors, and returns a scalar boolean indicating
-// whether lhs should come before rhs.
-func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error) {
-	if err := f.CheckValid(); err != nil {
-		return nil, err
-	}
-
-	if len(inputs) == 0 {
-		return nil, errors.Errorf("Sort: requires at least one input tensor")
-	}
-
-	// Validate inputs
-	inputNodes, err := f.VerifyAndCastValues("Sort", inputs...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate comparator closure
-	compFn, err := f.validateClosure("Sort", "comparator", comparator)
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify all inputs have the same dimensions
-	firstShape := inputNodes[0].Shape
-	for i, node := range inputNodes[1:] {
-		if !shapesEqualDimensions(firstShape, node.Shape) {
-			return nil, errors.Errorf("Sort: all inputs must have the same dimensions, input 0 has %s, input %d has %s",
-				firstShape, i+1, node.Shape)
-		}
-	}
-
-	// Normalize axis
-	rank := firstShape.Rank()
-	if axis < 0 {
-		axis = rank + axis
-	}
-	if axis < 0 || axis >= rank {
-		return nil, errors.Errorf("Sort: axis %d out of range for rank %d", axis, rank)
-	}
-
-	// Verify comparator has 2*N scalar parameters
-	expectedParams := 2 * len(inputNodes)
-	if len(compFn.Parameters) != expectedParams {
-		return nil, errors.Errorf("Sort: comparator must have %d parameters (2 per input), got %d",
-			expectedParams, len(compFn.Parameters))
-	}
-
-	// Verify comparator parameters are scalars with correct dtypes
-	for i, node := range inputNodes {
-		expectedDType := node.Shape.DType
-		for j, side := range []string{"lhs", "rhs"} {
-			paramIdx := 2*i + j
-			param := compFn.Parameters[paramIdx]
-			if param.Shape.Rank() != 0 {
-				return nil, errors.Errorf("Sort: comparator parameter %d (%s_%d) must be scalar, got %s",
-					paramIdx, side, i, param.Shape)
-			}
-			if param.Shape.DType != expectedDType {
-				return nil, errors.Errorf("Sort: comparator parameter %d (%s_%d) must have dtype %s, got %s",
-					paramIdx, side, i, expectedDType, param.Shape.DType)
-			}
-		}
-	}
-
-	// Verify comparator returns a scalar boolean
-	if len(compFn.Outputs) != 1 {
-		return nil, errors.Errorf("Sort: comparator must return exactly one value, got %d", len(compFn.Outputs))
-	}
-	if compFn.Outputs[0].Shape.Rank() != 0 || compFn.Outputs[0].Shape.DType != dtypes.Bool {
-		return nil, errors.Errorf("Sort: comparator must return a scalar boolean, got %s", compFn.Outputs[0].Shape)
-	}
-
-	// Create output shapes (same as inputs)
-	outputShapes := make([]shapes.Shape, len(inputNodes))
-	for i, node := range inputNodes {
-		outputShapes[i] = node.Shape.Clone()
-	}
-
-	data := &sortNode{
-		comparator: compFn,
-		axis:       axis,
-		isStable:   isStable,
-		inputCount: len(inputNodes),
-	}
-
-	// Create multi-output node for Sort with only input tensors as regular inputs.
-	// Captured values are tracked separately via AddNodeCapturedInputs.
-	node := f.NewMultiOutputsNode(compute.OpTypeSort, outputShapes, inputNodes...)
-	node.Data = data
-
-	// Add captured values from comparator to node.capturedInputs.
-	node.AddNodeCapturedInputs(compFn)
-
-	return node.MultiOutputValues(), nil
-}
-
-// sortNode holds the data for a Sort operation.
-type sortNode struct {
-	comparator *Function
-	axis       int
-	isStable   bool
-	inputCount int // Number of input tensors
-}
-
-// shapesEqualDimensions returns true if two shapes have the same dimensions (ignoring dtype).
-func shapesEqualDimensions(a, b shapes.Shape) bool {
-	if a.Rank() != b.Rank() {
-		return false
-	}
-	for i := range a.Dimensions {
-		if a.Dimensions[i] != b.Dimensions[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // Pad implements the compute.Builder interface.

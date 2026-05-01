@@ -11,6 +11,21 @@ import (
 
 func init() {
 
+	// DTypeMap: applyPermutationDTypeMap
+	applyPermutationDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, applyPermutationGeneric[int8])
+	applyPermutationDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, applyPermutationGeneric[int16])
+	applyPermutationDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, applyPermutationGeneric[int32])
+	applyPermutationDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, applyPermutationGeneric[int64])
+	applyPermutationDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, applyPermutationGeneric[uint8])
+	applyPermutationDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, applyPermutationGeneric[uint16])
+	applyPermutationDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, applyPermutationGeneric[uint32])
+	applyPermutationDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, applyPermutationGeneric[uint64])
+	applyPermutationDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, applyPermutationGeneric[float32])
+	applyPermutationDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, applyPermutationGeneric[float64])
+	applyPermutationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, applyPermutationGeneric[bfloat16.BFloat16])
+	applyPermutationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, applyPermutationGeneric[float16.Float16])
+	applyPermutationDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, applyPermutationGeneric[bool])
+
 	// DTypeMap: broadcastInDimDTypeMap
 	broadcastInDimDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int8])
 	broadcastInDimDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int16])

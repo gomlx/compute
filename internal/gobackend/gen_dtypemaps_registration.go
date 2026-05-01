@@ -10,21 +10,6 @@ import (
 
 func init() {
 
-	// DTypeMap: applyPermutationDTypeMap
-	applyPermutationDTypeMap.Register(dtypes.Int8, PriorityGeneric, applyPermutationGeneric[int8])
-	applyPermutationDTypeMap.Register(dtypes.Int16, PriorityGeneric, applyPermutationGeneric[int16])
-	applyPermutationDTypeMap.Register(dtypes.Int32, PriorityGeneric, applyPermutationGeneric[int32])
-	applyPermutationDTypeMap.Register(dtypes.Int64, PriorityGeneric, applyPermutationGeneric[int64])
-	applyPermutationDTypeMap.Register(dtypes.Uint8, PriorityGeneric, applyPermutationGeneric[uint8])
-	applyPermutationDTypeMap.Register(dtypes.Uint16, PriorityGeneric, applyPermutationGeneric[uint16])
-	applyPermutationDTypeMap.Register(dtypes.Uint32, PriorityGeneric, applyPermutationGeneric[uint32])
-	applyPermutationDTypeMap.Register(dtypes.Uint64, PriorityGeneric, applyPermutationGeneric[uint64])
-	applyPermutationDTypeMap.Register(dtypes.Float32, PriorityGeneric, applyPermutationGeneric[float32])
-	applyPermutationDTypeMap.Register(dtypes.Float64, PriorityGeneric, applyPermutationGeneric[float64])
-	applyPermutationDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, applyPermutationGeneric[bfloat16.BFloat16])
-	applyPermutationDTypeMap.Register(dtypes.Float16, PriorityGeneric, applyPermutationGeneric[float16.Float16])
-	applyPermutationDTypeMap.Register(dtypes.Bool, PriorityGeneric, applyPermutationGeneric[bool])
-
 	// DTypeMap: argMinMaxCopyIntsDTypeMap
 	argMinMaxCopyIntsDTypeMap.Register(dtypes.Int8, PriorityGeneric, buildArgMinMaxCopyIntsFn[int8])
 	argMinMaxCopyIntsDTypeMap.Register(dtypes.Int16, PriorityGeneric, buildArgMinMaxCopyIntsFn[int16])

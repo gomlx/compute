@@ -47,6 +47,9 @@ var (
 		// Unary Operations:
 		"Neg", "Abs", "Sign", "LogicalNot", "BitwiseNot", "BitCount", "Clz", "Exp", "Expm1", "Log", "Log1p", "Ceil",
 		"Floor", "Round", "Rsqrt", "Sqrt", "Cos", "Sin", "Tanh", "IsFinite", "Logistic", "Erf",
+
+		// Control Flow:
+		"Call", "If", "While", "Sort",
 	)
 
 	opsRegistrationTemplate = template.Must(template.New(opsRegistrationFile).Parse(
@@ -127,6 +130,10 @@ func normalizeParameterTypes(method *backendparser.Method) {
 	for _, paramSet := range []*[]backendparser.NameAndType{&method.Parameters, &method.Outputs} {
 		for i := range *paramSet {
 			param := &(*paramSet)[i]
+			if param.Name == "f" {
+				// Rename the 'f' parameter to 'fn' to avoid conflict with the receiver name 'f'.
+				param.Name = "fn"
+			}
 			switch param.Type {
 			case "Value":
 				param.Type = "compute.Value"
@@ -136,6 +143,8 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "[]compute.Value"
 			case "Shape":
 				param.Type = "shapes.Shape"
+			case "Function":
+				param.Type = "compute.Function"
 			case "ReduceOpType":
 				param.Type = "compute.ReduceOpType"
 			case "FFTType":

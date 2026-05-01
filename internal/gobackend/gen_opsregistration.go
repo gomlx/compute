@@ -80,6 +80,14 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
+func (f *Function) Call(fn compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
+	if RegisterCall.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Call(fn, inputs...)
+	}
+	return RegisterCall.Fn(f, fn, inputs...)
+}
+
 func (f *Function) Ceil(x compute.Value) (compute.Value, error) {
 	if RegisterCeil.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -238,6 +246,14 @@ func (f *Function) GreaterThan(lhs compute.Value, rhs compute.Value) (compute.Va
 		return f.Function.GreaterThan(lhs, rhs)
 	}
 	return RegisterGreaterThan.Fn(f, lhs, rhs)
+}
+
+func (f *Function) If(pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error) {
+	if RegisterIf.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.If(pred, trueBranch, falseBranch)
+	}
+	return RegisterIf.Fn(f, pred, trueBranch, falseBranch)
 }
 
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
@@ -544,6 +560,14 @@ func (f *Function) Sin(x compute.Value) (compute.Value, error) {
 	return RegisterSin.Fn(f, x)
 }
 
+func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error) {
+	if RegisterSort.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sort(comparator, axis, isStable, inputs...)
+	}
+	return RegisterSort.Fn(f, comparator, axis, isStable, inputs...)
+}
+
 func (f *Function) Sqrt(x compute.Value) (compute.Value, error) {
 	if RegisterSqrt.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -576,6 +600,14 @@ func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value
 	return RegisterTranspose.Fn(f, x, permutation...)
 }
 
+func (f *Function) While(cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error) {
+	if RegisterWhile.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.While(cond, body, initialState...)
+	}
+	return RegisterWhile.Fn(f, cond, body, initialState...)
+}
+
 // Registration variables for the op handlers.
 var (
 	RegisterAbs = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
@@ -604,6 +636,9 @@ var (
 	}
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
+	}
+	RegisterCall = OpHandlerRegistration[func(f *Function, fn compute.Function, inputs ...compute.Value) ([]compute.Value, error)]{
+		Method: "Call",
 	}
 	RegisterCeil = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Ceil",
@@ -664,6 +699,9 @@ var (
 	}
 	RegisterGreaterThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "GreaterThan",
+	}
+	RegisterIf = OpHandlerRegistration[func(f *Function, pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error)]{
+		Method: "If",
 	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (compute.Value, error)]{
 		Method: "Iota",
@@ -779,6 +817,9 @@ var (
 	RegisterSin = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Sin",
 	}
+	RegisterSort = OpHandlerRegistration[func(f *Function, comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error)]{
+		Method: "Sort",
+	}
 	RegisterSqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Sqrt",
 	}
@@ -790,5 +831,8 @@ var (
 	}
 	RegisterTranspose = OpHandlerRegistration[func(f *Function, x compute.Value, permutation ...int) (compute.Value, error)]{
 		Method: "Transpose",
+	}
+	RegisterWhile = OpHandlerRegistration[func(f *Function, cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error)]{
+		Method: "While",
 	}
 )

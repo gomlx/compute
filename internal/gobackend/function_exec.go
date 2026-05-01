@@ -234,7 +234,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 		}
 		if !execBuf.owned[outIdx] {
 			// Clone the buffer since we don't own it
-			outputs[i], err = backend.cloneBuffer(execBuf.results[outIdx])
+			outputs[i], err = backend.CloneBuffer(execBuf.results[outIdx])
 			if err != nil {
 				return nil, err
 			}

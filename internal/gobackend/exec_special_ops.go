@@ -252,7 +252,7 @@ func execScatter(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []b
 		output = operand
 		inputs[0] = nil // Mark operand as consumed.
 	} else {
-		output, err = backend.cloneBuffer(operand) // Creates a new buffer with copied data.
+		output, err = backend.CloneBuffer(operand) // Creates a new buffer with copied data.
 		if err != nil {
 			return nil, err
 		}
