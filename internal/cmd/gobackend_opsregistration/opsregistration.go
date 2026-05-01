@@ -106,7 +106,9 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 		generateStubFunction(&methodEntry)
 		methodsForTemplate = append(methodsForTemplate, methodEntry)
 	}
-	slices.SortFunc(methodsForTemplate, func(a, b MethodEntry) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(methodsForTemplate, func(a, b MethodEntry) int {
+		return strings.Compare(strings.ToUpper(a.Name), strings.ToUpper(b.Name))
+	})
 
 	fileName := path.Join(must.M1(os.Getwd()), opsRegistrationFile)
 	f := must.M1(os.Create(fileName))
