@@ -54,9 +54,19 @@ func (f Float16) Float32() float32 {
 	return math.Float32frombits(sign | exp32 | mantissa32)
 }
 
+// SetFloat32 sets the values from a float32.
+func (f *Float16) SetFloat32(v float32) {
+	*f = FromFloat32(v)
+}
+
 // Float64 converts the Float16 to a float64.
 func (f Float16) Float64() float64 {
 	return float64(f.Float32())
+}
+
+// SetFloat64 sets the values from a float64.
+func (f *Float16) SetFloat64(v float64) {
+	*f = FromFloat64(v)
 }
 
 // FromFloat32 converts a float32 to a Float16.

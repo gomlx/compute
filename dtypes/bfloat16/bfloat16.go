@@ -26,14 +26,24 @@ func (f BFloat16) Float32() float32 {
 	return math.Float32frombits(uint32(f) << 16)
 }
 
+// FromFloat32 converts a float32 to a BFloat16.
+func FromFloat32(x float32) BFloat16 {
+	return BFloat16(math.Float32bits(x) >> 16)
+}
+
+// SetFloat32 sets the values from a float32.
+func (f *BFloat16) SetFloat32(v float32) {
+	*f = FromFloat32(v)
+}
+
 // Float64 converts the BFloat16 to a float64.
 func (f BFloat16) Float64() float64 {
 	return float64(f.Float32())
 }
 
-// FromFloat32 converts a float32 to a BFloat16.
-func FromFloat32(x float32) BFloat16 {
-	return BFloat16(math.Float32bits(x) >> 16)
+// SetFloat64 sets the values from a float64.
+func (f *BFloat16) SetFloat64(v float64) {
+	*f = FromFloat64(v)
 }
 
 // FromFloat64 converts a float64 to a BFloat16.

@@ -631,3 +631,11 @@ type HalfPrecision interface {
 	Float64() float64
 	Float32() float32
 }
+
+// HalfPrecisionPtr is a pointer to a HalfPrecision wrapper type.
+// It is used when one needs to set the value of a HalfPrecision type from a float32 or float64.
+type HalfPrecisionPtr[T HalfPrecision] interface {
+	*T
+	SetFloat32(float32)
+	SetFloat64(float64)
+}
