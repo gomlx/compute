@@ -209,10 +209,10 @@ func main() {
 
 	// Deterministic order for generated code.
 	slices.SortFunc(data.Maps, func(a, b MapInfo) int {
-		return strings.Compare(a.MapName, b.MapName)
+		return strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName))
 	})
 	slices.SortFunc(data.PairMaps, func(a, b MapPairInfo) int {
-		return strings.Compare(a.MapName, b.MapName)
+		return strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName))
 	})
 
 	registerTemplate := template.Must(

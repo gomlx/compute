@@ -11,6 +11,42 @@ import (
 
 func init() {
 
+	// DTypeMap: dotGeneralKernelDTypeMap
+	dotGeneralKernelDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, buildDotGeneralKernel[int8])
+	dotGeneralKernelDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, buildDotGeneralKernel[int16])
+	dotGeneralKernelDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, buildDotGeneralKernel[int32])
+	dotGeneralKernelDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, buildDotGeneralKernel[int64])
+	dotGeneralKernelDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, buildDotGeneralKernel[uint8])
+	dotGeneralKernelDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, buildDotGeneralKernel[uint16])
+	dotGeneralKernelDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, buildDotGeneralKernel[uint32])
+	dotGeneralKernelDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, buildDotGeneralKernel[uint64])
+	dotGeneralKernelDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, buildDotGeneralKernel[float32])
+	dotGeneralKernelDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, buildDotGeneralKernel[float64])
+
+	// DTypeMap: dotGeneralNormalizedDTypeMap
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int8])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int16])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int32])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int64])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint8])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint16])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint32])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint64])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[float32])
+	dotGeneralNormalizedDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[float64])
+
+	// DTypeMap: dotGeneralSmallMatMulDTypeMap
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int8])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int16])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int32])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int64])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint8])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint16])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint32])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint64])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[float32])
+	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[float64])
+
 	// DTypeMap: FlatToBlockDTypeMap
 	FlatToBlockDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, CopyFlatToBlockShapeGeneric[int8])
 	FlatToBlockDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, CopyFlatToBlockShapeGeneric[int16])
@@ -50,41 +86,5 @@ func init() {
 	OutputBlockToFlatDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, copyOutputBlockToFlat[uint64])
 	OutputBlockToFlatDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, copyOutputBlockToFlat[float32])
 	OutputBlockToFlatDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, copyOutputBlockToFlat[float64])
-
-	// DTypeMap: dotGeneralKernelDTypeMap
-	dotGeneralKernelDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, buildDotGeneralKernel[int8])
-	dotGeneralKernelDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, buildDotGeneralKernel[int16])
-	dotGeneralKernelDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, buildDotGeneralKernel[int32])
-	dotGeneralKernelDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, buildDotGeneralKernel[int64])
-	dotGeneralKernelDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, buildDotGeneralKernel[uint8])
-	dotGeneralKernelDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, buildDotGeneralKernel[uint16])
-	dotGeneralKernelDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, buildDotGeneralKernel[uint32])
-	dotGeneralKernelDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, buildDotGeneralKernel[uint64])
-	dotGeneralKernelDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, buildDotGeneralKernel[float32])
-	dotGeneralKernelDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, buildDotGeneralKernel[float64])
-
-	// DTypeMap: dotGeneralNormalizedDTypeMap
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int8])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int16])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int32])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[int64])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint8])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint16])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint32])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[uint64])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[float32])
-	dotGeneralNormalizedDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execNormalizedDotGeneralGeneric[float64])
-
-	// DTypeMap: dotGeneralSmallMatMulDTypeMap
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int8])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int16])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int32])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[int64])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint8])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint16])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint32])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[uint64])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[float32])
-	dotGeneralSmallMatMulDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execDotGeneralSmallMatMulGeneric[float64])
 
 }

@@ -11,21 +11,6 @@ import (
 
 func init() {
 
-	// DTypeMap: TransposeDTypeMap
-	TransposeDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execTransposeGeneric[int8])
-	TransposeDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execTransposeGeneric[int16])
-	TransposeDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execTransposeGeneric[int32])
-	TransposeDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execTransposeGeneric[int64])
-	TransposeDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execTransposeGeneric[uint8])
-	TransposeDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execTransposeGeneric[uint16])
-	TransposeDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execTransposeGeneric[uint32])
-	TransposeDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execTransposeGeneric[uint64])
-	TransposeDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execTransposeGeneric[float32])
-	TransposeDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execTransposeGeneric[float64])
-	TransposeDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execTransposeGeneric[bfloat16.BFloat16])
-	TransposeDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execTransposeGeneric[float16.Float16])
-	TransposeDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execTransposeGeneric[bool])
-
 	// DTypeMap: broadcastInDimDTypeMap
 	broadcastInDimDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int8])
 	broadcastInDimDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int16])
@@ -170,5 +155,20 @@ func init() {
 	shiftRightLogicalDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint16])
 	shiftRightLogicalDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint32])
 	shiftRightLogicalDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, shiftRightLogicalGeneric[uint64])
+
+	// DTypeMap: TransposeDTypeMap
+	TransposeDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execTransposeGeneric[int8])
+	TransposeDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execTransposeGeneric[int16])
+	TransposeDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execTransposeGeneric[int32])
+	TransposeDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execTransposeGeneric[int64])
+	TransposeDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execTransposeGeneric[uint8])
+	TransposeDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execTransposeGeneric[uint16])
+	TransposeDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execTransposeGeneric[uint32])
+	TransposeDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execTransposeGeneric[uint64])
+	TransposeDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execTransposeGeneric[float32])
+	TransposeDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execTransposeGeneric[float64])
+	TransposeDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execTransposeGeneric[bfloat16.BFloat16])
+	TransposeDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execTransposeGeneric[float16.Float16])
+	TransposeDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execTransposeGeneric[bool])
 
 }
