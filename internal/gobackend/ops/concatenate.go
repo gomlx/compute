@@ -1,14 +1,22 @@
 package ops
 
+import (
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
+)
+
+func init() {
+	gobackend.RegisterConcatenate.Register(Concatenate, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeConcatenate, gobackend.PriorityGeneric, execConcatenate)
+}
+
 // Concatenate joins a sequence of tensors along the given axis (it must exist already).
 // All input tensors must have the same shape, except potentially in the concatenation dimension.
 // They must also have the same data type (DType).
 // It returns an error if inputs are invalid (e.g., no inputs, mismatched graphs, shapes, dtypes, or invalid dimension).
-
-func init() {
-	gobackend.RegisterConcatenate.Register(Concatenate, gobackend.PriorityGeneric)
-}
-
 func Concatenate(f *gobackend.Function, axis int, operandOps ...compute.Value) (compute.Value, error) {
 	if len(operandOps) == 0 {
 		return nil, errors.Errorf("Concatenate requires at least one input tensor")
