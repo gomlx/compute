@@ -4,6 +4,7 @@ package gobackend
 
 import (
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -30,6 +31,14 @@ func (f *Function) Atan2(lhs compute.Value, rhs compute.Value) (compute.Value, e
 		return f.Function.Atan2(lhs, rhs)
 	}
 	return RegisterAtan2.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Bitcast(operand compute.Value, targetDType dtypes.DType) (compute.Value, error) {
+	if RegisterBitcast.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Bitcast(operand, targetDType)
+	}
+	return RegisterBitcast.Fn(f, operand, targetDType)
 }
 
 func (f *Function) BitCount(operand compute.Value) (compute.Value, error) {
@@ -626,6 +635,9 @@ var (
 	}
 	RegisterAtan2 = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Atan2",
+	}
+	RegisterBitcast = OpHandlerRegistration[func(f *Function, operand compute.Value, targetDType dtypes.DType) (compute.Value, error)]{
+		Method: "Bitcast",
 	}
 	RegisterBitCount = OpHandlerRegistration[func(f *Function, operand compute.Value) (compute.Value, error)]{
 		Method: "BitCount",

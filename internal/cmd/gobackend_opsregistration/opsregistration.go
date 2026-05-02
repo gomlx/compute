@@ -38,7 +38,7 @@ var (
 		"ReduceMax", "ReduceMin", "ReduceSum", "ReduceProduct",
 		"ReduceBitwiseAnd", "ReduceBitwiseOr", "ReduceBitwiseXor",
 		"ReduceLogicalAnd", "ReduceLogicalOr", "ReduceLogicalXor",
-		"ConvGeneral",
+		"ConvGeneral", "Bitcast",
 
 		// Binary Operations:
 		"Add", "Mul", "Sub", "Div", "Rem", "Pow", "Atan2", "BitwiseAnd", "BitwiseOr", "BitwiseXor", "ShiftLeft",
@@ -61,6 +61,7 @@ package gobackend
 import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/dtypes"
 )
 
 // Stub methods that converts compute.Value to *Node and dispatches to the corresponding op handler.

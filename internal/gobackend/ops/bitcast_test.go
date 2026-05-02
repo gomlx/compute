@@ -1,11 +1,12 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package ops
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
@@ -14,7 +15,7 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 	// Bitcast uint8[2] → Uint4[4]: raw bytes stay the same.
 	// Byte 0xF0 = low nibble 0, high nibble 15.
 	// Byte 0x87 = low nibble 7, high nibble 8.
-	backend, err := New("")
+	backend, err := gobackend.New("")
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -22,13 +23,13 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Uint4, 4)
-	node := &Node{Shape: dstShape}
+	node := &gobackend.Node{Shape: dstShape}
 
 	// Not owned: should copy bytes without unpacking.
-	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -45,7 +46,7 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 	// Bitcast uint8[2] → Int4[4]: raw bytes stay the same.
-	backend, err := New("")
+	backend, err := gobackend.New("")
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -53,12 +54,12 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
-	node := &Node{Shape: dstShape}
+	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -77,12 +78,12 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 	// When owned, Bitcast should reuse the buffer.
 	srcData := []uint8{0xAB, 0xCD}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
-	node := &Node{Shape: dstShape}
+	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(nil, node, []*Buffer{srcBuf}, []bool{true})
+	result, err := execBitcast(nil, node, []*gobackend.Buffer{srcBuf}, []bool{true})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -100,7 +101,7 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 
 func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 	// Same bit-width, different Go type: should copy bytes.
-	backend, err := New("")
+	backend, err := gobackend.New("")
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -108,12 +109,12 @@ func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 
 	srcData := []uint8{0xFF, 0x80, 0x01}
 	srcShape := shapes.Make(dtypes.Uint8, 3)
-	srcBuf := &Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
 
 	dstShape := shapes.Make(dtypes.Int8, 3)
-	node := &Node{Shape: dstShape}
+	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(backend.(*Backend), node, []*Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}

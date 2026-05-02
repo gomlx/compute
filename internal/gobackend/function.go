@@ -374,33 +374,6 @@ func (f *Function) Concatenate(axis int, operandOps ...compute.Value) (compute.V
 	return node, nil
 }
 
-// Bitcast performs an elementwise bitcast operation from a dtype to another dtype.
-//
-// The Bitcast doesn't "convert", rather it just reinterprets the bits from operand.DType() to the targetDType.
-//
-// If the element sizes (in bytes/bits) differ, the last dimension is adjusted:
-//   - Smaller target: a new trailing axis of size (srcBits / dstBits) is appended, so rank is increased by 1.
-//   - Larger target: the last axis must be equal to (dstBits / srcBits), and the resultign rank is decreased by 1 ("squeezed").
-//
-// E.g:
-//
-//	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
-//	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
-func (f *Function) Bitcast(operandOp compute.Value, targetDType dtypes.DType) (compute.Value, error) {
-	opType := compute.OpTypeBitcast
-	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
-	if err != nil {
-		return nil, err
-	}
-	operand := inputs[0]
-	outputShape, err := shapeinference.BitcastOp(operand.Shape, targetDType)
-	if err != nil {
-		return nil, err
-	}
-	node, _ := f.GetOrCreateNode(opType, outputShape, []*Node{operand}, nil)
-	return node, nil
-}
-
 // ConvertDType converts operandOp to the given dtype. It implements the compute.Builder interface.
 func (f *Function) ConvertDType(operandOp compute.Value, dtype dtypes.DType) (compute.Value, error) {
 	opType := compute.OpTypeConvertDType

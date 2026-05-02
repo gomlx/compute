@@ -1,15 +1,46 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package gobackend
+package ops
 
 import (
 	"reflect"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 )
 
 func init() {
-	SetNodeExecutor(compute.OpTypeBitcast, PriorityGeneric, execBitcast)
+	gobackend.SetNodeExecutor(compute.OpTypeBitcast, gobackend.PriorityGeneric, execBitcast)
+	gobackend.RegisterBitcast.Register(Bitcast, gobackend.PriorityGeneric)
+}
+
+// Bitcast performs an elementwise bitcast operation from a dtype to another dtype.
+//
+// The Bitcast doesn't "convert", rather it just reinterprets the bits from operand.DType() to the targetDType.
+//
+// If the element sizes (in bytes/bits) differ, the last dimension is adjusted:
+//   - Smaller target: a new trailing axis of size (srcBits / dstBits) is appended, so rank is increased by 1.
+//   - Larger target: the last axis must be equal to (dstBits / srcBits), and the resultign rank is decreased by 1 ("squeezed").
+//
+// E.g:
+//
+//	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
+//	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
+func Bitcast(f *gobackend.Function, operandOp compute.Value, targetDType dtypes.DType) (compute.Value, error) {
+	opType := compute.OpTypeBitcast
+	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
+	outputShape, err := shapeinference.BitcastOp(operand.Shape, targetDType)
+	if err != nil {
+		return nil, err
+	}
+	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, nil)
+	return node, nil
 }
 
 // execBitcast implements Bitcast as a pure bit reinterpretation: the raw bytes are
@@ -22,7 +53,7 @@ func init() {
 // A uint8[N] buffer bitcast to Int4[2*N] keeps its []byte flat data — the 2*N
 // nibbles are stored packed (2 per byte). To unpack into one value per element,
 // use ConvertDType (e.g. ConvertDType(Int4 → Int8)).
-func execBitcast(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error) {
+func execBitcast(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	src := inputs[0]
 	targetDType := node.Shape.DType
 	srcDType := src.RawShape.DType
