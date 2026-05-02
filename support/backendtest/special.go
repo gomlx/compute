@@ -142,11 +142,11 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 					}
 				}
 			}
-			y2, _ := testutil.Exec1(b, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			got, _ := testutil.Exec1(b, []any{input2Data}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 				return f.ReduceSum(p[0], 1, 3)
 			})
-			want2 := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
-			if ok, diff := testutil.IsEqual(want2, y2); !ok {
+			want := [][][]uint32{{{20, 24}, {36, 40}}, {{84, 88}, {100, 104}}}
+			if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
 				t.Errorf("ReduceSum mismatch:\n%s", diff)
 			}
 		})
