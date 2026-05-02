@@ -121,6 +121,14 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
+func (f *Function) Call(fn compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
+	if RegisterCall.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Call(fn, inputs...)
+	}
+	return RegisterCall.Fn(f, fn, inputs...)
+}
+
 func (f *Function) Ceil(x compute.Value) (compute.Value, error) {
 	if RegisterCeil.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -892,6 +900,9 @@ var (
 	}
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
+	}
+	RegisterCall = OpHandlerRegistration[func(f *Function, fn compute.Function, inputs ...compute.Value) ([]compute.Value, error)]{
+		Method: "Call",
 	}
 	RegisterCeil = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Ceil",
