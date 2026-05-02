@@ -1,12 +1,17 @@
 package ops
 
-// Identity implements the compute.Identity interface.
-// This operation is not de-duplicated: if you issue it twice, it will not reuse the previous instance.
+import (
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+)
 
 func init() {
 	gobackend.RegisterIdentity.Register(Identity, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeIdentity, gobackend.PriorityGeneric, execIdentity)
 }
 
+// Identity implements the compute.Identity interface.
+// This operation is not de-duplicated: if you issue it twice, it will not reuse the previous instance.
 func Identity(f *gobackend.Function, operandOp compute.Value) (compute.Value, error) {
 	inputs, err := f.VerifyAndCastValues("Reshape", operandOp)
 	if err != nil {
