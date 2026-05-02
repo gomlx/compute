@@ -262,10 +262,6 @@ func init() {
 	reduceWindowMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowMinDTypeMap
-	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[float16.Float16])
-
-	// DTypeMap: reduceWindowMinDTypeMap
 	reduceWindowMinDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[int8])
 	reduceWindowMinDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[int16])
 	reduceWindowMinDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[int32])
@@ -276,6 +272,14 @@ func init() {
 	reduceWindowMinDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[uint64])
 	reduceWindowMinDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[float32])
 	reduceWindowMinDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[float64])
+
+	// DTypeMap: reduceWindowMinDTypeMap
+	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[float16.Float16])
+
+	// DTypeMap: reduceWindowProductDTypeMap
+	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowProductDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowProductDTypeMap
 	reduceWindowProductDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[int8])
@@ -289,9 +293,9 @@ func init() {
 	reduceWindowProductDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[float32])
 	reduceWindowProductDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[float64])
 
-	// DTypeMap: reduceWindowProductDTypeMap
-	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowProductDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[float16.Float16])
+	// DTypeMap: reduceWindowSumDTypeMap
+	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowSumDTypeMap
 	reduceWindowSumDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[int8])
@@ -304,10 +308,6 @@ func init() {
 	reduceWindowSumDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[uint64])
 	reduceWindowSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[float32])
 	reduceWindowSumDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[float64])
-
-	// DTypeMap: reduceWindowSumDTypeMap
-	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: scatterDTypeMap
 	scatterDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execScatterGeneric[int8])

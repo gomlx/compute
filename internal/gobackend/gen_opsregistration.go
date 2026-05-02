@@ -393,6 +393,14 @@ func (f *Function) Identity(x compute.Value) (compute.Value, error) {
 	return RegisterIdentity.Fn(f, x)
 }
 
+func (f *Function) If(pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error) {
+	if RegisterIf.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.If(pred, trueBranch, falseBranch)
+	}
+	return RegisterIf.Fn(f, pred, trueBranch, falseBranch)
+}
+
 func (f *Function) Imag(x compute.Value) (compute.Value, error) {
 	if RegisterImag.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -817,6 +825,14 @@ func (f *Function) Slice(x compute.Value, starts []int, limits []int, strides []
 	return RegisterSlice.Fn(f, x, starts, limits, strides)
 }
 
+func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error) {
+	if RegisterSort.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Sort(comparator, axis, isStable, inputs...)
+	}
+	return RegisterSort.Fn(f, comparator, axis, isStable, inputs...)
+}
+
 func (f *Function) Sqrt(x compute.Value) (compute.Value, error) {
 	if RegisterSqrt.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -855,6 +871,14 @@ func (f *Function) Where(condition compute.Value, onTrue compute.Value, onFalse 
 		return f.Function.Where(condition, onTrue, onFalse)
 	}
 	return RegisterWhere.Fn(f, condition, onTrue, onFalse)
+}
+
+func (f *Function) While(cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error) {
+	if RegisterWhile.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.While(cond, body, initialState...)
+	}
+	return RegisterWhile.Fn(f, cond, body, initialState...)
 }
 
 // Registration variables for the op handlers.
@@ -1002,6 +1026,9 @@ var (
 	}
 	RegisterIdentity = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Identity",
+	}
+	RegisterIf = OpHandlerRegistration[func(f *Function, pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error)]{
+		Method: "If",
 	}
 	RegisterImag = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Imag",
@@ -1162,6 +1189,9 @@ var (
 	RegisterSlice = OpHandlerRegistration[func(f *Function, x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error)]{
 		Method: "Slice",
 	}
+	RegisterSort = OpHandlerRegistration[func(f *Function, comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error)]{
+		Method: "Sort",
+	}
 	RegisterSqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Sqrt",
 	}
@@ -1176,5 +1206,8 @@ var (
 	}
 	RegisterWhere = OpHandlerRegistration[func(f *Function, condition compute.Value, onTrue compute.Value, onFalse compute.Value) (compute.Value, error)]{
 		Method: "Where",
+	}
+	RegisterWhile = OpHandlerRegistration[func(f *Function, cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error)]{
+		Method: "While",
 	}
 )

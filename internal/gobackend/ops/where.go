@@ -1,11 +1,17 @@
 package ops
 
-// Where implements the compute.Builder interface.
+import (
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+)
 
 func init() {
 	gobackend.RegisterWhere.Register(Where, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeWhere, gobackend.PriorityGeneric, execWhere)
 }
 
+// Where implements the compute.Builder interface.
 func Where(f *gobackend.Function, conditionOp, onTrueOp, onFalseOp compute.Value) (compute.Value, error) {
 	inputs, err := f.VerifyAndCastValues("Where", conditionOp, onTrueOp, onFalseOp)
 	if err != nil {
