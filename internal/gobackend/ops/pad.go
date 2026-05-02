@@ -1,11 +1,20 @@
 package ops
 
-// Pad implements the compute.Builder interface.
+import (
+	"slices"
+
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+	"github.com/pkg/errors"
+)
 
 func init() {
 	gobackend.RegisterPad.Register(Pad, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypePad, gobackend.PriorityGeneric, execPad)
 }
 
+// Pad implements the compute.Builder interface.
 func Pad(f *gobackend.Function, operandOp, fillValueOp compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
 	opType := compute.OpTypePad
 	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp, fillValueOp)
@@ -32,10 +41,6 @@ type padNode struct {
 func (p *padNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*padNode)
 	return slices.Equal(p.axesConfig, o.axesConfig)
-}
-
-func init() {
-	gobackend.SetNodeExecutor(compute.OpTypePad, gobackend.PriorityGeneric, execPad)
 }
 
 func execPad(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
