@@ -1,5 +1,22 @@
 package ops
 
+import (
+	"slices"
+
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/xslices"
+	"github.com/pkg/errors"
+)
+
+func init() {
+	gobackend.RegisterReduceWindow.Register(ReduceWindow, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeReduceWindow, gobackend.PriorityGeneric, execReduceWindow)
+}
+
 type reduceWindowNode struct {
 	reductionType                                              compute.ReduceOpType
 	windowDimensions, strides, inputDilations, windowDilations []int
@@ -35,12 +52,7 @@ func (r *reduceWindowNode) EqualNodeData(other gobackend.NodeDataComparable) boo
 //     If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
 //   - paddings: virtual padding to be added to the input at the edges (start and end) of each axis.
 //     If nil, it's assumed to be 0 for each axis.
-
-func init() {
-	gobackend.RegisterReduceWindow.Register(ReduceWindow, gobackend.PriorityGeneric)
-}
-
-func ReduceWindow(f *gobackend.Function, 
+func ReduceWindow(f *gobackend.Function,
 	operandOp compute.Value,
 	reductionType compute.ReduceOpType,
 	windowDimensions, strides, inputDilations, windowDilations []int,
@@ -73,10 +85,6 @@ func ReduceWindow(f *gobackend.Function,
 	}
 	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, data)
 	return node, nil
-}
-
-func init() {
-	gobackend.SetNodeExecutor(compute.OpTypeReduceWindow, gobackend.PriorityGeneric, execReduceWindow)
 }
 
 func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
@@ -220,21 +228,21 @@ type reduceWindowUpdateFn func(operandFlatIdx, outputFlatIdx int)
 
 var (
 	//gobackend:dtypemap reduceWindowMaxBuildUpdateFn ints,uints,floats
+	//gobackend:dtypemap reduceWindowMaxBuildUpdateFnHalf half
 	reduceWindowMaxDTypeMap = gobackend.NewDTypeMap("reduceWindowMaxDTypeMap")
+
 	//gobackend:dtypemap reduceWindowMinBuildUpdateFn ints,uints,floats
+	//gobackend:dtypemap reduceWindowMinBuildUpdateFnHalf half
 	reduceWindowMinDTypeMap = gobackend.NewDTypeMap("reduceWindowMinDTypeMap")
+
 	//gobackend:dtypemap reduceWindowSumBuildUpdateFn ints,uints,floats
+	//gobackend:dtypemap reduceWindowSumBuildUpdateFnHalf half
 	reduceWindowSumDTypeMap = gobackend.NewDTypeMap("reduceWindowSumDTypeMap")
+
 	//gobackend:dtypemap reduceWindowProductBuildUpdateFn ints,uints,floats
+	//gobackend:dtypemap reduceWindowProductBuildUpdateFnHalf half
 	reduceWindowProductDTypeMap = gobackend.NewDTypeMap("reduceWindowProductDTypeMap")
 )
-
-func init() {
-	reduceWindowMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, reduceWindowMaxBuildUpdateFnBFloat16)
-	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, reduceWindowMinBuildUpdateFnBFloat16)
-	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, reduceWindowSumBuildUpdateFnBFloat16)
-	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, reduceWindowProductBuildUpdateFnBFloat16)
-}
 
 // Generic functions that build a function that will update the output at outputFlatIdx from the operand at operandFlatIdx.
 
@@ -246,11 +254,11 @@ func reduceWindowMaxBuildUpdateFn[T PODNumericConstraints](operand, output *goba
 	}
 }
 
-func reduceWindowMaxBuildUpdateFnBFloat16(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	outputFlat := output.Flat.([]bfloat16.BFloat16)
+func reduceWindowMaxBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
-		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
+		P(&outputFlat[outputFlatIdx]).SetFloat32(
 			max(outputFlat[outputFlatIdx].Float32(), operandFlat[operandFlatIdx].Float32()))
 	}
 }
@@ -263,11 +271,11 @@ func reduceWindowMinBuildUpdateFn[T PODNumericConstraints](operand, output *goba
 	}
 }
 
-func reduceWindowMinBuildUpdateFnBFloat16(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	outputFlat := output.Flat.([]bfloat16.BFloat16)
+func reduceWindowMinBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
-		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
+		P(&outputFlat[outputFlatIdx]).SetFloat32(
 			min(outputFlat[outputFlatIdx].Float32(), operandFlat[operandFlatIdx].Float32()))
 	}
 }
@@ -280,11 +288,11 @@ func reduceWindowSumBuildUpdateFn[T PODNumericConstraints](operand, output *goba
 	}
 }
 
-func reduceWindowSumBuildUpdateFnBFloat16(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	outputFlat := output.Flat.([]bfloat16.BFloat16)
+func reduceWindowSumBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
-		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
+		P(&outputFlat[outputFlatIdx]).SetFloat32(
 			outputFlat[outputFlatIdx].Float32() + operandFlat[operandFlatIdx].Float32())
 	}
 }
@@ -297,11 +305,11 @@ func reduceWindowProductBuildUpdateFn[T PODNumericConstraints](operand, output *
 	}
 }
 
-func reduceWindowProductBuildUpdateFnBFloat16(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
-	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	outputFlat := output.Flat.([]bfloat16.BFloat16)
+func reduceWindowProductBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]T)
+	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
-		outputFlat[outputFlatIdx] = bfloat16.FromFloat32(
+		P(&outputFlat[outputFlatIdx]).SetFloat32(
 			outputFlat[outputFlatIdx].Float32() * operandFlat[operandFlatIdx].Float32())
 	}
 }
