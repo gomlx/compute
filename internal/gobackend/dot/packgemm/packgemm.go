@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend/workerspool"
 	"github.com/pkg/errors"
+	"k8s.io/klog/v2"
 )
 
 // Generate the GEMMDynamic dispatcher.
@@ -101,6 +102,7 @@ func RegisterGEMM[TInput, TOutput dtypes.Supported](
 	params *CacheParams,
 	priority Priority) {
 	dtypePair := GetDTypePair[TInput, TOutput]()
+	klog.Infof("RegisterGEMM %s dtypes=%v priority=%d", name, dtypePair, priority)
 	DTypeToGEMM[dtypePair] = append(DTypeToGEMM[dtypePair], GEMMRegistration{
 		Name:      name,
 		DTypePair: dtypePair,

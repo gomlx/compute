@@ -16,7 +16,7 @@ import (
 //gobackend:dtypemap NormalizeShape ints,uints,floats,half
 var NormalizeShapeDTypeMap = gobackend.NewDTypeMap("NormalizeShape")
 
-// NormalizationInfo holds pre-calculated information for dgNormalizeShape.
+// NormalizationInfo holds pre-calculated information for NormalizeShape.
 // This is calculated at graph construction time.
 type NormalizationInfo struct {
 	needsTranspose     bool
@@ -116,7 +116,7 @@ func NormalizePrepare(shape shapes.Shape, contractingAxes, batchAxes []int) *Nor
 	return info
 }
 
-// dgNormalizeShape reshapes the source to a rank-3 shape [batchSize, crossSize, contractingSize].
+// NormalizeShape reshapes the source to a rank-3 shape [batchSize, crossSize, contractingSize].
 //
 // It returns a buffer with the transposed/reshaped source.
 //

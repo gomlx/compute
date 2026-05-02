@@ -25,8 +25,8 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/gobackend"
-	"github.com/gomlx/compute/internal/gobackend/highway"
-	"github.com/gomlx/compute/internal/gobackend/packgemm"
+	"github.com/gomlx/compute/internal/gobackend/dot/highway"
+	"github.com/gomlx/compute/internal/gobackend/dot/packgemm"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
 	"github.com/pkg/errors"
@@ -147,6 +147,12 @@ func DotGeneral(f *gobackend.Function,
 		return nil, err
 	}
 	lhs, rhs := directInputs[0], directInputs[1]
+	if klog.V(1).Enabled() {
+		klog.Infof("DotGeneral lhs=%s rhs=%s contracting=%v,%v batch=%v,%v\n",
+			lhs.Shape, rhs.Shape,
+			lhsContractingAxes, rhsContractingAxes,
+			lhsBatchAxes, rhsBatchAxes)
+	}
 
 	// Parse the inputs.
 	dtype := lhs.Shape.DType
@@ -379,7 +385,7 @@ func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape,
 		if valid {
 			return execPath
 		}
-		klog.V(1).Infof("DotGeneral: forced path %s is invalid for problem size %s×%s\n", execPath, lhsShape, rhsShape)
+		klog.V(1).Infof("DotGeneral: forced path %s is invalid for problem dtype or axes order %s×%s\n", execPath, lhsShape, rhsShape)
 	}
 
 	// GEMM path:
