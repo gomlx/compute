@@ -124,7 +124,7 @@ func scatterImpls(
 		indicesAreSorted:         indicesAreSorted,
 		uniqueIndices:            uniqueIndices,
 	}
-	node, _ := f.GetOrCreateNode(scatterOpType, outputShape, []*Node{operand, indices, updates}, data)
+	node, _ := f.GetOrCreateNode(scatterOpType, outputShape, []*gobackend.Node{operand, indices, updates}, data)
 	return node, nil
 }
 
@@ -330,7 +330,7 @@ func newSubIndicesIterator(shape shapes.Shape, skipAxes ...int) *subIndicesItera
 		PerAxisIdx:  make([]int, rank),
 		PerAxisSize: slices.Clone(shape.Dimensions),
 	}
-	it.PerAxisStride = calculateStrides(shape.Dimensions)
+	it.PerAxisStride = shape.Strides()
 	for _, axis := range skipAxes {
 		if axis < rank {
 			// Set size for axis we don't want to iterate over to 1.
@@ -394,7 +394,7 @@ func init() {
 	combineSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, combineForScatterSumBFloat16)
 }
 
-func combineForScatterMaxGeneric[T PODNumericConstraints](a, b T) T {
+func combineForScatterMaxGeneric[T gobackend.PODNumericConstraints](a, b T) T {
 	return max(a, b)
 }
 
@@ -402,7 +402,7 @@ func combineForScatterMaxBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 	return bfloat16.FromFloat32(max(a.Float32(), b.Float32()))
 }
 
-func combineForScatterMinGeneric[T PODNumericConstraints](a, b T) T {
+func combineForScatterMinGeneric[T gobackend.PODNumericConstraints](a, b T) T {
 	return min(a, b)
 }
 
@@ -410,7 +410,7 @@ func combineForScatterMinBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 	return bfloat16.FromFloat32(min(a.Float32(), b.Float32()))
 }
 
-func combineForScatterSumGeneric[T PODNumericConstraints](a, b T) T {
+func combineForScatterSumGeneric[T gobackend.PODNumericConstraints](a, b T) T {
 	return a + b
 }
 
