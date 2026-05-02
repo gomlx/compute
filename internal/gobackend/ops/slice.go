@@ -49,19 +49,41 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 		return nil, err
 	}
 	operand := inputs[0]
-	data := &sliceNode{
-		starts,
-		make([]int, len(limits)),
-		strides,
+	rank := operand.Shape.Rank()
+
+	if len(starts) != rank || len(limits) != rank || (len(strides) != 0 && len(strides) != rank) {
+		return nil, errors.Errorf("Slice op %s: starts, limits and strides (if provided) must have the same rank as the operand (%d), but got %d, %d and %d",
+			opType, rank, len(starts), len(limits), len(strides))
 	}
-	// Trim limits to operand shape.
-	for axis, limit := range limits {
+
+	data := &sliceNode{
+		starts:  make([]int, rank),
+		limits:  make([]int, rank),
+		strides: make([]int, rank),
+	}
+	for axis := 0; axis < rank; axis++ {
+		// Start
+		start := starts[axis]
+		if start < 0 {
+			start = operand.Shape.Dimensions[axis] + start
+		}
+		start = min(max(start, 0), operand.Shape.Dimensions[axis])
+		data.starts[axis] = start
+
+		// Limit
+		limit := limits[axis]
 		if limit < 0 {
 			limit = operand.Shape.Dimensions[axis] + limit
 		}
-		limit = min(limit, operand.Shape.Dimensions[axis])
-		limit = max(limit, 0)
+		limit = min(max(limit, 0), operand.Shape.Dimensions[axis])
 		data.limits[axis] = limit
+
+		// Stride
+		stride := 1
+		if len(strides) > axis {
+			stride = max(1, strides[axis])
+		}
+		data.strides[axis] = stride
 	}
 
 	// Calculate output shape.
@@ -78,8 +100,6 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	operand := inputs[0]
 	sliceParams, ok := node.Data.(*sliceNode)
 	if !ok {
-		// Assuming node.data holds the necessary slice parameters.
-		// If Builder.Slice stores data differently, this needs adjustment.
 		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.Data)
 	}
 
@@ -94,7 +114,6 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 
 	// Dispatch to the generic implementation based on DType.
-	// Note: limits are not used in the generic exec function but passed for potential future use or consistency.
 	tmpAny, tmpErr := sliceDTypeMap.Get(node.Shape.DType)
 	if tmpErr != nil {
 		panic(tmpErr)
@@ -115,38 +134,30 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *go
 	outputFlat := output.Flat.([]T)
 	operandFlat := operand.Flat.([]T)
 
+	outputDimensions := output.RawShape.Dimensions
+	operandFlatStrides := operand.RawShape.Strides()
+	outputAxisIdxs := make([]int, rank)
+
 	// Find operandFlatIdx start value.
 	var operandFlatIdx int
-	operandFlatStrides := operand.RawShape.Strides()
-	for axis, idx := range params.starts {
-		operandFlatIdx += operandFlatStrides[axis] * idx
+	for axis, start := range params.starts {
+		operandFlatIdx += start * operandFlatStrides[axis]
 	}
 
-	operandPerAxisIdx := make([]int, rank)
-	operandDimensions := operand.RawShape.Dimensions
-
-	for outputFlatIdx := range outputFlat {
+	for outputFlatIdx := 0; outputFlatIdx < len(outputFlat); outputFlatIdx++ {
 		// Copy value at current position.
 		outputFlat[outputFlatIdx] = operandFlat[operandFlatIdx]
 
-		// Iterate to the next operand position.
+		// Iterate to the next position.
 		for axis := rank - 1; axis >= 0; axis-- {
-			if operandDimensions[axis] == 1 {
-				// We don't iterate on this axis.
-				continue
-			}
-
-			// Increment the current axis.
-			operandPerAxisIdx[axis]++
-			operandFlatIdx += operandFlatStrides[axis]
-			if operandPerAxisIdx[axis] < params.limits[axis] {
-				// Done for this iteration, don't need to go to the next axis yet.
+			outputAxisIdxs[axis]++
+			if outputAxisIdxs[axis] < outputDimensions[axis] {
+				operandFlatIdx += params.strides[axis] * operandFlatStrides[axis]
 				break
 			}
-			// Rewind the current axis to the start: we will increment the next axis for this iteration.
-			operandFlatIdx -= operandDimensions[axis] * operandFlatStrides[axis]
-			operandPerAxisIdx[axis] = params.starts[axis]
-			operandFlatIdx += operandFlatStrides[axis] * params.strides[axis]
+			// Reset axis
+			operandFlatIdx -= (outputDimensions[axis] - 1) * params.strides[axis] * operandFlatStrides[axis]
+			outputAxisIdxs[axis] = 0
 		}
 	}
 }
