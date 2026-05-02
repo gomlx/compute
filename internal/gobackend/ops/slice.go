@@ -9,6 +9,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+func init() {
+	gobackend.RegisterSlice.Register(Slice, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeSlice, gobackend.PriorityGeneric, execSlice)
+}
+
 // sliceNode is attached to the gobackend.Node.data field for Slice.
 type sliceNode struct {
 	starts, limits, strides []int
@@ -23,19 +28,20 @@ func (s *sliceNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 }
 
 // Slice extracts a subarray from the input array.
+//
 // The subarray is of the same rank as the input and contains the values inside a bounding box within the input array
 // where the dimensions and indices of the bounding box are given as arguments to the slice operation.
+//
 // The strides set the input stride of the slice in each axis and must be >= 1.
 // It is optional, and if missing, it is assumed to be 1 for every dimension.
+//
+// The limits are defined on the x axes, and they are exclusive upper bounds, i.e. the slice includes
+// elements from starts up to (but not including) limits.
+//
 // Examples:
 //
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={4}, strides=nil) -> {2, 3}
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
-
-func init() {
-	gobackend.RegisterSlice.Register(Slice, gobackend.PriorityGeneric)
-}
-
 func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strides []int) (compute.Value, error) {
 	opType := compute.OpTypeSlice
 	inputs, err := f.VerifyAndCastValues(opType.String(), operandOp)
@@ -43,15 +49,27 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.SliceOp(operand.Shape, starts, limits, strides)
+	data := &sliceNode{
+		starts,
+		make([]int, len(limits)),
+		strides,
+	}
+	// Trim limits to operand shape.
+	for axis, limit := range limits {
+		if limit < 0 {
+			limit = operand.Shape.Dimensions[axis] + limit
+		}
+		limit = min(limit, operand.Shape.Dimensions[axis])
+		limit = max(limit, 0)
+		data.limits[axis] = limit
+	}
+
+	// Calculate output shape.
+	outputShape, err := shapeinference.SliceOp(operand.Shape, data.starts, data.limits, data.strides)
 	if err != nil {
 		return nil, err
 	}
-	data := &sliceNode{
-		starts,
-		limits,
-		strides,
-	}
+
 	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, data)
 	return node, nil
 }
@@ -70,6 +88,10 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return nil, err
 	}
 	output.RawShape = node.Shape
+	if output.RawShape.Size() == 0 {
+		// Simplest case, where the slice is of 0 elements, just return the empty buffer with the correct shape.
+		return output, nil
+	}
 
 	// Dispatch to the generic implementation based on DType.
 	// Note: limits are not used in the generic exec function but passed for potential future use or consistency.
@@ -117,7 +139,7 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *go
 			// Increment the current axis.
 			operandPerAxisIdx[axis]++
 			operandFlatIdx += operandFlatStrides[axis]
-			if operandPerAxisIdx[axis] < operandDimensions[axis] {
+			if operandPerAxisIdx[axis] < params.limits[axis] {
 				// Done for this iteration, don't need to go to the next axis yet.
 				break
 			}
