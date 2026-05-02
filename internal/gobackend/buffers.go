@@ -183,7 +183,7 @@ func (b *Buffer) MutableBytes() ([]byte, error) {
 	return fn(b)
 }
 
-// gobackend:dtypemap MutableBytesGeneric ints,uints,floats,half,bool
+// gobackend:dtypemap MutableBytesGeneric ints,uints,floats,half,bool,packed
 var mutableBytesDTypeMap = NewDTypeMap("MutableBytes")
 
 // MutableBytesGeneric is the generic implementation of mutableBytes.

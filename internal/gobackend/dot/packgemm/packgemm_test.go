@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/internal/gobackend/packgemm"
+	"github.com/gomlx/compute/internal/gobackend/dot/packgemm"
 	"github.com/gomlx/compute/internal/gobackend/workerspool"
 	"github.com/gomlx/compute/support/xslices"
 )

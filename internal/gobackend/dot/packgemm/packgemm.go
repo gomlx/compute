@@ -12,7 +12,7 @@ import (
 )
 
 // Generate the GEMMDynamic dispatcher.
-//go:generate go run ../../../internal/cmd/packgemm_generator
+//go:generate go run ../../../cmd/packgemm_generator
 
 // BufAllocFn is a function that allocates a buffer (a slice) of type T, of the given size.
 type BufAllocFn[T any] func(size int) (ref any, data []T)

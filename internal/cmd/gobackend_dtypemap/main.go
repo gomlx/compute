@@ -52,7 +52,7 @@ var (
 	dtypesFloat16  = []DTypeInfo{{"Float16", "float16.Float16"}}
 )
 
-func makeDTypes(ints, uints, floats, halfPrecision, boolean bool) []DTypeInfo {
+func makeDTypes(ints, uints, floats, halfPrecision, boolean, packed bool) []DTypeInfo {
 	dtypes := make([]DTypeInfo, 0, 32)
 	if ints {
 		dtypes = append(dtypes,
@@ -87,6 +87,14 @@ func makeDTypes(ints, uints, floats, halfPrecision, boolean bool) []DTypeInfo {
 			DTypeInfo{"Bool", "bool"},
 		)
 	}
+	if packed {
+		dtypes = append(dtypes,
+			DTypeInfo{"Int2", "uint8"},
+			DTypeInfo{"Int4", "uint8"},
+			DTypeInfo{"Uint2", "uint8"},
+			DTypeInfo{"Uint4", "uint8"},
+		)
+	}
 	return dtypes
 }
 
@@ -98,7 +106,7 @@ func parseTypeGroups(groupsStr string) []DTypeInfo {
 	if groupsStr == "f16" {
 		return dtypesFloat16
 	}
-	var ints, uints, floats, half, boolean bool
+	var ints, uints, floats, half, boolean, packed bool
 	parts := strings.Split(groupsStr, ",")
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -113,9 +121,11 @@ func parseTypeGroups(groupsStr string) []DTypeInfo {
 			half = true
 		case "bool":
 			boolean = true
+		case "packed":
+			packed = true
 		}
 	}
-	return makeDTypes(ints, uints, floats, half, boolean)
+	return makeDTypes(ints, uints, floats, half, boolean, packed)
 }
 
 func parseFiles(dir string) (Data, error) {

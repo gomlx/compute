@@ -249,6 +249,42 @@ func unpackUint2Bits(packed []byte, dst []int8) {
 	}
 }
 
+func init() {
+	// Register sub-byte type conversions (Int4, Uint4).
+	// In simplego, Int4/Uint4 values are stored packed: 2 nibbles per byte.
+	// Bitcast from uint8 produces packed buffers (flat = []byte). ConvertDType
+	// unpacks them into one value per element of the target type.
+	// Low nibble (bits 0-3) is the first element, high nibble (bits 4-7) is the second.
+	//
+	// Both Int4 and Uint4 unpack to []int8 first (int8 is a common denominator
+	// that fits both signed [-8,7] and unsigned [0,15] 4-bit values), then the
+	// shared converter promotes to the target type.
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Float32, gobackend.PriorityTyped, execConvertPackedSubByte[float32](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Float64, gobackend.PriorityTyped, execConvertPackedSubByte[float64](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int32, gobackend.PriorityTyped, execConvertPackedSubByte[int32](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int64, gobackend.PriorityTyped, execConvertPackedSubByte[int64](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Int4, dtypes.Int8, gobackend.PriorityTyped, execConvertPackedSubByte[int8](unpackInt4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Float32, gobackend.PriorityTyped, execConvertPackedSubByte[float32](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Float64, gobackend.PriorityTyped, execConvertPackedSubByte[float64](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Int32, gobackend.PriorityTyped, execConvertPackedSubByte[int32](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Int64, gobackend.PriorityTyped, execConvertPackedSubByte[int64](unpackUint4Nibbles, 2))
+	ConvertDTypePairMap.Register(dtypes.Uint4, dtypes.Uint8, gobackend.PriorityTyped, execConvertPackedSubByte[uint8](unpackUint4Nibbles, 2))
+
+	// Register sub-byte type conversions (Int2, Uint2).
+	// Each byte packs 4 values (2 bits each). Bit layout: bits 0-1 = first value,
+	// bits 2-3 = second, bits 4-5 = third, bits 6-7 = fourth.
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Float32, gobackend.PriorityTyped, execConvertPackedSubByte[float32](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Float64, gobackend.PriorityTyped, execConvertPackedSubByte[float64](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int32, gobackend.PriorityTyped, execConvertPackedSubByte[int32](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int64, gobackend.PriorityTyped, execConvertPackedSubByte[int64](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Int2, dtypes.Int8, gobackend.PriorityTyped, execConvertPackedSubByte[int8](unpackInt2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Float32, gobackend.PriorityTyped, execConvertPackedSubByte[float32](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Float64, gobackend.PriorityTyped, execConvertPackedSubByte[float64](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Int32, gobackend.PriorityTyped, execConvertPackedSubByte[int32](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Int64, gobackend.PriorityTyped, execConvertPackedSubByte[int64](unpackUint2Bits, 4))
+	ConvertDTypePairMap.Register(dtypes.Uint2, dtypes.Uint8, gobackend.PriorityTyped, execConvertPackedSubByte[uint8](unpackUint2Bits, 4))
+}
+
 // execConvertPackedSubByte returns a converter for packed sub-byte types (Int4, Uint4, Int2, Uint2).
 // The unpackFn parameter selects signed vs unsigned nibble interpretation.
 // Sub-byte types are always stored packed as []byte.

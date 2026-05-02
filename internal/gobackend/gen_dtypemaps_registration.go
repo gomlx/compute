@@ -39,5 +39,9 @@ func init() {
 	mutableBytesDTypeMap.Register(dtypes.BFloat16, PriorityGeneric, MutableBytesGeneric[bfloat16.BFloat16])
 	mutableBytesDTypeMap.Register(dtypes.Float16, PriorityGeneric, MutableBytesGeneric[float16.Float16])
 	mutableBytesDTypeMap.Register(dtypes.Bool, PriorityGeneric, MutableBytesGeneric[bool])
+	mutableBytesDTypeMap.Register(dtypes.Int2, PriorityGeneric, MutableBytesGeneric[uint8])
+	mutableBytesDTypeMap.Register(dtypes.Int4, PriorityGeneric, MutableBytesGeneric[uint8])
+	mutableBytesDTypeMap.Register(dtypes.Uint2, PriorityGeneric, MutableBytesGeneric[uint8])
+	mutableBytesDTypeMap.Register(dtypes.Uint4, PriorityGeneric, MutableBytesGeneric[uint8])
 
 }
