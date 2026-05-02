@@ -125,7 +125,7 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	}
 
 	// Initialize output and updateFn according to the reduction type
-	var buildUpdateFnMap *DTypeMap
+	var buildUpdateFnMap *gobackend.DTypeMap
 	switch opData.reductionType { //nolint:exhaustive
 	case compute.ReduceOpMax:
 		err := output.Fill(dtype.LowestValue())
@@ -246,7 +246,7 @@ var (
 
 // Generic functions that build a function that will update the output at outputFlatIdx from the operand at operandFlatIdx.
 
-func reduceWindowMaxBuildUpdateFn[T PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowMaxBuildUpdateFn[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -263,7 +263,7 @@ func reduceWindowMaxBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPr
 	}
 }
 
-func reduceWindowMinBuildUpdateFn[T PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowMinBuildUpdateFn[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -280,7 +280,7 @@ func reduceWindowMinBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPr
 	}
 }
 
-func reduceWindowSumBuildUpdateFn[T PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowSumBuildUpdateFn[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {
@@ -297,7 +297,7 @@ func reduceWindowSumBuildUpdateFnHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPr
 	}
 }
 
-func reduceWindowProductBuildUpdateFn[T PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+func reduceWindowProductBuildUpdateFn[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer) reduceWindowUpdateFn {
 	operandFlat := operand.Flat.([]T)
 	outputFlat := output.Flat.([]T)
 	return func(operandFlatIdx, outputFlatIdx int) {

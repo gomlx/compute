@@ -1,5 +1,18 @@
 package ops
 
+import (
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+	"github.com/pkg/errors"
+)
+
+func init() {
+	gobackend.RegisterArgMinMax.Register(ArgMinMax, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeArgMinMax, gobackend.PriorityGeneric, execArgMinMax)
+}
+
 // argMinMaxNode with the axis and isMin fields.
 type argMinMaxNode struct {
 	axis  int
@@ -20,12 +33,7 @@ func (a *argMinMaxNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 //
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=1, isMin=true) -> {1, 0}  // (it chooses the 0 and the -3)
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=0, isMin=false) -> {0, 1, 0} // (it choose the 2, 4 and 7)
-
-func init() {
-	gobackend.RegisterArgMinMax.Register(ArgMinMax, gobackend.PriorityGeneric)
-}
-
-func ArgMinMax(f *gobackend.Function, 
+func ArgMinMax(f *gobackend.Function,
 	operandOp compute.Value,
 	axis int,
 	outputDType dtypes.DType,
@@ -47,10 +55,6 @@ func ArgMinMax(f *gobackend.Function,
 	}
 	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{operand}, data)
 	return node, nil
-}
-
-func init() {
-	gobackend.SetNodeExecutor(compute.OpTypeArgMinMax, gobackend.PriorityGeneric, execArgMinMax)
 }
 
 const MaxArgMinMaxReductionSize = 0x8000_0000
@@ -104,6 +108,7 @@ func execArgMinMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 
 var (
 	//gobackend:dtypemap execArgMinMaxGeneric ints,uints,floats
+	//gobackend:dtypemap execArgMinMaxGenericHalf half
 	argMinMaxDTypeMap = gobackend.NewDTypeMap("ArgMinMaxRun")
 	//gobackend:dtypemap buildArgMinMaxCopyIntsFn ints,uints
 	argMinMaxCopyIntsDTypeMap = gobackend.NewDTypeMap("ArgMinMaxCopyInts")
@@ -122,7 +127,7 @@ func buildArgMinMaxCopyIntsFn[T gobackend.PODIntegerConstraints](output *gobacke
 }
 
 // TODO: handle the error condition.
-func execArgMinMaxGeneric[T PODNumericConstraints](
+func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 	backend *gobackend.Backend, operand *gobackend.Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
 	operandFlat := operand.Flat.([]T)
@@ -181,19 +186,15 @@ func execArgMinMaxGeneric[T PODNumericConstraints](
 	backend.PutBuffer(currentArgBestBuffer)
 }
 
-func init() {
-	argMinMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, execArgMinMaxGenericBFloat16)
-}
-
 // TODO: handle the error condition
-func execArgMinMaxGenericBFloat16(
+func execArgMinMaxGenericHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](
 	backend *gobackend.Backend, operand *gobackend.Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
-	operandFlat := operand.Flat.([]bfloat16.BFloat16)
+	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
 	currentBestBuffer, _ := backend.GetBuffer(operand.RawShape.DType, suffixSize)
-	currentBest := currentBestBuffer.Flat.([]bfloat16.BFloat16)
+	currentBest := currentBestBuffer.Flat.([]T)
 	currentArgBestBuffer, _ := backend.GetBuffer(dtypes.Int32, suffixSize)
 	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
