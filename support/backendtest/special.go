@@ -421,29 +421,71 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 	t.Run("Slice", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeSlice)
-		// Test Case 1: Simple 1D slice
-		y1, _ := testutil.Exec1(b, []any{[]int64{0, 1, 2, 3, 4}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			starts := []int{1}
-			limits := []int{4}
-			strides := []int{1}
-			return f.Slice(p[0], starts, limits, strides)
-		})
-		want1 := []int64{1, 2, 3}
-		if ok, diff := testutil.IsEqual(want1, y1); !ok {
-			t.Fatalf("Slice y1 mismatch:\n%s", diff)
-		}
 
-		// Test Case 2: 2D slice with stride > 1
-		y2, _ := testutil.Exec1(b, []any{[][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			starts := []int{0, 0}
-			limits := []int{3, 3}
-			strides := []int{2, 2}
-			return f.Slice(p[0], starts, limits, strides)
+		t.Run("Simple1D", func(t *testing.T) {
+			y1, _ := testutil.Exec1(b, []any{[]int64{0, 1, 2, 3, 4}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				starts := []int{1}
+				limits := []int{4}
+				strides := []int{1}
+				return f.Slice(p[0], starts, limits, strides)
+			})
+			want1 := []int64{1, 2, 3}
+			if ok, diff := testutil.IsEqual(want1, y1); !ok {
+				t.Fatalf("Slice y1 mismatch:\n%s", diff)
+			}
 		})
-		want2 := [][]int32{{0, 2}, {6, 8}}
-		if ok, diff := testutil.IsEqual(want2, y2); !ok {
-			t.Fatalf("Slice y2 mismatch:\n%s", diff)
-		}
+
+		t.Run("2DWithStride", func(t *testing.T) {
+			y2, _ := testutil.Exec1(b, []any{[][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				starts := []int{0, 0}
+				limits := []int{3, 3}
+				strides := []int{2, 2}
+				return f.Slice(p[0], starts, limits, strides)
+			})
+			want2 := [][]int32{{0, 2}, {6, 8}}
+			if ok, diff := testutil.IsEqual(want2, y2); !ok {
+				t.Fatalf("Slice y2 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2DWithStart", func(t *testing.T) {
+			y3, _ := testutil.Exec1(b, []any{[][]int32{{0, 1, 2}, {3, 4, 5}, {6, 7, 8}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				starts := []int{0, 1}
+				limits := []int{3, 3}
+				strides := []int{1, 1}
+				return f.Slice(p[0], starts, limits, strides)
+			})
+			want3 := [][]int32{{1, 2}, {4, 5}, {7, 8}}
+			if ok, diff := testutil.IsEqual(want3, y3); !ok {
+				t.Fatalf("Slice y3 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("EmptySlice", func(t *testing.T) {
+			y, _ := testutil.Exec1(b, []any{[]int64{0, 1, 2, 3, 4}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				starts := []int{2}
+				limits := []int{2}
+				strides := []int{1}
+				return f.Slice(p[0], starts, limits, strides)
+			})
+			want := []int64{}
+			if ok, diff := testutil.IsEqual(want, y); !ok {
+				t.Fatalf("Slice y mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("EmptySliceMultipleDimensions", func(t *testing.T) {
+			y, _ := testutil.Exec1(b, []any{[][]int64{{0, 1, 2}, {3, 4, 5}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				starts := []int{0, 1}
+				limits := []int{2, 1}
+				strides := []int{1, 1}
+				return f.Slice(p[0], starts, limits, strides)
+			})
+			want := [][]int64{{}, {}}
+			if ok, diff := testutil.IsEqual(want, y); !ok {
+				t.Fatalf("Slice y mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("RNGBitsGenerator", func(t *testing.T) {

@@ -717,10 +717,16 @@ type StandardOps interface {
 	Sin(x Value) (Value, error)
 
 	// Slice extracts a subarray from the input array.
+	//
 	// The subarray is of the same rank as the input and contains the values inside a bounding box within the input array
 	// where the dimensions and indices of the bounding box are given as arguments to the slice operation.
+	//
 	// The strides set the input stride of the slice in each axis and must be >= 1.
 	// It is optional, and if missing, it is assumed to be 1 for every dimension.
+	//
+	// The limits are defined on the x axes, and they are exclusive upper bounds, i.e. the slice includes
+	// elements from starts up to (but not including) limits.
+	//
 	// Examples:
 	// 	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={4}, strides=nil) -> {2, 3}
 	// 	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
