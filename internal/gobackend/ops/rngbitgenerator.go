@@ -1,15 +1,25 @@
 package ops
 
+import (
+	"encoding/binary"
+	"math/rand/v2"
+
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
+)
+
+func init() {
+	gobackend.RegisterRNGBitGenerator.Register(RNGBitGenerator, gobackend.PriorityGeneric)
+	gobackend.MultiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
+}
+
 // RNGBitGenerator generates the given shape filled with random bits.
 // It takes as input the current random number generator (RNG) state, see RNGState or RNGStateFromSeed.
 // The algorithm is hard-coded to use Philox algorithm for now.
 //
 // It returns the new state of the RNG and the generated values (with random bits) with the given shape.
-
-func init() {
-	gobackend.RegisterRNGBitGenerator.Register(RNGBitGenerator, gobackend.PriorityGeneric)
-}
-
 func RNGBitGenerator(f *gobackend.Function, stateOp compute.Value, shape shapes.Shape) (newState, values compute.Value, err error) {
 	opType := compute.OpTypeRNGBitGenerator
 	inputs, err := f.VerifyAndCastValues(opType.String(), stateOp)
@@ -33,10 +43,6 @@ func RNGBitGenerator(f *gobackend.Function, stateOp compute.Value, shape shapes.
 	newState = node.MultiOutputsNodes[0]
 	values = node.MultiOutputsNodes[1]
 	return
-}
-
-func init() {
-	gobackend.MultiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
 }
 
 // execRNGBitGenerator is the executor function registered for compute.OpTypeRngBitGenerator.
