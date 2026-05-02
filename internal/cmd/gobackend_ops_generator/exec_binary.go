@@ -155,9 +155,8 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](lh
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = {{ CallOp .Format "lhs[indices.LHSFlatIdx]" "rhs[indices.RHSFlatIdx]" }}
 		}
 		return
@@ -213,9 +212,8 @@ func exec{{$name}}{{$version}}{{$half.DType}}(lhs, rhs []{{$half.GoType}}, outpu
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 		{{- if $is_comparison }}

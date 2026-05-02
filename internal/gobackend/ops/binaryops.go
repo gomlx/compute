@@ -152,6 +152,7 @@ func addBinaryOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp comp
 	if err != nil {
 		return nil, err
 	}
+
 	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, nil)
 	return node, nil
 }
@@ -167,6 +168,8 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 	if err != nil {
 		return nil, err
 	}
+	// Note: it's not worth pre-calculating the ZippedBroadcastIterator here, since it's so fast and it's better
+	// to have it created in the stack than accessing a pre-created one, it seems.
 	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, nil)
 	return node, nil
 }

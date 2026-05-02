@@ -47,43 +47,44 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execAddNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execAddNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execAddNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execAddNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execAddNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execAddNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execAddNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execAddNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execAddNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAddNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAddNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAddNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -91,7 +92,7 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execAddNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -109,15 +110,14 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] + rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execAddNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -138,9 +138,8 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a + b)
@@ -148,7 +147,7 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execAddNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -169,9 +168,8 @@ func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(a + b)
@@ -189,43 +187,44 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMulNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMulNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMulNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMulNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMulNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMulNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMulNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMulNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMulNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMulNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMulNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMulNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -233,7 +232,7 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMulNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -251,15 +250,14 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] * rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMulNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -280,9 +278,8 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a * b)
@@ -290,7 +287,7 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMulNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -311,9 +308,8 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(a * b)
@@ -327,43 +323,44 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execSubNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execSubNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execSubNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execSubNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execSubNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execSubNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execSubNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execSubNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execSubNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execSubNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execSubNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execSubNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -371,7 +368,7 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execSubNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -396,15 +393,14 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] - rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execSubNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -433,9 +429,8 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a - b)
@@ -443,7 +438,7 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execSubNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -472,9 +467,8 @@ func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(a - b)
@@ -488,43 +482,44 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execDivNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execDivNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execDivNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execDivNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execDivNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execDivNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execDivNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execDivNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execDivNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execDivNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execDivNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execDivNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -532,7 +527,7 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execDivNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -557,15 +552,14 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] / rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execDivNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -594,9 +588,8 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(a / b)
@@ -604,7 +597,7 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execDivNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -633,9 +626,8 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(a / b)
@@ -649,43 +641,44 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execRemIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execRemIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execRemIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execRemIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execRemIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execRemIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execRemIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execRemIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execRemFloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execRemFloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execRemFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execRemFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -693,7 +686,7 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -718,16 +711,15 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] % rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
 
-func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execRemFloatGeneric[T gobackend.PODFloatConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -752,15 +744,14 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Mod(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
 }
-func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execRemFloatBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -789,9 +780,8 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
@@ -799,7 +789,7 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	}
 }
-func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execRemFloatFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -828,9 +818,8 @@ func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
@@ -844,43 +833,44 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execPowIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execPowIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execPowIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execPowIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execPowIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execPowIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execPowIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execPowIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execPowFloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execPowFloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execPowFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execPowFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -888,7 +878,7 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -913,16 +903,15 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = execScalarPowIntGeneric(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
 }
 
-func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execPowFloatGeneric[T gobackend.PODFloatConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -947,15 +936,14 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Pow(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
 }
-func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execPowFloatBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -984,9 +972,8 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
@@ -994,7 +981,7 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	}
 }
-func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execPowFloatFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1023,9 +1010,8 @@ func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
@@ -1039,19 +1025,20 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Float32:
-		execAtan2FloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAtan2FloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAtan2FloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAtan2FloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1059,7 +1046,7 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	return output, nil
 }
 
-func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1084,15 +1071,14 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Atan2(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
 		return
 	}
 }
-func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execAtan2FloatBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1121,9 +1107,8 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
@@ -1131,7 +1116,7 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execAtan2FloatFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1160,9 +1145,8 @@ func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
@@ -1180,43 +1164,44 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMaxNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMaxNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMaxNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMaxNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMaxNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMaxNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMaxNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMaxNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMaxNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMaxNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMaxNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMaxNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1224,7 +1209,7 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMaxNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1242,15 +1227,14 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = max(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
 }
-func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMaxNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1271,9 +1255,8 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(max(a, b))
@@ -1281,7 +1264,7 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMaxNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1302,9 +1285,8 @@ func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(max(a, b))
@@ -1322,43 +1304,44 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMinNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMinNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMinNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMinNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMinNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMinNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMinNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMinNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMinNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMinNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMinNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMinNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1366,7 +1349,7 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMinNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1384,15 +1367,14 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = min(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
 		return
 	}
 }
-func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMinNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1413,9 +1395,8 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = bfloat16.FromFloat32(min(a, b))
@@ -1423,7 +1404,7 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMinNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1444,9 +1425,8 @@ func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = float16.FromFloat32(min(a, b))
@@ -1460,31 +1440,32 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseAndIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseAndIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseAndIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseAndIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseAndIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseAndIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseAndIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseAndIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1492,7 +1473,7 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1517,9 +1498,8 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] & rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1531,31 +1511,32 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseOrIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseOrIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseOrIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseOrIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseOrIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseOrIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseOrIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseOrIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1563,7 +1544,7 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	return output, nil
 }
 
-func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1588,9 +1569,8 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] | rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1602,31 +1582,32 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseXorIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseXorIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseXorIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseXorIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseXorIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseXorIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseXorIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseXorIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1634,7 +1615,7 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1659,9 +1640,8 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] ^ rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1673,10 +1653,11 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalAndBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalAndBooleanGeneric[bool](zipIter, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1685,7 +1666,7 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1710,9 +1691,8 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] && rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1724,10 +1704,11 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalOrBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalOrBooleanGeneric[bool](zipIter, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1736,7 +1717,7 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	return output, nil
 }
 
-func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1761,9 +1742,8 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] || rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1775,10 +1755,11 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalXorBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalXorBooleanGeneric[bool](zipIter, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1787,7 +1768,7 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1812,9 +1793,8 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
 		return
@@ -1835,43 +1815,44 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1879,7 +1860,7 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	return output, nil
 }
 
-func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execEqualNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1897,15 +1878,14 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] == rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execEqualNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1926,9 +1906,8 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a == b
@@ -1936,7 +1915,7 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execEqualNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -1957,9 +1936,8 @@ func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a == b
@@ -1982,43 +1960,44 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execNotEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execNotEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execNotEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execNotEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execNotEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execNotEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execNotEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execNotEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execNotEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execNotEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execNotEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execNotEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2026,7 +2005,7 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	return output, nil
 }
 
-func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2044,15 +2023,14 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execNotEqualNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2073,9 +2051,8 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a != b
@@ -2083,7 +2060,7 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execNotEqualNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2104,9 +2081,8 @@ func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a != b
@@ -2125,43 +2101,44 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterOrEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterOrEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterOrEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterOrEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterOrEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterOrEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterOrEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterOrEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterOrEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterOrEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2169,7 +2146,7 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 	return output, nil
 }
 
-func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2194,15 +2171,14 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] >= rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execGreaterOrEqualNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2231,9 +2207,8 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a >= b
@@ -2241,7 +2216,7 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 		return
 	}
 }
-func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execGreaterOrEqualNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2270,9 +2245,8 @@ func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a >= b
@@ -2291,43 +2265,44 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterThanNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterThanNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterThanNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterThanNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterThanNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterThanNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterThanNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterThanNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterThanNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterThanNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2335,7 +2310,7 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	return output, nil
 }
 
-func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2360,15 +2335,14 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] > rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execGreaterThanNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2397,9 +2371,8 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a > b
@@ -2407,7 +2380,7 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execGreaterThanNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2436,9 +2409,8 @@ func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a > b
@@ -2457,43 +2429,44 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessOrEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessOrEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessOrEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessOrEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessOrEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessOrEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessOrEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessOrEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessOrEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessOrEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2501,7 +2474,7 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	return output, nil
 }
 
-func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2526,15 +2499,14 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] <= rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execLessOrEqualNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2563,9 +2535,8 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a <= b
@@ -2573,7 +2544,7 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execLessOrEqualNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2602,9 +2573,8 @@ func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a <= b
@@ -2623,43 +2593,44 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	zipIter, _ := node.Data.(*gobackend.ZipIterator)
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessThanNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[uint8](zipIter, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessThanNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[uint16](zipIter, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessThanNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[uint32](zipIter, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessThanNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[uint64](zipIter, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessThanNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[int8](zipIter, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessThanNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[int16](zipIter, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessThanNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[int32](zipIter, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessThanNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[int64](zipIter, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessThanNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[float32](zipIter, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessThanNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric[float64](zipIter, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericBFloat16(zipIter, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericFloat16(zipIter, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2667,7 +2638,7 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	return output, nil
 }
 
-func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](zipIter *gobackend.ZipIterator, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2692,15 +2663,14 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] < rhs[indices.RHSFlatIdx]
 		}
 		return
 	}
 }
-func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execLessThanNumericBFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2729,9 +2699,8 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a < b
@@ -2739,7 +2708,7 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execLessThanNumericFloat16(zipIter *gobackend.ZipIterator, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape) {
 	switch {
 	case len(rhs) == 1:
@@ -2768,9 +2737,8 @@ func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 		return
 	default:
 		// Case 3: with broadcasting non-scalar tensors:
-		lhsIter := gobackend.NewBroadcastIterator(lhsShape, outputShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsShape, outputShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
 			output[indices.TgtFlatIdx] = a < b

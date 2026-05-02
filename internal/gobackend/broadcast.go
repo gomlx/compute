@@ -17,9 +17,6 @@ type BroadcastIterator struct {
 	srcStrides  []int
 	isBroadcast []bool
 	tgtDims     []int
-
-	srcFlatIdx int
-	perAxesIdx []int
 }
 
 // NewBroadcastIterator returns an iterator contructor over the flat indices of the target shape of a broadcast (where
@@ -35,7 +32,6 @@ func NewBroadcastIterator(srcShape, tgtShape shapes.Shape) *BroadcastIterator {
 	}
 	bi := &BroadcastIterator{
 		tgtSize:     tgtShape.Size(),
-		perAxesIdx:  make([]int, rank),
 		tgtDims:     slices.Clone(tgtShape.Dimensions),
 		isBroadcast: make([]bool, rank),
 		srcStrides:  srcShape.Strides(),
@@ -83,55 +79,97 @@ type ZippedIndices struct {
 	TgtFlatIdx             int
 }
 
-// ZipppedBroadcastIterators iterates over two BroadcastIterators in parallel, yielding the zipped indices.
-func ZippedBroadcastIterators(lhs, rhs *BroadcastIterator) iter.Seq[ZippedIndices] {
+// ZipIterator allows iteration over the flat indices of the target shape of a broadcast (where some axis
+// dimensions grow) for two input shapes (LHS and RHS).
+type ZipIterator struct {
+	tgtSize        int
+	tgtDims        []int
+	lhsStrides     []int
+	rhsStrides     []int
+	lhsIsBroadcast []bool
+	rhsIsBroadcast []bool
+}
+
+// NewZippedBroadcastIterator returns an iterator constructor over the flat indices of the target shape of a broadcast (where
+// some axis dimensions grow) for two input shapes (LHS and RHS).
+//
+// Pre-requisite: lhsShape.Rank() == tgtShape.Rank() && rhsShape.Rank() == tgtShape.Rank().
+//
+// It is used by implicit broadcasting in binary ops.
+func NewZippedBroadcastIterator(lhsShape, rhsShape, tgtShape shapes.Shape) *ZipIterator {
+	rank := tgtShape.Rank()
+	if lhsShape.Rank() != rank || rhsShape.Rank() != rank {
+		exceptions.Panicf("zippedBroadcastIterator: rank mismatch lhsShape=%s, rhsShape=%s, tgtShape=%s", lhsShape, rhsShape, tgtShape)
+	}
+
+	zi := &ZipIterator{
+		tgtSize:        tgtShape.Size(),
+		tgtDims:        slices.Clone(tgtShape.Dimensions),
+		lhsStrides:     lhsShape.Strides(),
+		rhsStrides:     rhsShape.Strides(),
+		lhsIsBroadcast: make([]bool, rank),
+		rhsIsBroadcast: make([]bool, rank),
+	}
+	for axis := range rank {
+		zi.lhsIsBroadcast[axis] = lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis]
+		zi.rhsIsBroadcast[axis] = rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis]
+	}
+	return zi
+}
+
+// EqualNodeData implements NodeDataComparable, so this can be used as NodeData -- the comparison
+// is used for deduping repeated nodes during model building.
+func (z *ZipIterator) EqualNodeData(other NodeDataComparable) bool {
+	if z == nil && other == nil {
+		return true
+	}
+	if z == nil || other == nil {
+		return false
+	}
+	otherZ, ok := other.(*ZipIterator)
+	if !ok {
+		return false
+	}
+	return z.tgtSize == otherZ.tgtSize &&
+		slices.Equal(z.tgtDims, otherZ.tgtDims) &&
+		slices.Equal(z.lhsStrides, otherZ.lhsStrides) &&
+		slices.Equal(z.rhsStrides, otherZ.rhsStrides) &&
+		slices.Equal(z.lhsIsBroadcast, otherZ.lhsIsBroadcast) &&
+		slices.Equal(z.rhsIsBroadcast, otherZ.rhsIsBroadcast)
+}
+
+// IterFlatIndices iterate over the lhs, rhs and target flat indices for broadcast.
+// Notice since we are broadcasting, the target index will always be incremented by 1,
+// while the source indices may repeat (when it is being broadcast).
+func (zi *ZipIterator) IterFlatIndices() iter.Seq[ZippedIndices] {
 	return func(yield func(ZippedIndices) bool) {
-		next1, stop1 := iter.Pull2(lhs.IterFlatIndices())
-		defer stop1()
+		rank := len(zi.tgtDims)
+		perAxesIdx := make([]int, rank)
+		lhsFlatIdx := 0
+		rhsFlatIdx := 0
 
-		next2, stop2 := iter.Pull2(rhs.IterFlatIndices())
-		defer stop2()
-
-		for {
-			var zipped ZippedIndices
-			var ok1, ok2 bool
-			zipped.LHSFlatIdx, zipped.TgtFlatIdx, ok1 = next1()
-			zipped.RHSFlatIdx, _, ok2 = next2()
-			if !ok1 || !ok2 {
-				break
+		for dstFlatIdx := range zi.tgtSize {
+			// Yield first.
+			if !yield(ZippedIndices{LHSFlatIdx: lhsFlatIdx, RHSFlatIdx: rhsFlatIdx, TgtFlatIdx: dstFlatIdx}) {
+				return
 			}
-			if !yield(zipped) {
-				break
+
+			// Bump to next
+			lhsFlatIdx++
+			rhsFlatIdx++
+			for axis := rank - 1; axis >= 0; axis-- {
+				perAxesIdx[axis]++
+				if perAxesIdx[axis] < zi.tgtDims[axis] {
+					if zi.lhsIsBroadcast[axis] {
+						lhsFlatIdx -= zi.lhsStrides[axis]
+					}
+					if zi.rhsIsBroadcast[axis] {
+						rhsFlatIdx -= zi.rhsStrides[axis]
+					}
+					break
+				}
+				perAxesIdx[axis] = 0
 			}
 		}
 	}
-}
-
-// Reset resets the iterator.
-// Only needed if BroadcastIterator is used more than once.
-func (bi *BroadcastIterator) Reset() {
-	bi.srcFlatIdx = 0
-	for i := range bi.perAxesIdx {
-		bi.perAxesIdx[i] = 0
-	}
-}
-
-// NextSrcIndex returns the next source index.
-// It must be called sequentially.
-func (bi *BroadcastIterator) Next() (srcFlatIdx int) {
-	srcFlatIdx = bi.srcFlatIdx
-	bi.srcFlatIdx++
-	rank := len(bi.perAxesIdx)
-	for axis := rank - 1; axis >= 0; axis-- {
-		bi.perAxesIdx[axis]++
-		if bi.perAxesIdx[axis] < bi.tgtDims[axis] {
-			if bi.isBroadcast[axis] {
-				// If we are broadcasting on this axis, we need to go back and repeat the same slice of the tensor.
-				bi.srcFlatIdx -= bi.srcStrides[axis]
-			}
-			break
-		}
-		bi.perAxesIdx[axis] = 0
-	}
-	return
 }

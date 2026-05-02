@@ -103,9 +103,8 @@ func shiftLeftGeneric[T gobackend.PODIntegerConstraints](lhsBuf, rhsBuf, outputB
 			output[i] = v << uint(rhs[i])
 		}
 	default:
-		lhsIter := gobackend.NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter := gobackend.NewZippedBroadcastIterator(lhsBuf.RawShape, rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] << uint(rhs[indices.RHSFlatIdx])
 		}
 	}
@@ -133,9 +132,8 @@ func shiftRightArithmeticGeneric[T gobackend.PODIntegerConstraints](lhsBuf, rhsB
 			output[i] = v >> uint(rhs[i])
 		}
 	default:
-		lhsIter := gobackend.NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter := gobackend.NewZippedBroadcastIterator(lhsBuf.RawShape, rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] >> uint(rhs[indices.RHSFlatIdx])
 		}
 	}
@@ -180,9 +178,8 @@ func shiftRightLogicalSignedGeneric[T ~int8 | ~int16 | ~int32 | ~int64, U ~uint8
 			output[i] = T(U(v) >> uint(rhs[i]))
 		}
 	default:
-		lhsIter := gobackend.NewBroadcastIterator(lhsBuf.RawShape, outputBuf.RawShape)
-		rhsIter := gobackend.NewBroadcastIterator(rhsBuf.RawShape, outputBuf.RawShape)
-		for indices := range gobackend.ZippedBroadcastIterators(lhsIter, rhsIter) {
+		zipIter := gobackend.NewZippedBroadcastIterator(lhsBuf.RawShape, rhsBuf.RawShape, outputBuf.RawShape)
+		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(U(lhs[indices.LHSFlatIdx]) >> uint(rhs[indices.RHSFlatIdx]))
 		}
 	}
