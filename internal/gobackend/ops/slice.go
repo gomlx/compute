@@ -1,5 +1,14 @@
 package ops
 
+import (
+	"slices"
+
+	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
+	"github.com/pkg/errors"
+)
+
 // sliceNode is attached to the gobackend.Node.data field for Slice.
 type sliceNode struct {
 	starts, limits, strides []int
@@ -86,16 +95,13 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *go
 
 	// Find operandFlatIdx start value.
 	var operandFlatIdx int
-	operandFlatStrides := calculateStrides(operand.RawShape.Dimensions)
+	operandFlatStrides := operand.RawShape.Strides()
 	for axis, idx := range params.starts {
 		operandFlatIdx += operandFlatStrides[axis] * idx
-
-		// Scale the flat index strides by the requested strides for this axis.
-		operandFlatStrides[axis] *= params.strides[axis]
 	}
 
 	operandPerAxisIdx := make([]int, rank)
-	operandPerAxisSize := output.RawShape.Dimensions
+	operandDimensions := operand.RawShape.Dimensions
 
 	for outputFlatIdx := range outputFlat {
 		// Copy value at current position.
@@ -103,7 +109,7 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *go
 
 		// Iterate to the next operand position.
 		for axis := rank - 1; axis >= 0; axis-- {
-			if operandPerAxisSize[axis] == 1 {
+			if operandDimensions[axis] == 1 {
 				// We don't iterate on this axis.
 				continue
 			}
@@ -111,14 +117,14 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *go
 			// Increment the current axis.
 			operandPerAxisIdx[axis]++
 			operandFlatIdx += operandFlatStrides[axis]
-			if operandPerAxisIdx[axis] < operandPerAxisSize[axis] {
-				// Done for this iteration.
+			if operandPerAxisIdx[axis] < operandDimensions[axis] {
+				// Done for this iteration, don't need to go to the next axis yet.
 				break
 			}
-
-			// Rewind the current axis: we will bump the next axis for this iteration.
-			operandPerAxisIdx[axis] = 0
-			operandFlatIdx -= operandPerAxisSize[axis] * operandFlatStrides[axis]
+			// Rewind the current axis to the start: we will increment the next axis for this iteration.
+			operandFlatIdx -= operandDimensions[axis] * operandFlatStrides[axis]
+			operandPerAxisIdx[axis] = params.starts[axis]
+			operandFlatIdx += operandFlatStrides[axis] * params.strides[axis]
 		}
 	}
 }
