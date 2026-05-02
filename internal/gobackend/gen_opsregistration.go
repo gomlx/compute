@@ -25,12 +25,44 @@ func (f *Function) Add(lhs compute.Value, rhs compute.Value) (compute.Value, err
 	return RegisterAdd.Fn(f, lhs, rhs)
 }
 
+func (f *Function) ArgMinMax(x compute.Value, axis int, outputDType dtypes.DType, isMin bool) (compute.Value, error) {
+	if RegisterArgMinMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ArgMinMax(x, axis, outputDType, isMin)
+	}
+	return RegisterArgMinMax.Fn(f, x, axis, outputDType, isMin)
+}
+
 func (f *Function) Atan2(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterAtan2.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Atan2(lhs, rhs)
 	}
 	return RegisterAtan2.Fn(f, lhs, rhs)
+}
+
+func (f *Function) BatchNormForInference(operand compute.Value, scale compute.Value, offset compute.Value, mean compute.Value, variance compute.Value, epsilon float32, featureAxis int) (compute.Value, error) {
+	if RegisterBatchNormForInference.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BatchNormForInference(operand, scale, offset, mean, variance, epsilon, featureAxis)
+	}
+	return RegisterBatchNormForInference.Fn(f, operand, scale, offset, mean, variance, epsilon, featureAxis)
+}
+
+func (f *Function) BatchNormForTraining(operand compute.Value, scale compute.Value, offset compute.Value, epsilon float32, featureAxis int) (normalized compute.Value, batchMean compute.Value, batchVariance compute.Value, err error) {
+	if RegisterBatchNormForTraining.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BatchNormForTraining(operand, scale, offset, epsilon, featureAxis)
+	}
+	return RegisterBatchNormForTraining.Fn(f, operand, scale, offset, epsilon, featureAxis)
+}
+
+func (f *Function) BatchNormGradient(operand compute.Value, scale compute.Value, mean compute.Value, variance compute.Value, gradOutput compute.Value, epsilon float32, featureAxis int) (gradOperand compute.Value, gradScale compute.Value, gradOffset compute.Value, err error) {
+	if RegisterBatchNormGradient.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.BatchNormGradient(operand, scale, mean, variance, gradOutput, epsilon, featureAxis)
+	}
+	return RegisterBatchNormGradient.Fn(f, operand, scale, mean, variance, gradOutput, epsilon, featureAxis)
 }
 
 func (f *Function) Bitcast(operand compute.Value, targetDType dtypes.DType) (compute.Value, error) {
@@ -89,14 +121,6 @@ func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, bro
 	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
 }
 
-func (f *Function) Call(fn compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
-	if RegisterCall.Fn == nil {
-		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.Call(fn, inputs...)
-	}
-	return RegisterCall.Fn(f, fn, inputs...)
-}
-
 func (f *Function) Ceil(x compute.Value) (compute.Value, error) {
 	if RegisterCeil.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -105,12 +129,52 @@ func (f *Function) Ceil(x compute.Value) (compute.Value, error) {
 	return RegisterCeil.Fn(f, x)
 }
 
+func (f *Function) Clamp(min compute.Value, x compute.Value, max compute.Value) (compute.Value, error) {
+	if RegisterClamp.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Clamp(min, x, max)
+	}
+	return RegisterClamp.Fn(f, min, x, max)
+}
+
 func (f *Function) Clz(x compute.Value) (compute.Value, error) {
 	if RegisterClz.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Clz(x)
 	}
 	return RegisterClz.Fn(f, x)
+}
+
+func (f *Function) Complex(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterComplex.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Complex(lhs, rhs)
+	}
+	return RegisterComplex.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Concatenate(axis int, operands ...compute.Value) (compute.Value, error) {
+	if RegisterConcatenate.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Concatenate(axis, operands...)
+	}
+	return RegisterConcatenate.Fn(f, axis, operands...)
+}
+
+func (f *Function) Conj(x compute.Value) (compute.Value, error) {
+	if RegisterConj.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Conj(x)
+	}
+	return RegisterConj.Fn(f, x)
+}
+
+func (f *Function) ConvertDType(x compute.Value, dtype dtypes.DType) (compute.Value, error) {
+	if RegisterConvertDType.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ConvertDType(x, dtype)
+	}
+	return RegisterConvertDType.Fn(f, x, dtype)
 }
 
 func (f *Function) ConvGeneral(input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error) {
@@ -145,12 +209,36 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 }
 
+func (f *Function) DynamicSlice(operand compute.Value, startIndices []compute.Value, sliceDims []int) (compute.Value, error) {
+	if RegisterDynamicSlice.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicSlice(operand, startIndices, sliceDims)
+	}
+	return RegisterDynamicSlice.Fn(f, operand, startIndices, sliceDims)
+}
+
+func (f *Function) DynamicUpdateSlice(operand compute.Value, update compute.Value, startIndices []compute.Value) (compute.Value, error) {
+	if RegisterDynamicUpdateSlice.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicUpdateSlice(operand, update, startIndices)
+	}
+	return RegisterDynamicUpdateSlice.Fn(f, operand, update, startIndices)
+}
+
 func (f *Function) Equal(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterEqual.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.Equal(lhs, rhs)
 	}
 	return RegisterEqual.Fn(f, lhs, rhs)
+}
+
+func (f *Function) EqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterEqualTotalOrder.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.EqualTotalOrder(lhs, rhs)
+	}
+	return RegisterEqualTotalOrder.Fn(f, lhs, rhs)
 }
 
 func (f *Function) Erf(x compute.Value) (compute.Value, error) {
@@ -175,6 +263,14 @@ func (f *Function) Expm1(x compute.Value) (compute.Value, error) {
 		return f.Function.Expm1(x)
 	}
 	return RegisterExpm1.Fn(f, x)
+}
+
+func (f *Function) FFT(operand compute.Value, fftType compute.FFTType, fftLength []int) (compute.Value, error) {
+	if RegisterFFT.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FFT(operand, fftType, fftLength)
+	}
+	return RegisterFFT.Fn(f, operand, fftType, fftLength)
 }
 
 func (f *Function) Floor(x compute.Value) (compute.Value, error) {
@@ -257,6 +353,14 @@ func (f *Function) GreaterOrEqual(lhs compute.Value, rhs compute.Value) (compute
 	return RegisterGreaterOrEqual.Fn(f, lhs, rhs)
 }
 
+func (f *Function) GreaterOrEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterGreaterOrEqualTotalOrder.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.GreaterOrEqualTotalOrder(lhs, rhs)
+	}
+	return RegisterGreaterOrEqualTotalOrder.Fn(f, lhs, rhs)
+}
+
 func (f *Function) GreaterThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterGreaterThan.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -265,12 +369,28 @@ func (f *Function) GreaterThan(lhs compute.Value, rhs compute.Value) (compute.Va
 	return RegisterGreaterThan.Fn(f, lhs, rhs)
 }
 
-func (f *Function) If(pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error) {
-	if RegisterIf.Fn == nil {
+func (f *Function) GreaterThanTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterGreaterThanTotalOrder.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.If(pred, trueBranch, falseBranch)
+		return f.Function.GreaterThanTotalOrder(lhs, rhs)
 	}
-	return RegisterIf.Fn(f, pred, trueBranch, falseBranch)
+	return RegisterGreaterThanTotalOrder.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Identity(x compute.Value) (compute.Value, error) {
+	if RegisterIdentity.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Identity(x)
+	}
+	return RegisterIdentity.Fn(f, x)
+}
+
+func (f *Function) Imag(x compute.Value) (compute.Value, error) {
+	if RegisterImag.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Imag(x)
+	}
+	return RegisterImag.Fn(f, x)
 }
 
 func (f *Function) Iota(shape shapes.Shape, iotaAxis int) (compute.Value, error) {
@@ -289,6 +409,14 @@ func (f *Function) IsFinite(x compute.Value) (compute.Value, error) {
 	return RegisterIsFinite.Fn(f, x)
 }
 
+func (f *Function) IsNaN(x compute.Value) (compute.Value, error) {
+	if RegisterIsNaN.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.IsNaN(x)
+	}
+	return RegisterIsNaN.Fn(f, x)
+}
+
 func (f *Function) LessOrEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterLessOrEqual.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -297,12 +425,28 @@ func (f *Function) LessOrEqual(lhs compute.Value, rhs compute.Value) (compute.Va
 	return RegisterLessOrEqual.Fn(f, lhs, rhs)
 }
 
+func (f *Function) LessOrEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLessOrEqualTotalOrder.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LessOrEqualTotalOrder(lhs, rhs)
+	}
+	return RegisterLessOrEqualTotalOrder.Fn(f, lhs, rhs)
+}
+
 func (f *Function) LessThan(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterLessThan.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.LessThan(lhs, rhs)
 	}
 	return RegisterLessThan.Fn(f, lhs, rhs)
+}
+
+func (f *Function) LessThanTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterLessThanTotalOrder.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.LessThanTotalOrder(lhs, rhs)
+	}
+	return RegisterLessThanTotalOrder.Fn(f, lhs, rhs)
 }
 
 func (f *Function) Log(x compute.Value) (compute.Value, error) {
@@ -401,6 +545,22 @@ func (f *Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value
 	return RegisterNotEqual.Fn(f, lhs, rhs)
 }
 
+func (f *Function) NotEqualTotalOrder(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
+	if RegisterNotEqualTotalOrder.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.NotEqualTotalOrder(lhs, rhs)
+	}
+	return RegisterNotEqualTotalOrder.Fn(f, lhs, rhs)
+}
+
+func (f *Function) Pad(x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
+	if RegisterPad.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Pad(x, fillValue, axesConfig...)
+	}
+	return RegisterPad.Fn(f, x, fillValue, axesConfig...)
+}
+
 func (f *Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterPow.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -415,6 +575,14 @@ func (f *Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.
 		return f.Function.QuantizedEmbeddingLookup(data, indices, dataQuantization)
 	}
 	return RegisterQuantizedEmbeddingLookup.Fn(f, data, indices, dataQuantization)
+}
+
+func (f *Function) Real(x compute.Value) (compute.Value, error) {
+	if RegisterReal.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.Real(x)
+	}
+	return RegisterReal.Fn(f, x)
 }
 
 func (f *Function) ReduceBitwiseAnd(x compute.Value, axes ...int) (compute.Value, error) {
@@ -497,6 +665,14 @@ func (f *Function) ReduceSum(x compute.Value, axes ...int) (compute.Value, error
 	return RegisterReduceSum.Fn(f, x, axes...)
 }
 
+func (f *Function) ReduceWindow(input compute.Value, reductionType compute.ReduceOpType, windowDimensions []int, strides []int, inputDilations []int, windowDilations []int, paddings [][2]int) (compute.Value, error) {
+	if RegisterReduceWindow.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ReduceWindow(input, reductionType, windowDimensions, strides, inputDilations, windowDilations, paddings)
+	}
+	return RegisterReduceWindow.Fn(f, input, reductionType, windowDimensions, strides, inputDilations, windowDilations, paddings)
+}
+
 func (f *Function) Rem(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterRem.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -521,6 +697,14 @@ func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) 
 	return RegisterReverse.Fn(f, x, axes...)
 }
 
+func (f *Function) RNGBitGenerator(state compute.Value, shape shapes.Shape) (newState compute.Value, values compute.Value, err error) {
+	if RegisterRNGBitGenerator.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.RNGBitGenerator(state, shape)
+	}
+	return RegisterRNGBitGenerator.Fn(f, state, shape)
+}
+
 func (f *Function) Round(x compute.Value) (compute.Value, error) {
 	if RegisterRound.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -535,6 +719,46 @@ func (f *Function) Rsqrt(x compute.Value) (compute.Value, error) {
 		return f.Function.Rsqrt(x)
 	}
 	return RegisterRsqrt.Fn(f, x)
+}
+
+func (f *Function) ScatterMax(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	if RegisterScatterMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ScatterMax(operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+	}
+	return RegisterScatterMax.Fn(f, operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+}
+
+func (f *Function) ScatterMin(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	if RegisterScatterMin.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ScatterMin(operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+	}
+	return RegisterScatterMin.Fn(f, operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+}
+
+func (f *Function) ScatterSum(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
+	if RegisterScatterSum.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.ScatterSum(operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+	}
+	return RegisterScatterSum.Fn(f, operand, scatterIndices, updates, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, indicesAreSorted, uniqueIndices)
+}
+
+func (f *Function) SelectAndScatterMax(operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error) {
+	if RegisterSelectAndScatterMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.SelectAndScatterMax(operand, source, windowDimensions, windowStrides, paddings)
+	}
+	return RegisterSelectAndScatterMax.Fn(f, operand, source, windowDimensions, windowStrides, paddings)
+}
+
+func (f *Function) SelectAndScatterMin(operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error) {
+	if RegisterSelectAndScatterMin.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.SelectAndScatterMin(operand, source, windowDimensions, windowStrides, paddings)
+	}
+	return RegisterSelectAndScatterMin.Fn(f, operand, source, windowDimensions, windowStrides, paddings)
 }
 
 func (f *Function) ShiftLeft(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -577,12 +801,12 @@ func (f *Function) Sin(x compute.Value) (compute.Value, error) {
 	return RegisterSin.Fn(f, x)
 }
 
-func (f *Function) Sort(comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error) {
-	if RegisterSort.Fn == nil {
+func (f *Function) Slice(x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error) {
+	if RegisterSlice.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.Sort(comparator, axis, isStable, inputs...)
+		return f.Function.Slice(x, starts, limits, strides)
 	}
-	return RegisterSort.Fn(f, comparator, axis, isStable, inputs...)
+	return RegisterSlice.Fn(f, x, starts, limits, strides)
 }
 
 func (f *Function) Sqrt(x compute.Value) (compute.Value, error) {
@@ -617,12 +841,12 @@ func (f *Function) Transpose(x compute.Value, permutation ...int) (compute.Value
 	return RegisterTranspose.Fn(f, x, permutation...)
 }
 
-func (f *Function) While(cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error) {
-	if RegisterWhile.Fn == nil {
+func (f *Function) Where(condition compute.Value, onTrue compute.Value, onFalse compute.Value) (compute.Value, error) {
+	if RegisterWhere.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.While(cond, body, initialState...)
+		return f.Function.Where(condition, onTrue, onFalse)
 	}
-	return RegisterWhile.Fn(f, cond, body, initialState...)
+	return RegisterWhere.Fn(f, condition, onTrue, onFalse)
 }
 
 // Registration variables for the op handlers.
@@ -633,8 +857,20 @@ var (
 	RegisterAdd = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Add",
 	}
+	RegisterArgMinMax = OpHandlerRegistration[func(f *Function, x compute.Value, axis int, outputDType dtypes.DType, isMin bool) (compute.Value, error)]{
+		Method: "ArgMinMax",
+	}
 	RegisterAtan2 = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Atan2",
+	}
+	RegisterBatchNormForInference = OpHandlerRegistration[func(f *Function, operand compute.Value, scale compute.Value, offset compute.Value, mean compute.Value, variance compute.Value, epsilon float32, featureAxis int) (compute.Value, error)]{
+		Method: "BatchNormForInference",
+	}
+	RegisterBatchNormForTraining = OpHandlerRegistration[func(f *Function, operand compute.Value, scale compute.Value, offset compute.Value, epsilon float32, featureAxis int) (normalized compute.Value, batchMean compute.Value, batchVariance compute.Value, err error)]{
+		Method: "BatchNormForTraining",
+	}
+	RegisterBatchNormGradient = OpHandlerRegistration[func(f *Function, operand compute.Value, scale compute.Value, mean compute.Value, variance compute.Value, gradOutput compute.Value, epsilon float32, featureAxis int) (gradOperand compute.Value, gradScale compute.Value, gradOffset compute.Value, err error)]{
+		Method: "BatchNormGradient",
 	}
 	RegisterBitcast = OpHandlerRegistration[func(f *Function, operand compute.Value, targetDType dtypes.DType) (compute.Value, error)]{
 		Method: "Bitcast",
@@ -657,14 +893,26 @@ var (
 	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
 	}
-	RegisterCall = OpHandlerRegistration[func(f *Function, fn compute.Function, inputs ...compute.Value) ([]compute.Value, error)]{
-		Method: "Call",
-	}
 	RegisterCeil = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Ceil",
 	}
+	RegisterClamp = OpHandlerRegistration[func(f *Function, min compute.Value, x compute.Value, max compute.Value) (compute.Value, error)]{
+		Method: "Clamp",
+	}
 	RegisterClz = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Clz",
+	}
+	RegisterComplex = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "Complex",
+	}
+	RegisterConcatenate = OpHandlerRegistration[func(f *Function, axis int, operands ...compute.Value) (compute.Value, error)]{
+		Method: "Concatenate",
+	}
+	RegisterConj = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Conj",
+	}
+	RegisterConvertDType = OpHandlerRegistration[func(f *Function, x compute.Value, dtype dtypes.DType) (compute.Value, error)]{
+		Method: "ConvertDType",
 	}
 	RegisterConvGeneral = OpHandlerRegistration[func(f *Function, input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error)]{
 		Method: "ConvGeneral",
@@ -678,8 +926,17 @@ var (
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
 	}
+	RegisterDynamicSlice = OpHandlerRegistration[func(f *Function, operand compute.Value, startIndices []compute.Value, sliceDims []int) (compute.Value, error)]{
+		Method: "DynamicSlice",
+	}
+	RegisterDynamicUpdateSlice = OpHandlerRegistration[func(f *Function, operand compute.Value, update compute.Value, startIndices []compute.Value) (compute.Value, error)]{
+		Method: "DynamicUpdateSlice",
+	}
 	RegisterEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Equal",
+	}
+	RegisterEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "EqualTotalOrder",
 	}
 	RegisterErf = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Erf",
@@ -689,6 +946,9 @@ var (
 	}
 	RegisterExpm1 = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Expm1",
+	}
+	RegisterFFT = OpHandlerRegistration[func(f *Function, operand compute.Value, fftType compute.FFTType, fftLength []int) (compute.Value, error)]{
+		Method: "FFT",
 	}
 	RegisterFloor = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Floor",
@@ -720,11 +980,20 @@ var (
 	RegisterGreaterOrEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "GreaterOrEqual",
 	}
+	RegisterGreaterOrEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "GreaterOrEqualTotalOrder",
+	}
 	RegisterGreaterThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "GreaterThan",
 	}
-	RegisterIf = OpHandlerRegistration[func(f *Function, pred compute.Value, trueBranch compute.Function, falseBranch compute.Function) ([]compute.Value, error)]{
-		Method: "If",
+	RegisterGreaterThanTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "GreaterThanTotalOrder",
+	}
+	RegisterIdentity = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Identity",
+	}
+	RegisterImag = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Imag",
 	}
 	RegisterIota = OpHandlerRegistration[func(f *Function, shape shapes.Shape, iotaAxis int) (compute.Value, error)]{
 		Method: "Iota",
@@ -732,11 +1001,20 @@ var (
 	RegisterIsFinite = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "IsFinite",
 	}
+	RegisterIsNaN = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "IsNaN",
+	}
 	RegisterLessOrEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LessOrEqual",
 	}
+	RegisterLessOrEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LessOrEqualTotalOrder",
+	}
 	RegisterLessThan = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "LessThan",
+	}
+	RegisterLessThanTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "LessThanTotalOrder",
 	}
 	RegisterLog = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Log",
@@ -774,11 +1052,20 @@ var (
 	RegisterNotEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "NotEqual",
 	}
+	RegisterNotEqualTotalOrder = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
+		Method: "NotEqualTotalOrder",
+	}
+	RegisterPad = OpHandlerRegistration[func(f *Function, x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error)]{
+		Method: "Pad",
+	}
 	RegisterPow = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Pow",
 	}
 	RegisterQuantizedEmbeddingLookup = OpHandlerRegistration[func(f *Function, data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error)]{
 		Method: "QuantizedEmbeddingLookup",
+	}
+	RegisterReal = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
+		Method: "Real",
 	}
 	RegisterReduceBitwiseAnd = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceBitwiseAnd",
@@ -810,6 +1097,9 @@ var (
 	RegisterReduceSum = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "ReduceSum",
 	}
+	RegisterReduceWindow = OpHandlerRegistration[func(f *Function, input compute.Value, reductionType compute.ReduceOpType, windowDimensions []int, strides []int, inputDilations []int, windowDilations []int, paddings [][2]int) (compute.Value, error)]{
+		Method: "ReduceWindow",
+	}
 	RegisterRem = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Rem",
 	}
@@ -819,11 +1109,29 @@ var (
 	RegisterReverse = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "Reverse",
 	}
+	RegisterRNGBitGenerator = OpHandlerRegistration[func(f *Function, state compute.Value, shape shapes.Shape) (newState compute.Value, values compute.Value, err error)]{
+		Method: "RNGBitGenerator",
+	}
 	RegisterRound = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Round",
 	}
 	RegisterRsqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Rsqrt",
+	}
+	RegisterScatterMax = OpHandlerRegistration[func(f *Function, operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error)]{
+		Method: "ScatterMax",
+	}
+	RegisterScatterMin = OpHandlerRegistration[func(f *Function, operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error)]{
+		Method: "ScatterMin",
+	}
+	RegisterScatterSum = OpHandlerRegistration[func(f *Function, operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error)]{
+		Method: "ScatterSum",
+	}
+	RegisterSelectAndScatterMax = OpHandlerRegistration[func(f *Function, operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error)]{
+		Method: "SelectAndScatterMax",
+	}
+	RegisterSelectAndScatterMin = OpHandlerRegistration[func(f *Function, operand compute.Value, source compute.Value, windowDimensions []int, windowStrides []int, paddings [][2]int) (compute.Value, error)]{
+		Method: "SelectAndScatterMin",
 	}
 	RegisterShiftLeft = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "ShiftLeft",
@@ -840,8 +1148,8 @@ var (
 	RegisterSin = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Sin",
 	}
-	RegisterSort = OpHandlerRegistration[func(f *Function, comparator compute.Function, axis int, isStable bool, inputs ...compute.Value) ([]compute.Value, error)]{
-		Method: "Sort",
+	RegisterSlice = OpHandlerRegistration[func(f *Function, x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error)]{
+		Method: "Slice",
 	}
 	RegisterSqrt = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Sqrt",
@@ -855,7 +1163,7 @@ var (
 	RegisterTranspose = OpHandlerRegistration[func(f *Function, x compute.Value, permutation ...int) (compute.Value, error)]{
 		Method: "Transpose",
 	}
-	RegisterWhile = OpHandlerRegistration[func(f *Function, cond compute.Function, body compute.Function, initialState ...compute.Value) ([]compute.Value, error)]{
-		Method: "While",
+	RegisterWhere = OpHandlerRegistration[func(f *Function, condition compute.Value, onTrue compute.Value, onFalse compute.Value) (compute.Value, error)]{
+		Method: "Where",
 	}
 )

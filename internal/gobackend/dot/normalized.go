@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -257,11 +258,11 @@ func execDotGeneralNormalized(
 
 	// If we created a temporary float32 output, convert it back to the original dtype.
 	if castToFloat32 {
-		convertFnAny, err := gobackend.ConvertDTypePairMap.Get(dtypes.Float32, output.RawShape.DType) //nolint:errcheck
+		convertFnAny, err := ops.ConvertDTypePairMap.Get(dtypes.Float32, output.RawShape.DType) //nolint:errcheck
 		if err != nil {
 			return err
 		}
-		convertFn := convertFnAny.(gobackend.ConvertFnType)
+		convertFn := convertFnAny.(ops.ConvertFnType)
 		convertFn(tmpOutput, output)
 		backend.PutBuffer(tmpOutput) // Return the temporary buffer to the pool.
 	}

@@ -30,6 +30,9 @@ var (
 		"Return", "Closure", "Name",
 		"DistributedSPMD", "DistributedAutoSharding", "DeviceAssignment")
 
+	// All methods in these interfaces will be included, except if in methodsExcluded.
+	includeInterfaces = sets.MakeWith("StandardOps", "FusedOps")
+
 	// methodsIncluded from StandardOps for which we want to generate and register stub methods.
 	// Temporary: until we refactored them all.
 	//
@@ -100,7 +103,8 @@ func GenerateOpsRegistration(methods []backendparser.Method) {
 			continue
 		}
 		// All FusedOps are included.
-		if !methodsIncluded.Has(method.Name) && method.Interface != "FusedOps" {
+		// if !methodsIncluded.Has(method.Name) && method.Interface != "FusedOps" {
+		if !includeInterfaces.Has(method.Interface) {
 			continue
 		}
 		methodEntry := MethodEntry{

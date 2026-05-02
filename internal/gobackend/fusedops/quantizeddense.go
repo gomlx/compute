@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -439,12 +440,12 @@ func unpackWeightsToBuffer(backend *gobackend.Backend, wBuf *gobackend.Buffer) (
 	}
 	outBuf.RawShape = shapes.Make(targetDType, wBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := gobackend.ConvertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
+	convertFnAny, err := ops.ConvertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
 	if err != nil {
 		backend.PutBuffer(outBuf)
 		return nil, false, err
 	}
-	convertFn := convertFnAny.(gobackend.ConvertFnType)
+	convertFn := convertFnAny.(ops.ConvertFnType)
 	convertFn(wBuf, outBuf)
 	return outBuf, true, nil
 }
@@ -514,12 +515,12 @@ func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buf
 	}
 	outBuf.RawShape = shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...)
 
-	convertFnAny, err := gobackend.ConvertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
+	convertFnAny, err := ops.ConvertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
 	if err != nil {
 		backend.PutBuffer(outBuf)
 		return nil, false, err
 	}
-	convertFn := convertFnAny.(gobackend.ConvertFnType)
+	convertFn := convertFnAny.(ops.ConvertFnType)
 	convertFn(indicesBuf, outBuf)
 	return outBuf, true, nil
 }
