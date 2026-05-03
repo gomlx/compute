@@ -42,11 +42,10 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		output = onFalse
 		inputs[2] = nil
 	default:
-		output, err = backend.GetBuffer(outputShape.DType, outputShape.Size())
+		output, err = backend.GetBufferForShape(outputShape)
 		if err != nil {
 			return nil, err
 		}
-		output.RawShape = outputShape
 	}
 	tmpAny, tmpErr := whereDTypeMap.Get(outputShape.DType)
 	if tmpErr != nil {

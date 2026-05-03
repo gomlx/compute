@@ -87,11 +87,10 @@ func unaryOperandAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buffe
 		inputs[0] = nil // This tells the executor that we took over the buffer.
 		return
 	}
-	output, err = backend.GetBuffer(input.RawShape.DType, input.RawShape.Size())
+	output, err = backend.GetBufferForShape(input.RawShape)
 	if err != nil {
 		return input, nil, err // as output is nil
 	}
-	output.RawShape = input.RawShape.Clone()
 	return input, output, nil
 }
 
@@ -1059,11 +1058,10 @@ func IsFinite(f *gobackend.Function, operandOp compute.Value) (compute.Value, er
 func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input := inputs[0]
 	// Output has the same shape as the input, but different dtypes: it is a bool.
-	output, err := backend.GetBuffer(dtypes.Bool, input.RawShape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	switch input.RawShape.DType {
 	case dtypes.Float32:
 		execIsFiniteGeneric(input.Flat.([]float32), output.Flat.([]bool))

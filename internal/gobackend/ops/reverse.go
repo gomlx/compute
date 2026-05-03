@@ -54,11 +54,10 @@ func execReverse(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 
 	// Allocate output buffer.
 	// TODO: if we can reuse the input buffer, create a version that uses swap instead of copy, and reverse in-place.
-	output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
+	output, err := backend.GetBufferForShape(shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = shape
 	if len(reverseAxes) == 0 {
 		// No-op, simply copy over bytes.
 		dstBytes, err := output.MutableBytes()

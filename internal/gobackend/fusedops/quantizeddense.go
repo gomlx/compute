@@ -434,11 +434,10 @@ func unpackWeightsToBuffer(backend *gobackend.Backend, wBuf *gobackend.Buffer) (
 		return wBuf, false, nil
 	}
 
-	outBuf, err := backend.GetBuffer(targetDType, wBuf.RawShape.Size())
+	outBuf, err := backend.GetBufferForShape(shapes.Make(targetDType, wBuf.RawShape.Dimensions...))
 	if err != nil {
 		return nil, false, err
 	}
-	outBuf.RawShape = shapes.Make(targetDType, wBuf.RawShape.Dimensions...)
 
 	convertFnAny, err := ops.ConvertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
 	if err != nil {
@@ -509,11 +508,10 @@ func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buf
 	if indicesBuf.RawShape.DType == dtypes.Int64 {
 		return indicesBuf, false, nil
 	}
-	outBuf, err := backend.GetBuffer(dtypes.Int64, indicesBuf.RawShape.Size())
+	outBuf, err := backend.GetBufferForShape(shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...))
 	if err != nil {
 		return nil, false, err
 	}
-	outBuf.RawShape = shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...)
 
 	convertFnAny, err := ops.ConvertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
 	if err != nil {

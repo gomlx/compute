@@ -35,11 +35,10 @@ func Iota(f *gobackend.Function, shape shapes.Shape, iotaAxis int) (compute.Valu
 
 func execIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	_, _ = inputs, inputsOwned // There are no inputs.
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	iotaAxis := node.Data.(int)
 	iotaSize := node.Shape.Dimensions[iotaAxis]
 	batchSize := 1

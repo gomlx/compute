@@ -2,18 +2,27 @@
 
 package gobackend_test
 
+import (
+	"runtime"
+	"testing"
+
+	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/testutil"
+)
+
 /*
 func TestBuffers_Bytes(t *testing.T) {
-	buf, err := backend.(*gobackend.Backend).getBuffer(dtypes.Int32, 3)
+	buf, err := backend.(*gobackend.Backend).GetBufferForShape(shapes.Make(dtypes.Int32, 3))
 	if err != nil {
 		t.Fatalf("Failed to get buffer: %+v", err)
 	}
-	buf.shape = shapes.Make(dtypes.Int32, 3)
 	buf.Zeros()
-	if len(buf.flat.([]int32)) != 3 {
-		t.Fatalf("Expected length 3, got %d", len(buf.flat.([]int32)))
+	if len(buf.Flat.([]int32)) != 3 {
+		t.Fatalf("Expected length 3, got %d", len(buf.Flat.([]int32)))
 	}
-	flatBytes, err := buf.mutableBytes()
+	flatBytes, err := buf.MutableBytes()
 	if err != nil {
 		t.Fatalf("Failed to get mutable bytes: %+v", err)
 	}
@@ -23,30 +32,29 @@ func TestBuffers_Bytes(t *testing.T) {
 	flatBytes[0] = 1
 	flatBytes[4] = 7
 	flatBytes[8] = 3
-	if ok, diff := testutil.IsEqual([]int32{1, 7, 3}, buf.flat.([]int32)); !ok {
+	if ok, diff := testutil.IsEqual([]int32{1, 7, 3}, buf.Flat.([]int32)); !ok {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 	runtime.KeepAlive(buf)
 }
 
 func TestBuffers_Fill(t *testing.T) {
-	buf, err := backend.(*Backend).getBuffer(dtypes.Int32, 3)
+	buf, err := backend.(*gobackend.Backend).GetBufferForShape(shapes.Make(dtypes.Int32, 3))
 	if err != nil {
 		t.Fatalf("Failed to get buffer: %+v", err)
 	}
-	buf.shape = shapes.Make(dtypes.Int32, 3)
-	if len(buf.flat.([]int32)) != 3 {
-		t.Fatalf("Expected length 3, got %d", len(buf.flat.([]int32)))
+	if len(buf.Flat.([]int32)) != 3 {
+		t.Fatalf("Expected length 3, got %d", len(buf.Flat.([]int32)))
 	}
 	if err := buf.Fill(int32(3)); err != nil {
 		t.Fatalf("Failed to fill buffer: %+v", err)
 	}
-	if ok, diff := testutil.IsEqual([]int32{3, 3, 3}, buf.flat.([]int32)); !ok {
+	if ok, diff := testutil.IsEqual([]int32{3, 3, 3}, buf.Flat.([]int32)); !ok {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 
 	buf.Zeros()
-	if ok, diff := testutil.IsEqual([]int32{0, 0, 0}, buf.flat.([]int32)); !ok {
+	if ok, diff := testutil.IsEqual([]int32{0, 0, 0}, buf.Flat.([]int32)); !ok {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 }

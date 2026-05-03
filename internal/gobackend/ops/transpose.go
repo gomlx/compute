@@ -56,11 +56,10 @@ func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// We can't write to the same buffer we read from because it's not done with swaps.
-	output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	it := NewTransposeIterator(operand.RawShape, permutations)
 	dtype := node.Shape.DType
 	tmpAny, tmpErr := TransposeDTypeMap.Get(dtype)

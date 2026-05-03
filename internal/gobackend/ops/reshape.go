@@ -38,12 +38,11 @@ func execReshape(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		output = operand
 		inputs[0] = nil
 	} else {
-		output, err = backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
+		output, err = backend.GetBufferForShape(node.Shape)
 		if err != nil {
 			return nil, err
 		}
 		gobackend.CopyFlat(output.Flat, operand.Flat)
 	}
-	output.RawShape = node.Shape
 	return output, nil
 }

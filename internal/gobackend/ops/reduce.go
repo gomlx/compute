@@ -120,19 +120,17 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	}
 	if len(reduceAxes) == 0 {
 		// Identity.
-		output, err := backend.GetBuffer(operand.RawShape.DType, operand.RawShape.Size())
+		output, err := backend.GetBufferForShape(operand.RawShape)
 		if err != nil {
 			return nil, err
 		}
-		output.RawShape = operand.RawShape
 		gobackend.CopyFlat(output.Flat, operand.Flat)
 		return output, nil
 	}
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 	it := NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
 	dtype := output.RawShape.DType
 

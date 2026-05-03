@@ -693,7 +693,7 @@ func dotGeneralCheckVersionsCmp(outputLarge, outputSmall *gobackend.Buffer) (mes
 func getBufAllocator[T dtypes.NumberNotComplex](backend *gobackend.Backend) packgemm.BufAllocFn[T] {
 	dtype := dtypes.FromGenericsType[T]()
 	return func(size int) (ref any, data []T) {
-		buf, err := backend.GetBuffer(dtype, size)
+		buf, err := backend.GetBufferForShape(shapes.Make(dtype, size))
 		if err != nil {
 			return nil, nil
 		}
@@ -705,7 +705,7 @@ func getBufAllocator[T dtypes.NumberNotComplex](backend *gobackend.Backend) pack
 // TODO: change signature to return the error
 func getAnyBufAllocator(backend *gobackend.Backend, dtype dtypes.DType) packgemm.BufAllocAnyFn {
 	return func(size int) (ref any, data any) {
-		buf, err := backend.GetBuffer(dtype, size)
+		buf, err := backend.GetBufferForShape(shapes.Make(dtype, size))
 		if err != nil {
 			return nil, nil
 		}

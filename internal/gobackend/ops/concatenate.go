@@ -49,11 +49,10 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// Allocate output buffer.
-	output, err := backend.GetBuffer(dtype, outputShape.Size())
+	output, err := backend.GetBufferForShape(outputShape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = outputShape
 	outputBytes, err := output.MutableBytes()
 	if err != nil {
 		return nil, err

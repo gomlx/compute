@@ -190,11 +190,10 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 	dtype := input.RawShape.DType
 
 	// Allocate output buffer for blocked data
-	output, err := backend.GetBuffer(dtype, data.blockedShape.Size())
+	output, err := backend.GetBufferForShape(data.blockedShape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = data.blockedShape
 	// output.Zeros()
 
 	// Copy data from flat to blocked format using the generic copy function
@@ -233,12 +232,10 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 
 	// Allocate output buffer in blocked format.
 	// Use params.outputBlockedShape.DType which is the accumulator type (Float32 for FP16/BF16).
-	accumulatorDType := params.OutputBlockedShape.DType
-	outputBlocks, err := backend.GetBuffer(accumulatorDType, params.OutputBlockedShape.Size())
+	outputBlocks, err := backend.GetBufferForShape(params.OutputBlockedShape)
 	if err != nil {
 		return err
 	}
-	outputBlocks.RawShape = params.OutputBlockedShape
 	outputBlocks.Zeros()
 
 	// Set up recursive data for kernel execution

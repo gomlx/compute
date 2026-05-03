@@ -81,11 +81,10 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	_ = inputsOwned // We don't reuse the inputs.
 	operand, startIndices := inputs[0], inputs[1]
 	gatherParams := node.Data.(*gatherNode)
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 
 	// Where to read/write the data.
 	operandBytes, err := operand.MutableBytes()

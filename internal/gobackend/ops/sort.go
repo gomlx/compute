@@ -208,19 +208,16 @@ func execSort(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	// Create temporary buffers for comparator inputs (2 scalars per input tensor)
 	compInputs := make([]*gobackend.Buffer, 2*len(outputs))
 	for i, output := range outputs {
-		compInputs[2*i], err = backend.GetBuffer(output.RawShape.DType, 1)
+		scalarShape := shapes.Make(output.RawShape.DType)
+		compInputs[2*i], err = backend.GetBufferForShape(scalarShape)
 		if err != nil {
 			return nil, err
 		}
-		compInputs[2*i].RawShape = output.RawShape.Clone()
-		compInputs[2*i].RawShape.Dimensions = nil // scalar
 
-		compInputs[2*i+1], err = backend.GetBuffer(output.RawShape.DType, 1)
+		compInputs[2*i+1], err = backend.GetBufferForShape(scalarShape)
 		if err != nil {
 			return nil, err
 		}
-		compInputs[2*i+1].RawShape = output.RawShape.Clone()
-		compInputs[2*i+1].RawShape.Dimensions = nil // scalar
 	}
 	defer func() {
 		for _, buf := range compInputs {

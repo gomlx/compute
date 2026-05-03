@@ -169,17 +169,18 @@ func sdpaComputeMaskStrides(dims []int) (batchStride, headStride int) {
 // transposeBuffer transposes a buffer according to the given axis permutation,
 // reusing the existing transposeIterator and transposeDTypeMap infrastructure.
 func transposeBuffer(backend *gobackend.Backend, buf *gobackend.Buffer, permutations []int) (*gobackend.Buffer, error) {
-	output, err := backend.GetBuffer(buf.RawShape.DType, buf.RawShape.Size())
-	if err != nil {
-		return nil, err
-	}
 	// Compute the output shape by permuting dimensions.
 	dims := buf.RawShape.Dimensions
 	outDims := make([]int, len(dims))
 	for i, p := range permutations {
 		outDims[i] = dims[p]
 	}
-	output.RawShape = shapes.Make(buf.RawShape.DType, outDims...)
+	outShape := shapes.Make(buf.RawShape.DType, outDims...)
+
+	output, err := backend.GetBufferForShape(outShape)
+	if err != nil {
+		return nil, err
+	}
 	it := ops.NewTransposeIterator(buf.RawShape, permutations)
 	transposeFnAny, err := ops.TransposeDTypeMap.Get(buf.RawShape.DType)
 	if err != nil {

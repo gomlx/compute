@@ -5,6 +5,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
 
@@ -64,11 +65,10 @@ func execArgMinMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	operand := inputs[0]
 	reduceAxis := node.Data.(*argMinMaxNode).axis
 	isMin := node.Data.(*argMinMaxNode).isMin
-	output, err := backend.GetBuffer(node.Shape.DType, node.Shape.Size())
+	output, err := backend.GetBufferForShape(node.Shape)
 	if err != nil {
 		return nil, err
 	}
-	output.RawShape = node.Shape
 
 	// There are 3 sizes to iterate over: before and after the reduceAxis, and the size (dimension) of the reduced axis itself.
 	operandDims := operand.RawShape.Dimensions
@@ -133,10 +133,10 @@ func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.GetBuffer(operand.RawShape.DType, suffixSize)
+	currentBestBuffer, _ := backend.GetBufferForShape(shapes.Make(operand.RawShape.DType, suffixSize))
 
 	currentBest := currentBestBuffer.Flat.([]T)
-	currentArgBestBuffer, _ := backend.GetBuffer(dtypes.Int32, suffixSize)
+	currentArgBestBuffer, _ := backend.GetBufferForShape(shapes.Make(dtypes.Int32, suffixSize))
 	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0
@@ -193,9 +193,9 @@ func execArgMinMaxGenericHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionP
 	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.GetBuffer(operand.RawShape.DType, suffixSize)
+	currentBestBuffer, _ := backend.GetBufferForShape(shapes.Make(operand.RawShape.DType, suffixSize))
 	currentBest := currentBestBuffer.Flat.([]T)
-	currentArgBestBuffer, _ := backend.GetBuffer(dtypes.Int32, suffixSize)
+	currentArgBestBuffer, _ := backend.GetBufferForShape(shapes.Make(dtypes.Int32, suffixSize))
 	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0
