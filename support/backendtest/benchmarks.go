@@ -9,8 +9,10 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
+	"k8s.io/klog/v2"
 )
 
 func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
@@ -29,11 +31,15 @@ func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
 	b.Run("QuantizedDense", func(b *testing.B) {
 		BenchmarkQuantizedDense(b, backend)
 	})
+	b.Run("DotGeneral", func(b *testing.B) {
+		BenchmarkDotGeneral(b, backend)
+	})
 }
 
 // benchMust panics on error, used in benchmark setup.
 func benchMust[T any](v T, err error) T {
 	if err != nil {
+		klog.Errorf("Error: %+v", err)
 		panic(err)
 	}
 	return v
@@ -51,7 +57,7 @@ func (be *benchExec) run(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		outputs, err := be.exec.Execute(be.inputs, nil, 0)
 		if err != nil {
-			b.Fatal(err)
+			b.Fatalf("Execute failed: %+v", err)
 		}
 		for _, buf := range outputs {
 			buf.(*gobackend.Buffer).Flat = nil // release data
@@ -62,12 +68,19 @@ func (be *benchExec) run(b *testing.B) {
 // newBenchExec builds, compiles, and prepares inputs for a benchmark.
 func newBenchExec(backend compute.Backend, inputShapes []shapes.Shape, inputDatas []any,
 	buildFn func(f compute.Function, params []compute.Value) (compute.Value, error),
-) *benchExec {
-	exec, inputs, err := buildGraph(backend, inputShapes, inputDatas, buildFn)
-	if err != nil {
-		panic(err)
+) (*benchExec, error) {
+	be := &benchExec{backend: backend}
+	var buildErr error
+	panicErr := exceptions.TryCatch[error](func() {
+		be.exec, be.inputs, buildErr = buildGraph(backend, inputShapes, inputDatas, buildFn)
+	})
+	if panicErr != nil {
+		return nil, panicErr
 	}
-	return &benchExec{backend: backend, exec: exec, inputs: inputs}
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	return be, nil
 }
 
 // buildGraph compiles a backend graph from the given input shapes and build function,
@@ -159,12 +172,15 @@ func BenchmarkSoftmax(b *testing.B, backend compute.Backend) {
 		data := randomFloat32(shape.Size())
 		axis := sz.axis
 
-		fused := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+		fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedSoftmax(params[0], axis)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create fused benchmark: %+v", err)
+		}
 
-		decomposed := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+		decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
@@ -173,6 +189,9 @@ func BenchmarkSoftmax(b *testing.B, backend compute.Backend) {
 				sumExps := reduceAndKeep(f, exps, f.ReduceSum, shape, axis)
 				return f.Div(exps, sumExps)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+		}
 
 		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
 		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
@@ -196,13 +215,16 @@ func BenchmarkGelu(b *testing.B, backend compute.Backend) {
 		shape := shapes.Make(dtypes.Float32, sz.dims...)
 		data := randomFloat32(shape.Size())
 
-		fused := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+		fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedGelu(params[0], true)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create fused benchmark: %+v", err)
+		}
 
 		// Decomposed GELU: x * 0.5 * (1 + erf(x / sqrt(2)))
-		decomposed := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+		decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				sqrt2Inv := benchMust(f.Constant([]float32{float32(1.0 / 1.4142135623730951)}, 1))
@@ -218,6 +240,9 @@ func BenchmarkGelu(b *testing.B, backend compute.Backend) {
 				xHalf := benchMust(f.Mul(x, halfBroadcast))
 				return f.Mul(xHalf, onePlusErf)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+		}
 
 		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
 		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
@@ -251,13 +276,16 @@ func BenchmarkLayerNorm(b *testing.B, backend compute.Backend) {
 		allShapes := []shapes.Shape{shape, gammaShape, betaShape}
 		allDatas := []any{data, gammaData, betaData}
 
-		fused := newBenchExec(backend, allShapes, allDatas,
+		fused, err := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedLayerNorm(params[0], []int{axis}, 1e-5, params[1], params[2])
 			})
+		if err != nil {
+			b.Fatalf("Failed to create fused benchmark: %+v", err)
+		}
 
 		// Decomposed: mean, variance, normalize, scale, offset.
-		decomposed := newBenchExec(backend, allShapes, allDatas,
+		decomposed, err := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				gamma := params[1]
@@ -303,6 +331,9 @@ func BenchmarkLayerNorm(b *testing.B, backend compute.Backend) {
 				betaBroadcast := benchMust(f.BroadcastInDim(betaReshaped, shape, broadcastAxes))
 				return f.Add(scaled, betaBroadcast)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+		}
 
 		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
 		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
@@ -336,13 +367,16 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 		allShapes := []shapes.Shape{xShape, wShape, bShape}
 		allDatas := []any{xData, wData, biasData}
 
-		fused := newBenchExec(backend, allShapes, allDatas,
+		fused, err := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedDense(params[0], params[1], params[2], compute.ActivationNone)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create fused benchmark: %+v", err)
+		}
 
 		// Decomposed: DotGeneral + bias add.
-		decomposed := newBenchExec(backend, allShapes, allDatas,
+		decomposed, err := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				x := params[0]
 				weight := params[1]
@@ -355,6 +389,9 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 				biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
 				return f.Add(y, biasBroadcast)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+		}
 
 		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
 		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
@@ -414,20 +451,23 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 		nf4Data := randomUint8(K * N)
 		nf4Shape := shapes.Make(dtypes.Uint8, K, N)
 
-		nf4Fused := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
+		nf4Fused, err := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
 			[]any{xData, nf4Data, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedQuantizedDense(params[0], params[1], params[3],
 					&compute.Quantization{Scheme: compute.QuantNF4, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
 					compute.ActivationNone)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create NF4/Fused benchmark: %+v", err)
+		}
 		b.Run(fmt.Sprintf("NF4/Fused/%s", sz.name), func(b *testing.B) { nf4Fused.run(b) })
 
 		// --- Linear Int8 (second set) ---
 		int4WeightsData := randomInt8(K * N)
 		int4WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int4Fused := newBenchExec(
+		int4Fused, err := newBenchExec(
 			backend, []shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
 			[]any{xData, int4WeightsData, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -435,19 +475,25 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 					&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
 					compute.ActivationNone)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create LinearInt8_2/Fused benchmark: %+v", err)
+		}
 		b.Run(fmt.Sprintf("LinearInt8_2/Fused/%s", sz.name), func(b *testing.B) { int4Fused.run(b) })
 
 		// --- Int8 ---
 		int8WeightsData := randomInt8(K * N)
 		int8WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int8Fused := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
+		int8Fused, err := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
 			[]any{xData, int8WeightsData, scalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedQuantizedDense(params[0], params[1], params[3],
 					&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
 					compute.ActivationNone)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create Int8/Fused benchmark: %+v", err)
+		}
 		b.Run(fmt.Sprintf("Int8/Fused/%s", sz.name), func(b *testing.B) { int8Fused.run(b) })
 
 		// Int8 Decomposed: ConvertDType + Mul(scales) + DotGeneral + bias.
@@ -462,7 +508,7 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 		}
 		expandedScalesShape := shapes.Make(dtypes.Float32, K, N)
 
-		int8Decomposed := newBenchExec(backend,
+		int8Decomposed, err := newBenchExec(backend,
 			[]shapes.Shape{xShape, int8WeightsShape, expandedScalesShape, biasShape},
 			[]any{xData, int8WeightsData, expandedScalesData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -482,18 +528,24 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 				biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
 				return f.Add(y, biasBroadcast)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create Int8/Decomposed benchmark: %+v", err)
+		}
 		b.Run(fmt.Sprintf("Int8/Decomposed/%s", sz.name), func(b *testing.B) { int8Decomposed.run(b) })
 
 		// Float32 Dense reference (same M×K×N, full-precision weights).
 		f32WeightsData := randomFloat32(K * N)
 		f32WeightsShape := shapes.Make(dtypes.Float32, K, N)
 
-		f32Dense := newBenchExec(backend,
+		f32Dense, err := newBenchExec(backend,
 			[]shapes.Shape{xShape, f32WeightsShape, biasShape},
 			[]any{xData, f32WeightsData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedDense(params[0], params[1], params[2], compute.ActivationNone)
 			})
+		if err != nil {
+			b.Fatalf("Failed to create Float32Dense benchmark: %+v", err)
+		}
 		b.Run(fmt.Sprintf("Float32Dense/%s", sz.name), func(b *testing.B) { f32Dense.run(b) })
 	}
 }

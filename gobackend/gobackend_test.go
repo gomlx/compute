@@ -49,6 +49,6 @@ func TestMain(m *testing.M) {
 // To run:
 //
 //	$ go test -bench=. -benchmem
-func BenchmarkStandard(b *testing.B) {
+func BenchmarkGoBackend(b *testing.B) {
 	backendtest.RunAllBenchmarks(b, backend)
 }

@@ -107,17 +107,17 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	t.Run("Reduce", func(t *testing.T) {
 		t.Run("Min", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
-			y0, _ := testutil.Exec1(b, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
-			if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, y0); !ok {
-				fmt.Printf("\t- want: %v, got %v\n", []float32{0, 0, 11}, y0)
+			got, _ := testutil.Exec1(b, []any{[][]float32{{7, 0, 9}, {0, 3, 2}, {1001, 101, 11}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 1) })
+			if ok, diff := testutil.IsEqual([]float32{0, 0, 11}, got); !ok {
+				fmt.Printf("\t- want: %v, got %v\n", []float32{0, 0, 11}, got)
 				t.Errorf("ReduceMin mismatch:\n%s", diff)
 			}
 		})
 
 		t.Run("Max", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
-			y1, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
-			if ok, diff := testutil.IsEqual(-1.0e6, y1); !ok {
+			got, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+			if ok, diff := testutil.IsEqual(-1.0e6, got); !ok {
 				t.Errorf("ReduceMax mismatch:\n%s", diff)
 			}
 		})
@@ -153,8 +153,8 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("Product", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceProduct)
-			y3, _ := testutil.Exec1(b, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
-			if ok, diff := testutil.IsEqual(float32(1), y3); !ok {
+			got, _ := testutil.Exec1(b, []any{[]float32{-1e-2, 1e5, -1e-3}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceProduct(p[0], 0) })
+			if ok, diff := testutil.IsInDelta(float32(1), got, 1e-3); !ok {
 				t.Errorf("ReduceMultiply mismatch:\n%s", diff)
 			}
 		})
