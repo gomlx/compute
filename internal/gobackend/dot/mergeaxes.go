@@ -61,9 +61,10 @@ func MergeAxes(f *gobackend.Function,
 
 			canMerge := false
 			if infoPrev.typ == infoCurr.typ {
-				if infoPrev.typ == axisTypeCross {
+				switch infoPrev.typ {
+				case axisTypeCross:
 					canMerge = true
-				} else if infoPrev.typ == axisTypeBatch {
+				case axisTypeBatch:
 					// Batch axes must be adjacent in the axes list and in correct order.
 					if infoCurr.idx == infoPrev.idx+1 {
 						rhsPrev := rhsBatchAxes[infoPrev.idx]
@@ -73,7 +74,7 @@ func MergeAxes(f *gobackend.Function,
 							canMerge = true
 						}
 					}
-				} else if infoPrev.typ == axisTypeContracting {
+				case axisTypeContracting:
 					// Contracting axes must map to adjacent physical axes in RHS.
 					rhsPrev := rhsContractingAxes[infoPrev.idx]
 					rhsCurr := rhsContractingAxes[infoCurr.idx]
@@ -106,9 +107,10 @@ func MergeAxes(f *gobackend.Function,
 
 			canMerge := false
 			if infoPrev.typ == infoCurr.typ {
-				if infoPrev.typ == axisTypeCross {
+				switch infoPrev.typ {
+				case axisTypeCross:
 					canMerge = true
-				} else if infoPrev.typ == axisTypeBatch {
+				case axisTypeBatch:
 					// Check if LHS merged them
 					if infoCurr.idx == infoPrev.idx+1 {
 						lhsPrev := lhsBatchAxes[infoPrev.idx]
@@ -117,7 +119,7 @@ func MergeAxes(f *gobackend.Function,
 							canMerge = true
 						}
 					}
-				} else if infoPrev.typ == axisTypeContracting {
+				case axisTypeContracting:
 					// Check if LHS merged them
 					lhsPrev := lhsContractingAxes[infoPrev.idx]
 					lhsCurr := lhsContractingAxes[infoCurr.idx]
