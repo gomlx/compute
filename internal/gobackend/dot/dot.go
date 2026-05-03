@@ -47,7 +47,7 @@ func init() {
 	}
 }
 
-type GeneralNodeData struct {
+type NodeData struct {
 	LHSContractingAxes, LHSBatchAxes                       []int
 	RHSContractingAxes, RHSBatchAxes                       []int
 	BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize int
@@ -59,8 +59,8 @@ type GeneralNodeData struct {
 }
 
 // EqualNodeData implements nodeDataComparable for dotGeneralNodeData.
-func (d *GeneralNodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	o := other.(*GeneralNodeData)
+func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	o := other.(*NodeData)
 	if d.BatchSize != o.BatchSize ||
 		d.LHSCrossSize != o.LHSCrossSize ||
 		d.RHSCrossSize != o.RHSCrossSize ||
@@ -86,6 +86,61 @@ func adjustAxisToRank(rank, axis int) (int, error) {
 		return -1, errors.Errorf("axis %d is out of range [0, %d)", axis, rank)
 	}
 	return axis, nil
+}
+
+func (d *NodeData) VerifyAndAdjust(lhsShape, rhsShape shapes.Shape) error {
+	lhsRank := lhsShape.Rank()
+	rhsRank := rhsShape.Rank()
+
+	// Validate and adjust axes.
+	var err error
+	for ii, axis := range d.LHSContractingAxes {
+		d.LHSContractingAxes[ii], err = adjustAxisToRank(lhsRank, axis)
+		if err != nil {
+			return errors.WithMessagef(err,
+				"while adjusting contractingAxes for DotGeneral(lhs=%s, lhsContractingAxes=%v)",
+				lhsShape, d.LHSContractingAxes)
+		}
+	}
+	for ii, axis := range d.LHSBatchAxes {
+		d.LHSBatchAxes[ii], err = adjustAxisToRank(lhsRank, axis)
+		if err != nil {
+			return errors.WithMessagef(err,
+				"while adjusting batchAxes for DotGeneral(lhs=%s, lhsBatchAxes=%v)", lhsShape, d.LHSBatchAxes)
+		}
+	}
+	for ii, axis := range d.RHSContractingAxes {
+		d.RHSContractingAxes[ii], err = adjustAxisToRank(rhsRank, axis)
+		if err != nil {
+			return errors.WithMessagef(err,
+				"while adjusting contractingAxes for DotGeneral(rhs=%s, rhsContractingAxes=%v)",
+				rhsShape, d.RHSContractingAxes)
+		}
+	}
+	for ii, axis := range d.RHSBatchAxes {
+		d.RHSBatchAxes[ii], err = adjustAxisToRank(rhsRank, axis)
+		if err != nil {
+			return errors.WithMessagef(err,
+				"while adjusting batchAxes for DotGeneral(rhs=%s, rhsBatchAxes=%v)", rhsShape, d.RHSBatchAxes)
+		}
+	}
+
+	// Check that batch and contracting dimensions from lhs and rhs match.
+	for ii, lhsAxis := range d.LHSContractingAxes {
+		rhsAxis := d.RHSContractingAxes[ii]
+		if lhsShape.Dimensions[lhsAxis] != rhsShape.Dimensions[rhsAxis] {
+			return errors.Errorf("DotGeneral contracting dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
+				lhsAxis, lhsShape.Dimensions[lhsAxis], rhsAxis, rhsShape.Dimensions[rhsAxis])
+		}
+	}
+	for ii, lhsAxis := range d.LHSBatchAxes {
+		rhsAxis := d.RHSBatchAxes[ii]
+		if lhsShape.Dimensions[lhsAxis] != rhsShape.Dimensions[rhsAxis] {
+			return errors.Errorf("DotGeneral batch dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
+				lhsAxis, lhsShape.Dimensions[lhsAxis], rhsAxis, rhsShape.Dimensions[rhsAxis])
+		}
+	}
+	return nil
 }
 
 // SetBackendOption process the configuration options for DotGeneral.
@@ -187,72 +242,41 @@ func DotGeneral(f *gobackend.Function,
 			len(lhsContractingAxes), len(rhsContractingAxes))
 	}
 
-	lhsRank := lhs.Shape.Rank()
-	rhsRank := rhs.Shape.Rank()
-	params := GeneralNodeData{
+	// Create node params, and verify axes have valid dimensions.
+	params := NodeData{
 		LHSContractingAxes: lhsContractingAxes,
 		LHSBatchAxes:       lhsBatchAxes,
 		RHSContractingAxes: rhsContractingAxes,
 		RHSBatchAxes:       rhsBatchAxes,
 	}
-
-	// Validate and adjust axes.
-	for ii, axis := range lhsContractingAxes {
-		params.LHSContractingAxes[ii], err = adjustAxisToRank(lhsRank, axis)
-		if err != nil {
-			return nil, errors.WithMessagef(err,
-				"while adjusting contractingAxes for DotGeneral(lhs=%s, lhsContractingAxes=%v)",
-				lhs.Shape, lhsContractingAxes)
-		}
-	}
-	for ii, axis := range lhsBatchAxes {
-		params.LHSBatchAxes[ii], err = adjustAxisToRank(lhsRank, axis)
-		if err != nil {
-			return nil, errors.WithMessagef(err,
-				"while adjusting batchAxes for DotGeneral(lhs=%s, lhsBatchAxes=%v)", lhs.Shape, lhsBatchAxes)
-		}
-	}
-	for ii, axis := range rhsContractingAxes {
-		params.RHSContractingAxes[ii], err = adjustAxisToRank(rhsRank, axis)
-		if err != nil {
-			return nil, errors.WithMessagef(err,
-				"while adjusting contractingAxes for DotGeneral(rhs=%s, rhsContractingAxes=%v)",
-				rhs.Shape, rhsContractingAxes)
-		}
-	}
-	for ii, axis := range rhsBatchAxes {
-		params.RHSBatchAxes[ii], err = adjustAxisToRank(rhsRank, axis)
-		if err != nil {
-			return nil, errors.WithMessagef(err,
-				"while adjusting batchAxes for DotGeneral(rhs=%s, rhsBatchAxes=%v)", rhs.Shape, rhsBatchAxes)
-		}
-	}
-
-	// Check that batch and contracting dimensions from lhs and rhs match.
-	batchDims := make([]int, len(lhsBatchAxes))
-	contractingDims := make([]int, len(lhsContractingAxes))
-	for ii, lhsAxis := range params.LHSContractingAxes {
-		rhsAxis := params.RHSContractingAxes[ii]
-		if lhs.Shape.Dimensions[lhsAxis] != rhs.Shape.Dimensions[rhsAxis] {
-			return nil, errors.Errorf("DotGeneral contracting dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
-				lhsAxis, lhs.Shape.Dimensions[lhsAxis], rhsAxis, rhs.Shape.Dimensions[rhsAxis])
-		}
-		contractingDims[ii] = lhs.Shape.Dimensions[lhsAxis]
-	}
-	for ii, lhsAxis := range params.LHSBatchAxes {
-		rhsAxis := params.RHSBatchAxes[ii]
-		if lhs.Shape.Dimensions[lhsAxis] != rhs.Shape.Dimensions[rhsAxis] {
-			return nil, errors.Errorf("DotGeneral batch dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
-				lhsAxis, lhs.Shape.Dimensions[lhsAxis], rhsAxis, rhs.Shape.Dimensions[rhsAxis])
-		}
-		batchDims[ii] = lhs.Shape.Dimensions[lhsAxis]
+	err = params.VerifyAndAdjust(lhs.Shape, rhs.Shape)
+	if err != nil {
+		return nil, err
 	}
 
 	// Find sizes of the normalized operands ([batchSize, crossSize, contractSize]).
+	// We do this before merging axes so we capture the original unmerged dimensions
+	// which are needed to correctly reshape the final output.
+	batchDims := make([]int, len(lhsBatchAxes))
+	for ii, lhsAxis := range params.LHSBatchAxes {
+		batchDims[ii] = lhs.Shape.Dimensions[lhsAxis]
+	}
 	var lhsCrossDims, rhsCrossDims []int
 	params.BatchSize, params.LHSCrossSize, params.ContractingSize, lhsCrossDims = support.DotGeneralFindSizes(
 		lhs.Shape, lhsContractingAxes, lhsBatchAxes)
 	_, params.RHSCrossSize, _, rhsCrossDims = support.DotGeneralFindSizes(rhs.Shape, rhsContractingAxes, rhsBatchAxes)
+
+	// Merge adjacent axes used for the same purpose to simplify the operation.
+	// This makes the physical memory layout simpler and allows matching to
+	// fast paths (like SmallMatMul or Packgemm) more often.
+	var revertFn revertMergeAxesFunc
+	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes, revertFn, err = MergeAxes(
+		f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes)
+	if err != nil {
+		return nil, err
+	}
 
 	// Check that all sizes are positive
 	if params.BatchSize <= 0 || params.LHSCrossSize <= 0 || params.ContractingSize <= 0 || params.RHSCrossSize <= 0 {
@@ -264,19 +288,12 @@ func DotGeneral(f *gobackend.Function,
 	params.LHSNormalization = NormalizePrepare(lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes)
 	params.RHSNormalization = NormalizePrepare(rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
 
-	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
-	params.LHSBlockedShape = CreateBlockedShape(
-		dtype, params.BatchSize, params.LHSCrossSize, params.ContractingSize, blockLog2Dim)
-	params.RHSBlockedShape = CreateBlockedShape(
-		dtype, params.BatchSize, params.RHSCrossSize, params.ContractingSize, blockLog2Dim)
 	outputDType := dtype
 	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
 		// For 16 bits, store the intermediary results as float32 to minimize numerical errors during accumulation.
 		// Notice the blockLog2Dim must be the same, because the block dimensions much match the inputs.
 		outputDType = dtypes.Float32
 	}
-	params.OutputBlockedShape = CreateBlockedShape(
-		outputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, blockLog2Dim)
 
 	// Select execution path at build time based on problem size and matrix layout.
 	// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
@@ -288,6 +305,7 @@ func DotGeneral(f *gobackend.Function,
 	// the blocking is done once and shared.
 	var lhsBlocked, rhsBlocked *gobackend.Node
 	if params.execPath == BlockedPath || params.execPath == CheckPath {
+		params.SetBlockedParams(dtype, outputDType)
 		lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
 			params.BatchSize, params.LHSCrossSize, params.ContractingSize)
 		rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
@@ -324,7 +342,12 @@ func DotGeneral(f *gobackend.Function,
 			return nil, err
 		}
 	}
-	return result.(*gobackend.Node), nil
+
+	result, err = revertFn(result.(*gobackend.Node))
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // ExecutionPath indicates which execution strategy to use for DotGeneral.
@@ -353,7 +376,7 @@ const (
 
 // selectExecPath selects the execution path based on problem size and backend configuration.
 // Called at graph-build time from DotGeneral().
-func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape, params *GeneralNodeData) ExecutionPath {
+func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape, params *NodeData) ExecutionPath {
 	dtype := lhsShape.DType
 	outputDType := dtype
 	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
@@ -424,7 +447,7 @@ func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape,
 // For blockedPath, inputs are already pre-blocked at build time.
 func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
-	params := node.Data.(*GeneralNodeData)
+	params := node.Data.(*NodeData)
 	outputShape := node.Shape
 	output, err := backend.GetBufferForShape(outputShape)
 
@@ -436,13 +459,13 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		// Inputs are pre-blocked at graph-build time. Extract block metadata from input nodes.
 		lhsNode := node.Inputs[0]
 		rhsNode := node.Inputs[1]
-		_, ok := lhsNode.Data.(*blockForDotGeneralData)
+		_, ok := lhsNode.Data.(*preBlockNodeData)
 		if !ok {
 			backend.PutBuffer(output)
 			return nil, errors.Errorf("blockedPath requires pre-blocked LHS input, got %T (node type: %s)",
 				lhsNode.Data, lhsNode.OpType)
 		}
-		rhsBlockData, ok := rhsNode.Data.(*blockForDotGeneralData)
+		rhsBlockData, ok := rhsNode.Data.(*preBlockNodeData)
 		if !ok {
 			backend.PutBuffer(output)
 			return nil, errors.Errorf("blockedPath requires pre-blocked RHS input, got %T (node type: %s)",
@@ -485,7 +508,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 				if err != nil {
 					return nil, err
 				}
-				execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *GeneralNodeData, *gobackend.Buffer))
+				execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *NodeData, *gobackend.Buffer))
 				// BFloat16/Float16 implementations accumulate in float32 internally but write to native output
 				execSmallMatMulFn(backend, lhsRaw, rhsRaw, params, output2)
 				err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
@@ -546,7 +569,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		if err != nil {
 			return nil, err
 		}
-		execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *GeneralNodeData, *gobackend.Buffer))
+		execSmallMatMulFn := execSmallMatMulFnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, *NodeData, *gobackend.Buffer))
 		execSmallMatMulFn(backend, lhs, rhs, params, output)
 		return output, nil
 
@@ -596,7 +619,7 @@ func log2int(x int) int {
 
 var dotGeneralVersionsCheckDelta = 1e-3
 
-func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *GeneralNodeData, outputLarge, outputSmall *gobackend.Buffer) error {
+func dotGeneralCheckVersions(_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *NodeData, outputLarge, outputSmall *gobackend.Buffer) error {
 	if klog.V(1).Enabled() {
 		var value0 float64
 		dtype := outputLarge.RawShape.DType

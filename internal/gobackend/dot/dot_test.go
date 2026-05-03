@@ -301,7 +301,7 @@ func TestDgUseSmallMatMul(t *testing.T) {
 				lhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.lhsCrossSize, tc.contractingSize)
 				rhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.contractingSize, tc.rhsCrossSize)
 
-				params := &dot.GeneralNodeData{
+				params := &dot.NodeData{
 					LHSContractingAxes: []int{2},
 					LHSBatchAxes:       []int{0},
 					RHSContractingAxes: []int{1},

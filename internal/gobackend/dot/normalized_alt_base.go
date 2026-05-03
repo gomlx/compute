@@ -19,7 +19,7 @@ import "github.com/gomlx/compute/internal/gobackend"
 func execNormalizedDotGeneralGeneric[T gobackend.PODNumericConstraints]( //alt:base
 	//alt:bf16 func execNormalizedDotGeneralBFloat16(
 	//alt:f16 func execNormalizedDotGeneralFloat16(
-	lhs, rhs, output *gobackend.Buffer, params *GeneralNodeData, batchStartIdx, batchEndIdx int) {
+	lhs, rhs, output *gobackend.Buffer, params *NodeData, batchStartIdx, batchEndIdx int) {
 	lhsFlat := lhs.Flat.([]T)       //alt:base
 	rhsFlat := rhs.Flat.([]T)       //alt:base
 	outputFlat := output.Flat.([]T) //alt:base

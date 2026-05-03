@@ -177,7 +177,7 @@ func NormalizeShape[T interface {
 func execDotGeneralNormalized(
 	backend *gobackend.Backend,
 	lhs, rhs *gobackend.Buffer,
-	params *GeneralNodeData,
+	params *NodeData,
 	output *gobackend.Buffer) error {
 	dtype := lhs.RawShape.DType
 	normalizeFnAny, err := NormalizeShapeDTypeMap.Get(dtype)
@@ -221,7 +221,7 @@ func execDotGeneralNormalized(
 		return err
 	}
 	normalizeDotGeneral := normalizeDotGeneralAny.(func(lhs, rhs, output *gobackend.Buffer,
-		params *GeneralNodeData, batchStartIdx, batchEndIdx int))
+		params *NodeData, batchStartIdx, batchEndIdx int))
 
 	// Decide on using parallelism across the batch -- each example is started on a separate worker.
 	useBatchParallelism := backend.Workers.IsEnabled()

@@ -32,7 +32,7 @@ import (
 func execDotGeneralSmallMatMulGeneric[T gobackend.PODNumericConstraints]( //alt:base
 	//alt:bf16 func execDotGeneralSmallMatMulBFloat16(
 	//alt:f16 func execDotGeneralSmallMatMulFloat16(
-	_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *GeneralNodeData, output *gobackend.Buffer) {
+	_ *gobackend.Backend, lhs, rhs *gobackend.Buffer, params *NodeData, output *gobackend.Buffer) {
 
 	lhsFlat := lhs.Flat.([]T)       //alt:base
 	rhsFlat := rhs.Flat.([]T)       //alt:base

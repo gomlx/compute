@@ -48,6 +48,18 @@ func init() {
 	setDotGeneralTargetBlockSize(DotGeneralTargetBlockSize)
 }
 
+// SetBlockedParams is a helper for setting the parameters needed for the blocked DotGeneral execution path.
+// Call this is committed to use the blocked path.
+func (d *NodeData) SetBlockedParams(inputDType, outputDType dtypes.DType) {
+	blockLog2Dim := DotGeneralTargetBlockLog2Dim[inputDType]
+	d.LHSBlockedShape = CreateBlockedShape(
+		inputDType, d.BatchSize, d.LHSCrossSize, d.ContractingSize, blockLog2Dim)
+	d.RHSBlockedShape = CreateBlockedShape(
+		inputDType, d.BatchSize, d.RHSCrossSize, d.ContractingSize, blockLog2Dim)
+	d.OutputBlockedShape = CreateBlockedShape(
+		outputDType, d.BatchSize, d.LHSCrossSize, d.RHSCrossSize, blockLog2Dim)
+}
+
 // setDotGeneralTargetBlockSize sets the target block size for DotGeneral.
 func setDotGeneralTargetBlockSize(blockSize int) {
 	DotGeneralTargetBlockSize = blockSize
@@ -90,14 +102,14 @@ func CreateBlockedShape(dtype dtypes.DType, batchSize, crossSize, contractingSiz
 // Pre-blocking for DotGeneral
 // ============================================================================
 
-// blockForDotGeneralData holds parameters for the BlockForDotGeneral operation.
+// preBlockNodeData holds parameters for the BlockForDotGeneral operation.
 // This operation pre-blocks a tensor (LHS or RHS) for efficient DotGeneral execution.
 //
 // It works with any shape after normalization to [batchSize, crossSize, contractingSize]
 // or [batchSize, contractingSize, crossSize], and outputs
 // [batchSize, crossBlocks, contractBlocks, blockDim, blockDim] or
 // [batchSize, contractBlocks, crossBlocks, blockDim, blockDim]
-type blockForDotGeneralData struct {
+type preBlockNodeData struct {
 	// blockLog2Dim is log2 of the block dimension
 	blockLog2Dim int
 
@@ -116,8 +128,8 @@ type blockForDotGeneralData struct {
 }
 
 // EqualNodeData implements nodeDataComparable for de-duplication.
-func (d *blockForDotGeneralData) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	o, ok := other.(*blockForDotGeneralData)
+func (d *preBlockNodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	o, ok := other.(*preBlockNodeData)
 	if !ok {
 		return false
 	}
@@ -131,7 +143,7 @@ func (d *blockForDotGeneralData) EqualNodeData(other gobackend.NodeDataComparabl
 }
 
 // Compile-time check that blockForDotGeneralData implements nodeDataComparable.
-var _ gobackend.NodeDataComparable = (*blockForDotGeneralData)(nil)
+var _ gobackend.NodeDataComparable = (*preBlockNodeData)(nil)
 
 func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeBlockForDotGeneral, gobackend.PriorityGeneric, execBlockForDotGeneral)
@@ -154,7 +166,7 @@ func blockForDotGeneral(f *gobackend.Function, input *gobackend.Node,
 	blockLog2Dim := DotGeneralTargetBlockLog2Dim[dtype]
 	blockedShape := CreateBlockedShape(dtype, batchSize, axesASize, axesBSize, blockLog2Dim)
 
-	data := &blockForDotGeneralData{
+	data := &preBlockNodeData{
 		blockLog2Dim:    blockLog2Dim,
 		blockedShape:    blockedShape,
 		batchSize:       batchSize,
@@ -173,7 +185,7 @@ func blockForDotGeneral(f *gobackend.Function, input *gobackend.Node,
 // for efficient DotGeneral execution.
 func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input := inputs[0]
-	data := node.Data.(*blockForDotGeneralData)
+	data := node.Data.(*preBlockNodeData)
 
 	dtype := input.RawShape.DType
 
@@ -214,7 +226,7 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 //   - lhsBlockData, rhsBlockData: pre-blocking metadata from the input nodes
 //   - params: DotGeneral parameters
 //   - output: output buffer in flat format
-func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gobackend.Buffer, hasBatch bool, params *GeneralNodeData,
+func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gobackend.Buffer, hasBatch bool, params *NodeData,
 	output *gobackend.Buffer) error {
 	dtype := lhsBlocks.RawShape.DType
 	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtype]
