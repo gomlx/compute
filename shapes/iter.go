@@ -207,7 +207,7 @@ func (s Shape) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[int, 
 	if indices == nil {
 		indices = make([]int, rank)
 	} else if len(indices) != rank {
-		panic(errors.Errorf("Shape.IterOnAxes given len(indices) == %d, want it to be equal to the rank %d", len(indices), rank))
+		panic(errors.Errorf("Shape.IterOnAxes given len(indices) == %d, but rank of shape is %d, shape is %s", len(indices), rank, s))
 	}
 
 	return func(yield func(int, []int) bool) {

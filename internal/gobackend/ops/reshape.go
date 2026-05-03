@@ -36,6 +36,7 @@ func execReshape(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	if inputsOwned[0] {
 		output = operand
+		output.RawShape = node.Shape // Actual reshape happening here.
 		inputs[0] = nil
 	} else {
 		output, err = backend.GetBuffer(node.Shape)

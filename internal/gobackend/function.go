@@ -16,8 +16,8 @@ import (
 type Function struct {
 	notimplemented.Function
 
-	Builder *Builder
-	name    string
+	RawBuilder *Builder
+	name       string
 
 	// RawParent is the parent function if this is a closure.
 	// For top-level functions (including main), this is nil.
@@ -61,10 +61,10 @@ var _ compute.Function = (*Function)(nil)
 
 // CheckValid returns an error if the builder or the function are not ok.
 func (f *Function) CheckValid() error {
-	if f == nil || f.Builder == nil {
+	if f == nil || f.RawBuilder == nil {
 		return errors.Errorf("function is nil or undefined for %q", BackendName)
 	}
-	if f.Builder.IsCompiled {
+	if f.RawBuilder.IsCompiled {
 		return errors.Errorf("cannot add new op to Function %q, builder has already been compiled", f.name)
 	}
 	return nil
@@ -98,6 +98,24 @@ func (f *Function) IsAncestorOf(leafFunc *Function) bool {
 	return false
 }
 
+// Builder returns the builder for this function.
+func (f *Function) Builder() compute.Builder {
+	return f.RawBuilder
+}
+
+// Shape returns the shape of a value in the function.
+func (f *Function) Shape(v compute.Value) (shapes.Shape, error) {
+	var s shapes.Shape
+	n, ok := v.(*Node)
+	if !ok {
+		return s, errors.Errorf("value is not a Node for a Go backend, instead got a %T", v)
+	}
+	if err := f.CheckValid(); err != nil {
+		return s, err
+	}
+	return n.Shape, nil
+}
+
 // Closure creates a new closure function within this function.
 // Closures can access values from their parent function's scope.
 func (f *Function) Closure() (compute.Function, error) {
@@ -108,10 +126,10 @@ func (f *Function) Closure() (compute.Function, error) {
 		Function: notimplemented.Function{
 			ErrFn: notImplementedError,
 		},
-		Builder:   f.Builder,
-		name:      "", // Closures have empty names
-		RawParent: f,
-		nodeDedup: make(map[NodeDedupKey][]*Node),
+		RawBuilder: f.RawBuilder,
+		name:       "", // Closures have empty names
+		RawParent:  f,
+		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
 	return closure, nil
 }
@@ -123,7 +141,7 @@ func (f *Function) Closure() (compute.Function, error) {
 // Use getOrCreateNode instead for most operations.
 func (f *Function) NewNode(opType compute.OpType, shape shapes.Shape, inputs ...*Node) *Node {
 	n := &Node{
-		Builder:  f.Builder,
+		Builder:  f.RawBuilder,
 		OpType:   opType,
 		Index:    len(f.Nodes),
 		Shape:    shape,
@@ -150,7 +168,7 @@ func (f *Function) NewMultiOutputsNode(
 	node.MultiOutputsNodes = make([]*Node, len(outputShapes))
 	for i, shape := range outputShapes {
 		node.MultiOutputsNodes[i] = &Node{
-			Builder:            f.Builder,
+			Builder:            f.RawBuilder,
 			OpType:             opType,
 			Index:              len(f.Nodes),
 			Shape:              shape,
@@ -171,7 +189,7 @@ func (f *Function) VerifyAndCastValues(name string, values ...compute.Value) ([]
 	if err := f.CheckValid(); err != nil {
 		return nil, err
 	}
-	nodes, err := f.Builder.checkValues(name, values...)
+	nodes, err := f.RawBuilder.checkValues(name, values...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +247,7 @@ func (f *Function) Parameter(name string, shape shapes.Shape, sharding *compute.
 	}
 	if supported, ok := Capabilities.DTypes[dtype]; !ok || !supported {
 		return nil, errors.Errorf("Parameter: data type (DType) %s not supported for backend %q, try using "+
-			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.Builder.Backend.Name())
+			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.RawBuilder.Backend.Name())
 	}
 	if sharding != nil {
 		return nil, errors.Wrapf(
@@ -257,7 +275,7 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 	}
 	if supported, ok := Capabilities.DTypes[dtype]; !ok || !supported {
 		return nil, errors.Errorf("Constant: data type (DType) %s not supported for backend %q, try using "+
-			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.Builder.Backend.Name())
+			"a different backend, or open an issue in github.com/gomlx/gomlx", dtype, f.RawBuilder.Backend.Name())
 	}
 	shape := shapes.Make(dtype, dims...)
 	if shape.Size() != flatLen {
@@ -297,7 +315,7 @@ func (f *Function) Return(outputs []compute.Value, shardings []*compute.Sharding
 		if len(node.MultiOutputsShapes) != 0 {
 			return errors.Errorf(
 				"%s node %q is internal (with multiple-outputs) and cannot be used for output",
-				f.Builder.Name(),
+				f.RawBuilder.Name(),
 				node.OpType,
 			)
 		}

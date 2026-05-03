@@ -24,6 +24,9 @@ type Function interface {
 	// Name of the function. It will return "" for closures.
 	Name() string
 
+	// Builder returns the builder of which this function is part of.
+	Builder() Builder
+
 	// Parent returns the parent function of the current function.
 	// This is only set for "closures" within another functions.
 	// For top-level functions, like "main", or for backends that don't support fun this returns nil.
@@ -62,6 +65,11 @@ type Function interface {
 	// The value is copied into the graph. It's recommended that for very large
 	// tensors, even if constants, that they are passed as parameters instead.
 	Constant(flat any, dims ...int) (Value, error)
+
+	// Shape returns the shape of the given Value.
+	//
+	// Notice, this doesn't create an op on the graph, it's purely for reporting/introspection.
+	Shape(v Value) (shapes.Shape, error)
 
 	// Return marks the outputs of this function.
 	// Once called, the function can no longer be futher modified.

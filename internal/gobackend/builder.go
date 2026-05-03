@@ -55,10 +55,10 @@ func (b *Builder) NewFunction(name string) (compute.Function, error) {
 		Function: notimplemented.Function{
 			ErrFn: notImplementedError,
 		},
-		Builder:   b,
-		name:      name,
-		RawParent: nil, // Top-level functions have no parent
-		nodeDedup: make(map[NodeDedupKey][]*Node),
+		RawBuilder: b,
+		name:       name,
+		RawParent:  nil, // Top-level functions have no parent
+		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
 	return f, nil
 }

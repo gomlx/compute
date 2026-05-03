@@ -297,7 +297,7 @@ func DotGeneral(f *gobackend.Function,
 
 	// Select execution path at build time based on problem size and matrix layout.
 	// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
-	params.execPath = selectExecPath(f.Builder.Backend, lhs.Shape, rhs.Shape, &params)
+	params.execPath = selectExecPath(f.RawBuilder.Backend, lhs.Shape, rhs.Shape, &params)
 	klog.V(1).Infof("DotGeneral execPath: %s\n", params.execPath)
 
 	// For blockedPath, pre-block BOTH inputs at graph-build time.

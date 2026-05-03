@@ -110,41 +110,34 @@ func (b *Buffer) recast(dtype dtypes.DType, length int) {
 	b.Flat = dtypes.UnsafeAnySliceFromBytes(unsafe.Pointer(unsafe.SliceData(b.RawBytes)), dtype, length)
 }
 
-// getBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
-// initialized.
+// GetBuffer with the corresponding shape from the backend pool of buffers if possible, or it allocates a new one.
+//
+// It returns ErrBackendAlreadyFinalized if the backend is already finalized.
 //
 // Important: it's not necessarily initialized with zero, since it can reuse old buffers.
 //
 // See also Buffer.Zeros to initialize it with zeros, if needed.
-func (b *Backend) getBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
+func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	if b.isFinalized {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
+	dtype := shape.DType
+	length := shape.Size()
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
 	pool := b.getBufferPool(bucketedSize)
 	var buf *Buffer
 	if item := pool.Get(); item != nil {
-		buf = item.(*Buffer)
+		buf = item.(*Buffer) //nolint:errcheck
 	} else {
 		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}
 	}
 	buf.RawBackend = b
 	buf.InUse = true
 	buf.isUserFed = false
-	buf.RawShape = shapes.Make(dtype, length)
+	buf.RawShape = shape.Clone()
 	buf.recast(dtype, length)
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
-	return buf, nil
-}
-
-// GetBuffer is a wrapper for getBuffer that also sets the buffer shape accordingly.
-func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
-	buf, err := b.getBuffer(shape.DType, shape.Size())
-	if err != nil {
-		return nil, err
-	}
-	buf.RawShape = shape.Clone()
 	return buf, nil
 }
 

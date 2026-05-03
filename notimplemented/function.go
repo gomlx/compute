@@ -36,6 +36,14 @@ func (f Function) Parent() compute.Function {
 	return nil
 }
 
+func (f Function) Builder() compute.Builder {
+	return nil
+}
+
+func (f Function) Shape(v compute.Value) (shapes.Shape, error) {
+	return shapes.Invalid(), errors.Wrapf(NotImplementedError, "in Shape()")
+}
+
 func (f Function) Closure() (compute.Function, error) {
 	return nil, f.baseErrFn(compute.OpTypeInvalid)
 }

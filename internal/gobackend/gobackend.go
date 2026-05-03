@@ -186,9 +186,9 @@ func (b *Backend) Builder(name string) compute.Builder {
 		Function: notimplemented.Function{
 			ErrFn: notImplementedError,
 		},
-		Builder:   builder,
-		name:      "main",
-		nodeDedup: make(map[NodeDedupKey][]*Node),
+		RawBuilder: builder,
+		name:       "main",
+		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
 	// Set the "not implemented" custom message:
 	return builder

@@ -30,7 +30,7 @@ func Call(f *gobackend.Function, target compute.Function, inputs ...compute.Valu
 	if !ok {
 		return nil, errors.Errorf("Call: target function must be a *gobackend.Function, got %T", target)
 	}
-	if targetFn.Builder != f.Builder {
+	if targetFn.RawBuilder != f.RawBuilder {
 		return nil, errors.Errorf("Call: target function must be from the same builder")
 	}
 	if !targetFn.IsReturned {
