@@ -1,6 +1,7 @@
 package gobackend
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -11,7 +12,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
-var backend compute.Backend
+var (
+	backend compute.Backend
+
+	configFlag = flag.String("config", "", "Go backend config string")
+)
 
 // TestCompliance runs all compute.Backend compliance tests.
 func TestCompliance(t *testing.T) {
@@ -30,7 +35,12 @@ func setup() {
 	} else {
 		fmt.Printf("\t$%s=%q\n", compute.ConfigEnvVar, os.Getenv(compute.ConfigEnvVar))
 	}
-	backend = compute.MustNew()
+	var err error
+	backend, err = New(*configFlag)
+	if err != nil {
+		klog.Fatalf("Failed to create backend: %+v", err)
+
+	}
 	fmt.Printf("Backend: %s, %s\n", backend.Name(), backend.Description())
 }
 
@@ -39,6 +49,7 @@ func teardown() {
 }
 
 func TestMain(m *testing.M) {
+	flag.Parse()
 	setup()
 	code := m.Run() // Run all tests in the file
 	teardown()
