@@ -132,7 +132,7 @@ func NormalizeShape[T interface {
 
 	// Create the output buffer.
 	outputShape := shapes.Make(source.RawShape.DType, batchSize, crossSize, contractingSize)
-	output, _ = backend.GetBufferForShape(outputShape)
+	output, _ = backend.GetBuffer(outputShape)
 	outputStrides := [3]int{crossSize * contractingSize, contractingSize, 1}
 	var outputIdx [3]int
 
@@ -209,7 +209,7 @@ func execDotGeneralNormalized(
 	if castToFloat32 {
 		outputShape := shapes.Make(dtypes.Float32, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
 		var err error
-		tmpOutput, err = backend.GetBufferForShape(outputShape)
+		tmpOutput, err = backend.GetBuffer(outputShape)
 		if err != nil {
 			return err
 		}

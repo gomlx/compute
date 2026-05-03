@@ -209,12 +209,12 @@ func execSort(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	compInputs := make([]*gobackend.Buffer, 2*len(outputs))
 	for i, output := range outputs {
 		scalarShape := shapes.Make(output.RawShape.DType)
-		compInputs[2*i], err = backend.GetBufferForShape(scalarShape)
+		compInputs[2*i], err = backend.GetBuffer(scalarShape)
 		if err != nil {
 			return nil, err
 		}
 
-		compInputs[2*i+1], err = backend.GetBufferForShape(scalarShape)
+		compInputs[2*i+1], err = backend.GetBuffer(scalarShape)
 		if err != nil {
 			return nil, err
 		}

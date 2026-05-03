@@ -449,7 +449,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs := inputs[0], inputs[1]
 	params := node.Data.(*NodeData)
 	outputShape := node.Shape
-	output, err := backend.GetBufferForShape(outputShape)
+	output, err := backend.GetBuffer(outputShape)
 
 	if err != nil {
 		return nil, err
@@ -480,7 +480,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			// The "checkPath" is the debug path: it uses the blocked path as a reference and runs all other possible paths
 			// comparing the results.
 			lhsRaw, rhsRaw := inputs[2], inputs[3]
-			output2, err := backend.GetBufferForShape(outputShape)
+			output2, err := backend.GetBuffer(outputShape)
 			if err != nil {
 				return nil, err
 			}
@@ -693,7 +693,7 @@ func dotGeneralCheckVersionsCmp(outputLarge, outputSmall *gobackend.Buffer) (mes
 func getBufAllocator[T dtypes.NumberNotComplex](backend *gobackend.Backend) packgemm.BufAllocFn[T] {
 	dtype := dtypes.FromGenericsType[T]()
 	return func(size int) (ref any, data []T) {
-		buf, err := backend.GetBufferForShape(shapes.Make(dtype, size))
+		buf, err := backend.GetBuffer(shapes.Make(dtype, size))
 		if err != nil {
 			return nil, nil
 		}
@@ -705,7 +705,7 @@ func getBufAllocator[T dtypes.NumberNotComplex](backend *gobackend.Backend) pack
 // TODO: change signature to return the error
 func getAnyBufAllocator(backend *gobackend.Backend, dtype dtypes.DType) packgemm.BufAllocAnyFn {
 	return func(size int) (ref any, data any) {
-		buf, err := backend.GetBufferForShape(shapes.Make(dtype, size))
+		buf, err := backend.GetBuffer(shapes.Make(dtype, size))
 		if err != nil {
 			return nil, nil
 		}

@@ -54,7 +54,7 @@ func execReverse(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 
 	// Allocate output buffer.
 	// TODO: if we can reuse the input buffer, create a version that uses swap instead of copy, and reverse in-place.
-	output, err := backend.GetBufferForShape(shape)
+	output, err := backend.GetBuffer(shape)
 	if err != nil {
 		return nil, err
 	}

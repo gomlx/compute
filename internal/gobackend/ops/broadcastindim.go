@@ -76,7 +76,7 @@ func execBroadcastInDim(
 	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs, since presumably the shape will change.
 	operand := inputs[0]
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

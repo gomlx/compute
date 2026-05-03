@@ -52,7 +52,7 @@ func execPad(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	elementSize := node.Shape.DType.Size()
 
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

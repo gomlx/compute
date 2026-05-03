@@ -12,9 +12,8 @@ import (
 	"github.com/gomlx/compute/support/testutil"
 )
 
-/*
 func TestBuffers_Bytes(t *testing.T) {
-	buf, err := backend.(*gobackend.Backend).GetBufferForShape(shapes.Make(dtypes.Int32, 3))
+	buf, err := backend.(*gobackend.Backend).GetBuffer(shapes.Make(dtypes.Int32, 3))
 	if err != nil {
 		t.Fatalf("Failed to get buffer: %+v", err)
 	}
@@ -39,7 +38,7 @@ func TestBuffers_Bytes(t *testing.T) {
 }
 
 func TestBuffers_Fill(t *testing.T) {
-	buf, err := backend.(*gobackend.Backend).GetBufferForShape(shapes.Make(dtypes.Int32, 3))
+	buf, err := backend.(*gobackend.Backend).GetBuffer(shapes.Make(dtypes.Int32, 3))
 	if err != nil {
 		t.Fatalf("Failed to get buffer: %+v", err)
 	}
@@ -58,5 +57,3 @@ func TestBuffers_Fill(t *testing.T) {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 }
-
-*/

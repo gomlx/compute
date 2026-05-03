@@ -56,7 +56,7 @@ func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// We can't write to the same buffer we read from because it's not done with swaps.
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

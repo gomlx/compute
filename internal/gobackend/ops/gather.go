@@ -81,7 +81,7 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	_ = inputsOwned // We don't reuse the inputs.
 	operand, startIndices := inputs[0], inputs[1]
 	gatherParams := node.Data.(*gatherNode)
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

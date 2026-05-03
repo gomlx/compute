@@ -38,7 +38,7 @@ func execReshape(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		output = operand
 		inputs[0] = nil
 	} else {
-		output, err = backend.GetBufferForShape(node.Shape)
+		output, err = backend.GetBuffer(node.Shape)
 		if err != nil {
 			return nil, err
 		}

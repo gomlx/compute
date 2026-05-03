@@ -104,7 +104,7 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 		); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
-		outBlocks, err := be.GetBufferForShape(outShape)
+		outBlocks, err := be.GetBuffer(outShape)
 		if err != nil {
 			t.Fatalf("Failed: %+v", err)
 		}

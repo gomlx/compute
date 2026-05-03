@@ -115,7 +115,7 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 		}
 	}
 
-	output, err := backend.GetBufferForShape(query.RawShape.Clone())
+	output, err := backend.GetBuffer(query.RawShape.Clone())
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func transposeBuffer(backend *gobackend.Backend, buf *gobackend.Buffer, permutat
 	}
 	outShape := shapes.Make(buf.RawShape.DType, outDims...)
 
-	output, err := backend.GetBufferForShape(outShape)
+	output, err := backend.GetBuffer(outShape)
 	if err != nil {
 		return nil, err
 	}

@@ -51,7 +51,7 @@ func execRNGBitGenerator(backend *gobackend.Backend, node *gobackend.Node, input
 	stateFlat := state.Flat.([]uint64)
 
 	// Reserved outputs:
-	rngData, err := backend.GetBufferForShape(node.MultiOutputsShapes[1])
+	rngData, err := backend.GetBuffer(node.MultiOutputsShapes[1])
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func execRNGBitGenerator(backend *gobackend.Backend, node *gobackend.Node, input
 		// We re-use the current state.
 		inputs[0] = nil
 	} else {
-		state, err = backend.GetBufferForShape(node.MultiOutputsShapes[0])
+		state, err = backend.GetBuffer(node.MultiOutputsShapes[0])
 		if err != nil {
 			return nil, err
 		}

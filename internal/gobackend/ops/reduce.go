@@ -120,14 +120,14 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	}
 	if len(reduceAxes) == 0 {
 		// Identity.
-		output, err := backend.GetBufferForShape(operand.RawShape)
+		output, err := backend.GetBuffer(operand.RawShape)
 		if err != nil {
 			return nil, err
 		}
 		gobackend.CopyFlat(output.Flat, operand.Flat)
 		return output, nil
 	}
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

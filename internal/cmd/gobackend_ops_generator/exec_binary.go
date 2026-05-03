@@ -56,7 +56,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 {{- if .IsComparison }}
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {return nil, err}
 {{- else }}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)

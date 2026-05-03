@@ -183,7 +183,7 @@ func execConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	params := node.Data.(*convNode)
 	outputShape := node.Shape
 	dtype := input.RawShape.DType
-	output, err := backend.GetBufferForShape(outputShape)
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}

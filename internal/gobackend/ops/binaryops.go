@@ -187,7 +187,7 @@ func binaryOperandsAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buf
 		output = lhs
 		inputs[0] = nil
 	default:
-		output, _ = backend.GetBufferForShape(outputShape)
+		output, _ = backend.GetBuffer(outputShape)
 	}
 	return
 }

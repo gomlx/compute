@@ -98,7 +98,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			inputs[0] = nil // Signal to executor that we reused the input.
 			return matmul, nil
 		}
-		output, err := backend.GetBufferForShape(node.Shape)
+		output, err := backend.GetBuffer(node.Shape)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		inputs[0] = nil // Signal to the executor that we reused the input.
 	} else {
 		var err error
-		output, err = backend.GetBufferForShape(node.Shape)
+		output, err = backend.GetBuffer(node.Shape)
 		if err != nil {
 			return nil, err
 		}

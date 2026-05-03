@@ -35,7 +35,7 @@ func ConvertDType(f *gobackend.Function, operandOp compute.Value, dtype dtypes.D
 func execConvertDType(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
 	_ = inputsOwned // We don't reuse the inputs.
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

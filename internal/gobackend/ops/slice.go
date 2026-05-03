@@ -103,7 +103,7 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.Data)
 	}
 
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

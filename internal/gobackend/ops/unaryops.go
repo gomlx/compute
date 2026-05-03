@@ -87,7 +87,7 @@ func unaryOperandAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buffe
 		inputs[0] = nil // This tells the executor that we took over the buffer.
 		return
 	}
-	output, err = backend.GetBufferForShape(input.RawShape)
+	output, err = backend.GetBuffer(input.RawShape)
 	if err != nil {
 		return input, nil, err // as output is nil
 	}
@@ -1058,7 +1058,7 @@ func IsFinite(f *gobackend.Function, operandOp compute.Value) (compute.Value, er
 func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input := inputs[0]
 	// Output has the same shape as the input, but different dtypes: it is a bool.
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}

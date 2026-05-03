@@ -33,7 +33,7 @@ func execIdentity(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	}
 
 	// If the input is still in use, we make a copy.
-	output, err := backend.GetBufferForShape(operand.RawShape)
+	output, err := backend.GetBuffer(operand.RawShape)
 	if err != nil {
 		return nil, err
 	}

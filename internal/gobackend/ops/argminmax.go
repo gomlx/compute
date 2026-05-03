@@ -65,7 +65,7 @@ func execArgMinMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	operand := inputs[0]
 	reduceAxis := node.Data.(*argMinMaxNode).axis
 	isMin := node.Data.(*argMinMaxNode).isMin
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +133,10 @@ func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.GetBufferForShape(shapes.Make(operand.RawShape.DType, suffixSize))
+	currentBestBuffer, _ := backend.GetBuffer(shapes.Make(operand.RawShape.DType, suffixSize))
 
 	currentBest := currentBestBuffer.Flat.([]T)
-	currentArgBestBuffer, _ := backend.GetBufferForShape(shapes.Make(dtypes.Int32, suffixSize))
+	currentArgBestBuffer, _ := backend.GetBuffer(shapes.Make(dtypes.Int32, suffixSize))
 	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0
@@ -193,9 +193,9 @@ func execArgMinMaxGenericHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionP
 	operandFlat := operand.Flat.([]T)
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
-	currentBestBuffer, _ := backend.GetBufferForShape(shapes.Make(operand.RawShape.DType, suffixSize))
+	currentBestBuffer, _ := backend.GetBuffer(shapes.Make(operand.RawShape.DType, suffixSize))
 	currentBest := currentBestBuffer.Flat.([]T)
-	currentArgBestBuffer, _ := backend.GetBufferForShape(shapes.Make(dtypes.Int32, suffixSize))
+	currentArgBestBuffer, _ := backend.GetBuffer(shapes.Make(dtypes.Int32, suffixSize))
 	currentArgBest := currentArgBestBuffer.Flat.([]int32)
 
 	outputFlatIdx := 0

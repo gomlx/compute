@@ -355,7 +355,7 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: only float32 input supported, got %s", xBuf.RawShape.DType)
 	}
 
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +434,7 @@ func unpackWeightsToBuffer(backend *gobackend.Backend, wBuf *gobackend.Buffer) (
 		return wBuf, false, nil
 	}
 
-	outBuf, err := backend.GetBufferForShape(shapes.Make(targetDType, wBuf.RawShape.Dimensions...))
+	outBuf, err := backend.GetBuffer(shapes.Make(targetDType, wBuf.RawShape.Dimensions...))
 	if err != nil {
 		return nil, false, err
 	}
@@ -457,7 +457,7 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	dataBuf := inputs[0]
 	indicesBuf := inputs[1]
 
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +508,7 @@ func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buf
 	if indicesBuf.RawShape.DType == dtypes.Int64 {
 		return indicesBuf, false, nil
 	}
-	outBuf, err := backend.GetBufferForShape(shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...))
+	outBuf, err := backend.GetBuffer(shapes.Make(dtypes.Int64, indicesBuf.RawShape.Dimensions...))
 	if err != nil {
 		return nil, false, err
 	}

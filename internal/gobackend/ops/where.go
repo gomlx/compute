@@ -42,7 +42,7 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		output = onFalse
 		inputs[2] = nil
 	default:
-		output, err = backend.GetBufferForShape(outputShape)
+		output, err = backend.GetBuffer(outputShape)
 		if err != nil {
 			return nil, err
 		}

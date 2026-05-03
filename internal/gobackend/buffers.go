@@ -4,7 +4,9 @@ package gobackend
 
 import (
 	stderrors "errors"
+	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -13,7 +15,9 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
+	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
+	"k8s.io/klog/v2"
 )
 
 // ErrBackendAlreadyFinalized is returned when attempting to register or initialize a backend that already exists.
@@ -92,13 +96,7 @@ func (b *Backend) getBufferPool(bucketedSize int) *sync.Pool {
 	key := bufferPoolKey{bucketedSize: bucketedSize}
 	poolInterface, ok := b.bufferPools.Load(key)
 	if !ok {
-		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{
-			New: func() any {
-				return &Buffer{
-					RawBytes: make([]byte, bucketedSize),
-				}
-			},
-		})
+		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{})
 	}
 	return poolInterface.(*sync.Pool) //nolint:errcheck
 }
@@ -112,20 +110,25 @@ func (b *Buffer) recast(dtype dtypes.DType, length int) {
 	b.Flat = dtypes.UnsafeAnySliceFromBytes(unsafe.Pointer(unsafe.SliceData(b.RawBytes)), dtype, length)
 }
 
-// GetBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
+// getBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
 // initialized.
 //
 // Important: it's not necessarily initialized with zero, since it can reuse old buffers.
 //
 // See also Buffer.Zeros to initialize it with zeros, if needed.
-func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
+func (b *Backend) getBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	if b.isFinalized {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
 	pool := b.getBufferPool(bucketedSize)
-	buf := pool.Get().(*Buffer) //nolint:errcheck
+	var buf *Buffer
+	if item := pool.Get(); item != nil {
+		buf = item.(*Buffer)
+	} else {
+		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}
+	}
 	buf.RawBackend = b
 	buf.InUse = true
 	buf.isUserFed = false
@@ -135,13 +138,13 @@ func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	return buf, nil
 }
 
-// GetBufferForShape is a wrapper for getShape that also sets the buffer shape accordingly.
-func (b *Backend) GetBufferForShape(shape shapes.Shape) (*Buffer, error) {
-	buf, err := b.GetBuffer(shape.DType, shape.Size())
+// GetBuffer is a wrapper for getBuffer that also sets the buffer shape accordingly.
+func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
+	buf, err := b.getBuffer(shape.DType, shape.Size())
 	if err != nil {
 		return nil, err
 	}
-	buf.RawShape = shape
+	buf.RawShape = shape.Clone()
 	return buf, nil
 }
 
@@ -158,6 +161,14 @@ func (b *Backend) GetBufferForShape(shape shapes.Shape) (*Buffer, error) {
 // After this any references to buffer should be dropped.
 func (b *Backend) PutBuffer(buffer *Buffer) {
 	if b.isFinalized {
+		return
+	}
+	// DEBUG
+	if false {
+		err := buffer.Finalize()
+		if err != nil {
+			klog.Errorf("Failed to finalize buffer: %+v", err)
+		}
 		return
 	}
 	if buffer == nil || !buffer.RawShape.Ok() {
@@ -308,11 +319,10 @@ func (b *Backend) CloneBuffer(buffer *Buffer) (*Buffer, error) {
 		return nil, errors.Errorf("cloneBuffer(%p): %s -- buffer was already isFinalized", buffer,
 			strings.Join(issues, ", "))
 	}
-	newBuffer, err := b.GetBuffer(buffer.RawShape.DType, buffer.RawShape.Size())
+	newBuffer, err := b.GetBuffer(buffer.RawShape)
 	if err != nil {
 		return nil, err
 	}
-	newBuffer.RawShape = buffer.RawShape.Clone()
 	CopyFlat(newBuffer.Flat, buffer.Flat)
 	return newBuffer, nil
 }
@@ -321,11 +331,10 @@ func (b *Backend) CloneBuffer(buffer *Buffer) (*Buffer, error) {
 //
 // TODO: should we study the possibility to change the signature with an error?
 func (b *Backend) NewBuffer(shape shapes.Shape) *Buffer {
-	buffer, err := b.GetBuffer(shape.DType, shape.Size())
+	buffer, err := b.GetBuffer(shape)
 	if err != nil {
 		return nil
 	}
-	buffer.RawShape = shape.Clone()
 	return buffer
 }
 
@@ -483,4 +492,56 @@ func (buffer *Buffer) CopyToDevice(deviceNum compute.DeviceNum) (compute.Buffer,
 // Backend returns the backend that owns this buffer.
 func (buffer *Buffer) Backend() compute.Backend {
 	return buffer.RawBackend
+}
+
+// MemReport returns a human-readable report of memory usage.
+func (b *Backend) MemReport() string {
+	type poolStat struct {
+		size, count, memory int
+	}
+	var stats []poolStat
+	var totalMem int
+
+	b.bufferPools.Range(func(key, value any) bool {
+		k := key.(bufferPoolKey)
+		pool := value.(*sync.Pool)
+
+		var items []*Buffer
+		for {
+			item := pool.Get()
+			if item == nil {
+				break
+			}
+			items = append(items, item.(*Buffer))
+		}
+
+		if len(items) > 0 {
+			stat := poolStat{
+				size:   k.bucketedSize,
+				count:  len(items),
+				memory: len(items) * k.bucketedSize,
+			}
+			stats = append(stats, stat)
+			totalMem += stat.memory
+		}
+
+		for _, item := range items {
+			pool.Put(item)
+		}
+		return true
+	})
+
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].size < stats[j].size
+	})
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Total Memory In Buffer Pools:  %s\n", humanize.Bytes(totalMem)))
+	sb.WriteString("Buffer Pool:\n")
+	sb.WriteString("   <shape>   <# elements>  <memory-used>\n")
+	for _, stat := range stats {
+		shapeStr := fmt.Sprintf("[%d bytes]", stat.size)
+		sb.WriteString(fmt.Sprintf("   %-9s %-13d %s\n", shapeStr, stat.count, humanize.Bytes(stat.memory)))
+	}
+	return sb.String()
 }

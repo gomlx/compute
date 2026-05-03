@@ -93,7 +93,7 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	rank := operandShape.Rank()
 	dtype := operandShape.DType
 	outputShape := node.Shape
-	output, err := backend.GetBufferForShape(outputShape)
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}

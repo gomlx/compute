@@ -190,7 +190,7 @@ func execBlockForDotGeneral(backend *gobackend.Backend, node *gobackend.Node, in
 	dtype := input.RawShape.DType
 
 	// Allocate output buffer for blocked data
-	output, err := backend.GetBufferForShape(data.blockedShape)
+	output, err := backend.GetBuffer(data.blockedShape)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func execDotGeneralBlocked(backend *gobackend.Backend, lhsBlocks, rhsBlocks *gob
 
 	// Allocate output buffer in blocked format.
 	// Use params.outputBlockedShape.DType which is the accumulator type (Float32 for FP16/BF16).
-	outputBlocks, err := backend.GetBufferForShape(params.OutputBlockedShape)
+	outputBlocks, err := backend.GetBuffer(params.OutputBlockedShape)
 	if err != nil {
 		return err
 	}

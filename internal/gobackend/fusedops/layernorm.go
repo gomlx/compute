@@ -73,7 +73,7 @@ func FusedLayerNorm(f *gobackend.Function, x compute.Value, axes []int, epsilon 
 func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
-	output, err := backend.GetBufferForShape(node.Shape)
+	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
 	}
