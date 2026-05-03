@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support"
 	"github.com/pkg/errors"
 )
 
@@ -32,7 +33,12 @@ type Buffer struct {
 	// InUse is set to false when the buffer is finalized and moved back to the pool.
 	InUse bool
 
+	// RawBytes is the underlying storage for the buffer.
+	// Its length is always >= requested size in bytes.
+	RawBytes []byte
+
 	// Flat is always a slice of the underlying data type (shape.DType).
+	// It is a re-casting of RawBytes.
 	Flat any
 }
 
@@ -73,25 +79,32 @@ func compareFlatData(a, b any) bool {
 }
 
 type bufferPoolKey struct {
-	dtype  dtypes.DType
-	length int
+	bucketedSize int
 }
 
-// getBufferPool for given dtype/length.
-func (b *Backend) getBufferPool(dtype dtypes.DType, length int) *sync.Pool {
-	key := bufferPoolKey{dtype: dtype, length: length}
+// getBufferPool for given bucketedSize.
+func (b *Backend) getBufferPool(bucketedSize int) *sync.Pool {
+	key := bufferPoolKey{bucketedSize: bucketedSize}
 	poolInterface, ok := b.bufferPools.Load(key)
 	if !ok {
 		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{
 			New: func() any {
 				return &Buffer{
-					Flat:     dtypes.MakeAnySlice(dtype, length),
-					RawShape: shapes.Make(dtype, length),
+					RawBytes: make([]byte, bucketedSize),
 				}
 			},
 		})
 	}
 	return poolInterface.(*sync.Pool) //nolint:errcheck
+}
+
+// recast re-sets the Flat field based on RawBytes, DType and length.
+func (b *Buffer) recast(dtype dtypes.DType, length int) {
+	if length == 0 {
+		b.Flat = dtypes.MakeAnySlice(dtype, 0)
+		return
+	}
+	b.Flat = dtypes.UnsafeAnySliceFromBytes(unsafe.Pointer(unsafe.SliceData(b.RawBytes)), dtype, length)
 }
 
 // GetBuffer from the backend pool of buffers. It returns ErrBackendAlreadyFinalized if the backend is already
@@ -104,10 +117,14 @@ func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	if b.isFinalized {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
-	pool := b.getBufferPool(dtype, length)
+	requestedSizeInBytes := dtype.SizeForDimensions(length)
+	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
+	pool := b.getBufferPool(bucketedSize)
 	buf := pool.Get().(*Buffer) //nolint:errcheck
 	buf.RawBackend = b
 	buf.InUse = true
+	buf.RawShape = shapes.Make(dtype, length)
+	buf.recast(dtype, length)
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
 }
@@ -144,7 +161,11 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 		panic(errors.New("double-freeing simplego buffer"))
 	}
 	buffer.InUse = false
-	pool := b.getBufferPool(buffer.RawShape.DType, buffer.RawShape.Size())
+	if len(buffer.RawBytes) == 0 {
+		return
+	}
+	buffer.Flat = nil
+	pool := b.getBufferPool(len(buffer.RawBytes))
 	pool.Put(buffer)
 }
 
@@ -315,7 +336,10 @@ func (buffer *Buffer) Finalize() error {
 		return errors.Errorf("Finalize(%p): %s -- buffer was already finalized or back in the pool",
 			buffer, strings.Join(issues, ", "))
 	}
-	buffer.RawBackend.PutBuffer(buffer)
+
+	buffer.Flat = nil
+	buffer.RawBytes = nil
+	// Alternatively, to return buffer to pool: buffer.RawBackend.PutBuffer(buffer)
 	return nil
 }
 
