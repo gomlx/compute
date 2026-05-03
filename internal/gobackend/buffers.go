@@ -17,7 +17,6 @@ import (
 	"github.com/gomlx/compute/support"
 	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
-	"k8s.io/klog/v2"
 )
 
 // ErrBackendAlreadyFinalized is returned when attempting to register or initialize a backend that already exists.
@@ -129,8 +128,10 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	var buf *Buffer
 	if item := pool.Get(); item != nil {
 		buf = item.(*Buffer) //nolint:errcheck
+		// fmt.Printf("> Reusing buffer: \t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
 	} else {
 		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}
+		// fmt.Printf("> Creating buffer:\t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
 	}
 	buf.RawBackend = b
 	buf.InUse = true
@@ -153,15 +154,8 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 // PutBuffer back into the backend pool of buffers.
 // After this any references to buffer should be dropped.
 func (b *Backend) PutBuffer(buffer *Buffer) {
+	// fmt.Printf("> Returning buffer:\t(%s) %s\n", humanize.Bytes(len(buffer.RawBytes)), buffer.RawShape)
 	if b.isFinalized {
-		return
-	}
-	// DEBUG
-	if false {
-		err := buffer.Finalize()
-		if err != nil {
-			klog.Errorf("Failed to finalize buffer: %+v", err)
-		}
 		return
 	}
 	if buffer == nil || !buffer.RawShape.Ok() {
