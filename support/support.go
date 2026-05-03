@@ -4,6 +4,8 @@
 package support
 
 import (
+	"math/bits"
+
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -47,4 +49,37 @@ func DotGeneralFindSizes(shape shapes.Shape, contractingAxes, batchAxes []int) (
 		}
 	}
 	return
+}
+
+// TwoBitBucketLen returns the smallest size >= unpaddedLen that uses only
+// the two highest bits (either 2^n or 1.5 * 2^n).
+//
+// This is a more granular version of a NextPowerOfTwo function to use
+// for bucketing strategies.
+func TwoBitBucketLen(unpaddedLen int) int {
+	if unpaddedLen <= 2 {
+		return unpaddedLen
+	}
+
+	// Find the position of the most significant bit (MSB).
+	// bits.Len returns the number of bits required to represent the uint.
+	// For 5 (101), Len is 3.
+	msbPos := bits.Len(uint(unpaddedLen)) - 1
+	msbValue := 1 << msbPos
+
+	// Case 1: Exact power of 2
+	if unpaddedLen == msbValue {
+		return msbValue
+	}
+
+	// Case 2: Check the "1.5" threshold (the two highest bits)
+	// Example: If msbValue is 4 (100), threshold is 6 (110)
+	threshold := msbValue | (msbValue >> 1)
+
+	if unpaddedLen <= threshold {
+		return threshold
+	}
+
+	// Case 3: Above the 1.5 threshold, jump to the next power of 2
+	return msbValue << 1
 }
