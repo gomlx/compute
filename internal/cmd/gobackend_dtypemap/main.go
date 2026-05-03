@@ -181,23 +181,30 @@ func parseFiles(dir string) (Data, error) {
 							if match := reDTypeMap.FindStringSubmatch(comment); match != nil {
 								generic := match[1]
 								typeGroups := match[2]
+								dtypes := parseTypeGroups(typeGroups)
+								slices.SortFunc(dtypes, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
 								d.Maps = append(d.Maps, MapInfo{
 									MapName: mapName,
 									Generic: generic,
-									DTypes:  parseTypeGroups(typeGroups),
+									DTypes:  dtypes,
 								})
 							} else if match := reDTypePairMap.FindStringSubmatch(comment); match != nil {
 								generic := match[1]
 								typeGroups1 := match[2]
 								typeGroups2 := match[3]
+								dtypes1 := parseTypeGroups(typeGroups1)
+								slices.SortFunc(dtypes1, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
+								dtypes2 := parseTypeGroups(typeGroups2)
+								slices.SortFunc(dtypes2, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
 								d.PairMaps = append(d.PairMaps, MapPairInfo{
 									MapName: mapName,
 									Generic: generic,
-									DTypes1: parseTypeGroups(typeGroups1),
-									DTypes2: parseTypeGroups(typeGroups2),
+									DTypes1: dtypes1,
+									DTypes2: dtypes2,
 								})
 							}
 						}
+
 					}
 				}
 			}
