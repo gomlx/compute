@@ -238,14 +238,25 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			// We owned it, and now we are giving it to the user.
+			// Return a shallow clone so the user can have a fresh handle,
+			// while keeping the original handle (if it was a donated input) unchanged.
+			//
+			// If we return the same pointer, and the user calls Finalize() on it (which clears
+			// the memory), then the user would be destroying the output they just received.
+			outputs[i] = execBuf.results[outIdx].shallowClone()
 		}
-		execBuf.results[outIdx] = nil // Prevent double-free
+		execBuf.results[outIdx] = nil // Set to nil so it's not put back into the pool in the cleanup loop below.
 	}
 
 	// Free any remaining owned buffers that weren't outputs
 	for idx, buf := range execBuf.results {
-		if buf != nil && execBuf.owned[idx] {
-			backend.PutBuffer(buf)
+		if buf != nil {
+			if execBuf.owned[idx] {
+				backend.PutBuffer(buf)
+			}
+			execBuf.results[idx] = nil
 		}
 	}
 

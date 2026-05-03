@@ -33,6 +33,11 @@ type Buffer struct {
 	// InUse is set to false when the buffer is finalized and moved back to the pool.
 	InUse bool
 
+	// isUserFed is set to true when the buffer was created from user-provided data
+	// (e.g., via BufferFromFlatData). These buffers should not be pooled after use
+	// to avoid unbounded pool growth when iterating over large datasets.
+	isUserFed bool
+
 	// RawBytes is the underlying storage for the buffer.
 	// Its length is always >= requested size in bytes.
 	RawBytes []byte
@@ -123,6 +128,7 @@ func (b *Backend) GetBuffer(dtype dtypes.DType, length int) (*Buffer, error) {
 	buf := pool.Get().(*Buffer) //nolint:errcheck
 	buf.RawBackend = b
 	buf.InUse = true
+	buf.isUserFed = false
 	buf.RawShape = shapes.Make(dtype, length)
 	buf.recast(dtype, length)
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
@@ -160,13 +166,28 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	if !buffer.InUse {
 		panic(errors.New("double-freeing simplego buffer"))
 	}
+
+	if buffer.isUserFed {
+		// User-fed buffers are not returned to the pool to avoid unbounded growth
+		// when looping through large datasets.
+		_ = buffer.Finalize()
+		return
+	}
+
 	buffer.InUse = false
 	if len(buffer.RawBytes) == 0 {
 		return
 	}
 	buffer.Flat = nil
+	buffer.RawShape = shapes.Invalid()
 	pool := b.getBufferPool(len(buffer.RawBytes))
 	pool.Put(buffer)
+}
+
+// shallowClone returns a new Buffer struct pointing to the same data.
+func (buffer *Buffer) shallowClone() *Buffer {
+	newBuf := *buffer
+	return &newBuf
 }
 
 // CopyFlat assumes both flat slices are of the same underlying type.
@@ -308,7 +329,7 @@ func (b *Backend) NewBuffer(shape shapes.Shape) *Buffer {
 	return buffer
 }
 
-// BufferFinalize allows the client to inform the backend that the buffer is no longer needed and associated resources
+// Finalize allows the client to inform the backend that the buffer is no longer needed and associated resources
 // can be freed immediately.
 //
 // A isFinalized buffer should never be used again. Preferably, the caller should set its references to it to nil.
@@ -320,6 +341,8 @@ func (buffer *Buffer) Finalize() error {
 	}
 	if buffer.RawBackend.isFinalized {
 		buffer.Flat = nil // Accelerates GC.
+		buffer.RawBytes = nil
+		buffer.RawShape = shapes.Invalid()
 		return errors.Errorf("Finalize(%p): backend is already finalized", buffer)
 	}
 	var issues []string
@@ -337,9 +360,10 @@ func (buffer *Buffer) Finalize() error {
 			buffer, strings.Join(issues, ", "))
 	}
 
+	buffer.InUse = false
 	buffer.Flat = nil
 	buffer.RawBytes = nil
-	// Alternatively, to return buffer to pool: buffer.RawBackend.PutBuffer(buffer)
+	buffer.RawShape = shapes.Invalid()
 	return nil
 }
 
@@ -393,6 +417,7 @@ func (b *Backend) BufferFromFlatData(deviceNum compute.DeviceNum, flat any, shap
 	if buffer == nil {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
+	buffer.isUserFed = true
 
 	CopyFlat(buffer.Flat, flat)
 	return buffer, nil
@@ -431,6 +456,7 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 	if goBuffer == nil {
 		return nil, nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
+	goBuffer.isUserFed = true
 	return goBuffer, goBuffer.Flat, nil
 }
 
