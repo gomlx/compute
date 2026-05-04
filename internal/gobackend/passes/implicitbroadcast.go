@@ -1,7 +1,9 @@
 package passes
 
 import (
+	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 )
 
 func init() {
@@ -31,5 +33,26 @@ func (p *ImplicitBroadcastFusion) Name() string {
 // Binary operations for which implicit broadcasting applies are defined in
 // shapeinference.StandardBinaryOperations and shapeinference.ComparisonOperations.
 func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) error {
+	for _, f := range b.Functions {
+		for _, node := range f.Nodes {
+			if !shapeinference.StandardBinaryOperations.Has(node.OpType) &&
+				!shapeinference.ComparisonOperations.Has(node.OpType) {
+				continue
+			}
+
+			// Binary operations for which implicit broadcasting applies.
+			for i, input := range node.Inputs {
+				if input.OpType != compute.OpTypeBroadcastInDim {
+					continue
+				}
+
+				// Only fuse if rank doesn't change: implicit broadcasting only works if ranks are equal.
+				if input.Inputs[0].Shape.Rank() == node.Shape.Rank() {
+					// Fuse: use the input of the broadcast directly.
+					node.Inputs[i] = input.Inputs[0]
+				}
+			}
+		}
+	}
 	return nil
 }

@@ -190,6 +190,7 @@ func (b *Backend) Builder(name string) compute.Builder {
 		name:       "main",
 		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
+	builder.Functions = append(builder.Functions, builder.MainFn)
 	// Set the "not implemented" custom message:
 	return builder
 }

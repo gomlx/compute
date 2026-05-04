@@ -131,6 +131,7 @@ func (f *Function) Closure() (compute.Function, error) {
 		RawParent:  f,
 		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
+	f.RawBuilder.Functions = append(f.RawBuilder.Functions, closure)
 	return closure, nil
 }
 

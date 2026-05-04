@@ -24,6 +24,10 @@ type Builder struct {
 	// MainFn is the main function of the computation.
 	// Each function (including MainFn and closures) has its own nodes slice.
 	MainFn *Function
+
+	// Functions are all functions created within this builder, in order of creation.
+	// It includes the main function.
+	Functions []*Function
 }
 
 // Compile-time check.
@@ -60,6 +64,7 @@ func (b *Builder) NewFunction(name string) (compute.Function, error) {
 		RawParent:  nil, // Top-level functions have no parent
 		nodeDedup:  make(map[NodeDedupKey][]*Node),
 	}
+	b.Functions = append(b.Functions, f)
 	return f, nil
 }
 
