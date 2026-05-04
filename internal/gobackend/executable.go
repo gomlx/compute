@@ -632,7 +632,6 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		execBuf.opInputBuffers = inputBuffers
 		execBuf.opInputsOwned = inputsOwned
 	}
-
 	return nil
 }
 

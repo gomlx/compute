@@ -164,7 +164,6 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	if !buffer.InUse {
 		panic(errors.New("double-freeing simplego buffer"))
 	}
-
 	if buffer.isUserFed {
 		// User-fed buffers are not returned to the pool to avoid unbounded growth
 		// when looping through large datasets.
