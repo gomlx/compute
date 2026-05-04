@@ -9,6 +9,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/support/humanize"
+	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
@@ -22,6 +23,10 @@ type FunctionExecutable struct {
 	// NumNodesToProcess is the max(outputs.idx)+1.
 	// Arrays are sized to this to allow direct idx indexing.
 	NumNodesToProcess int
+
+	// Schedule represents the order in which nodes should be executed.
+	// This should be optimized to minimize the latency/temporary memory.
+	Schedule []int
 
 	// NumUses tracks how many times each node's result is used (indexed by idx).
 	NumUses []int
@@ -92,11 +97,18 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		},
 	}
 
+	fe.InitSchedule()
+
 	if klog.V(1).Enabled() {
 		fmt.Printf("* Compiling function %q: estimated max temporary memory: %s\n",
 			fe.Function.Name(), humanize.Bytes(fe.EstimatedTemporaryMemory()))
 	}
 	return fe, nil
+}
+
+// InitSchedule initializes the execution schedule.
+func (fe *FunctionExecutable) InitSchedule() {
+	fe.Schedule = xslices.Iota(0, fe.NumNodesToProcess)
 }
 
 // countNodeUsesAndDependents recursively counts how many times a node is used.
@@ -282,7 +294,7 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 		execBuf.opInputsOwned = nil
 	}()
 
-	for nodeIdx := range fe.NumNodesToProcess {
+	for _, nodeIdx := range fe.Schedule {
 		if execBuf.results[nodeIdx] != nil {
 			// Already computed (parameter)
 			continue
@@ -315,7 +327,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 
 	// Count expected nodes and initialize dependencies
 	// Dependencies include both regular inputs and captured inputs
-	for nodeIdx := range fe.NumNodesToProcess {
+	for _, nodeIdx := range fe.Schedule {
 		if fe.NumUses[nodeIdx] > 0 {
 			expected++
 			node := fe.Function.Nodes[nodeIdx]
@@ -659,7 +671,7 @@ func (fe *FunctionExecutable) EstimatedTemporaryMemory() int64 {
 		}
 	}
 
-	for nodeIdx := range fe.NumNodesToProcess {
+	for _, nodeIdx := range fe.Schedule {
 		if computed[nodeIdx] {
 			continue
 		}
