@@ -3,7 +3,6 @@
 package backendtest
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -300,8 +299,6 @@ func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguratio
 							return nil, err
 						}
 
-						shape, err := f.Shape(kernel)
-						fmt.Printf("* kernel shape=%s, err=%+v\n", shape, err)
 						output, err := f.ConvGeneral(input, kernel, tc.axes, tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations, tc.channelGroupCount, tc.batchGroupCount)
 						if err != nil {
 							return nil, err
