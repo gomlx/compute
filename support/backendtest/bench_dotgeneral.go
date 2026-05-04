@@ -13,10 +13,15 @@ import (
 func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 	type dotGeneralCase struct {
 		name                                         string
+		model                                        string // model if set splits the cases into another sub-benchmark.
 		lhsShape, rhsShape                           shapes.Shape
 		lhsContract, lhsBatch, rhsContract, rhsBatch []int
 	}
 	benchCases := []dotGeneralCase{
+		// Examples from "KnightsAnalytics/all-MiniLM-L6-v2"
+		{
+			model: "KnightsAnalytics-all-MiniLM-L6-v2",
+		},
 		{
 			name:        "32x12x13x13_x_32x12x13x32",
 			lhsShape:    shapes.Make(dtypes.Float32, 32, 12, 13, 13),
@@ -70,22 +75,319 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			lhsContract: []int{1},
 			rhsContract: []int{0},
 		},
+
+		// Examples from "BAAI/bge-small-en-v1.5", used with various batch sizes / sequence lengths.
+		{
+			model: "BAAI-bge-small-en-v1.5",
+		},
+		{
+			name:        "10x192x12x192_x_10x192x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 12, 192),
+			rhsShape:    shapes.Make(dtypes.Float32, 10, 192, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "10x192x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "10x192x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "10x192x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "16x128x12x128_x_16x128x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 128, 12, 128),
+			rhsShape:    shapes.Make(dtypes.Float32, 16, 128, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "16x128x12x32_x_16x128x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 128, 12, 32),
+			rhsShape:    shapes.Make(dtypes.Float32, 16, 128, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{3},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "16x128x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 128, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "16x128x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 128, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "16x128x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 128, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "21x96x12x96_x_21x96x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 21, 96, 12, 96),
+			rhsShape:    shapes.Make(dtypes.Float32, 21, 96, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "21x96x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 21, 96, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "21x96x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 21, 96, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "21x96x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 21, 96, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "256x8x12x8_x_256x8x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 256, 8, 12, 8),
+			rhsShape:    shapes.Make(dtypes.Float32, 256, 8, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "256x8x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 256, 8, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "256x8x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 256, 8, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "256x8x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 256, 8, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "32x64x12x64_x_32x64x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 32, 64, 12, 64),
+			rhsShape:    shapes.Make(dtypes.Float32, 32, 64, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "32x64x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 32, 64, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "32x64x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 32, 64, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "32x64x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 32, 64, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "42x48x12x48_x_42x48x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 42, 48, 12, 48),
+			rhsShape:    shapes.Make(dtypes.Float32, 42, 48, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "42x48x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 42, 48, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "42x48x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 42, 48, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "42x48x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 42, 48, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "64x32x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 64, 32, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "64x32x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 64, 32, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "64x32x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 64, 32, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "8x256x12x256_x_8x256x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 8, 256, 12, 256),
+			rhsShape:    shapes.Make(dtypes.Float32, 8, 256, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "8x256x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 8, 256, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "8x256x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 8, 256, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "8x256x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 8, 256, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "85x24x12x24_x_85x24x12x32",
+			lhsShape:    shapes.Make(dtypes.Float32, 85, 24, 12, 24),
+			rhsShape:    shapes.Make(dtypes.Float32, 85, 24, 12, 32),
+			lhsContract: []int{3},
+			lhsBatch:    []int{0, 2},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0, 2},
+		},
+		{
+			name:        "85x24x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 85, 24, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "85x24x384_x_1536x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 85, 24, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
+		{
+			name:        "85x24x384_x_384x384",
+			lhsShape:    shapes.Make(dtypes.Float32, 85, 24, 384),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
+		},
 	}
 
-	for _, tc := range benchCases {
-		lhsData := randomFloat32(tc.lhsShape.Size())
-		rhsData := randomFloat32(tc.rhsShape.Size())
-
-		be, err := newBenchExec(backend, []shapes.Shape{tc.lhsShape, tc.rhsShape}, []any{lhsData, rhsData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.DotGeneral(params[0], tc.lhsContract, tc.lhsBatch, params[1], tc.rhsContract, tc.rhsBatch, compute.DotGeneralConfig{})
-			})
-		if err != nil {
-			b.Fatalf("Failed to create benchmark %s: %+v", tc.name, err)
+	benchIdx := 0
+	for benchIdx < len(benchCases) {
+		// Skip to case with a model name.
+		benchCase := benchCases[benchIdx]
+		for benchCase.model == "" {
+			benchIdx++
+			if benchIdx >= len(benchCases) {
+				return // Finished processing.
+			}
+			benchCase = benchCases[benchIdx]
 		}
 
-		b.Run(tc.name, func(b *testing.B) {
-			be.run(b)
+		// Run all cases that belong to this model.
+		b.Run(benchCase.model, func(b *testing.B) {
+			benchIdx++
+			for ; benchIdx < len(benchCases); benchIdx++ {
+				benchCase := benchCases[benchIdx]
+				if benchCase.model != "" {
+					// Next model.
+					break
+				}
+				lhsData := randomFloat32(benchCase.lhsShape.Size())
+				rhsData := randomFloat32(benchCase.rhsShape.Size())
+
+				be, err := newBenchExec(backend, []shapes.Shape{benchCase.lhsShape, benchCase.rhsShape}, []any{lhsData, rhsData},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, compute.DotGeneralConfig{})
+					})
+				if err != nil {
+					b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)
+				}
+
+				b.Run(benchCase.name, func(b *testing.B) {
+					be.run(b)
+				})
+			}
 		})
 	}
 }
