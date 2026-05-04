@@ -3,11 +3,14 @@
 package gobackend
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
+	"k8s.io/klog/v2"
 )
 
 // FunctionExecutable contains pre-compiled execution information for any function.
@@ -59,7 +62,8 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		Dependents:        make([][]int, numNodesToProcess),
 	}
 
-	// Find max inputs (including captured inputs) and count uses/dependents
+	// Find max inputs (the maximum number of inputs any single node has),
+	// including for captured inputs, and count uses/dependents
 	for nodeIdx := range numNodesToProcess {
 		node := f.Nodes[nodeIdx]
 		// Total inputs = regular inputs + all captured inputs across closures
@@ -71,7 +75,7 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		fe.MaxInputs = max(fe.MaxInputs, totalInputs)
 	}
 
-	// Count uses for each node starting from outputs
+	// Recursively count uses for each node starting from outputs.
 	for _, output := range f.Outputs {
 		fe.countNodeUsesAndDependents(output)
 	}
@@ -88,6 +92,10 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		},
 	}
 
+	if klog.V(1).Enabled() {
+		fmt.Printf("* Compiling function %q: estimated max temporary memory: %s\n",
+			fe.Function.Name(), humanize.Bytes(fe.EstimatedTemporaryMemory()))
+	}
 	return fe, nil
 }
 
@@ -280,7 +288,7 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 			continue
 		}
 		if fe.NumUses[nodeIdx] == 0 {
-			// Not used by any output
+			// Not used by any output: this effectively performs a dead code elimination (DCE).
 			continue
 		}
 
@@ -626,4 +634,99 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	}
 
 	return nil
+}
+
+// EstimatedTemporaryMemory estimates the memory used for the function if executed sequentially.
+//
+// It assumes temporary memory is used for every node output (using Shape.ByteSize()),
+// and released everytime one node output is no longer needed (its output has been used
+// fe.NumUses[nodeIdx] times). It does not actually execute the nodes, just simulates the
+// execution to report back the maximum temporary memory live at any time.
+func (fe *FunctionExecutable) EstimatedTemporaryMemory() int64 {
+	var currentMemory int64
+	var maxMemory int64
+	numUsed := make([]int, fe.NumNodesToProcess)
+	computed := make([]bool, fe.NumNodesToProcess)
+
+	// Pre-mark parameters and captured values as computed.
+	for _, node := range fe.Function.Parameters {
+		if node.Index < fe.NumNodesToProcess {
+			computed[node.Index] = true
+		}
+	}
+	for _, node := range fe.Function.CapturedLocalNodes {
+		if node.Index < fe.NumNodesToProcess {
+			computed[node.Index] = true
+		}
+	}
+
+	for nodeIdx := range fe.NumNodesToProcess {
+		if computed[nodeIdx] {
+			continue
+		}
+		if fe.NumUses[nodeIdx] == 0 {
+			continue
+		}
+
+		node := fe.Function.Nodes[nodeIdx]
+
+		if node.OpType == compute.OpTypeParameter ||
+			node.OpType == compute.OpTypeConstant ||
+			node.OpType == compute.OpTypeCapturedValue {
+			computed[nodeIdx] = true
+			continue
+		}
+
+		// Allocate memory for this node's output(s)
+		if node.IsMultiOutputs() {
+			for _, outputNode := range node.MultiOutputsNodes {
+				if outputNode.Index >= fe.NumNodesToProcess || fe.NumUses[outputNode.Index] == 0 {
+					continue
+				}
+				computed[outputNode.Index] = true
+				currentMemory += outputNode.Shape.ByteSize()
+			}
+		} else {
+			computed[nodeIdx] = true
+			currentMemory += node.Shape.ByteSize()
+		}
+
+		if currentMemory > maxMemory {
+			maxMemory = currentMemory
+		}
+
+		// Simulate the release of inputs
+		for _, input := range node.Inputs {
+			inputIdx := input.Index
+			numUsed[inputIdx]++
+			if numUsed[inputIdx] == fe.NumUses[inputIdx] {
+				inputNode := fe.Function.Nodes[inputIdx]
+				if inputNode.OpType != compute.OpTypeParameter &&
+					inputNode.OpType != compute.OpTypeConstant &&
+					inputNode.OpType != compute.OpTypeCapturedValue &&
+					!inputNode.IsMultiOutputs() {
+					currentMemory -= inputNode.Shape.ByteSize()
+				}
+			}
+		}
+
+		// Simulate the release of captured inputs
+		for _, closureCaptures := range node.CapturedInputs {
+			for _, capturedInput := range closureCaptures {
+				capturedIdx := capturedInput.Index
+				numUsed[capturedIdx]++
+				if numUsed[capturedIdx] == fe.NumUses[capturedIdx] {
+					capturedNode := fe.Function.Nodes[capturedIdx]
+					if capturedNode.OpType != compute.OpTypeParameter &&
+						capturedNode.OpType != compute.OpTypeConstant &&
+						capturedNode.OpType != compute.OpTypeCapturedValue &&
+						!capturedNode.IsMultiOutputs() {
+						currentMemory -= capturedNode.Shape.ByteSize()
+					}
+				}
+			}
+		}
+	}
+
+	return maxMemory
 }
