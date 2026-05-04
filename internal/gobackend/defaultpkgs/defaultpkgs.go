@@ -6,7 +6,11 @@
 package defaultpkgs
 
 import (
+	// Operations implementations:
 	_ "github.com/gomlx/compute/internal/gobackend/dot"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops"
 	_ "github.com/gomlx/compute/internal/gobackend/ops"
+
+	// Optimization passes:
+	_ "github.com/gomlx/compute/internal/gobackend/passes"
 )

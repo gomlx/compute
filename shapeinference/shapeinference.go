@@ -110,6 +110,8 @@ var (
 
 	// StandardBinaryOperations include all operations that have two operands usually named lhs (left-hand-side) and
 	// rhs (right-hand-side) and are usually commutative (invariant to order).
+	//
+	// Implicit broadcasting rules apply to them.
 	StandardBinaryOperations = sets.MakeWith(
 		compute.OpTypeAdd,
 		compute.OpTypeSub,
@@ -133,6 +135,8 @@ var (
 
 	// ComparisonOperations include all operations that take two inputs and returns booleans with the results of
 	// a comparison.
+	//
+	// Implicit broadcasting rules apply to them.
 	ComparisonOperations = sets.MakeWith(
 		compute.OpTypeEqual,
 		compute.OpTypeNotEqual,

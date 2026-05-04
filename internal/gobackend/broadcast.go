@@ -81,6 +81,8 @@ type ZippedIndices struct {
 
 // ZipIterator allows iteration over the flat indices of the target shape of a broadcast (where some axis
 // dimensions grow) for two input shapes (LHS and RHS).
+//
+// It implements the implicit broadcasting for binary ops like Add, Sub, Mul, Div, etc.
 type ZipIterator struct {
 	tgtSize        int
 	tgtDims        []int
@@ -95,7 +97,7 @@ type ZipIterator struct {
 //
 // Pre-requisite: lhsShape.Rank() == tgtShape.Rank() && rhsShape.Rank() == tgtShape.Rank().
 //
-// It is used by implicit broadcasting in binary ops.
+// It implements the implicit broadcasting for binary ops like Add, Sub, Mul, Div, etc.
 func NewZippedBroadcastIterator(lhsShape, rhsShape, tgtShape shapes.Shape) *ZipIterator {
 	rank := tgtShape.Rank()
 	if lhsShape.Rank() != rank || rhsShape.Rank() != rank {

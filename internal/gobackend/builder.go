@@ -98,6 +98,11 @@ func (b *Builder) Compile() (compute.Executable, error) {
 		}
 	}
 
+	// Optimization passes
+	if err := b.Optimize(); err != nil {
+		return nil, errors.WithMessagef(err, "failed to optimize graph")
+	}
+
 	// Update mainFn outputs (in case duplicates were handled) and compile
 	b.MainFn.Outputs = outputs
 	mainFnExec, err := newFunctionExecutable(b.MainFn)

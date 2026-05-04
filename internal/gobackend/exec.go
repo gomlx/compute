@@ -142,7 +142,7 @@ const (
 // If the priority is lower than the current priority for the operation type, the executor is ignored.
 func SetNodeExecutor(opType compute.OpType, priority RegisterPriority, executor NodeExecutor) {
 	if priority < nodeExecutorsPriority[opType] {
-		// We have soemthing registered with higher priority, ignore.
+		// We have something registered with higher priority, ignore.
 		return
 	}
 	nodeExecutorsPriority[opType] = priority
