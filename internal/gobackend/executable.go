@@ -9,7 +9,6 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/support/humanize"
-	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
@@ -17,6 +16,9 @@ import (
 // FunctionExecutable contains pre-compiled execution information for any function.
 // This is used for both the main function and closures, unifying their execution model.
 type FunctionExecutable struct {
+	Backend *Backend
+	Builder *Builder
+
 	// Function is the source Function this was compiled from.
 	Function *Function
 
@@ -60,6 +62,8 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 	}
 
 	fe := &FunctionExecutable{
+		Backend:           f.RawBuilder.Backend,
+		Builder:           f.RawBuilder,
 		Function:          f,
 		OutputNodes:       f.Outputs,
 		NumNodesToProcess: numNodesToProcess,
@@ -104,11 +108,6 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 			fe.Function.Name(), humanize.Bytes(fe.EstimatedTemporaryMemory()))
 	}
 	return fe, nil
-}
-
-// InitSchedule initializes the execution schedule.
-func (fe *FunctionExecutable) InitSchedule() {
-	fe.Schedule = xslices.Iota(0, fe.NumNodesToProcess)
 }
 
 // countNodeUsesAndDependents recursively counts how many times a node is used.

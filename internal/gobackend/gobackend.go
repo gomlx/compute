@@ -87,13 +87,18 @@ func New(config string) (compute.Backend, error) {
 			// This will force the ops to be executed in parallel where possible.
 			// The default is running parallel if it's the only thing executing, otherwise sequentially.
 			b.OpsExecutionType = OpsExecutionParallel
+		case "dependency_order":
+			b.SchedulingStrategy = DependencyOrderSchedule
+		case "creation_order":
+			b.SchedulingStrategy = CreationOrderSchedule
 		case "":
 			// No-op, just skip.
 		default:
 			setter, ok := KnownOptionsSetters[key]
 			if !ok {
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, ops_sequential, ops_parallel, %s; see code for documentation", key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
+					"parallelism=#workers, ops_sequential, ops_parallel, dependency_order, creation_order, %s; see code for documentation",
+					key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
 			}
 			err := setter(b, key)
 			if err != nil {
@@ -138,6 +143,9 @@ type Backend struct {
 
 	// isFinalized is true if the backend has been isFinalized.
 	isFinalized bool
+
+	// SchedulingStrategy
+	SchedulingStrategy ScheduleStrategy
 }
 
 // Compile-time check that simplego.Backend implements compute.Backend.
