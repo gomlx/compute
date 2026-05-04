@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _ScheduleStrategyName = "CreationOrderScheduleDependencyOrderSchedule"
+const _ScheduleStrategyName = "DependencyOrderScheduleCreationOrderSchedule"
 
-var _ScheduleStrategyIndex = [...]uint8{0, 21, 44}
+var _ScheduleStrategyIndex = [...]uint8{0, 23, 44}
 
-const _ScheduleStrategyLowerName = "creationorderscheduledependencyorderschedule"
+const _ScheduleStrategyLowerName = "dependencyorderschedulecreationorderschedule"
 
 func (i ScheduleStrategy) String() string {
 	if i < 0 || i >= ScheduleStrategy(len(_ScheduleStrategyIndex)-1) {
@@ -24,22 +24,22 @@ func (i ScheduleStrategy) String() string {
 // Re-run the stringer command to generate them again.
 func _ScheduleStrategyNoOp() {
 	var x [1]struct{}
-	_ = x[CreationOrderSchedule-(0)]
-	_ = x[DependencyOrderSchedule-(1)]
+	_ = x[DependencyOrderSchedule-(0)]
+	_ = x[CreationOrderSchedule-(1)]
 }
 
-var _ScheduleStrategyValues = []ScheduleStrategy{CreationOrderSchedule, DependencyOrderSchedule}
+var _ScheduleStrategyValues = []ScheduleStrategy{DependencyOrderSchedule, CreationOrderSchedule}
 
 var _ScheduleStrategyNameToValueMap = map[string]ScheduleStrategy{
-	_ScheduleStrategyName[0:21]:       CreationOrderSchedule,
-	_ScheduleStrategyLowerName[0:21]:  CreationOrderSchedule,
-	_ScheduleStrategyName[21:44]:      DependencyOrderSchedule,
-	_ScheduleStrategyLowerName[21:44]: DependencyOrderSchedule,
+	_ScheduleStrategyName[0:23]:       DependencyOrderSchedule,
+	_ScheduleStrategyLowerName[0:23]:  DependencyOrderSchedule,
+	_ScheduleStrategyName[23:44]:      CreationOrderSchedule,
+	_ScheduleStrategyLowerName[23:44]: CreationOrderSchedule,
 }
 
 var _ScheduleStrategyNames = []string{
-	_ScheduleStrategyName[0:21],
-	_ScheduleStrategyName[21:44],
+	_ScheduleStrategyName[0:23],
+	_ScheduleStrategyName[23:44],
 }
 
 // ScheduleStrategyString retrieves an enum value from the enum constants string name.
