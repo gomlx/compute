@@ -10,7 +10,6 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/exceptions"
-	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"k8s.io/klog/v2"
 )
@@ -54,13 +53,16 @@ type benchExec struct {
 
 func (be *benchExec) run(b *testing.B) {
 	b.Helper()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		outputs, err := be.exec.Execute(be.inputs, nil, 0)
 		if err != nil {
 			b.Fatalf("Execute failed: %+v", err)
 		}
 		for _, buf := range outputs {
-			buf.(*gobackend.Buffer).Flat = nil // release data
+			err = buf.Finalize()
+			if err != nil {
+				b.Fatalf("Failed to finalize buffer: %+v", err)
+			}
 		}
 	}
 }

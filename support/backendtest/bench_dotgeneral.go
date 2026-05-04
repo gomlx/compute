@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -20,7 +21,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 	benchCases := []dotGeneralCase{
 		// Examples from "KnightsAnalytics/all-MiniLM-L6-v2"
 		{
-			model: "KnightsAnalytics-all-MiniLM-L6-v2",
+			model: "KA-all-MiniLM-L6-v2",
 		},
 		{
 			name:        "32x12x13x13_x_32x12x13x32",
@@ -41,11 +42,18 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{0, 1},
 		},
 		{
-			name:        "32x13x1536_x_1536x384",
+			name:        "NonTransposed:32x13x1536_x_1536x384",
 			lhsShape:    shapes.Make(dtypes.Float32, 32, 13, 1536),
 			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
 			lhsContract: []int{2},
 			rhsContract: []int{0},
+		},
+		{
+			name:        "Transposed:32x13x1536_x_384x1536",
+			lhsShape:    shapes.Make(dtypes.Float32, 32, 13, 1536),
+			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
+			lhsContract: []int{2},
+			rhsContract: []int{1},
 		},
 		{
 			name:        "32x13x384_x_384x1152",
@@ -81,7 +89,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			model: "BAAI-bge-small-en-v1.5",
 		},
 		{
-			name:        "10x192x12x192_x_10x192x12x32",
+			name:        "Incompatible:10x192x12x192_x_10x192x12x32",
 			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 12, 192),
 			rhsShape:    shapes.Make(dtypes.Float32, 10, 192, 12, 32),
 			lhsContract: []int{3},
@@ -90,21 +98,21 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{0, 2},
 		},
 		{
-			name:        "10x192x1536_x_384x1536",
+			name:        "Transposed:10x192x1536_x_384x1536",
 			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 1536),
 			rhsShape:    shapes.Make(dtypes.Float32, 384, 1536),
 			lhsContract: []int{2},
 			rhsContract: []int{1},
 		},
 		{
-			name:        "10x192x384_x_1536x384",
+			name:        "Transposed:10x192x384_x_1536x384",
 			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 384),
 			rhsShape:    shapes.Make(dtypes.Float32, 1536, 384),
 			lhsContract: []int{2},
 			rhsContract: []int{1},
 		},
 		{
-			name:        "10x192x384_x_384x384",
+			name:        "Transposed:10x192x384_x_384x384",
 			lhsShape:    shapes.Make(dtypes.Float32, 10, 192, 384),
 			rhsShape:    shapes.Make(dtypes.Float32, 384, 384),
 			lhsContract: []int{2},
@@ -363,12 +371,13 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			}
 			benchCase = benchCases[benchIdx]
 		}
+		benchIdx++
 
 		// Run all cases that belong to this model.
 		b.Run(benchCase.model, func(b *testing.B) {
-			benchIdx++
-			for ; benchIdx < len(benchCases); benchIdx++ {
-				benchCase := benchCases[benchIdx]
+			fmt.Printf("Starting benchmarks for %q\n", benchCase.model)
+			for innerBenchIdx := benchIdx; innerBenchIdx < len(benchCases); innerBenchIdx++ {
+				benchCase := benchCases[innerBenchIdx]
 				if benchCase.model != "" {
 					// Next model.
 					break
@@ -376,15 +385,15 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 				lhsData := randomFloat32(benchCase.lhsShape.Size())
 				rhsData := randomFloat32(benchCase.rhsShape.Size())
 
-				be, err := newBenchExec(backend, []shapes.Shape{benchCase.lhsShape, benchCase.rhsShape}, []any{lhsData, rhsData},
-					func(f compute.Function, params []compute.Value) (compute.Value, error) {
-						return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, compute.DotGeneralConfig{})
-					})
-				if err != nil {
-					b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)
-				}
-
 				b.Run(benchCase.name, func(b *testing.B) {
+					be, err := newBenchExec(backend, []shapes.Shape{benchCase.lhsShape, benchCase.rhsShape}, []any{lhsData, rhsData},
+						func(f compute.Function, params []compute.Value) (compute.Value, error) {
+							return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, compute.DotGeneralConfig{})
+						})
+					if err != nil {
+						b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)
+					}
+					b.ResetTimer()
 					be.run(b)
 				})
 			}
