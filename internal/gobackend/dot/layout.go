@@ -2,8 +2,79 @@ package dot
 
 import (
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapes"
 )
 
+// Layout for inputs of DotGeneral.
+type Layout int
+
+//go:generate go tool enumer -type Layout -trimprefix=Layout -output=gen_layout_enumer.go layout.go
+
+const (
+	// LayoutNonTransposed, "MatMul", "Row-Major" or "Normal-Transposed" layout,
+	// with lhs shaped [B, N, K]; rhs shaped [B, K, M] and output shaped [B, N, M].
+	// B is the optional batch axis; N is the lhs "cross" axis; M is the rhs
+	// "cross" axis; K is the contracting axis.
+	LayoutNonTransposed Layout = iota
+
+	// LayoutTransposed with lhs shaped [B, N, K]; rhs shaped [B, M, K] and
+	// output shaped [B, N, M].
+	// B is the optional batch axis; N is the lhs "cross" axis; M is the rhs
+	// "cross" axis; K is the contracting axis.
+	LayoutTransposed
+
+	// LayoutIncompatible indicates that the layout is incompatible with the
+	// underlying basic DotGeneral algorithms, and will require a Reshape or
+	// Transpose operation before the DotGeneral operation.
+	LayoutIncompatible
+)
+
+// LayoutForDotGeneral returns the layout for DotGeneral given the shapes of the
+// inputs and the axes to contract and batch over.
+func LayoutForDotGeneral(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes []int,
+	rhsShape shapes.Shape, rhsContractingAxes, rhsBatchAxes []int) Layout {
+	// Require exactly one contracting axis.
+	if len(lhsContractingAxes) != 1 || len(rhsContractingAxes) != 1 {
+		return LayoutIncompatible
+	}
+
+	// Batch axes must match in count, must be 0 or 1, and must be leading and sequential (0, 1, 2, ...).
+	numBatchAxes := len(lhsBatchAxes)
+	if numBatchAxes > 1 {
+		return LayoutIncompatible
+	}
+	if len(rhsBatchAxes) != numBatchAxes {
+		return LayoutIncompatible
+	}
+	for i := range numBatchAxes {
+		if lhsBatchAxes[i] != i || rhsBatchAxes[i] != i {
+			return LayoutIncompatible
+		}
+	}
+
+	lhsRank := lhsShape.Rank()
+	rhsRank := rhsShape.Rank()
+
+	// LHS contracting axis must be the last axis: [B..., N, K]
+	if lhsContractingAxes[0] != lhsRank-1 {
+		return LayoutIncompatible
+	}
+
+	// For LayoutNonTransposed (MatMul): RHS contracting axis is first after batch axes [B..., K, M]
+	if rhsContractingAxes[0] == numBatchAxes {
+		return LayoutNonTransposed
+	}
+
+	// For LayoutTransposed (Normal-Transposed): RHS contracting axis is last [B..., M, K]
+	if rhsContractingAxes[0] == rhsRank-1 {
+		return LayoutTransposed
+	}
+
+	return LayoutIncompatible
+}
+
+// revertMergeAxesFunc is a function that reverts the merging of axes.
+// It is called by the backend to reshape the result to the original dimensions.
 type revertMergeAxesFunc func(result *gobackend.Node) (*gobackend.Node, error)
 
 type axisType int
