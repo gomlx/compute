@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -38,6 +39,14 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("Unexpected error: %+v", err)
 		}
+		gotShape, err := mainFn.Shape(gotOp)
+		if err != nil {
+			t.Fatalf("Unexpected error: %+v", err)
+		}
+		if err := gotShape.Check(F32, 5, 2, 4, 1); err != nil {
+			t.Errorf("Unexpected shape: %+v", err)
+		}
+
 		err = mainFn.Return([]compute.Value{gotOp}, nil)
 		if err != nil {
 			t.Fatalf("Unexpected error: %+v", err)
@@ -146,7 +155,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 	t.Run("BFloat16-with-f32-acc", func(t *testing.T) {
 		// The default accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
 		bf16 := bfloat16.FromFloat32
-		y2, err := testutil.Exec1(b, []any{
+		got, err := testutil.Exec1(b, []any{
 			[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
 			[][]bfloat16.BFloat16{{bf16(10)}, {bf16(11)}, {bf16(12)}},
 		}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -155,7 +164,7 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("failed with an error: %+v", err)
 		}
-		if ok, diff := testutil.IsEqual(float32(10+22+36), y2.([][]bfloat16.BFloat16)[0][0].Float32()); !ok {
+		if ok, diff := testutil.IsEqual(float32(10+22+36), got.([][]bfloat16.BFloat16)[0][0].Float32()); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
 	})
@@ -180,20 +189,27 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		// Define common input shapes and values
 		lhsData := float16.FromFloat32s(1, 2, 3, 4, 5, 6)
 		rhsData := float16.FromFloat32s(7, 8, 9, 10, 11, 12)
+
 		// Flat shapes for testutil.Exec1: it doesn't currently support tensors.Tensor.
-		lhsFlat := [][]float16.Float16{{lhsData[0], lhsData[1], lhsData[2]}, {lhsData[3], lhsData[4], lhsData[5]}}
-		rhsFlat := [][]float16.Float16{{rhsData[0], rhsData[1]}, {rhsData[2], rhsData[3]}, {rhsData[4], rhsData[5]}}
+		lhsFlat := [][]float16.Float16{{lhsData[0], lhsData[1], lhsData[2]}, {lhsData[3], lhsData[4], lhsData[5]}}   // [2, 3]
+		rhsFlat := [][]float16.Float16{{rhsData[0], rhsData[1]}, {rhsData[2], rhsData[3]}, {rhsData[4], rhsData[5]}} // [3, 2]
 
 		t.Run("AccumulatorDType", func(t *testing.T) {
 			result, err := testutil.Exec1(b, []any{lhsFlat, rhsFlat}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.DotGeneral(params[0], []int{1}, nil, params[1], []int{0}, nil, compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32})
+				return f.DotGeneral(
+					params[0], []int{1}, nil,
+					params[1], []int{0}, nil,
+					compute.DotGeneralConfig{AccumulatorDType: dtypes.Float32, OutputDType: dtypes.Float32})
 			})
 			if err != nil {
 				t.Fatalf("unexpected error: %+v", err)
 			}
-			want := float16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
+			want := []float32{1*7 + 2*9 + 3*11, 1*8 + 2*10 + 3*12, 4*7 + 5*9 + 6*11, 4*8 + 5*10 + 6*12}
+			// want := float16.FromFloat32s(1*7+2*9+3*11, 1*8+2*10+3*12, 4*7+5*9+6*11, 4*8+5*10+6*12)
 			gotFlat := testutil.FlattenSlice(result)
 			if ok, diff := testutil.IsInDelta(want, gotFlat, 1e-2); !ok {
+				fmt.Printf("\t- Want: %v\n", want)
+				fmt.Printf("\t- Got: %v\n", gotFlat)
 				t.Fatalf("Result not within delta 1e-2:\n%s", diff)
 			}
 		})
@@ -232,6 +248,57 @@ func TestDotGeneral(t *testing.T, b compute.Backend) {
 		}
 		if ok, diff := testutil.IsEqual([]float32{1*10 + 2*11 + 3*12, 2*10 + 4*11 + 6*12}, y1); !ok {
 			t.Errorf("Unexpected result (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("DTypes", func(t *testing.T) {
+		var testDTypes []dtypes.DType
+		for dtype, included := range dtypes.FloatDTypes {
+			if included {
+				testDTypes = append(testDTypes, dtypes.DType(dtype))
+			}
+		}
+		testDTypes = append(testDTypes, dtypes.InvalidDType)
+
+		for _, inputDType := range testDTypes {
+			if inputDType == dtypes.InvalidDType {
+				continue
+			}
+			for _, accumulatorDType := range testDTypes {
+				for _, outputDType := range testDTypes {
+					t.Run(fmt.Sprintf("%s_%s_%s", inputDType, accumulatorDType, outputDType), func(t *testing.T) {
+						result, err := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+							lhs, err := f.Iota(shapes.Make(inputDType, 16), 0)
+							if err != nil {
+								return nil, err
+							}
+							rhs, err := f.Iota(shapes.Make(inputDType, 16), 0)
+							if err != nil {
+								return nil, err
+							}
+
+							return f.DotGeneral(lhs, []int{0}, nil, rhs, []int{0}, nil, compute.DotGeneralConfig{
+								AccumulatorDType: accumulatorDType,
+								OutputDType:      outputDType,
+							})
+						})
+						if err != nil {
+							// Some combinations might not be supported by all backends.
+							t.Logf("Failed for %s, %s, %s: %+v", inputDType, accumulatorDType, outputDType, err)
+							return
+						}
+
+						gotDType := dtypes.FromAny(result)
+						wantDType := outputDType
+						if wantDType == dtypes.InvalidDType {
+							wantDType = inputDType
+						}
+						if gotDType != wantDType {
+							t.Errorf("Unexpected output dtype: got %s, want %s", gotDType, wantDType)
+						}
+					})
+				}
+			}
 		}
 	})
 }
