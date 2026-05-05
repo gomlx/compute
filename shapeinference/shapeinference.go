@@ -133,6 +133,10 @@ var (
 		compute.OpTypeShiftRightLogical,
 	)
 
+	// AllBinaryOperations include all operations that have two operands and follow the standard implicit broadcasting rules,
+	// and the operation is element-wise (output_i dependes only on lhs_i and rhs_i)
+	AllBinaryOperations = sets.Union(StandardBinaryOperations, ComparisonOperations)
+
 	// ComparisonOperations include all operations that take two inputs and returns booleans with the results of
 	// a comparison.
 	//
@@ -153,6 +157,8 @@ var (
 
 	// StandardUnaryOperations include all operations that have a single operand as input, and the return shape is the
 	// same as the input (so no reductions).
+	//
+	// Plus, only operations that are element-wise (output_i dependes only on input_i) are included.
 	StandardUnaryOperations = sets.MakeWith(
 		compute.OpTypeLogicalNot,
 		compute.OpTypeBitwiseNot,

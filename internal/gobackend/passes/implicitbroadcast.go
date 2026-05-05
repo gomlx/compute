@@ -37,13 +37,14 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
 	requiresDAGSort := false
 	for _, f := range b.Functions {
 		for _, node := range f.Nodes {
-			if !shapeinference.StandardBinaryOperations.Has(node.OpType) &&
-				!shapeinference.ComparisonOperations.Has(node.OpType) {
+			isBinary := shapeinference.AllBinaryOperations.Has(node.OpType)
+			isUnary := shapeinference.StandardUnaryOperations.Has(node.OpType)
+			if !isBinary && !isUnary {
 				continue
 			}
 
 			changed := false
-			// Binary operations for which implicit broadcasting applies.
+			// Binary and Unary operations for which implicit broadcasting applies.
 			for i, input := range node.Inputs {
 				if input.OpType != compute.OpTypeBroadcastInDim {
 					continue
@@ -60,10 +61,14 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
 			if changed {
 				var newShape shapes.Shape
 				var err error
-				if shapeinference.StandardBinaryOperations.Has(node.OpType) {
-					newShape, err = shapeinference.BinaryOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+				if isBinary {
+					if shapeinference.StandardBinaryOperations.Has(node.OpType) {
+						newShape, err = shapeinference.BinaryOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+					} else {
+						newShape, err = shapeinference.ComparisonOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+					}
 				} else {
-					newShape, err = shapeinference.ComparisonOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+					newShape, err = shapeinference.UnaryOp(node.OpType, node.Inputs[0].Shape)
 				}
 				if err != nil {
 					return false, err
