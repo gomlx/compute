@@ -3,7 +3,9 @@
 package gobackend
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -74,6 +76,38 @@ func (f *Function) CheckValid() error {
 // For closures, this returns "".
 func (f *Function) Name() string {
 	return f.name
+}
+
+// String returns a multi-line string with one line per node.
+func (f *Function) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("- Function %s (", f.name))
+	for i, node := range f.Parameters {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("#%d %s", node.Index, node.Shape))
+	}
+	sb.WriteString(") -> (")
+	for i, node := range f.Outputs {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("#%d %s", node.Index, node.Shape))
+	}
+	sb.WriteString("):\n")
+
+	for _, node := range f.Nodes {
+		sb.WriteString(fmt.Sprintf("    Node #%d: %s (", node.Index, node.OpType))
+		for i, input := range node.Inputs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(fmt.Sprintf("#%d %s", input.Index, input.Shape))
+		}
+		sb.WriteString(fmt.Sprintf(") -> %s\n", node.Shape))
+	}
+	return sb.String()
 }
 
 // Parent returns the parent function if this is a closure.
