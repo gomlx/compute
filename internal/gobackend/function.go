@@ -78,34 +78,64 @@ func (f *Function) Name() string {
 	return f.name
 }
 
+const (
+	// Bold enables the bold text style
+	Bold = "\x1b[1m"
+	// Reset clears all text formatting and colors back to default
+	Reset = "\x1b[0m"
+	// Blue enables the blue text style
+	Blue = "\x1b[34m"
+	// Green enables the green text style
+	Green = "\x1b[32m"
+	// Red enables the red text style
+	Red = "\x1b[31m"
+	// Underline enables the underline text style
+	Underline = "\x1b[4m"
+)
+
 // String returns a multi-line string with one line per node.
 func (f *Function) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("- Function %s (", f.name))
+	w := func(format string, args ...any) {
+		sb.WriteString(fmt.Sprintf(format, args...))
+	}
+	w("- %s%s%sFunction %s(", Bold, Underline, Blue, f.name)
 	for i, node := range f.Parameters {
 		if i > 0 {
-			sb.WriteString(", ")
+			w(", ")
 		}
-		sb.WriteString(fmt.Sprintf("#%d %s", node.Index, node.Shape))
+		w("#%d %s", node.Index, node.Shape)
 	}
-	sb.WriteString(") -> (")
+	w(") -> (")
 	for i, node := range f.Outputs {
 		if i > 0 {
-			sb.WriteString(", ")
+			w(", ")
 		}
-		sb.WriteString(fmt.Sprintf("#%d %s", node.Index, node.Shape))
+		w("#%d %s", node.Index, node.Shape)
 	}
-	sb.WriteString("):\n")
+	w(")%s:\n", Reset)
 
 	for _, node := range f.Nodes {
-		sb.WriteString(fmt.Sprintf("    Node #%d: %s (", node.Index, node.OpType))
+		colored := false
+		if node.OpType == compute.OpTypeParameter {
+			w("%s%s", Green, Bold)
+			colored = true
+		}
+		if slices.Contains(f.Outputs, node) {
+			w("%s%s", Red, Bold)
+			colored = true
+		}
+		w("    Node #%d: %s (", node.Index, node.OpType)
 		for i, input := range node.Inputs {
 			if i > 0 {
-				sb.WriteString(", ")
+				w(", ")
 			}
-			sb.WriteString(fmt.Sprintf("#%d %s", input.Index, input.Shape))
+			w("#%d %s", input.Index, input.Shape)
 		}
-		sb.WriteString(fmt.Sprintf(") -> %s\n", node.Shape))
+		w(") -> %s\n", node.Shape)
+		if colored {
+			w("%s", Reset)
+		}
 	}
 	return sb.String()
 }
