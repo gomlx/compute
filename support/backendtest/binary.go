@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -67,13 +68,48 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 			return f.Mul(params[0], params[1])
 		}
 
-		y0, err := testutil.Exec1(b, []any{[]float32{1, 2, 3}, float32(2)}, buildFnMul)
-		if err != nil {
-			t.Fatalf("Failed to execute Mul: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual([]float32{2, 4, 6}, y0); !ok {
-			t.Errorf("y0 value mismatch (-want +got):\n%s", diff)
-		}
+		t.Run("SimpleWithBroadcast", func(t *testing.T) {
+			got, err := testutil.Exec1(b, []any{[]float32{1, 2, 3}, float32(2)}, buildFnMul)
+			if err != nil {
+				t.Fatalf("Failed to execute Mul: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]float32{2, 4, 6}, got); !ok {
+				t.Errorf("y0 value mismatch (-want +got):\n%s", diff)
+			}
+		})
+
+		t.Run("Large-2D", func(t *testing.T) {
+			x := [][]float64{
+				{0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026},
+				{0.383, 0.383, 0.383, 0.383, 0.383, 0.383, 0.383, 0.383},
+				{0.3614, 0.3614, 0.3614, 0.3614, 0.3614, 0.3614, 0.3614, 0.3614},
+				{0.04446, 0.04446, 0.04446, 0.04446, 0.04446, 0.04446, 0.04446, 0.04446},
+				{0.2288, 0.2288, 0.2288, 0.2288, 0.2288, 0.2288, 0.2288, 0.2288},
+				{0.0327, 0.0327, 0.0327, 0.0327, 0.0327, 0.0327, 0.0327, 0.0327},
+				{0.199, 0.199, 0.199, 0.199, 0.199, 0.199, 0.199, 0.199},
+				{0.03168, 0.03168, 0.03168, 0.03168, 0.03168, 0.03168, 0.03168, 0.03168},
+			}
+			got, err := testutil.Exec1(b, []any{x, x}, buildFnMul)
+			if err != nil {
+				t.Fatalf("Failed to execute Mul: %+v", err)
+			}
+			want := [][]float64{
+				{0.1621, 0.1621, 0.1621, 0.1621, 0.1621, 0.1621, 0.1621, 0.1621},
+				{0.1467, 0.1467, 0.1467, 0.1467, 0.1467, 0.1467, 0.1467, 0.1467},
+				{0.1306, 0.1306, 0.1306, 0.1306, 0.1306, 0.1306, 0.1306, 0.1306},
+				{0.001977, 0.001977, 0.001977, 0.001977, 0.001977, 0.001977, 0.001977, 0.001977},
+				{0.05235, 0.05235, 0.05235, 0.05235, 0.05235, 0.05235, 0.05235, 0.05235},
+				{0.001069, 0.001069, 0.001069, 0.001069, 0.001069, 0.001069, 0.001069, 0.001069},
+				{0.0396, 0.0396, 0.0396, 0.0396, 0.0396, 0.0396, 0.0396, 0.0396},
+				{0.001004, 0.001004, 0.001004, 0.001004, 0.001004, 0.001004, 0.001004, 0.001004},
+			}
+			if ok, diff := testutil.IsInRelativeDelta(want, got, 1e-2); !ok {
+				fmt.Printf("\t- x=%#v\n", x)
+				fmt.Printf("\t- want (x*x): %#v\n", want)
+				fmt.Printf("\t- got:        %#.04v\n", got)
+				t.Errorf("y0 value mismatch (-want +got):\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Sub", func(t *testing.T) {
