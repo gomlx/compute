@@ -81,7 +81,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 {{- range $.IntegerTypes}}
 
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
+		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
 	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
@@ -91,7 +91,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 {{- range $.FloatTypes}}
 
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
+		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
 	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
@@ -109,7 +109,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	// Boolean:
 {{- range $.BooleanTypes}}
 	case dtypes.{{.DType}}:
-		exec{{$name}}{{$version}}Generic[{{.GoType}}](lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]{{.GoType}}),
+		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]{{.GoType}}),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}

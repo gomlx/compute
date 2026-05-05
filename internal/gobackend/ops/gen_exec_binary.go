@@ -50,34 +50,34 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execAddNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execAddNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execAddNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execAddNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execAddNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execAddNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execAddNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execAddNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execAddNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAddNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execAddNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -189,34 +189,34 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMulNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMulNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMulNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMulNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMulNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMulNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMulNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMulNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMulNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMulNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execMulNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -324,34 +324,34 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execSubNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execSubNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execSubNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execSubNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execSubNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execSubNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execSubNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execSubNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execSubNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execSubNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execSubNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -482,34 +482,34 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execDivNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execDivNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execDivNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execDivNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execDivNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execDivNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execDivNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execDivNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execDivNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execDivNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execDivNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -640,34 +640,34 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execRemIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execRemIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execRemIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execRemIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execRemIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execRemIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execRemIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execRemIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execRemFloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execRemFloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execRemFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -831,34 +831,34 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execPowIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execPowIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execPowIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execPowIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execPowIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execPowIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execPowIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execPowIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execPowFloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execPowFloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execPowFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -1022,10 +1022,10 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Float32:
-		execAtan2FloatGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAtan2FloatGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execAtan2FloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -1160,34 +1160,34 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMaxNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMaxNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMaxNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMaxNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMaxNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMaxNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMaxNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMaxNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMaxNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMaxNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execMaxNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -1299,34 +1299,34 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMinNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMinNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMinNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMinNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMinNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMinNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMinNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMinNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMinNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMinNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execMinNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -1434,28 +1434,28 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseAndIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseAndIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseAndIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseAndIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseAndIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseAndIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseAndIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseAndIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1504,28 +1504,28 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseOrIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseOrIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseOrIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseOrIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseOrIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseOrIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseOrIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseOrIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1574,28 +1574,28 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseXorIntegerGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseXorIntegerGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseXorIntegerGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseXorIntegerGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseXorIntegerGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseXorIntegerGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseXorIntegerGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseXorIntegerGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1644,7 +1644,7 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalAndBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalAndBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1694,7 +1694,7 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalOrBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalOrBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1744,7 +1744,7 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalXorBooleanGeneric[bool](lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalXorBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -1803,34 +1803,34 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -1947,34 +1947,34 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execNotEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execNotEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execNotEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execNotEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execNotEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execNotEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execNotEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execNotEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execNotEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execNotEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execNotEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -2087,34 +2087,34 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterOrEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterOrEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterOrEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterOrEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterOrEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterOrEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterOrEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterOrEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterOrEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterOrEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execGreaterOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -2250,34 +2250,34 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterThanNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterThanNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterThanNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterThanNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterThanNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterThanNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterThanNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterThanNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterThanNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterThanNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execGreaterThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -2413,34 +2413,34 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessOrEqualNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessOrEqualNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessOrEqualNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessOrEqualNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessOrEqualNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessOrEqualNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessOrEqualNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessOrEqualNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessOrEqualNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessOrEqualNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execLessOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
@@ -2576,34 +2576,34 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessThanNumericGeneric[uint8](lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessThanNumericGeneric[uint16](lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessThanNumericGeneric[uint32](lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessThanNumericGeneric[uint64](lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessThanNumericGeneric[int8](lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessThanNumericGeneric[int16](lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessThanNumericGeneric[int32](lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessThanNumericGeneric[int64](lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessThanNumericGeneric[float32](lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessThanNumericGeneric[float64](lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
 		execLessThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
