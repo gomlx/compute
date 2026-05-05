@@ -4,6 +4,7 @@ package gobackend
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -11,6 +12,7 @@ import (
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
+	"k8s.io/klog/v2"
 )
 
 // Builder keeps track of the computation graph being defined.
@@ -36,6 +38,18 @@ var _ compute.Builder = (*Builder)(nil)
 // Name implements compute.Builder.
 func (b *Builder) Name() string {
 	return b.name
+}
+
+// String returns a multi-line string with the output of each function.
+func (b *Builder) String() string {
+	var sb strings.Builder
+	for i, f := range b.Functions {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(f.String())
+	}
+	return sb.String()
 }
 
 // Main returns the main function of this computation.
@@ -103,9 +117,18 @@ func (b *Builder) Compile() (compute.Executable, error) {
 		}
 	}
 
+	if klog.V(3).Enabled() {
+		klog.Infof("Computation Graph (before optimizations):\n%s\n", b)
+	}
+
 	// Optimization passes
 	if err := b.Optimize(); err != nil {
 		return nil, errors.WithMessagef(err, "failed to optimize graph")
+	}
+
+	if klog.V(2).Enabled() {
+		klog.Infof("Computation Graph (after optimizations):\n%s\n", b)
+		klog.Info("================================================================================================================")
 	}
 
 	// Update mainFn outputs (in case duplicates were handled) and compile

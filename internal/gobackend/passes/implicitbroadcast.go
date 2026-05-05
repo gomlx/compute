@@ -4,6 +4,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
 )
 
 func init() {
@@ -32,15 +33,18 @@ func (p *ImplicitBroadcastFusion) Name() string {
 //
 // Binary operations for which implicit broadcasting applies are defined in
 // shapeinference.StandardBinaryOperations and shapeinference.ComparisonOperations.
-func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) error {
+func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
+	requiresDAGSort := false
 	for _, f := range b.Functions {
 		for _, node := range f.Nodes {
-			if !shapeinference.StandardBinaryOperations.Has(node.OpType) &&
-				!shapeinference.ComparisonOperations.Has(node.OpType) {
+			isBinary := shapeinference.AllBinaryOperations.Has(node.OpType)
+			isUnary := shapeinference.StandardUnaryOperations.Has(node.OpType)
+			if !isBinary && !isUnary {
 				continue
 			}
 
-			// Binary operations for which implicit broadcasting applies.
+			changed := false
+			// Binary and Unary operations for which implicit broadcasting applies.
 			for i, input := range node.Inputs {
 				if input.OpType != compute.OpTypeBroadcastInDim {
 					continue
@@ -50,9 +54,58 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) error {
 				if input.Inputs[0].Shape.Rank() == node.Shape.Rank() {
 					// Fuse: use the input of the broadcast directly.
 					node.Inputs[i] = input.Inputs[0]
+					changed = true
+				}
+			}
+
+			if changed {
+				var newShape shapes.Shape
+				var err error
+				if isBinary {
+					if shapeinference.StandardBinaryOperations.Has(node.OpType) {
+						newShape, err = shapeinference.BinaryOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+					} else {
+						newShape, err = shapeinference.ComparisonOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
+					}
+				} else {
+					newShape, err = shapeinference.UnaryOp(node.OpType, node.Inputs[0].Shape)
+				}
+				if err != nil {
+					return false, err
+				}
+
+				if !newShape.Equal(node.Shape) {
+					// By skipping the BroadcastInDim nodes (to optimize execution), we may have changed the output of the
+					// current node. So we need to create a BroadcastInDim after the changed node.
+					// Note that we gain of that, since we perform the operation on a smaller shape.
+					oldShape := node.Shape
+					node.Shape = newShape
+
+					dims := make([]int, newShape.Rank())
+					for i := range dims {
+						dims[i] = i
+					}
+
+					broadcastNode, _ := f.GetOrCreateNode(compute.OpTypeBroadcastInDim, oldShape, []*gobackend.Node{node}, dims)
+					for _, otherNode := range f.Nodes {
+						if otherNode == node || otherNode == broadcastNode {
+							continue
+						}
+						for i, input := range otherNode.Inputs {
+							if input == node {
+								otherNode.Inputs[i] = broadcastNode
+							}
+						}
+					}
+					for i, out := range f.Outputs {
+						if out == node {
+							f.Outputs[i] = broadcastNode
+						}
+					}
+					requiresDAGSort = true
 				}
 			}
 		}
 	}
-	return nil
+	return requiresDAGSort, nil
 }

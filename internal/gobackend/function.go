@@ -3,7 +3,9 @@
 package gobackend
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -74,6 +76,68 @@ func (f *Function) CheckValid() error {
 // For closures, this returns "".
 func (f *Function) Name() string {
 	return f.name
+}
+
+const (
+	// Bold enables the bold text style
+	Bold = "\x1b[1m"
+	// Reset clears all text formatting and colors back to default
+	Reset = "\x1b[0m"
+	// Blue enables the blue text style
+	Blue = "\x1b[34m"
+	// Green enables the green text style
+	Green = "\x1b[32m"
+	// Red enables the red text style
+	Red = "\x1b[31m"
+	// Underline enables the underline text style
+	Underline = "\x1b[4m"
+)
+
+// String returns a multi-line string with one line per node.
+func (f *Function) String() string {
+	var sb strings.Builder
+	w := func(format string, args ...any) {
+		sb.WriteString(fmt.Sprintf(format, args...))
+	}
+	w("- %s%s%sFunction %s(", Bold, Underline, Blue, f.name)
+	for i, node := range f.Parameters {
+		if i > 0 {
+			w(", ")
+		}
+		w("#%d %s", node.Index, node.Shape)
+	}
+	w(") -> (")
+	for i, node := range f.Outputs {
+		if i > 0 {
+			w(", ")
+		}
+		w("#%d %s", node.Index, node.Shape)
+	}
+	w(")%s:\n", Reset)
+
+	for _, node := range f.Nodes {
+		colored := false
+		if node.OpType == compute.OpTypeParameter {
+			w("%s%s", Green, Bold)
+			colored = true
+		}
+		if slices.Contains(f.Outputs, node) {
+			w("%s%s", Red, Bold)
+			colored = true
+		}
+		w("    Node #%d: %s (", node.Index, node.OpType)
+		for i, input := range node.Inputs {
+			if i > 0 {
+				w(", ")
+			}
+			w("#%d %s", input.Index, input.Shape)
+		}
+		w(") -> %s\n", node.Shape)
+		if colored {
+			w("%s", Reset)
+		}
+	}
+	return sb.String()
 }
 
 // Parent returns the parent function if this is a closure.
@@ -283,11 +347,11 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 		return nil, errors.Errorf("flat ([%d]%s) and shape size (%d) mismatch for constant value",
 			flatLen, dtype, shape.Size())
 	}
-	data := &Buffer{
-		RawShape: shape,
-		Flat:     flat,
-		InUse:    true,
+	data, err := f.RawBuilder.Backend.GetBuffer(shape)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "Failed to allocated a buffer for Contant")
 	}
+	dtypes.CopyAnySlice(data.Flat, flat)
 	n, _ := f.GetOrCreateNode(compute.OpTypeConstant, shape, nil, data)
 	return n, nil
 }

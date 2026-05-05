@@ -23,7 +23,11 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcComputeBuf, err := backend.BufferFromFlatData(0, srcData, srcShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+	srcBuf := srcComputeBuf.(*gobackend.Buffer)
 
 	dstShape := shapes.Make(dtypes.Uint4, 4)
 	node := &gobackend.Node{Shape: dstShape}
@@ -54,7 +58,11 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 
 	srcData := []uint8{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcComputeBuf, err := backend.BufferFromFlatData(0, srcData, srcShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+	srcBuf := srcComputeBuf.(*gobackend.Buffer)
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
 	node := &gobackend.Node{Shape: dstShape}
@@ -75,15 +83,25 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 }
 
 func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
+	backend, err := gobackend.New("")
+	if err != nil {
+		t.Fatalf("Failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
 	// When owned, Bitcast should reuse the buffer.
 	srcData := []uint8{0xAB, 0xCD}
 	srcShape := shapes.Make(dtypes.Uint8, 2)
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcComputeBuf, err := backend.BufferFromFlatData(0, srcData, srcShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+	srcBuf := srcComputeBuf.(*gobackend.Buffer)
 
 	dstShape := shapes.Make(dtypes.Int4, 4)
 	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(nil, node, []*gobackend.Buffer{srcBuf}, []bool{true})
+	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{true})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -109,7 +127,11 @@ func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 
 	srcData := []uint8{0xFF, 0x80, 0x01}
 	srcShape := shapes.Make(dtypes.Uint8, 3)
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcComputeBuf, err := backend.BufferFromFlatData(0, srcData, srcShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+	srcBuf := srcComputeBuf.(*gobackend.Buffer)
 
 	dstShape := shapes.Make(dtypes.Int8, 3)
 	node := &gobackend.Node{Shape: dstShape}

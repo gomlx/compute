@@ -27,8 +27,8 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot/highway"
 	"github.com/gomlx/compute/internal/gobackend/dot/packgemm"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
-	"github.com/gomlx/compute/support"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
@@ -48,11 +48,13 @@ func init() {
 }
 
 type NodeData struct {
+	InputDType, OutputDType                                dtypes.DType
+	Config                                                 compute.DotGeneralConfig
+	Layout                                                 Layout
 	LHSContractingAxes, LHSBatchAxes                       []int
 	RHSContractingAxes, RHSBatchAxes                       []int
 	BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize int
 	LHSBlockedShape, RHSBlockedShape, OutputBlockedShape   shapes.Shape
-	LHSNormalization, RHSNormalization                     *NormalizationInfo
 
 	// execPath determines which execution strategy to use. Decided at graph-build time.
 	execPath ExecutionPath
@@ -77,6 +79,32 @@ func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 		d.OutputBlockedShape.Equal(o.OutputBlockedShape)
 }
 
+// SetSizes sets the dot-general sizes according to the axes dimensions.
+// Assumes shape has been normalized to one of the two supported layouts.
+func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
+	d.BatchSize = 1
+	if len(d.LHSBatchAxes) > 0 {
+		d.BatchSize = lhsShape.Dimensions[d.LHSBatchAxes[0]]
+	}
+	d.LHSCrossSize = 1
+	for i, dim := range lhsShape.Dimensions {
+		if !slices.Contains(d.LHSContractingAxes, i) && !slices.Contains(d.LHSBatchAxes, i) {
+			d.LHSCrossSize *= dim
+		}
+	}
+	d.RHSCrossSize = 1
+	for i, dim := range rhsShape.Dimensions {
+		if !slices.Contains(d.RHSContractingAxes, i) && !slices.Contains(d.RHSBatchAxes, i) {
+			d.RHSCrossSize *= dim
+		}
+	}
+	d.ContractingSize = 1
+	if len(d.LHSContractingAxes) > 0 {
+		// We could have gotten from lhs or rhs, they must match.
+		d.ContractingSize = lhsShape.Dimensions[d.LHSContractingAxes[0]]
+	}
+}
+
 // adjustAxisToRank returns a positive axis, adjusting negative numbers to the correct rank.
 func adjustAxisToRank(rank, axis int) (int, error) {
 	if axis < 0 {
@@ -88,67 +116,12 @@ func adjustAxisToRank(rank, axis int) (int, error) {
 	return axis, nil
 }
 
-func (d *NodeData) VerifyAndAdjust(lhsShape, rhsShape shapes.Shape) error {
-	lhsRank := lhsShape.Rank()
-	rhsRank := rhsShape.Rank()
-
-	// Validate and adjust axes.
-	var err error
-	for ii, axis := range d.LHSContractingAxes {
-		d.LHSContractingAxes[ii], err = adjustAxisToRank(lhsRank, axis)
-		if err != nil {
-			return errors.WithMessagef(err,
-				"while adjusting contractingAxes for DotGeneral(lhs=%s, lhsContractingAxes=%v)",
-				lhsShape, d.LHSContractingAxes)
-		}
-	}
-	for ii, axis := range d.LHSBatchAxes {
-		d.LHSBatchAxes[ii], err = adjustAxisToRank(lhsRank, axis)
-		if err != nil {
-			return errors.WithMessagef(err,
-				"while adjusting batchAxes for DotGeneral(lhs=%s, lhsBatchAxes=%v)", lhsShape, d.LHSBatchAxes)
-		}
-	}
-	for ii, axis := range d.RHSContractingAxes {
-		d.RHSContractingAxes[ii], err = adjustAxisToRank(rhsRank, axis)
-		if err != nil {
-			return errors.WithMessagef(err,
-				"while adjusting contractingAxes for DotGeneral(rhs=%s, rhsContractingAxes=%v)",
-				rhsShape, d.RHSContractingAxes)
-		}
-	}
-	for ii, axis := range d.RHSBatchAxes {
-		d.RHSBatchAxes[ii], err = adjustAxisToRank(rhsRank, axis)
-		if err != nil {
-			return errors.WithMessagef(err,
-				"while adjusting batchAxes for DotGeneral(rhs=%s, rhsBatchAxes=%v)", rhsShape, d.RHSBatchAxes)
-		}
-	}
-
-	// Check that batch and contracting dimensions from lhs and rhs match.
-	for ii, lhsAxis := range d.LHSContractingAxes {
-		rhsAxis := d.RHSContractingAxes[ii]
-		if lhsShape.Dimensions[lhsAxis] != rhsShape.Dimensions[rhsAxis] {
-			return errors.Errorf("DotGeneral contracting dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
-				lhsAxis, lhsShape.Dimensions[lhsAxis], rhsAxis, rhsShape.Dimensions[rhsAxis])
-		}
-	}
-	for ii, lhsAxis := range d.LHSBatchAxes {
-		rhsAxis := d.RHSBatchAxes[ii]
-		if lhsShape.Dimensions[lhsAxis] != rhsShape.Dimensions[rhsAxis] {
-			return errors.Errorf("DotGeneral batch dimensions don't match: lhs[%d]=%d != rhs[%d]=%d",
-				lhsAxis, lhsShape.Dimensions[lhsAxis], rhsAxis, rhsShape.Dimensions[rhsAxis])
-		}
-	}
-	return nil
-}
-
 // SetBackendOption process the configuration options for DotGeneral.
 func SetBackendOption(b *gobackend.Backend, key string) error {
 	switch key {
 	case "dotgeneral_normalized":
 		// Force DotGeneral to use the normalized path (transpose to [B,Cross,Contract] form).
-		b.DotGeneralForceExecutionPath = int(NormalizedPath)
+		b.DotGeneralForceExecutionPath = int(SmallTransposedPath)
 	case "dotgeneral_blocked":
 		// Force DotGeneral to use the blocked/tiled path (cache-efficient for large matrices).
 		b.DotGeneralForceExecutionPath = int(BlockedPath)
@@ -181,131 +154,92 @@ func SetBackendOption(b *gobackend.Backend, key string) error {
 //   - Contracted (contracting axes), where the output does multiply the values and reduce sum
 //     those dimensions.
 //
-// It follows that the resulting dimension number starts with the batch dimension, then the 'lhs'
-// non-contracting/non-batch dimension and finally the 'rhs' non-contracting/non-batch dimension.
-// It provides the basic means of implementing Einsum.
+// The resulting shape is [batchIndices..., <lhs cross indices...>, <rhs cross indices...>], the
+// indices come in the order they were provided.
+// The output dtype is by default the same as the input, except if configured otherwise in config.OutputDType.
 //
-// This function implements compute.Builder interface.
-//
-// This is the graph building part of DotGeneral. It first transposes the operands to a normalized
-// shape with rank=3 ([batchSize, crossSize, contractingSize]), and then it issues the DotGeneral
-// node with normalized inputs. Finally, it reshapes back to the final result.
-//
-// See execDotGeneral for the implementation.
+// This is the graph building part of DotGeneral. It reshapes and transposes the inputs as needed
+// to transform them into one of the two layouts the implementation functions (see execDotGeneral)
+// know how to handle.
 func DotGeneral(f *gobackend.Function,
 	lhsValue compute.Value, lhsContractingAxes, lhsBatchAxes []int,
 	rhsValue compute.Value, rhsContractingAxes, rhsBatchAxes []int,
 	config compute.DotGeneralConfig) (compute.Value, error) {
 
+	// Get and sanity check graph nodes from values.
 	directInputs, err := f.VerifyAndCastValues("DotGeneral", lhsValue, rhsValue)
 	if err != nil {
 		return nil, err
 	}
 	lhs, rhs := directInputs[0], directInputs[1]
 	if klog.V(1).Enabled() {
-		klog.Infof("DotGeneral lhs=%s rhs=%s contracting=%v,%v batch=%v,%v\n",
+		klog.Infof("DotGeneral lhs=%s rhs=%s contracting=%v,%v batch=%v,%v - config=%+v\n",
 			lhs.Shape, rhs.Shape,
 			lhsContractingAxes, rhsContractingAxes,
-			lhsBatchAxes, rhsBatchAxes)
+			lhsBatchAxes, rhsBatchAxes, config)
 	}
 
-	// Parse the inputs.
-	dtype := lhs.Shape.DType
-	if dtype != rhs.Shape.DType {
-		return nil, errors.Errorf("DotGeneral lhs (left-hand-side) and rhs operands don't match data types: %s and %s",
-			dtype, rhs.Shape.DType)
+	// Verify inputs validity for DotGeneral and compute the output shape.
+	outputShape, err := shapeinference.DotGeneral(lhs.Shape, lhsContractingAxes, lhsBatchAxes, rhs.Shape, rhsContractingAxes, rhsBatchAxes, config)
+	if err != nil {
+		return nil, err
 	}
 
-	// We don't yet support accumulator dtype, so we convert the inputs.
-	// - Exception: Half-Precision types automatically use Float32 for the computation.
-	isHalfPrecisionWithFloat32 := dtype.IsHalfPrecision() && config.AccumulatorDType == dtypes.Float32
-	if !isHalfPrecisionWithFloat32 && config.AccumulatorDType != dtypes.InvalidDType && config.AccumulatorDType != dtype {
-		lhsOp, err := f.ConvertDType(lhs, config.AccumulatorDType)
-		if err != nil {
-			return nil, err
-		}
-		lhs = lhsOp.(*gobackend.Node)
-		rhsOp, err := f.ConvertDType(rhs, config.AccumulatorDType)
-		if err != nil {
-			return nil, err
-		}
-		rhs = rhsOp.(*gobackend.Node)
-		dtype = config.AccumulatorDType
-	}
-
-	if len(lhsContractingAxes) != len(rhsContractingAxes) {
-		return nil, errors.Errorf("DotGeneral number of contracting axes for lhs (%d) doesn't match rhs (%d)",
-			len(lhsContractingAxes), len(rhsContractingAxes))
-	}
-	if len(lhsBatchAxes) != len(rhsBatchAxes) {
-		return nil, errors.Errorf("DotGeneral number of contracting axes for lhs (%d) doesn't match rhs (%d)",
-			len(lhsContractingAxes), len(rhsContractingAxes))
-	}
-
-	// Create node params, and verify axes have valid dimensions.
-	params := NodeData{
+	// Create node params or the "normalized" dot-general, after all reshaping/transposition.
+	// - LayoutNonTransposed: lhs=[batch, lhsCross, contracting], rhs=[batch, contracting, rhsCross]
+	// - LayoutTransposed:    lhs=[batch, lhsCross, contracting], rhs=[batch, rhsCross, contracting]
+	// In usual MatMul works, B=batch, M=lhsCross, K=contracting, N=rhsCross.
+	params := &NodeData{
+		InputDType:         lhs.Shape.DType,
+		OutputDType:        lhs.Shape.DType, // output DType for now is assumed to be the same as the input.
+		Config:             config,
 		LHSContractingAxes: lhsContractingAxes,
 		LHSBatchAxes:       lhsBatchAxes,
 		RHSContractingAxes: rhsContractingAxes,
 		RHSBatchAxes:       rhsBatchAxes,
 	}
-	err = params.VerifyAndAdjust(lhs.Shape, rhs.Shape)
+	lhs, rhs, params, err = reshapeToSupportedLayout(f, lhs, rhs, params)
 	if err != nil {
 		return nil, err
 	}
 
-	// Find sizes of the normalized operands ([batchSize, crossSize, contractSize]).
-	// We do this before merging axes so we capture the original unmerged dimensions
-	// which are needed to correctly reshape the final output.
-	batchDims := make([]int, len(lhsBatchAxes))
-	for ii, lhsAxis := range params.LHSBatchAxes {
-		batchDims[ii] = lhs.Shape.Dimensions[lhsAxis]
+	// Only for half-types inputs we always output Float32 for the "normalized" dot-general.
+	if params.InputDType.IsHalfPrecision() {
+		params.OutputDType = dtypes.Float32
 	}
-	var lhsCrossDims, rhsCrossDims []int
-	params.BatchSize, params.LHSCrossSize, params.ContractingSize, lhsCrossDims = support.DotGeneralFindSizes(
-		lhs.Shape, lhsContractingAxes, lhsBatchAxes)
-	_, params.RHSCrossSize, _, rhsCrossDims = support.DotGeneralFindSizes(rhs.Shape, rhsContractingAxes, rhsBatchAxes)
 
-	// Merge adjacent axes used for the same purpose to simplify the operation.
-	// This makes the physical memory layout simpler and allows matching to
-	// fast paths (like SmallMatMul or Packgemm) more often.
-	var revertFn revertMergeAxesFunc
-	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs, params.RHSContractingAxes, params.RHSBatchAxes, revertFn, err = MergeAxes(
-		f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs, params.RHSContractingAxes, params.RHSBatchAxes)
+	// Accumulator dtype conversion: except Float32 accumulator for half precision inputs,
+	// we simply convert the inputs to the accumulator dtype.
+	lhs, rhs, params, err = convertToAccumulatorDType(f, lhs, rhs, params)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check that all sizes are positive
-	if params.BatchSize <= 0 || params.LHSCrossSize <= 0 || params.ContractingSize <= 0 || params.RHSCrossSize <= 0 {
-		return nil, errors.Errorf("DotGeneral sizes must be positive: lhs(batch=%d, cross=%d, contracting=%d), rhs(cross=%d)",
-			params.BatchSize, params.LHSCrossSize, params.ContractingSize,
-			params.RHSCrossSize)
-	}
-
-	params.LHSNormalization = NormalizePrepare(lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes)
-	params.RHSNormalization = NormalizePrepare(rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
-
-	outputDType := dtype
-	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
-		// For 16 bits, store the intermediary results as float32 to minimize numerical errors during accumulation.
-		// Notice the blockLog2Dim must be the same, because the block dimensions much match the inputs.
-		outputDType = dtypes.Float32
-	}
+	// Find sizes of the normalized operands (batchSize, crossSizes and contractSize).
+	// The shape is already normalized (to a LayoutNonTranposed or LayoutTransposed), so
+	// there is at most one axis of each type.
+	params.SetSizes(lhs.Shape, rhs.Shape)
 
 	// Select execution path at build time based on problem size and matrix layout.
 	// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
-	params.execPath = selectExecPath(f.RawBuilder.Backend, lhs.Shape, rhs.Shape, &params)
-	klog.V(1).Infof("DotGeneral execPath: %s\n", params.execPath)
+	params.execPath = selectExecPath(f.RawBuilder.Backend, params)
+	if params.execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed {
+		// The "SmallTransposedPath" takes as input LayoutTransposed, we are forced to transpose the RHS.
+		klog.V(1).Info("DotGeneral selecte SmallTransposedPath, transposing to required LayoutTransposed")
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = transposeSide(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes, LayoutTransposed)
+		if err != nil {
+			return nil, err
+		}
+		params.Layout = LayoutTransposed
+	}
+	klog.V(1).Infof("DotGeneral execPath for %s layout: %s\n", params.Layout, params.execPath)
 
 	// For blockedPath, pre-block BOTH inputs at graph-build time.
 	// This allows deduplication: if the same tensor is used in multiple DotGenerals,
 	// the blocking is done once and shared.
 	var lhsBlocked, rhsBlocked *gobackend.Node
 	if params.execPath == BlockedPath || params.execPath == CheckPath {
-		params.SetBlockedParams(dtype, outputDType)
+		params.SetBlockedParams()
 		lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
 			params.BatchSize, params.LHSCrossSize, params.ContractingSize)
 		rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
@@ -323,31 +257,120 @@ func DotGeneral(f *gobackend.Function,
 	default:
 		inputs = []*gobackend.Node{lhs, rhs}
 	}
-	dotGeneral, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, shapes.Make(dtype, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize), inputs, &params)
 
-	// Reshape result to recover batch and cross dimensions.
-	resultingDims := make([]int, 0, len(batchDims)+len(lhsCrossDims)+len(rhsCrossDims))
-	resultingDims = append(resultingDims, batchDims...)
-	resultingDims = append(resultingDims, lhsCrossDims...)
-	resultingDims = append(resultingDims, rhsCrossDims...)
-	result, err := f.Reshape(dotGeneral, resultingDims...)
-	if err != nil {
-		return nil, err
+	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
+	normalizedOutputShape := shapes.Make(params.OutputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
+	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, normalizedOutputShape, inputs, params)
+	if result.Shape.Equal(outputShape) {
+		// If no de-normalization is needed, return the result immediately.
+		return result, nil
 	}
 
-	// If config.OutputDType is different than the input, for now we simply convert it.
-	if config.OutputDType != dtypes.InvalidDType && config.OutputDType != dtype {
-		result, err = f.ConvertDType(result, config.OutputDType)
+	// Reshape result to recover batch and cross dimensions.
+	if result.Shape.DType != outputShape.DType {
+		// Requires final DType conversion:
+		resultValue, err := f.ConvertDType(result, outputShape.DType)
 		if err != nil {
 			return nil, err
 		}
+		result = resultValue.(*gobackend.Node)
 	}
-
-	result, err = revertFn(result.(*gobackend.Node))
-	if err != nil {
-		return nil, err
+	if !result.Shape.Equal(outputShape) {
+		// Reshape to axes that may have been merged during layout normalization.
+		resultValue, err := f.Reshape(result, outputShape.Dimensions...)
+		if err != nil {
+			return nil, err
+		}
+		result = resultValue.(*gobackend.Node)
 	}
 	return result, nil
+}
+
+// reshapeToSupportedLayout reshapes/transposes lhs and rhs to a layout
+// supported by the underlying execution backends.
+//
+// It returns the updated lhs, rhs and params (same as the input, with fields updated).
+// The params.Layout field will be set to the supported layout.
+func reshapeToSupportedLayout(
+	f *gobackend.Function,
+	lhs, rhs *gobackend.Node,
+	params *NodeData,
+) (lhsOut, rhsOut *gobackend.Node, paramsOut *NodeData, err error) {
+	params.Layout = LayoutForDotGeneral(
+		lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
+	if params.Layout != LayoutIncompatible {
+		// Already a supported layout.
+		return lhs, rhs, params, nil
+	}
+
+	// First attempt to merge axes with same function:
+	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = MergeAxes(
+		f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	params.Layout = LayoutForDotGeneral(lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if params.Layout != LayoutIncompatible {
+		// Merged axes make a supported layout.
+		return lhs, rhs, params, nil
+	}
+
+	// We need to transpose inputs to a supported layout. Since the
+	// LayoutTransposed is the fastest, we transpose to that.
+	targetLayout := LayoutTransposed
+	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = TransposeToLayout(
+		f,
+		lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+		rhs, params.RHSContractingAxes, params.RHSBatchAxes,
+		targetLayout)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	params.Layout = targetLayout
+	return lhs, rhs, params, nil
+}
+
+// convertToAccumulatorDType if an accumulator dtype is specified -- for the algorithms that don't support a different accumulator type.
+func convertToAccumulatorDType(f *gobackend.Function, lhs, rhs *gobackend.Node, params *NodeData) (*gobackend.Node, *gobackend.Node, *NodeData, error) {
+	accDType := params.Config.AccumulatorDType
+	if accDType == dtypes.InvalidDType || accDType == params.InputDType {
+		return lhs, rhs, params, nil
+	}
+	if accDType == params.OutputDType {
+		// The output dtype will be used already, no need to convert.
+		return lhs, rhs, params, nil
+	}
+
+	// Exception: Half-Precision types automatically uses Float32 for the computation.
+	if params.InputDType.IsHalfPrecision() && accDType == dtypes.Float32 {
+		return lhs, rhs, params, nil
+	}
+
+	// Convert inputs to accumulator dtype.
+	if klog.V(2).Enabled() {
+		klog.Infof("Converting inputs from %s to accumulator DType=%s\n", lhs.Shape.DType, accDType)
+	}
+	lhsOp, err := f.ConvertDType(lhs, accDType)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	lhs = lhsOp.(*gobackend.Node)
+	rhsOp, err := f.ConvertDType(rhs, accDType)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	rhs = rhsOp.(*gobackend.Node)
+	params.InputDType = accDType
+	params.OutputDType = accDType
+	return lhs, rhs, params, nil
 }
 
 // ExecutionPath indicates which execution strategy to use for DotGeneral.
@@ -358,8 +381,8 @@ const (
 	// AutoSelectPath means the execution path should be auto-selected based on matrix size.
 	// This is used only for backend.dotGeneralForceExecutionPath; never stored in params.execPath.
 	AutoSelectPath ExecutionPath = iota
-	// NormalizedPath uses the normalized transpose path (small matrices)
-	NormalizedPath
+	// SmallTransposedPath uses the normalized transpose path (small matrices)
+	SmallTransposedPath
 	// BlockedPath uses execDotGeneralBlocked (cache-tiled algorithm, large matrices)
 	BlockedPath
 	// SmallMatMulPath uses the SmallMatMul fast path (small float32 matrices in standard order)
@@ -376,70 +399,55 @@ const (
 
 // selectExecPath selects the execution path based on problem size and backend configuration.
 // Called at graph-build time from DotGeneral().
-func selectExecPath(backend *gobackend.Backend, lhsShape, rhsShape shapes.Shape, params *NodeData) ExecutionPath {
-	dtype := lhsShape.DType
-	outputDType := dtype
-	if dtype == dtypes.BFloat16 || dtype == dtypes.Float16 {
-		// For 16 bits, store the intermediary results as float32 to minimize numerical errors during accumulation.
-		// Notice the blockLog2Dim must be the same, because the block dimensions much match the inputs.
-		outputDType = dtypes.Float32
-	}
-
+func selectExecPath(backend *gobackend.Backend, params *NodeData) ExecutionPath {
 	// If a specific path is forced via backend config, use that.
 	execPath := ExecutionPath(backend.DotGeneralForceExecutionPath)
 	if execPath != AutoSelectPath {
 		// Checks whether the forced path is valid for the given problem.
-		var valid bool
-		switch execPath {
-		case SmallMatMulPath:
-			valid = IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-				rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
-		case PackgemmPath:
-			valid = backend.EnablePackgemm && packgemm.HasDTypeSupport(dtype, outputDType) &&
-				IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-					rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
-		case HighwayPath:
-			valid = backend.EnableHighway && highway.HasDTypeSupport(dtype, outputDType) &&
-				IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-					rhsShape, params.RHSContractingAxes, params.RHSBatchAxes)
-		default:
-			valid = true
-		}
-		if valid {
+		switch {
+		case execPath == SmallMatMulPath && params.Layout == LayoutNonTransposed:
+			return execPath
+		case execPath == PackgemmPath && params.Layout == LayoutNonTransposed && packgemm.HasDTypeSupport(params.InputDType, params.OutputDType):
+			return execPath
+		case execPath == HighwayPath && params.Layout == LayoutNonTransposed && highway.HasDTypeSupport(params.InputDType, params.OutputDType):
+			return execPath
+		case execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed:
+			return execPath
+		case execPath == BlockedPath && params.Layout == LayoutNonTransposed:
 			return execPath
 		}
-		klog.V(1).Infof("DotGeneral: forced path %s is invalid for problem dtype or axes order %s×%s\n", execPath, lhsShape, rhsShape)
+		klog.V(1).Infof(
+			"DotGeneral: forced path %s is invalid for problem with input dtype %s, output dtype %s and layout (%s)\n",
+			execPath, params.InputDType, params.OutputDType, params.Layout)
 	}
 
 	// GEMM path:
-	if backend.EnablePackgemm && packgemm.HasDTypeSupport(dtype, outputDType) &&
-		IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-			rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
+	if backend.EnablePackgemm && packgemm.HasDTypeSupport(params.InputDType, params.OutputDType) &&
+		params.Layout == LayoutNonTransposed {
 		return PackgemmPath
 	}
 
 	// Highway path:
-	if backend.EnableHighway && highway.HasDTypeSupport(dtype, outputDType) &&
-		IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-			rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
+	if backend.EnableHighway && highway.HasDTypeSupport(params.InputDType, params.OutputDType) &&
+		params.Layout == LayoutNonTransposed {
 		return HighwayPath
 	}
 
 	// Check for SmallMatMul fast path first.
 	// SmallMatMul is beneficial for small float32 matrices in standard [M,K]×[K,N] order.
-	if UseSmallMatMul(dtype, lhsShape, rhsShape, params) {
+	if UseSmallMatMul(params) {
 		return SmallMatMulPath
 	}
 
 	// Default selection based on problem size.
 	// For large matrices, the blocked path with cache-tiled algorithm is more efficient.
 	crossesSize := params.RHSCrossSize * params.LHSCrossSize
-	blockDim := 1 << DotGeneralTargetBlockLog2Dim[dtype]
+	blockDim := 1 << DotGeneralTargetBlockLog2Dim[params.InputDType]
 	blockSize := blockDim * blockDim
 	if crossesSize > DotGeneralBlockedPathThreshold*blockSize {
 		return BlockedPath
 	}
-	return NormalizedPath
+	return SmallTransposedPath
 }
 
 // execDotGeneral executes the DotGeneral operation.
@@ -485,7 +493,7 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 				return nil, err
 			}
 			output2.Zeros()
-			err = execDotGeneralNormalized(backend, lhsRaw, rhsRaw, params, output2)
+			err = execSmallTransposed(backend, lhsRaw, rhsRaw, params, output2)
 			if err != nil {
 				backend.PutBuffer(output2)
 				backend.PutBuffer(output)
@@ -573,10 +581,10 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		execSmallMatMulFn(backend, lhs, rhs, params, output)
 		return output, nil
 
-	case NormalizedPath:
+	case SmallTransposedPath:
 		// Transpose-based normalized path for small matrices
 		output.Zeros()
-		err = execDotGeneralNormalized(backend, lhs, rhs, params, output)
+		err = execSmallTransposed(backend, lhs, rhs, params, output)
 
 	case PackgemmPath:
 		// Custom GEMM path for large "malmul" order.

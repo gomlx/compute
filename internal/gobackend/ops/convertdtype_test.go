@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 )
@@ -17,10 +16,13 @@ func TestConvertPackedInt4ToInt8(t *testing.T) {
 	// Byte 0x87 = low nibble 0x7 (7), high nibble 0x8 (-8).
 	srcData := []byte{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Int4, 4) // 4 Int4 elements packed in 2 bytes
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := makeBuffer(t, srcShape, srcData)
 
 	dstShape := shapes.Make(dtypes.Int8, 4)
-	dstBuf := &gobackend.Buffer{RawShape: dstShape, Flat: make([]int8, 4), InUse: true}
+	dstBuf, err := backend.GetBuffer(dstShape)
+	if err != nil {
+		t.Fatalf("Failed to get buffer: %+v", err)
+	}
 
 	tmpAny, tmpErr := ops.ConvertDTypePairMap.Get(dtypes.Int4, dtypes.Int8)
 	if tmpErr != nil {
@@ -50,10 +52,10 @@ func TestConvertPackedUint4ToUint8(t *testing.T) {
 	// Byte 0x87 = low nibble 7, high nibble 8.
 	srcData := []byte{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Uint4, 4) // 4 Uint4 elements packed in 2 bytes
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := makeBuffer(t, srcShape, srcData)
 
 	dstShape := shapes.Make(dtypes.Uint8, 4)
-	dstBuf := &gobackend.Buffer{RawShape: dstShape, Flat: make([]uint8, 4), InUse: true}
+	dstBuf := makeBuffer(t, dstShape, make([]uint8, 4))
 
 	tmpAny, tmpErr := ops.ConvertDTypePairMap.Get(dtypes.Uint4, dtypes.Uint8)
 	if tmpErr != nil {
@@ -81,10 +83,10 @@ func TestConvertPackedInt4ToFloat32(t *testing.T) {
 	// Packed Int4 → Float32: unpacks and converts.
 	srcData := []byte{0xF0, 0x87}
 	srcShape := shapes.Make(dtypes.Int4, 4)
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := makeBuffer(t, srcShape, srcData)
 
 	dstShape := shapes.Make(dtypes.Float32, 4)
-	dstBuf := &gobackend.Buffer{RawShape: dstShape, Flat: make([]float32, 4), InUse: true}
+	dstBuf := makeBuffer(t, dstShape, make([]float32, 4))
 
 	tmpAny, tmpErr := ops.ConvertDTypePairMap.Get(dtypes.Int4, dtypes.Float32)
 	if tmpErr != nil {
@@ -113,10 +115,10 @@ func TestConvertPackedInt2ToInt8(t *testing.T) {
 	// Byte 0b11_10_01_00 = 0xE4: values 0, 1, -2, -1.
 	srcData := []byte{0xE4}
 	srcShape := shapes.Make(dtypes.Int2, 4) // 4 Int2 elements packed in 1 byte
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := makeBuffer(t, srcShape, srcData)
 
 	dstShape := shapes.Make(dtypes.Int8, 4)
-	dstBuf := &gobackend.Buffer{RawShape: dstShape, Flat: make([]int8, 4), InUse: true}
+	dstBuf := makeBuffer(t, dstShape, make([]int8, 4))
 
 	tmpAny, tmpErr := ops.ConvertDTypePairMap.Get(dtypes.Int2, dtypes.Int8)
 	if tmpErr != nil {
@@ -145,10 +147,10 @@ func TestConvertPackedUint2ToUint8(t *testing.T) {
 	// Byte 0b11_10_01_00 = 0xE4: values 0, 1, 2, 3.
 	srcData := []byte{0xE4}
 	srcShape := shapes.Make(dtypes.Uint2, 4) // 4 Uint2 elements packed in 1 byte
-	srcBuf := &gobackend.Buffer{RawShape: srcShape, Flat: srcData, InUse: true}
+	srcBuf := makeBuffer(t, srcShape, srcData)
 
 	dstShape := shapes.Make(dtypes.Uint8, 4)
-	dstBuf := &gobackend.Buffer{RawShape: dstShape, Flat: make([]uint8, 4), InUse: true}
+	dstBuf := makeBuffer(t, dstShape, make([]uint8, 4))
 
 	tmpAny, tmpErr := ops.ConvertDTypePairMap.Get(dtypes.Uint2, dtypes.Uint8)
 	if tmpErr != nil {

@@ -136,15 +136,17 @@ const smallMatMulMaxSize = 256 * 1024 // 256Kb
 // SmallMatMul skips transpose overhead but has strided RHS access, so it's only
 // beneficial for small matrices in standard [M,K]×[K,N] order.
 // Supports all numeric dtypes (POD types + BFloat16 + Float16).
-func UseSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params *NodeData) bool {
+func UseSmallMatMul(params *NodeData) bool {
 	// Check if dtype has a registered SmallMatMul implementation
-	if dtype >= gobackend.MaxDTypes || dotGeneralSmallMatMulDTypeMap.Map[dtype] == nil {
+	if params.InputDType >= gobackend.MaxDTypes || dotGeneralSmallMatMulDTypeMap.Map[params.InputDType] == nil {
+		return false
+	}
+	if params.OutputDType != params.InputDType {
 		return false
 	}
 
 	// Check if axes are in standard matmul order
-	if !IsMatMulOrder(lhsShape, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhsShape, params.RHSContractingAxes, params.RHSBatchAxes) {
+	if params.Layout != LayoutNonTransposed {
 		return false
 	}
 
@@ -187,7 +189,7 @@ func UseSmallMatMul(dtype dtypes.DType, lhsShape, rhsShape shapes.Shape, params 
 		/* RHS size */ params.RHSCrossSize*params.ContractingSize +
 		/* Output size */ params.LHSCrossSize*params.RHSCrossSize
 	problemSize *= params.BatchSize
-	problemSize *= dtype.Size()
+	problemSize *= params.InputDType.Size()
 	if problemSize > smallMatMulMaxSize {
 		return false
 	}

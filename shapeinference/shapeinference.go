@@ -133,6 +133,10 @@ var (
 		compute.OpTypeShiftRightLogical,
 	)
 
+	// AllBinaryOperations include all operations that have two operands and follow the standard implicit broadcasting rules,
+	// and the operation is element-wise (output_i dependes only on lhs_i and rhs_i)
+	AllBinaryOperations = sets.Union(StandardBinaryOperations, ComparisonOperations)
+
 	// ComparisonOperations include all operations that take two inputs and returns booleans with the results of
 	// a comparison.
 	//
@@ -153,6 +157,8 @@ var (
 
 	// StandardUnaryOperations include all operations that have a single operand as input, and the return shape is the
 	// same as the input (so no reductions).
+	//
+	// Plus, only operations that are element-wise (output_i dependes only on input_i) are included.
 	StandardUnaryOperations = sets.MakeWith(
 		compute.OpTypeLogicalNot,
 		compute.OpTypeBitwiseNot,
@@ -422,28 +428,6 @@ func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape,
 		srcAxis := permutations[axis]
 		output.Dimensions[axis] = operand.Dimensions[srcAxis]
 	}
-	return
-}
-
-// BroadcastOp adds the prefixDims to the start of the shape.
-func BroadcastOp(operand shapes.Shape, prefixDims []int) (output shapes.Shape, err error) {
-	if operand.DType == dtypes.InvalidDType {
-		err = errors.Errorf("invalid shape %s for BroadcastOp", operand)
-		return
-	}
-	if len(prefixDims) == 0 {
-		return operand, nil
-	}
-	for _, dim := range prefixDims {
-		if dim <= 0 {
-			err = errors.Errorf("Invalid prefix dimensions %v for BroadcastOp, they must be positive", prefixDims)
-			return
-		}
-	}
-	output = shapes.Make(operand.DType)
-	output.Dimensions = make([]int, len(prefixDims)+operand.Rank())
-	copy(output.Dimensions, prefixDims)
-	copy(output.Dimensions[len(prefixDims):], operand.Dimensions)
 	return
 }
 

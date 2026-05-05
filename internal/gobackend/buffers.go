@@ -6,7 +6,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"unsafe"
@@ -15,7 +14,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
-	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
 )
 
@@ -480,54 +478,30 @@ func (buffer *Buffer) Backend() compute.Backend {
 	return buffer.RawBackend
 }
 
-// MemReport returns a human-readable report of memory usage.
-func (b *Backend) MemReport() string {
-	type poolStat struct {
-		size, count, memory int
+// Check does a sanity-check on the buffer.
+// Returns a corresponding error if something is wrong.
+//
+// Used only for debugging.
+func (buffer *Buffer) Check() error {
+	var issues []string
+	if buffer == nil {
+		return errors.Errorf("Check(%p): buffer was nil", buffer)
 	}
-	var stats []poolStat
-	var totalMem int
-
-	b.bufferPools.Range(func(key, value any) bool {
-		k := key.(bufferPoolKey)
-		pool := value.(*sync.Pool)
-
-		var items []*Buffer
-		for {
-			item := pool.Get()
-			if item == nil {
-				break
-			}
-			items = append(items, item.(*Buffer))
-		}
-
-		if len(items) > 0 {
-			stat := poolStat{
-				size:   k.bucketedSize,
-				count:  len(items),
-				memory: len(items) * k.bucketedSize,
-			}
-			stats = append(stats, stat)
-			totalMem += stat.memory
-		}
-
-		for _, item := range items {
-			pool.Put(item)
-		}
-		return true
-	})
-
-	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].size < stats[j].size
-	})
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Total Memory In Buffer Pools:  %s\n", humanize.Bytes(totalMem)))
-	sb.WriteString("Buffer Pool:\n")
-	sb.WriteString("   <shape>   <# elements>  <memory-used>\n")
-	for _, stat := range stats {
-		shapeStr := fmt.Sprintf("[%d bytes]", stat.size)
-		sb.WriteString(fmt.Sprintf("   %-9s %-13d %s\n", shapeStr, stat.count, humanize.Bytes(stat.memory)))
+	if buffer.Flat == nil {
+		issues = append(issues, "buffer.Flat was nil")
 	}
-	return sb.String()
+	if !buffer.RawShape.Ok() {
+		issues = append(issues, "buffer.RawShape was invalid")
+	}
+	if !buffer.InUse {
+		issues = append(issues, "buffer was marked as not in use")
+	}
+	if buffer.Flat != nil && buffer.RawShape.Ok() && buffer.RawShape.Size() != reflect.ValueOf(buffer.Flat).Len() {
+		issues = append(issues, fmt.Sprintf("buffer.RawShape.Size() != len(buffer.Flat): %d != %d", buffer.RawShape.Size(), reflect.ValueOf(buffer.Flat).Len()))
+	}
+	if len(issues) > 0 {
+		return errors.Errorf("Check(%p, shape=%s): %s",
+			buffer, buffer.RawShape, strings.Join(issues, "; "))
+	}
+	return nil
 }
