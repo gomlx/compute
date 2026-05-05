@@ -3,7 +3,6 @@
 package gobackend
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -104,7 +103,7 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 	fe.InitSchedule()
 
 	if klog.V(1).Enabled() {
-		fmt.Printf("* Compiling function %q: estimated max temporary memory: %s\n",
+		klog.Infof("* Compiling function %q: estimated max temporary memory: %s\n",
 			fe.Function.Name(), humanize.Bytes(fe.EstimatedTemporaryMemory()))
 	}
 	return fe, nil

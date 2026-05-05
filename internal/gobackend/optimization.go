@@ -16,7 +16,10 @@ import (
 // GraphTransformation is an optimizer of the graph, to be executed during compilation.
 type GraphTransformation interface {
 	// Apply takes the current graph state and returns an optimized version.
-	Apply(builder *Builder) error
+	//
+	// It should return dagModified=true, if new nodes were create out-of-order (at the end) and hence the DAG
+	// order would have been broken, requiring a re-sort after the pass.
+	Apply(builder *Builder) (dagModified bool, err error)
 	Name() string
 }
 
@@ -53,8 +56,12 @@ func (b *Builder) Optimize() error {
 		if klog.V(1).Enabled() {
 			klog.Infof("Applying transformation %q\n", p.Transform.Name())
 		}
-		if err := p.Transform.Apply(b); err != nil {
+		dagModified, err := p.Transform.Apply(b)
+		if err != nil {
 			return errors.WithMessagef(err, "transformation %q failed", p.Transform.Name())
+		}
+		if dagModified {
+			// TODO: resort DAG.
 		}
 	}
 	return nil
