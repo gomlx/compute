@@ -3,6 +3,8 @@
 // Package sets implement a set type as a `map[T]struct{}` but with better ergonomics.
 package sets
 
+import "maps"
+
 // Set implements a Set for the key type T.
 type Set[T comparable] map[T]struct{}
 
@@ -20,6 +22,17 @@ func MakeWith[T comparable](elements ...T) Set[T] {
 	s := Make[T](len(elements))
 	for _, element := range elements {
 		s.Insert(element)
+	}
+	return s
+}
+
+// Union returns the union of all the given sets.
+func Union[T comparable](sets ...Set[T]) Set[T] {
+	s := Make[T]()
+	for _, s2 := range sets {
+		for k := range maps.Keys(s2) {
+			s.Insert(k)
+		}
 	}
 	return s
 }
