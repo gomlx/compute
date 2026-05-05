@@ -448,16 +448,8 @@ func TestCompiledClosureExecute(t *testing.T) {
 	}
 
 	// Create input buffers
-	xBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 3),
-		Flat:     []float32{1.0, 2.0, 3.0},
-		InUse:    true,
-	}
-	yBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 3),
-		Flat:     []float32{10.0, 20.0, 30.0},
-		InUse:    true,
-	}
+	xBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 3), []float32{1.0, 2.0, 3.0})
+	yBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 3), []float32{10.0, 20.0, 30.0})
 
 	// Execute the closure
 	b := backend.(*gobackend.Backend)
@@ -652,11 +644,7 @@ func TestCompiledClosureMultipleOutputs(t *testing.T) {
 		t.Fatalf("compiled closure is nil")
 	}
 
-	inputBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{5.0, 10.0},
-		InUse:    true,
-	}
+	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{5.0, 10.0})
 
 	b := backend.(*gobackend.Backend)
 	outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
@@ -740,11 +728,7 @@ func TestCompiledClosureChainedOperations(t *testing.T) {
 	// (x + 1) = [2, 3]
 	// (x + 1) * 2 = [4, 6]
 	// (x + 1) * 2 - 3 = [1, 3]
-	inputBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{1.0, 2.0},
-		InUse:    true,
-	}
+	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{1.0, 2.0})
 
 	goBackend := backend.(*gobackend.Backend)
 	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
@@ -798,11 +782,7 @@ func TestCompiledClosureInputValidation(t *testing.T) {
 	}
 
 	// Try to execute with wrong number of inputs
-	xBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{1.0, 2.0},
-		InUse:    true,
-	}
+	xBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{1.0, 2.0})
 
 	goBackend := backend.(*gobackend.Backend)
 
@@ -944,18 +924,10 @@ func TestClosureExecuteWithCapturedValues(t *testing.T) {
 	}
 
 	// Prepare the captured value buffer (simulating what an If/While executor would do)
-	capturedBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{10.0, 20.0}, // The captured constant value
-		InUse:    true,
-	}
+	capturedBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{10.0, 20.0})
 
 	// Prepare the input parameter buffer: y = [1, 2]
-	inputBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{1.0, 2.0},
-		InUse:    true,
-	}
+	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{1.0, 2.0})
 
 	// Execute the closure with captured values
 	// Expected: [10, 20] + [1, 2] = [11, 22]
@@ -1040,18 +1012,10 @@ func TestClosureExecuteWithNestedCapturedValues(t *testing.T) {
 	}
 
 	// Prepare the captured value buffer (the grandparent constant value)
-	capturedBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{100.0, 200.0},
-		InUse:    true,
-	}
+	capturedBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{100.0, 200.0})
 
 	// Prepare the input parameter buffer: y = [2, 3]
-	inputBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 2),
-		Flat:     []float32{2.0, 3.0},
-		InUse:    true,
-	}
+	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{2.0, 3.0})
 
 	// Execute the nested closure with captured values
 	// Expected: [100, 200] * [2, 3] = [200, 600]
@@ -1397,7 +1361,7 @@ func TestIfOperation(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	trueInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{true}, InUse: true}
+	trueInput := makeBuffer(t, shapes.Make(dtypes.Bool), []bool{true})
 	outputs, err := exec.Execute([]compute.Buffer{trueInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1410,7 +1374,7 @@ func TestIfOperation(t *testing.T) {
 	}
 
 	// Execute with false
-	falseInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{false}, InUse: true}
+	falseInput := makeBuffer(t, shapes.Make(dtypes.Bool), []bool{false})
 	outputs, err = exec.Execute([]compute.Buffer{falseInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1565,11 +1529,7 @@ func TestSortOperation(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", err)
 	}
 
-	inputBuf := &gobackend.Buffer{
-		RawShape: shapes.Make(dtypes.Float32, 5),
-		Flat:     []float32{5.0, 2.0, 8.0, 1.0, 3.0},
-		InUse:    true,
-	}
+	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 5), []float32{5.0, 2.0, 8.0, 1.0, 3.0})
 	outputs, err := exec.Execute([]compute.Buffer{inputBuf}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1658,7 +1618,7 @@ func TestClosureCaptureExecutionWithIf(t *testing.T) {
 	}
 
 	// Test with pred = true
-	trueInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{true}, InUse: true}
+	trueInput := makeBuffer(t, shapes.Make(dtypes.Bool), []bool{true})
 	outputs, err := exec.Execute([]compute.Buffer{trueInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1672,7 +1632,7 @@ func TestClosureCaptureExecutionWithIf(t *testing.T) {
 	}
 
 	// Test with pred = false
-	falseInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Bool), Flat: []bool{false}, InUse: true}
+	falseInput := makeBuffer(t, shapes.Make(dtypes.Bool), []bool{false})
 	outputs, err = exec.Execute([]compute.Buffer{falseInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
@@ -1764,7 +1724,7 @@ func TestClosureCaptureExecutionWithWhile(t *testing.T) {
 	}
 
 	// Test with initial counter = 0 (scalar)
-	counterInput := &gobackend.Buffer{RawShape: shapes.Make(dtypes.Float32), Flat: []float32{0.0}, InUse: true}
+	counterInput := makeBuffer(t, shapes.Make(dtypes.Float32), []float32{0.0})
 	outputs, err := exec.Execute([]compute.Buffer{counterInput}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)

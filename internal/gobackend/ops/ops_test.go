@@ -1,6 +1,4 @@
-// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
-
-package gobackend_test
+package ops_test
 
 import (
 	"fmt"
@@ -8,16 +6,14 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/internal/gobackend"
+	_ "github.com/gomlx/compute/internal/gobackend/defaultpkgs"
+	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
 	"k8s.io/klog/v2"
-
-	// Registers all the ops.
-	_ "github.com/gomlx/compute/internal/gobackend/ops"
 )
 
-var backend compute.Backend
+var backend *gobackend.Backend
 
 func init() {
 	klog.InitFlags(nil)
@@ -31,7 +27,11 @@ func setup() {
 	} else {
 		fmt.Printf("\t$%s=%q\n", compute.ConfigEnvVar, os.Getenv(compute.ConfigEnvVar))
 	}
-	backend = compute.MustNew()
+	backendGeneric, err := gobackend.New("")
+	if err != nil {
+		klog.Fatalf("Failed to create backend: %+v", err)
+	}
+	backend = backendGeneric.(*gobackend.Backend)
 	fmt.Printf("Backend: %s, %s\n", backend.Name(), backend.Description())
 }
 
