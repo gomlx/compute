@@ -511,6 +511,13 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		if err != nil {
 			return errors.WithMessagef(err, "executing closure op %s", node.OpType)
 		}
+		if klog.V(1).Enabled() {
+			for _, outputBuf := range outputBuffers {
+				if err := outputBuf.Check(); err != nil {
+					klog.Errorf("executing closure op %s: output buffer %p: %v", node.OpType, outputBuf, err)
+				}
+			}
+		}
 
 		// Check if any captured inputs were consumed (set to nil by the executor).
 		// If so, mark execBuf.results as nil to indicate they're no longer available.
@@ -547,6 +554,13 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		if err != nil {
 			return errors.WithMessagef(err, "executing multi-output %s", node.OpType)
 		}
+		if klog.V(1).Enabled() {
+			for _, outputBuf := range outputBuffers {
+				if err := outputBuf.Check(); err != nil {
+					klog.Errorf("executing multi-output %s: output buffer %p: %v", node.OpType, outputBuf, err)
+				}
+			}
+		}
 
 		// Write outputs to execBuf (multi-output ops are always multi-output style), or free those no longer
 		// needed.
@@ -573,6 +587,11 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		result, err := executor(backend, node, inputBuffers, inputsOwned)
 		if err != nil {
 			return errors.WithMessagef(err, "executing %s", node.OpType)
+		}
+		if klog.V(1).Enabled() {
+			if err := result.Check(); err != nil {
+				klog.Errorf("executing single output %s: output buffer %p: %v", node.OpType, result, err)
+			}
 		}
 
 		// Write result to execBuf (single output node), or free it if not needed.
