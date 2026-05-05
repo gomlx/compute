@@ -3,6 +3,7 @@ package dot
 import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
 )
 
 // Layout for inputs of DotGeneral.
@@ -73,35 +74,32 @@ func LayoutForDotGeneral(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes
 	return LayoutIncompatible
 }
 
-// revertMergeAxesFunc is a function that reverts the merging of axes.
-// It is called by the backend to reshape the result to the original dimensions.
-type revertMergeAxesFunc func(result *gobackend.Node) (*gobackend.Node, error)
-
-type axisType int
+// AxisType represents the type of an axis, based on its function in the DotGeneral.
+type AxisType int
 
 const (
-	axisTypeCross axisType = iota
-	axisTypeBatch
-	axisTypeContracting
+	AxisTypeCross AxisType = iota
+	AxisTypeBatch
+	AxisTypeContracting
 )
 
 type axisInfo struct {
-	typ axisType
+	typ AxisType
 	idx int // index in batchAxes or contractingAxes
 }
 
 func getAxisInfo(axis int, batchAxes, contractingAxes []int) axisInfo {
 	for i, a := range batchAxes {
 		if a == axis {
-			return axisInfo{axisTypeBatch, i}
+			return axisInfo{AxisTypeBatch, i}
 		}
 	}
 	for i, a := range contractingAxes {
 		if a == axis {
-			return axisInfo{axisTypeContracting, i}
+			return axisInfo{AxisTypeContracting, i}
 		}
 	}
-	return axisInfo{axisTypeCross, -1}
+	return axisInfo{AxisTypeCross, -1}
 }
 
 // MergeAxes checks if adjacent axes in lhs and rhs are used for the same purpose
@@ -109,14 +107,13 @@ func getAxisInfo(axis int, batchAxes, contractingAxes []int) axisInfo {
 // This simplifies the shape of the tensors, making it more likely that the
 // operation can be matched to a fast execution path (like SmallMatMul or Packgemm).
 //
-// It returns the reshaped lhs and rhs, the new contracting and batch axes, and a function
-// to revert the merging on the final result.
+// It returns the reshaped lhs and rhs, the new contracting and batch axes.
 func MergeAxes(f *gobackend.Function,
 	lhs *gobackend.Node, lhsContractingAxes, lhsBatchAxes []int,
 	rhs *gobackend.Node, rhsContractingAxes, rhsBatchAxes []int) (
 	newLhs *gobackend.Node, newLhsContractingAxes, newLhsBatchAxes []int,
 	newRhs *gobackend.Node, newRhsContractingAxes, newRhsBatchAxes []int,
-	revertFn revertMergeAxesFunc, err error) {
+	err error) {
 
 	lhsRank := lhs.Shape.Rank()
 	rhsRank := rhs.Shape.Rank()
@@ -133,9 +130,9 @@ func MergeAxes(f *gobackend.Function,
 			canMerge := false
 			if infoPrev.typ == infoCurr.typ {
 				switch infoPrev.typ {
-				case axisTypeCross:
+				case AxisTypeCross:
 					canMerge = true
-				case axisTypeBatch:
+				case AxisTypeBatch:
 					// Batch axes must be adjacent in the axes list and in correct order.
 					if infoCurr.idx == infoPrev.idx+1 {
 						rhsPrev := rhsBatchAxes[infoPrev.idx]
@@ -145,7 +142,7 @@ func MergeAxes(f *gobackend.Function,
 							canMerge = true
 						}
 					}
-				case axisTypeContracting:
+				case AxisTypeContracting:
 					// Contracting axes must map to adjacent physical axes in RHS.
 					rhsPrev := rhsContractingAxes[infoPrev.idx]
 					rhsCurr := rhsContractingAxes[infoCurr.idx]
@@ -179,9 +176,9 @@ func MergeAxes(f *gobackend.Function,
 			canMerge := false
 			if infoPrev.typ == infoCurr.typ {
 				switch infoPrev.typ {
-				case axisTypeCross:
+				case AxisTypeCross:
 					canMerge = true
-				case axisTypeBatch:
+				case AxisTypeBatch:
 					// Check if LHS merged them
 					if infoCurr.idx == infoPrev.idx+1 {
 						lhsPrev := lhsBatchAxes[infoPrev.idx]
@@ -190,7 +187,7 @@ func MergeAxes(f *gobackend.Function,
 							canMerge = true
 						}
 					}
-				case axisTypeContracting:
+				case AxisTypeContracting:
 					// Check if LHS merged them
 					lhsPrev := lhsContractingAxes[infoPrev.idx]
 					lhsCurr := lhsContractingAxes[infoCurr.idx]
@@ -240,7 +237,7 @@ func MergeAxes(f *gobackend.Function,
 	if len(newLhsDims) != lhsRank {
 		reshaped, err := f.Reshape(lhs, newLhsDims...)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, err
 		}
 		newLhs = reshaped.(*gobackend.Node)
 	}
@@ -249,7 +246,7 @@ func MergeAxes(f *gobackend.Function,
 	if len(newRhsDims) != rhsRank {
 		reshaped, err := f.Reshape(rhs, newRhsDims...)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, err
 		}
 		newRhs = reshaped.(*gobackend.Node)
 	}
@@ -284,12 +281,116 @@ func MergeAxes(f *gobackend.Function,
 		}
 	}
 
-	// Provide revert function
-	revertFn = func(result *gobackend.Node) (*gobackend.Node, error) {
-		return result, nil // This will be wrapped by the caller to reshape to the original dimensions
+	return newLhs, newLhsContractingAxes, newLhsBatchAxes,
+		newRhs, newRhsContractingAxes, newRhsBatchAxes, nil
+}
+
+// transposeSide is a helper to transpose one side to a specific ordering of (batch, cross, contracting).
+func transposeSide(f *gobackend.Function, node *gobackend.Node, contractingAxes, batchAxes []int, layout Layout) (*gobackend.Node, []int, []int, error) {
+	rank := node.Shape.Rank()
+	isContracting := make([]bool, rank)
+	for _, axis := range contractingAxes {
+		isContracting[axis] = true
+	}
+	isBatch := make([]bool, rank)
+	for _, axis := range batchAxes {
+		isBatch[axis] = true
+	}
+
+	crossAxes := make([]int, 0, rank)
+	for axis := 0; axis < rank; axis++ {
+		if !isContracting[axis] && !isBatch[axis] {
+			crossAxes = append(crossAxes, axis)
+		}
+	}
+
+	var perm []int
+	switch layout {
+	case LayoutTransposed:
+		// Batch, Cross, Contracting
+		perm = append(perm, batchAxes...)
+		perm = append(perm, crossAxes...)
+		perm = append(perm, contractingAxes...)
+	case LayoutNonTransposed:
+		// Batch, Contracting, Cross
+		perm = append(perm, batchAxes...)
+		perm = append(perm, contractingAxes...)
+		perm = append(perm, crossAxes...)
+	default:
+		return nil, nil, nil, errors.Errorf("unsupported layout %v in transposeSide", layout)
+	}
+
+	// Check if already in order
+	alreadyInOrder := true
+	for i, p := range perm {
+		if p != i {
+			alreadyInOrder = false
+			break
+		}
+	}
+
+	newNode := node
+	if !alreadyInOrder {
+		transposed, err := f.Transpose(node, perm...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		newNode = transposed.(*gobackend.Node)
+	}
+
+	// Calculate new axes
+	newBatchAxes := make([]int, len(batchAxes))
+	for i := range batchAxes {
+		newBatchAxes[i] = i
+	}
+
+	newContractingAxes := make([]int, len(contractingAxes))
+	if layout == LayoutTransposed {
+		start := len(batchAxes) + len(crossAxes)
+		for i := range contractingAxes {
+			newContractingAxes[i] = start + i
+		}
+	} else {
+		start := len(batchAxes)
+		for i := range contractingAxes {
+			newContractingAxes[i] = start + i
+		}
+	}
+
+	return newNode, newContractingAxes, newBatchAxes, nil
+}
+
+// TransposeToLayout attempts to transpose the axes of lhs and rhs to match a the given layout: LayoutTransposed or LayoutNonTranposed.
+//
+// Consider running MergeAxes first, it will make the transposing faster.
+func TransposeToLayout(f *gobackend.Function,
+	lhs *gobackend.Node, lhsContractingAxes, lhsBatchAxes []int,
+	rhs *gobackend.Node, rhsContractingAxes, rhsBatchAxes []int,
+	layout Layout) (
+	newLhs *gobackend.Node, newLhsContractingAxes, newLhsBatchAxes []int,
+	newRhs *gobackend.Node, newRhsContractingAxes, newRhsBatchAxes []int,
+	err error) {
+
+	newLhs, newLhsContractingAxes, newLhsBatchAxes, err = transposeSide(f, lhs, lhsContractingAxes, lhsBatchAxes, LayoutTransposed)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+
+	newRhs, newRhsContractingAxes, newRhsBatchAxes, err = transposeSide(f, rhs, rhsContractingAxes, rhsBatchAxes, layout)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+
+	// Merge axes
+	newLhs, newLhsContractingAxes, newLhsBatchAxes,
+		newRhs, newRhsContractingAxes, newRhsBatchAxes, err = MergeAxes(
+		f, newLhs, newLhsContractingAxes, newLhsBatchAxes,
+		newRhs, newRhsContractingAxes, newRhsBatchAxes)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	return newLhs, newLhsContractingAxes, newLhsBatchAxes,
 		newRhs, newRhsContractingAxes, newRhsBatchAxes,
-		revertFn, nil
+		nil
 }

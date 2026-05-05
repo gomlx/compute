@@ -145,67 +145,6 @@ func TestDotGeneral_LargeShapesAndCopy(t *testing.T) {
 	}
 }
 
-func TestDotGeneral_SmallNormalize(t *testing.T) {
-	if _, ok := backend.(*gobackend.Backend); !ok {
-		t.Skip("Skipping test because backend is not a SimpleGo Backend")
-	}
-
-	// Test #1: batch axes are out-of-order.
-	{
-		dtype := dtypes.Float64
-		sourceShape := shapes.Make(dtype, 2, 1, 3)
-		contractingAxes := []int{1}
-		batchAxes := []int{2, 0}
-		batchSize, crossSize, contractingSize, crossDims := support.DotGeneralFindSizes(sourceShape, contractingAxes, batchAxes)
-		if batchSize != 6 {
-			t.Fatalf("Expected batchSize 6, got %d", batchSize)
-		}
-		if crossSize != 1 {
-			t.Fatalf("Expected crossSize 1, got %d", crossSize)
-		}
-		if contractingSize != 1 {
-			t.Fatalf("Expected contractingSize 1, got %d", contractingSize)
-		}
-		if len(crossDims) != 0 {
-			t.Fatalf("Expected crossDims length 0, got %d", len(crossDims))
-		}
-
-		// Create the source buffer.
-		sourceIf, sourceFlatAny, err := backend.NewSharedBuffer(0, sourceShape)
-		if err != nil {
-			t.Fatalf("Failed: %+v", err)
-		}
-		source := sourceIf.(*gobackend.Buffer)
-		sourceFlat := sourceFlatAny.([]float64)
-		for i := range sourceFlat {
-			sourceFlat[i] = float64(i + 1)
-		}
-		tmpAny, tmpErr := dot.NormalizeShapeDTypeMap.Get(dtype)
-		if tmpErr != nil {
-			panic(tmpErr)
-		}
-		normalizeFn := tmpAny.(func(backend *gobackend.Backend, source *gobackend.Buffer, info *dot.NormalizationInfo, batchSize, crossSize, contractingSize int) *gobackend.Buffer)
-		info := dot.NormalizePrepare(source.RawShape, contractingAxes, batchAxes)
-		output := normalizeFn(
-			backend.(*gobackend.Backend),
-			source,
-			info,
-			batchSize,
-			crossSize,
-			contractingSize,
-		)
-		if output == nil {
-			t.Fatalf("Expected non-nil value")
-		}
-		if err := output.RawShape.Check(dtype, batchSize, crossSize, contractingSize); err != nil {
-			t.Fatalf("Check failed: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual([]float64{1, 4, 2, 5, 3, 6}, output.Flat.([]float64)); !ok {
-			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
-		}
-	}
-}
-
 func TestDotGeneral_ForcePaths(t *testing.T) {
 	goBackend, ok := backend.(*gobackend.Backend)
 	if !ok {
@@ -221,7 +160,7 @@ func TestDotGeneral_ForcePaths(t *testing.T) {
 	rhs := [][][]float32{{{1, 1}, {1, 1}, {1, 1}}}
 	want := [][]float32{{1, 4}, {2, 5}, {3, 6}}
 
-	for _, execPath := range []dot.ExecutionPath{dot.NormalizedPath, dot.BlockedPath, dot.SmallMatMulPath, dot.PackgemmPath, dot.HighwayPath, dot.CheckPath} {
+	for _, execPath := range []dot.ExecutionPath{dot.SmallTransposedPath, dot.BlockedPath, dot.SmallMatMulPath, dot.PackgemmPath, dot.HighwayPath, dot.CheckPath} {
 		if execPath == dot.PackgemmPath && (!goBackend.EnablePackgemm || !packgemm.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
 			continue
 		}
@@ -280,7 +219,7 @@ func TestIsMatMulOrder(t *testing.T) {
 	}
 }
 
-func TestDgUseSmallMatMul(t *testing.T) {
+func TestUseSmallMatMul(t *testing.T) {
 	t.Run("ThresholdBoundaries", func(t *testing.T) {
 		testCases := []struct {
 			name            string
@@ -298,10 +237,10 @@ func TestDgUseSmallMatMul(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				lhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.lhsCrossSize, tc.contractingSize)
-				rhsShape := shapes.Make(dtypes.Float32, tc.batchSize, tc.contractingSize, tc.rhsCrossSize)
-
 				params := &dot.NodeData{
+					Layout:             dot.LayoutNonTransposed,
+					InputDType:         dtypes.Float32,
+					OutputDType:        dtypes.Float32,
 					LHSContractingAxes: []int{2},
 					LHSBatchAxes:       []int{0},
 					RHSContractingAxes: []int{1},
@@ -312,9 +251,9 @@ func TestDgUseSmallMatMul(t *testing.T) {
 					ContractingSize:    tc.contractingSize,
 				}
 
-				got := dot.UseSmallMatMul(dtypes.Float32, lhsShape, rhsShape, params)
+				got := dot.UseSmallMatMul(params)
 				if got != tc.want {
-					t.Errorf("dgCanUseSmallMatMul with batch=%d, M=%d, N=%d, K=%d: got %v, want %v",
+					t.Errorf("UseSmallMatMul with batch=%d, M=%d, N=%d, K=%d: got %v, want %v",
 						tc.batchSize, tc.lhsCrossSize, tc.rhsCrossSize, tc.contractingSize, got, tc.want)
 				}
 			})

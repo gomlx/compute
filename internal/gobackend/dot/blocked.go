@@ -50,14 +50,14 @@ func init() {
 
 // SetBlockedParams is a helper for setting the parameters needed for the blocked DotGeneral execution path.
 // Call this is committed to use the blocked path.
-func (d *NodeData) SetBlockedParams(inputDType, outputDType dtypes.DType) {
-	blockLog2Dim := DotGeneralTargetBlockLog2Dim[inputDType]
+func (d *NodeData) SetBlockedParams() {
+	blockLog2Dim := DotGeneralTargetBlockLog2Dim[d.InputDType]
 	d.LHSBlockedShape = CreateBlockedShape(
-		inputDType, d.BatchSize, d.LHSCrossSize, d.ContractingSize, blockLog2Dim)
+		d.InputDType, d.BatchSize, d.LHSCrossSize, d.ContractingSize, blockLog2Dim)
 	d.RHSBlockedShape = CreateBlockedShape(
-		inputDType, d.BatchSize, d.RHSCrossSize, d.ContractingSize, blockLog2Dim)
+		d.InputDType, d.BatchSize, d.RHSCrossSize, d.ContractingSize, blockLog2Dim)
 	d.OutputBlockedShape = CreateBlockedShape(
-		outputDType, d.BatchSize, d.LHSCrossSize, d.RHSCrossSize, blockLog2Dim)
+		d.OutputDType, d.BatchSize, d.LHSCrossSize, d.RHSCrossSize, blockLog2Dim)
 }
 
 // setDotGeneralTargetBlockSize sets the target block size for DotGeneral.

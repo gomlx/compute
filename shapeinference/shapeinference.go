@@ -425,28 +425,6 @@ func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape,
 	return
 }
 
-// BroadcastOp adds the prefixDims to the start of the shape.
-func BroadcastOp(operand shapes.Shape, prefixDims []int) (output shapes.Shape, err error) {
-	if operand.DType == dtypes.InvalidDType {
-		err = errors.Errorf("invalid shape %s for BroadcastOp", operand)
-		return
-	}
-	if len(prefixDims) == 0 {
-		return operand, nil
-	}
-	for _, dim := range prefixDims {
-		if dim <= 0 {
-			err = errors.Errorf("Invalid prefix dimensions %v for BroadcastOp, they must be positive", prefixDims)
-			return
-		}
-	}
-	output = shapes.Make(operand.DType)
-	output.Dimensions = make([]int, len(prefixDims)+operand.Rank())
-	copy(output.Dimensions, prefixDims)
-	copy(output.Dimensions[len(prefixDims):], operand.Dimensions)
-	return
-}
-
 // BroadcastInDimOp verifies that the arguments are valid. The output shape is already known, so nothing is returned.
 func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) error {
 	if len(broadcastAxes) != operand.Rank() {

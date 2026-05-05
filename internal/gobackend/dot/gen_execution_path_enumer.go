@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _ExecutionPathName = "AutoSelectPathNormalizedPathBlockedPathSmallMatMulPathPackgemmPathHighwayPathCheckPath"
+const _ExecutionPathName = "AutoSelectPathSmallTransposedPathBlockedPathSmallMatMulPathPackgemmPathHighwayPathCheckPath"
 
-var _ExecutionPathIndex = [...]uint8{0, 14, 28, 39, 54, 66, 77, 86}
+var _ExecutionPathIndex = [...]uint8{0, 14, 33, 44, 59, 71, 82, 91}
 
-const _ExecutionPathLowerName = "autoselectpathnormalizedpathblockedpathsmallmatmulpathpackgemmpathhighwaypathcheckpath"
+const _ExecutionPathLowerName = "autoselectpathsmalltransposedpathblockedpathsmallmatmulpathpackgemmpathhighwaypathcheckpath"
 
 func (i ExecutionPath) String() string {
 	if i < 0 || i >= ExecutionPath(len(_ExecutionPathIndex)-1) {
@@ -25,7 +25,7 @@ func (i ExecutionPath) String() string {
 func _ExecutionPathNoOp() {
 	var x [1]struct{}
 	_ = x[AutoSelectPath-(0)]
-	_ = x[NormalizedPath-(1)]
+	_ = x[SmallTransposedPath-(1)]
 	_ = x[BlockedPath-(2)]
 	_ = x[SmallMatMulPath-(3)]
 	_ = x[PackgemmPath-(4)]
@@ -33,33 +33,33 @@ func _ExecutionPathNoOp() {
 	_ = x[CheckPath-(6)]
 }
 
-var _ExecutionPathValues = []ExecutionPath{AutoSelectPath, NormalizedPath, BlockedPath, SmallMatMulPath, PackgemmPath, HighwayPath, CheckPath}
+var _ExecutionPathValues = []ExecutionPath{AutoSelectPath, SmallTransposedPath, BlockedPath, SmallMatMulPath, PackgemmPath, HighwayPath, CheckPath}
 
 var _ExecutionPathNameToValueMap = map[string]ExecutionPath{
 	_ExecutionPathName[0:14]:       AutoSelectPath,
 	_ExecutionPathLowerName[0:14]:  AutoSelectPath,
-	_ExecutionPathName[14:28]:      NormalizedPath,
-	_ExecutionPathLowerName[14:28]: NormalizedPath,
-	_ExecutionPathName[28:39]:      BlockedPath,
-	_ExecutionPathLowerName[28:39]: BlockedPath,
-	_ExecutionPathName[39:54]:      SmallMatMulPath,
-	_ExecutionPathLowerName[39:54]: SmallMatMulPath,
-	_ExecutionPathName[54:66]:      PackgemmPath,
-	_ExecutionPathLowerName[54:66]: PackgemmPath,
-	_ExecutionPathName[66:77]:      HighwayPath,
-	_ExecutionPathLowerName[66:77]: HighwayPath,
-	_ExecutionPathName[77:86]:      CheckPath,
-	_ExecutionPathLowerName[77:86]: CheckPath,
+	_ExecutionPathName[14:33]:      SmallTransposedPath,
+	_ExecutionPathLowerName[14:33]: SmallTransposedPath,
+	_ExecutionPathName[33:44]:      BlockedPath,
+	_ExecutionPathLowerName[33:44]: BlockedPath,
+	_ExecutionPathName[44:59]:      SmallMatMulPath,
+	_ExecutionPathLowerName[44:59]: SmallMatMulPath,
+	_ExecutionPathName[59:71]:      PackgemmPath,
+	_ExecutionPathLowerName[59:71]: PackgemmPath,
+	_ExecutionPathName[71:82]:      HighwayPath,
+	_ExecutionPathLowerName[71:82]: HighwayPath,
+	_ExecutionPathName[82:91]:      CheckPath,
+	_ExecutionPathLowerName[82:91]: CheckPath,
 }
 
 var _ExecutionPathNames = []string{
 	_ExecutionPathName[0:14],
-	_ExecutionPathName[14:28],
-	_ExecutionPathName[28:39],
-	_ExecutionPathName[39:54],
-	_ExecutionPathName[54:66],
-	_ExecutionPathName[66:77],
-	_ExecutionPathName[77:86],
+	_ExecutionPathName[14:33],
+	_ExecutionPathName[33:44],
+	_ExecutionPathName[44:59],
+	_ExecutionPathName[59:71],
+	_ExecutionPathName[71:82],
+	_ExecutionPathName[82:91],
 }
 
 // ExecutionPathString retrieves an enum value from the enum constants string name.
