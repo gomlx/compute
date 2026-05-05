@@ -533,11 +533,11 @@ func TestCompiledClosureMultipleExecutions(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		inputBuf := &gobackend.Buffer{
-			RawShape: shapes.Make(dtypes.Float32, 2),
-			Flat:     tc.input,
-			InUse:    true,
+		inputBuf_compute, err := backend.BufferFromFlatData(0, tc.input, shapes.Make(dtypes.Float32, 2))
+		if err != nil {
+			t.Fatalf("BufferFromFlatData failed: %+v", err)
 		}
+		inputBuf := inputBuf_compute.(*gobackend.Buffer)
 
 		outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
 		if err != nil {

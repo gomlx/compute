@@ -283,11 +283,11 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 		return nil, errors.Errorf("flat ([%d]%s) and shape size (%d) mismatch for constant value",
 			flatLen, dtype, shape.Size())
 	}
-	data := &Buffer{
-		RawShape: shape,
-		Flat:     flat,
-		InUse:    true,
+	data, err := f.RawBuilder.Backend.GetBuffer(shape)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "Failed to allocated a buffer for Contant")
 	}
+	dtypes.CopyAnySlice(data.Flat, flat)
 	n, _ := f.GetOrCreateNode(compute.OpTypeConstant, shape, nil, data)
 	return n, nil
 }
