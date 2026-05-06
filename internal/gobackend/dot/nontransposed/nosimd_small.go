@@ -1,0 +1,288 @@
+package nontransposed
+
+import (
+	"github.com/gomlx/compute/dtypes"
+)
+
+// smallNoSIMDGeneric implements a non-SIMD matrix multiplication for the non-transposed layout.
+//
+// It is used for small inputs, where packing the data is not worth the cost.
+func smallNoSIMDGeneric[I, O dtypes.NumberNotComplex](
+	lhs, rhs []I,
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
+	output []O) {
+	lhsStride := contractingSize * lhsCrossSize
+	rhsStride := rhsCrossSize * contractingSize
+	outputStride := rhsCrossSize * lhsCrossSize
+
+	// Bounds check hint for the compiler: the hope is that the compile won't need to
+	// insert bounds checks inside the loops below.
+	//
+	// This should never happen.
+	if len(lhs) < lhsStride*batchSize || len(rhs) < rhsStride*batchSize || len(output) < outputStride*batchSize {
+		return
+	}
+
+	lhsBase, rhsBase, outputBase := 0, 0, 0
+	for range batchSize {
+		row := 0
+		// Main Loop: Process 3 rows at a time
+		for ; row+2 < lhsCrossSize; row += 3 {
+			// Pre-calculate base indices for the 3 LHS rows
+			lRow0Base := lhsBase + row*contractingSize
+			lRow1Base := lRow0Base + contractingSize
+			lRow2Base := lRow1Base + contractingSize
+
+			col := 0
+			// Main Tile: Process 4 columns at a time
+			for ; col+3 < rhsCrossSize; col += 4 {
+				var c00, c01, c02, c03 O
+				var c10, c11, c12, c13 O
+				var c20, c21, c22, c23 O
+
+				// rIdx tracks the current row in the RHS for these 4 columns
+				rIdx := rhsBase + col
+				for k := range contractingSize {
+
+					// Load RHS row segment
+					r0, r1, r2, r3 := rhs[rIdx], rhs[rIdx+1], rhs[rIdx+2], rhs[rIdx+3]
+
+					// Row 0
+					l0 := lhs[lRow0Base+k]
+					c00 += O(l0 * r0)
+					c01 += O(l0 * r1)
+					c02 += O(l0 * r2)
+					c03 += O(l0 * r3)
+					// Row 1
+					l1 := lhs[lRow1Base+k]
+					c10 += O(l1 * r0)
+					c11 += O(l1 * r1)
+					c12 += O(l1 * r2)
+					c13 += O(l1 * r3)
+					// Row 2
+					l2 := lhs[lRow2Base+k]
+					c20 += O(l2 * r0)
+					c21 += O(l2 * r1)
+					c22 += O(l2 * r2)
+					c23 += O(l2 * r3)
+
+					rIdx += rhsCrossSize
+				}
+
+				// Write 3x4 tile results
+				outputIdx0 := outputBase + row*rhsCrossSize + col
+				outputIdx1 := outputIdx0 + rhsCrossSize
+				outputIdx2 := outputIdx0 + 2*rhsCrossSize
+				output[outputIdx0] = c00
+				output[outputIdx0+1] = c01
+				output[outputIdx0+2] = c02
+				output[outputIdx0+3] = c03
+				output[outputIdx1] = c10
+				output[outputIdx1+1] = c11
+				output[outputIdx1+2] = c12
+				output[outputIdx1+3] = c13
+				output[outputIdx2] = c20
+				output[outputIdx2+1] = c21
+				output[outputIdx2+2] = c22
+				output[outputIdx2+3] = c23
+			}
+
+			// Columns-fringe: handle remaining columns for the current 3 rows
+			for ; col < rhsCrossSize; col++ {
+				var c0, c1, c2 O
+				rIdx := rhsBase + col
+				for k := range contractingSize {
+					rk := rhs[rIdx]
+					c0 += O(lhs[lRow0Base+k] * rk)
+					c1 += O(lhs[lRow1Base+k] * rk)
+					c2 += O(lhs[lRow2Base+k] * rk)
+					rIdx += rhsCrossSize
+				}
+				outputIdx := outputBase + row*rhsCrossSize + col
+				output[outputIdx] = c0
+				output[outputIdx+rhsCrossSize] = c1
+				output[outputIdx+2*rhsCrossSize] = c2
+			}
+		}
+
+		// Row-Fringe: Handle remaining rows (fewer than 3)
+		outputIdx := outputBase + row*rhsCrossSize
+		for ; row < lhsCrossSize; row++ {
+			for col := range rhsCrossSize {
+				var acc O
+				lhsIdx := lhsBase + row*contractingSize
+				rhsIdx0 := rhsBase + col
+				rhsIdx1 := rhsBase + col + rhsCrossSize
+				rhsIdx2 := rhsBase + col + 2*rhsCrossSize
+				rhsIdx3 := rhsBase + col + 3*rhsCrossSize
+				rhsStride := rhsCrossSize * 4
+				var contractingIdx int
+				for ; contractingIdx+3 < contractingSize; contractingIdx += 4 {
+					v0 := O(lhs[lhsIdx] * rhs[rhsIdx0])
+					v1 := O(lhs[lhsIdx+1] * rhs[rhsIdx1])
+					v2 := O(lhs[lhsIdx+2] * rhs[rhsIdx2])
+					v3 := O(lhs[lhsIdx+3] * rhs[rhsIdx3])
+					acc += v0 + v1 + v2 + v3
+					lhsIdx += 4
+					rhsIdx0 += rhsStride
+					rhsIdx1 += rhsStride
+					rhsIdx2 += rhsStride
+					rhsIdx3 += rhsStride
+				}
+				for ; contractingIdx < contractingSize; contractingIdx++ {
+					acc += O(lhs[lhsIdx] * rhs[rhsIdx0])
+					lhsIdx++
+					rhsIdx0 += rhsCrossSize
+				}
+				output[outputIdx] = acc
+				outputIdx++
+			}
+		}
+
+		lhsBase += lhsStride
+		rhsBase += rhsStride
+		outputBase += outputStride
+	}
+}
+
+// smallNoSIMDHalfPrecision implements a non-SIMD matrix multiplication for the non-transposed layout for
+// half-precision numbers.
+//
+// It is used for small inputs, where packing the data is not worth the cost.
+func smallNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O float32 | float64](
+	lhs, rhs []I,
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
+	output []O) {
+	lhsStride := contractingSize * lhsCrossSize
+	rhsStride := rhsCrossSize * contractingSize
+	outputStride := rhsCrossSize * lhsCrossSize
+
+	// Bounds check hint for the compiler: the hope is that the compile won't need to
+	// insert bounds checks inside the loops below.
+	//
+	// This should never happen.
+	if len(lhs) < lhsStride*batchSize || len(rhs) < rhsStride*batchSize || len(output) < outputStride*batchSize {
+		return
+	}
+
+	lhsBase, rhsBase, outputBase := 0, 0, 0
+	for range batchSize {
+		row := 0
+		// Main Loop: Process 3 rows at a time
+		for ; row+2 < lhsCrossSize; row += 3 {
+			// Pre-calculate base indices for the 3 LHS rows
+			lRow0Base := lhsBase + row*contractingSize
+			lRow1Base := lRow0Base + contractingSize
+			lRow2Base := lRow1Base + contractingSize
+
+			col := 0
+			// Main Tile: Process 4 columns at a time
+			for ; col+3 < rhsCrossSize; col += 4 {
+				var c00, c01, c02, c03 O
+				var c10, c11, c12, c13 O
+				var c20, c21, c22, c23 O
+
+				// rIdx tracks the current row in the RHS for these 4 columns
+				rIdx := rhsBase + col
+				for k := range contractingSize {
+
+					// Load RHS row segment
+					r0, r1, r2, r3 := rhs[rIdx].Float32(), rhs[rIdx+1].Float32(), rhs[rIdx+2].Float32(), rhs[rIdx+3].Float32()
+
+					// Row 0
+					l0 := lhs[lRow0Base+k].Float32()
+					c00 += O(l0 * r0)
+					c01 += O(l0 * r1)
+					c02 += O(l0 * r2)
+					c03 += O(l0 * r3)
+					// Row 1
+					l1 := lhs[lRow1Base+k].Float32()
+					c10 += O(l1 * r0)
+					c11 += O(l1 * r1)
+					c12 += O(l1 * r2)
+					c13 += O(l1 * r3)
+					// Row 2
+					l2 := lhs[lRow2Base+k].Float32()
+					c20 += O(l2 * r0)
+					c21 += O(l2 * r1)
+					c22 += O(l2 * r2)
+					c23 += O(l2 * r3)
+
+					rIdx += rhsCrossSize
+				}
+
+				// Write 3x4 tile results
+				outputIdx0 := outputBase + row*rhsCrossSize + col
+				outputIdx1 := outputIdx0 + rhsCrossSize
+				outputIdx2 := outputIdx0 + 2*rhsCrossSize
+				output[outputIdx0] = c00
+				output[outputIdx0+1] = c01
+				output[outputIdx0+2] = c02
+				output[outputIdx0+3] = c03
+				output[outputIdx1] = c10
+				output[outputIdx1+1] = c11
+				output[outputIdx1+2] = c12
+				output[outputIdx1+3] = c13
+				output[outputIdx2] = c20
+				output[outputIdx2+1] = c21
+				output[outputIdx2+2] = c22
+				output[outputIdx2+3] = c23
+			}
+
+			// Columns-fringe: handle remaining columns for the current 3 rows
+			for ; col < rhsCrossSize; col++ {
+				var c0, c1, c2 O
+				rIdx := rhsBase + col
+				for k := range contractingSize {
+					rk := rhs[rIdx].Float32()
+					c0 += O(lhs[lRow0Base+k].Float32() * rk)
+					c1 += O(lhs[lRow1Base+k].Float32() * rk)
+					c2 += O(lhs[lRow2Base+k].Float32() * rk)
+					rIdx += rhsCrossSize
+				}
+				outputIdx := outputBase + row*rhsCrossSize + col
+				output[outputIdx] = c0
+				output[outputIdx+rhsCrossSize] = c1
+				output[outputIdx+2*rhsCrossSize] = c2
+			}
+		}
+
+		// Row-Fringe: Handle remaining rows (fewer than 3)
+		outputIdx := outputBase + row*rhsCrossSize
+		for ; row < lhsCrossSize; row++ {
+			for col := range rhsCrossSize {
+				var acc O
+				lhsIdx := lhsBase + row*contractingSize
+				rhsIdx0 := rhsBase + col
+				rhsIdx1 := rhsBase + col + rhsCrossSize
+				rhsIdx2 := rhsBase + col + 2*rhsCrossSize
+				rhsIdx3 := rhsBase + col + 3*rhsCrossSize
+				rhsStride := rhsCrossSize * 4
+				var contractingIdx int
+				for ; contractingIdx+3 < contractingSize; contractingIdx += 4 {
+					v0 := O(lhs[lhsIdx].Float32() * rhs[rhsIdx0].Float32())
+					v1 := O(lhs[lhsIdx+1].Float32() * rhs[rhsIdx1].Float32())
+					v2 := O(lhs[lhsIdx+2].Float32() * rhs[rhsIdx2].Float32())
+					v3 := O(lhs[lhsIdx+3].Float32() * rhs[rhsIdx3].Float32())
+					acc += v0 + v1 + v2 + v3
+					lhsIdx += 4
+					rhsIdx0 += rhsStride
+					rhsIdx1 += rhsStride
+					rhsIdx2 += rhsStride
+					rhsIdx3 += rhsStride
+				}
+				for ; contractingIdx < contractingSize; contractingIdx++ {
+					acc += O(lhs[lhsIdx].Float32() * rhs[rhsIdx0].Float32())
+					lhsIdx++
+					rhsIdx0 += rhsCrossSize
+				}
+				output[outputIdx] = acc
+				outputIdx++
+			}
+		}
+
+		lhsBase += lhsStride
+		rhsBase += rhsStride
+		outputBase += outputStride
+	}
+}

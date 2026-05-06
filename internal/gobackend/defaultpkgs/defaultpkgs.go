@@ -13,4 +13,7 @@ import (
 
 	// Optimization passes:
 	_ "github.com/gomlx/compute/internal/gobackend/passes"
+
+	// DotGeneral implementations:
+	_ "github.com/gomlx/compute/internal/gobackend/dot/nontransposed"
 )
