@@ -94,14 +94,13 @@ type DTypePairMap struct {
 //
 // Similar to NewDTypeMap, you can add annotations to generate code to register generic functions. Example:
 //
-//	//gobackend:dtypemap_pair execConvertDTypeGeneric ints,uints,floats ints,uints,floats
-//	//gobackend:dtypemap_pair execConvertDTypeToBFloat16 ints,uints,floats bf16
-//	//gobackend:dtypemap_pair execConvertDTypeFromBFloat16 bf16 ints,uints,floats
-//	//gobackend:dtypemap_pair execConvertDTypeToFloat16 ints,uints,floats f16
-//	//gobackend:dtypemap_pair execConvertDTypeFromFloat16 f16 ints,uints,floats
-//	//gobackend:dtypemap_pair execConvertDTypeToBool ints,uints,floats bool
-//	//gobackend:dtypemap_pair execConvertDTypeFromBool bool ints,uints,floats
-//	var ConvertDTypePairMap = NewDTypePairMap("ConvertDType")
+//	//gobackend:dtypemap_pair callImplementationGeneric ints same
+//	//gobackend:dtypemap_pair callImplementationGeneric ints int32,int64
+//	//gobackend:dtypemap_pair callImplementationGeneric uints same
+//	//gobackend:dtypemap_pair callImplementationGeneric uints uint32,uint64
+//	//gobackend:dtypemap_pair callImplementationGeneric floats floats
+//	//gobackend:dtypemap_pair callImplementationGeneric half float32
+//	callImplementationDTypePairMap = gobackend.NewDTypePairMap("callImplementationGeneric")
 func NewDTypePairMap(name string) *DTypePairMap {
 	return &DTypePairMap{
 		Name: name,
