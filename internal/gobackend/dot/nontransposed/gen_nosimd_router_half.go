@@ -27,10 +27,19 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 	// 2. Check if small matrix multiplication kernel can be used.
 	flopsPerMatrix := lhsCrossSize * rhsCrossSize * contractingSize
 	flops := batchSize * flopsPerMatrix
-	if !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold) {
-		klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
-		matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
-		matricesPerWorker = min(matricesPerWorker, batchSize)
+	_ = flops
+	// if !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold) {
+	klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
+	matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
+	matricesPerWorker = min(matricesPerWorker, batchSize)
+	if matricesPerWorker < 2 {
+		// The overhead of distributing the processing is not worth it:
+		//alt:generic smallNoSIMDGeneric(
+		smallNoSIMDHalfPrecision( //alt:half
+			lhs, rhs,
+			0, batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+			output)
+	} else {
 		//alt:generic smallNoSIMDGenericParallel(
 		smallNoSIMDHalfPrecisionParallel( //alt:half
 			lhs, rhs,
@@ -38,7 +47,7 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 			output, pool, matricesPerWorker)
 	}
 
-	klog.V(1).Infof("Using large variant for NonTransposed non-SIMD dot-product kernel")
+	// klog.V(1).Infof("Using large variant for NonTransposed non-SIMD dot-product kernel")
 	// return basicSymmetricGenericLargeGEMMParallel(
 	// 	alpha, beta,
 	// 	lhsFlat, rhsFlat, outputFlat,
@@ -46,11 +55,4 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 	// 	lhsBatchStride, rhsBatchStride, outputBatchStride,
 	// 	bufAllocFn, bufReleaseFn,
 	// 	pool)
-	matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
-	matricesPerWorker = min(matricesPerWorker, batchSize)
-	//alt:generic smallNoSIMDGenericParallel(
-	smallNoSIMDHalfPrecisionParallel( //alt:half
-		lhs, rhs,
-		batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-		output, pool, matricesPerWorker)
 }
