@@ -47,6 +47,8 @@ func init() {
 	}
 }
 
+// NodeData associated to a DotGeneral Node: gathered during graph building, it should include
+// all the information needed to execute it.
 type NodeData struct {
 	InputDType, OutputDType                                dtypes.DType
 	Config                                                 compute.DotGeneralConfig
