@@ -59,7 +59,12 @@ type NodeData struct {
 	LHSBlockedShape, RHSBlockedShape, OutputBlockedShape   shapes.Shape
 
 	// execPath determines which execution strategy to use. Decided at graph-build time.
+	// Deprecated: use implementation instead.
 	execPath ExecutionPath
+
+	// Implementation for current layout.
+	// This is exclusive to execPath, and meant to replace it.
+	implementation *ImplementationRegistration
 }
 
 // EqualNodeData implements nodeDataComparable for dotGeneralNodeData.
@@ -105,17 +110,6 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 		// We could have gotten from lhs or rhs, they must match.
 		d.ContractingSize = lhsShape.Dimensions[d.LHSContractingAxes[0]]
 	}
-}
-
-// adjustAxisToRank returns a positive axis, adjusting negative numbers to the correct rank.
-func adjustAxisToRank(rank, axis int) (int, error) {
-	if axis < 0 {
-		axis += rank
-	}
-	if axis < 0 || axis >= rank {
-		return -1, errors.Errorf("axis %d is out of range [0, %d)", axis, rank)
-	}
-	return axis, nil
 }
 
 // SetBackendOption process the configuration options for DotGeneral.
@@ -205,7 +199,7 @@ func DotGeneral(f *gobackend.Function,
 		return nil, err
 	}
 
-	// Only for half-types inputs we always output Float32 for the "normalized" dot-general.
+	// Only for half-types inputs we always output (accumulator dtype) Float32 for the "normalized" dot-general.
 	if params.InputDType.IsHalfPrecision() {
 		params.OutputDType = dtypes.Float32
 	}
@@ -222,42 +216,53 @@ func DotGeneral(f *gobackend.Function,
 	// there is at most one axis of each type.
 	params.SetSizes(lhs.Shape, rhs.Shape)
 
-	// Select execution path at build time based on problem size and matrix layout.
-	// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
-	params.execPath = selectExecPath(f.RawBuilder.Backend, params)
-	if params.execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed {
-		// The "SmallTransposedPath" takes as input LayoutTransposed, we are forced to transpose the RHS.
-		klog.V(1).Info("DotGeneral selecte SmallTransposedPath, transposing to required LayoutTransposed")
-		rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = transposeSide(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes, LayoutTransposed)
-		if err != nil {
-			return nil, err
+	// Find a registered implementation for the current layout.
+	inputs := []*gobackend.Node{lhs, rhs}
+	params.implementation = FindRegisteredImplementation(params.Layout, params.InputDType, params.OutputDType)
+	if klog.V(1).Enabled() {
+		if params.implementation != nil {
+			klog.Infof("Using DotGeneral implementation %q for layout=%s and dtypes=%s,%s",
+				params.implementation.name, params.Layout, params.InputDType, params.OutputDType)
+		} else {
+			klog.Infof("No registered DotGeneral implementation found for layout=%s and dtypes=%s,%s",
+				params.Layout, params.InputDType, params.OutputDType)
+
 		}
-		params.Layout = LayoutTransposed
 	}
-	klog.V(1).Infof("DotGeneral execPath for %s layout: %s\n", params.Layout, params.execPath)
+	if params.implementation == nil {
+		// Backoff to deprecated implementations.
 
-	// For blockedPath, pre-block BOTH inputs at graph-build time.
-	// This allows deduplication: if the same tensor is used in multiple DotGenerals,
-	// the blocking is done once and shared.
-	var lhsBlocked, rhsBlocked *gobackend.Node
-	if params.execPath == BlockedPath || params.execPath == CheckPath {
-		params.SetBlockedParams()
-		lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-			params.BatchSize, params.LHSCrossSize, params.ContractingSize)
-		rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
-			params.BatchSize, params.RHSCrossSize, params.ContractingSize)
-	}
+		// Select execution path at build time based on problem size and matrix layout.
+		// This enables proper deduplication of pre-blocked inputs via getOrCreateNode.
+		params.execPath = selectExecPath(f.RawBuilder.Backend, params)
+		if params.execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed {
+			// The "SmallTransposedPath" takes as input LayoutTransposed, we are forced to transpose the RHS.
+			klog.V(1).Info("DotGeneral selecte SmallTransposedPath, transposing to required LayoutTransposed")
+			rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = transposeSide(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes, LayoutTransposed)
+			if err != nil {
+				return nil, err
+			}
+			params.Layout = LayoutTransposed
+			inputs = []*gobackend.Node{lhs, rhs}
+		}
+		klog.V(1).Infof("DotGeneral execPath for %s layout: %s\n", params.Layout, params.execPath)
 
-	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
-	var inputs []*gobackend.Node
-	switch params.execPath {
-	case BlockedPath:
-		inputs = []*gobackend.Node{lhsBlocked, rhsBlocked}
-	case CheckPath:
-		// Include inputs in both forms.
-		inputs = []*gobackend.Node{lhsBlocked, rhsBlocked, lhs, rhs}
-	default:
-		inputs = []*gobackend.Node{lhs, rhs}
+		// For blockedPath, pre-block BOTH inputs at graph-build time.
+		// This allows deduplication: if the same tensor is used in multiple DotGenerals,
+		// the blocking is done once and shared.
+		var lhsBlocked, rhsBlocked *gobackend.Node
+		if params.execPath == BlockedPath || params.execPath == CheckPath {
+			params.SetBlockedParams()
+			lhsBlocked = blockForDotGeneral(f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
+				params.BatchSize, params.LHSCrossSize, params.ContractingSize)
+			rhsBlocked = blockForDotGeneral(f, rhs, params.RHSContractingAxes, params.RHSBatchAxes,
+				params.BatchSize, params.RHSCrossSize, params.ContractingSize)
+			if params.execPath == CheckPath {
+				inputs = []*gobackend.Node{lhsBlocked, rhsBlocked, lhs, rhs}
+			} else {
+				inputs = []*gobackend.Node{lhsBlocked, rhsBlocked}
+			}
+		}
 	}
 
 	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
