@@ -8,8 +8,6 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
-	"github.com/gomlx/compute/internal/gobackend/workerspool"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -36,7 +34,7 @@ var (
 
 	// Minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	nosimdMinMatMulFlopsPerWorker = 1024
+	noSIMDMinMatMulFlopsPerWorker = 10 * 1024
 )
 
 func init() {
@@ -49,122 +47,51 @@ func RegisterNoSIMDForTests() {
 
 func registerNoSIMD(forTests bool) {
 	// DTypePairMap: callImplementationDTypePairMap (ints, same)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int16, noSIMDGeneric[int16, int16], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDGeneric[int32, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDGeneric[int64, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int8, noSIMDGeneric[int8, int8], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int16, noSIMDRouter[int16, int16], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int8, noSIMDRouter[int8, int8], gobackend.PriorityTyped, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (ints, int32,int64)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int32, noSIMDGeneric[int16, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int64, noSIMDGeneric[int16, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDGeneric[int32, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int64, noSIMDGeneric[int32, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int32, noSIMDGeneric[int64, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDGeneric[int64, int64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int32, noSIMDGeneric[int8, int32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int64, noSIMDGeneric[int8, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int32, noSIMDRouter[int16, int32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int16, dtypes.Int64, noSIMDRouter[int16, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int32, noSIMDRouter[int32, int32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int32, dtypes.Int64, noSIMDRouter[int32, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int32, noSIMDRouter[int64, int32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int64, dtypes.Int64, noSIMDRouter[int64, int64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int32, noSIMDRouter[int8, int32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Int8, dtypes.Int64, noSIMDRouter[int8, int64], gobackend.PriorityTyped, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (uints, same)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint16, noSIMDGeneric[uint16, uint16], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDGeneric[uint32, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDGeneric[uint64, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint8, noSIMDGeneric[uint8, uint8], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint16, noSIMDRouter[uint16, uint16], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint8, noSIMDRouter[uint8, uint8], gobackend.PriorityTyped, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (uints, uint32,uint64)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint32, noSIMDGeneric[uint16, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint64, noSIMDGeneric[uint16, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDGeneric[uint32, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint64, noSIMDGeneric[uint32, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint32, noSIMDGeneric[uint64, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDGeneric[uint64, uint64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint32, noSIMDGeneric[uint8, uint32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint64, noSIMDGeneric[uint8, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint32, noSIMDRouter[uint16, uint32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint16, dtypes.Uint64, noSIMDRouter[uint16, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint32, noSIMDRouter[uint32, uint32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint32, dtypes.Uint64, noSIMDRouter[uint32, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint32, noSIMDRouter[uint64, uint32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint64, dtypes.Uint64, noSIMDRouter[uint64, uint64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint32, noSIMDRouter[uint8, uint32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Uint8, dtypes.Uint64, noSIMDRouter[uint8, uint64], gobackend.PriorityTyped, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (floats, floats)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, noSIMDGeneric[float32, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float64, noSIMDGeneric[float32, float64], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float32, noSIMDGeneric[float64, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, noSIMDGeneric[float64, float64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, noSIMDRouter[float32, float32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float64, noSIMDRouter[float32, float64], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float32, noSIMDRouter[float64, float32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, noSIMDRouter[float64, float64], gobackend.PriorityTyped, forTests)
 
 	// DTypePairMap: callImplementationDTypePairMap (half, float32)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, noSIMDHalfPrecision[bfloat16.BFloat16, float32], gobackend.PriorityTyped, forTests)
-	dot.RegisterImplementation("no-simd-small", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, noSIMDHalfPrecision[float16.Float16, float32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32], gobackend.PriorityTyped, forTests)
+	dot.RegisterImplementation("no-simd", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, noSIMDHalfPrecisionRouter[float16.Float16, float32], gobackend.PriorityTyped, forTests)
 }
 
-// noSIMDGeneric implements a non-SIMD matrix multiplication for the non-transposed layout.
-//
-// It is used when no SIMD-optimized implementation is available, or for non-supported
-// dtype configuration.
-func noSIMDGeneric[I, O dtypes.NumberNotComplex](
-	lhs, rhs []I,
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O,
-	pool *workerspool.Pool) {
-
-	// 1. Resolve Strides
-
-	// 2. Check if small matrix multiplication kernel can be used.
-	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
-	if !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold) {
-		klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
-		smallNoSIMDGeneric(
-			lhs, rhs,
-			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-			output)
-	}
-
-	// klog.V(1).Infof("Using large variant for NonTransposed non-SIMD dot-product kernel")
-	// return basicSymmetricGenericLargeGEMMParallel(
-	// 	alpha, beta,
-	// 	lhsFlat, rhsFlat, outputFlat,
-	// 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-	// 	lhsBatchStride, rhsBatchStride, outputBatchStride,
-	// 	bufAllocFn, bufReleaseFn,
-	// 	pool)
-	smallNoSIMDGeneric(
-		lhs, rhs,
-		batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-		output)
-	_ = pool
-}
-
-// noSIMDHalfPrecision implements a non-SIMD matrix multiplication for the non-transposed layout for half-precision
-// numbers.
-//
-// It is used when no SIMD-optimized implementation is available, or for non-supported
-// dtype configuration.
-func noSIMDHalfPrecision[I dtypes.HalfPrecision[I], O float32 | float64](
-	lhs, rhs []I,
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O,
-	pool *workerspool.Pool) {
-
-	// 1. Resolve Strides
-
-	// 2. Check if small matrix multiplication kernel can be used.
-	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
-	if !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold) {
-		klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
-		smallNoSIMDHalfPrecision(
-			lhs, rhs,
-			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-			output)
-	}
-
-	// klog.V(1).Infof("Using large variant for NonTransposed non-SIMD dot-product kernel")
-	// return basicSymmetricGenericLargeGEMMParallel(
-	// 	alpha, beta,
-	// 	lhsFlat, rhsFlat, outputFlat,
-	// 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-	// 	lhsBatchStride, rhsBatchStride, outputBatchStride,
-	// 	bufAllocFn, bufReleaseFn,
-	// 	pool)
-	smallNoSIMDHalfPrecision(
-		lhs, rhs,
-		batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-		output)
-	_ = pool
-}
+// Auto-generate alternate specialized versions of noSIMD operations -- for half-precision input data types.
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_router.go -tags=half
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_small.go -tags=half
 
 /*
 func basicSymmetricGenericLargeGEMMParallel[T dtypes.Number](
