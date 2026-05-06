@@ -139,8 +139,9 @@ func (w *Pool) StartIfAvailable(task func()) bool {
 // Saturate fans out as many workers as available, each running the given task.
 // It keeps spawning workers if more workers become available.
 //
-// When the first task finishes, it indicates there is not more work to be done, and it
-// stops spawning new tasks.
+// Each task is expected to keep doing work until there nothing else to be done.
+// As soon as any task finishes, it indicates there is no more need for more task, and it
+// immediately stops spawning new tasks.
 //
 // It returns when all started tasks have finished.
 func (w *Pool) Saturate(task func()) {
