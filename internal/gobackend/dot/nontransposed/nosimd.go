@@ -220,19 +220,28 @@ func packRHS[T interface {
 	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
 		// How many columns valid in this strip?
 		validCols := min(RHSL1KernelCols, rhsCols-stripColIdx)
+		srcIdxBase := (srcRowStart * srcStrideCol) + srcColStart + stripColIdx
 
-		// Iterate over rows (k)
-		for row := range contractingRows {
-			srcRow := srcRowStart + row
-			srcColBase := srcColStart + stripColIdx
-			srcIdx := (srcRow * srcStrideCol) + srcColBase
-			// Copy valid columns
-			copy(dst[dstIdx:], src[srcIdx:srcIdx+validCols])
-			dstIdx += validCols
-			// Zero-pad if strip is incomplete (edge of matrix)
-			for c := validCols; c < RHSL1KernelCols; c++ {
-				dst[dstIdx] = T(0)
-				dstIdx++
+		if validCols == RHSL1KernelCols {
+			// Fast path: no zero padding needed
+			for range contractingRows {
+				// Copy valid columns
+				copy(dst[dstIdx:], src[srcIdxBase:srcIdxBase+validCols])
+				dstIdx += validCols
+				srcIdxBase += srcStrideCol
+			}
+		} else {
+			// Iterate over rows (k)
+			for range contractingRows {
+				// Copy valid columns
+				copy(dst[dstIdx:], src[srcIdxBase:srcIdxBase+validCols])
+				dstIdx += validCols
+				srcIdxBase += srcStrideCol
+				// Zero-pad if strip is incomplete (edge of matrix)
+				for c := validCols; c < RHSL1KernelCols; c++ {
+					dst[dstIdx] = T(0)
+					dstIdx++
+				}
 			}
 		}
 	}
@@ -255,23 +264,37 @@ func packLHS[T interface {
 	// Iterate over strips of height mr
 	for stripRowIdx := 0; stripRowIdx < lhsRows; stripRowIdx += lhsL1KernelRows {
 		validRows := min(lhsL1KernelRows, lhsRows-stripRowIdx)
+		srcIdxBase := ((srcRowStart + stripRowIdx) * srcRowStride) + srcColStart
 
-		// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
-		for col := range contractingCols {
-			srcCol := srcColStart + col
-			srcRowBase := srcRowStart + stripRowIdx
+		if validRows == lhsL1KernelRows {
+			// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
+			for col := range contractingCols {
+				srcIdx := srcIdxBase + col
 
-			// Copy valid "rows" (they are the last axis in the returned panel)
-			for row := range validRows {
-				srcIdx := ((srcRowBase + row) * srcRowStride) + srcCol
-				dst[dstIdx] = src[srcIdx]
-				dstIdx++
+				// Copy valid "rows" (they are the last axis in the returned panel)
+				for range validRows {
+					dst[dstIdx] = src[srcIdx]
+					dstIdx++
+					srcIdx += srcRowStride
+				}
 			}
+		} else {
+			// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
+			for col := range contractingCols {
+				srcIdx := srcIdxBase + col
 
-			// Zero-pad
-			for r := validRows; r < lhsL1KernelRows; r++ {
-				dst[dstIdx] = T(0)
-				dstIdx++
+				// Copy valid "rows" (they are the last axis in the returned panel)
+				for range validRows {
+					dst[dstIdx] = src[srcIdx]
+					dstIdx++
+					srcIdx += srcRowStride
+				}
+
+				// Zero-pad
+				for r := validRows; r < lhsL1KernelRows; r++ {
+					dst[dstIdx] = T(0)
+					dstIdx++
+				}
 			}
 		}
 	}
@@ -291,27 +314,17 @@ func noSIMDApplyPackedOutput[T dtypes.NumberNotComplex](
 	if isFirstContractingPanel {
 		// First contracting panel, so we overwrite to the output (as it may not have been zero-initialized).
 		for range height {
-			packedColIdx := packedRowIdx
-			outputColIdx := outputRowIdx
-			for range width {
-				val := packedOutput[packedColIdx]
-				packedColIdx++
-				output[outputColIdx] = val
-				outputColIdx++
-			}
+			copy(output[outputRowIdx:outputRowIdx+width], packedOutput[packedRowIdx:packedRowIdx+width])
 			packedRowIdx += packedOutputRowStride
 			outputRowIdx += outputRowStride
 		}
 	} else {
 		// Not the first contracting panel, so we need to add to the existing values.
 		for range height {
-			packedColIdx := packedRowIdx
-			outputColIdx := outputRowIdx
-			for range width {
-				val := packedOutput[packedColIdx]
-				packedColIdx++
-				output[outputColIdx] += val
-				outputColIdx++
+			packedSlice := packedOutput[packedRowIdx : packedRowIdx+width]
+			outputSlice := output[outputRowIdx : outputRowIdx+width]
+			for i, val := range packedSlice {
+				outputSlice[i] += val
 			}
 			packedRowIdx += packedOutputRowStride
 			outputRowIdx += outputRowStride
