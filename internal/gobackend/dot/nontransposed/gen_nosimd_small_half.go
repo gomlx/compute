@@ -6,7 +6,7 @@ package nontransposed
 
 import (
 	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/internal/gobackend/workerspool"
+	"github.com/gomlx/compute/internal/gobackend"
 )
 
 // smallNoSIMDGenericParallel implements a parallelized version of the non-SIMD matrix
@@ -14,9 +14,10 @@ import (
 //
 //alt:generic func smallNoSIMDGenericParallel[I, O dtypes.NumberNotComplex](
 func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+	backend *gobackend.Backend,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O, pool *workerspool.Pool, matricesPerTask int) {
+	output []O, matricesPerTask int) {
 
 	// Crate work that needs doing in a buffered channel.
 	type chunkData struct {
@@ -31,7 +32,7 @@ func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.Number
 	close(work)
 
 	// Execute the work in as many workers as available.
-	pool.Saturate(func() {
+	backend.Workers.Saturate(func() {
 		for chunk := range work {
 			//alt:generic smallNoSIMDGeneric(
 			smallNoSIMDHalfPrecision( //alt:half

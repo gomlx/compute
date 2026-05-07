@@ -8,6 +8,8 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
+	"github.com/gomlx/compute/shapes"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -92,344 +94,221 @@ func registerNoSIMD(forTests bool) {
 // Auto-generate alternate specialized versions of noSIMD operations -- for half-precision input data types.
 //go:generate go run ../../../cmd/alternates_generator -base=nosimd_router.go -tags=half
 //go:generate go run ../../../cmd/alternates_generator -base=nosimd_small.go -tags=half
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_large.go -tags=half
 
-/*
-func basicSymmetricGenericLargeGEMMParallel[T dtypes.Number](
-	alpha, beta T,
-	lhsFlat, rhsFlat []T, outputFlat []T,
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	lhsBatchStride, rhsBatchStride, outputBatchStride int,
-	bufAllocFn BufAllocFn[T], bufReleaseFn BufReleaseFn,
-	pool *workerspool.Pool) error {
-
-	params := &NoSIMD32Params
-
-	// Split work in reasonable number of "chunks".
-	maxWorkers := 1
-	if pool != nil {
-		maxWorkers = pool.AdjustedMaxParallelism()
+// GetBuffer simplifies the process of getting a buffer from a backend and getting the flat slice.
+func GetBuffer[T dtypes.Supported](backend *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
+	var err error
+	ref, err = backend.GetBuffer(shapes.Make(dtypes.FromGenericsType[T](), length))
+	if err != nil {
+		klog.Errorf("Failed to allocate buffer for DotGeneral, undefined values are returned: %+v", err)
+		return nil, nil, false
 	}
-	if maxWorkers <= 1 {
-		// Do everything sequentially.
-		packedLhsRef, packedLHS := bufAllocFn(params.LHSPanelCrossSize * params.PanelContractingSize)
-		packedRhsRef, packedRHS := bufAllocFn(params.PanelContractingSize * params.RHSPanelCrossSize)
-		packedOutRef, packedOutput := bufAllocFn(params.LHSPanelCrossSize * params.RHSPanelCrossSize)
-		defer func() {
-			bufReleaseFn(packedLhsRef)
-			bufReleaseFn(packedRhsRef)
-			bufReleaseFn(packedOutRef)
-		}()
-		for batchIdx := range batchSize {
-			batchLhs := lhsFlat[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
-			batchRhs := rhsFlat[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
-			batchOutput := outputFlat[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
-			basicSymmetricLargeGemmSlice(
-				alpha, beta,
-				batchLhs, batchRhs, batchOutput,
-				lhsCrossSize, rhsCrossSize, contractingSize,
-				NoSIMD32Params,
-				0, lhsCrossSize, 0, rhsCrossSize,
-				packedLHS, packedRHS, packedOutput,
-			)
-		}
-		return nil
-	}
-
-	// 1. Split work in workItems.
-	workChan := make(chan workItem, max(2000, 2*maxWorkers))
-	go feedWorkItems(
-		batchSize, lhsCrossSize, rhsCrossSize,
-		params, maxWorkers, workChan)
-
-	// 2. Saturate (fan-out workers) on workItems.
-	pool.Saturate(func() {
-		packedLhsRef, packedLHS := bufAllocFn(params.LHSPanelCrossSize * params.PanelContractingSize)
-		packedRhsRef, packedRHS := bufAllocFn(params.PanelContractingSize * params.RHSPanelCrossSize)
-		packedOutRef, packedOutput := bufAllocFn(params.LHSPanelCrossSize * params.RHSPanelCrossSize)
-		defer func() {
-			bufReleaseFn(packedLhsRef)
-			bufReleaseFn(packedRhsRef)
-			bufReleaseFn(packedOutRef)
-		}()
-
-		for item := range workChan {
-			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
-				batchLhs := lhsFlat[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
-				batchRhs := rhsFlat[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
-				batchOutput := outputFlat[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
-				basicSymmetricLargeGemmSlice(
-					alpha, beta,
-					batchLhs, batchRhs, batchOutput,
-					lhsCrossSize, rhsCrossSize, contractingSize,
-					NoSIMD32Params,
-					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
-					packedLHS, packedRHS, packedOutput,
-				)
-			}
-		}
-	})
-	return nil
+	flat = ref.Flat.([]T)
+	success = true
+	return
 }
 
-// basicSymmetricLargeGemmSlice performs a slice of the matrix multiplication on one example: lhs, rhs an output
-// must already have sliced one example of the batch dimension.
+// ReleaseBuffer releases a buffer obtained through GetBuffer.
+func ReleaseBuffer(ref *gobackend.Buffer) {
+	ref.Backend().(*gobackend.Backend).PutBuffer(ref)
+}
+
+// workItem is used when parallelizing the DotGeneral: it allows spliting the work into batch/lhs/rhs slices.
+type workItem struct {
+	batchStart, batchEnd,
+	lhsRowStart, lhsRowEnd,
+	rhsColStart, rhsColEnd int
+}
+
+// feedWorkItems split the matrix-multiplication tasks is "workItems" optimized (as large as possible, prioritizing whole batch items)
+// for maxWokers (>=1).
+// It closes workChan on exit.
 //
-// packedLHS and packedRHS must be pre-allocated buffers of appropriate size.
-func basicSymmetricLargeGemmSlice[T dtypes.Number](
-	alpha, beta T,
-	lhs, rhs, output []T,
-	lhsCrossSize, rhsCrossSize, contractingSize int,
-	params CacheParams,
-	rowStart, rowEnd, colStart, colEnd int,
-	packedLHS, packedRHS, packedOutput []T,
-) {
-	// Loop 5 (jc): Tiling N (Output Columns)
-	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
-		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
+// feedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
+func feedWorkItems(
+	batchSize, lhsCrossSize, rhsCrossSize int,
+	params *CacheParams,
+	maxWorkers int,
+	workChan chan<- workItem) {
+	defer func() {
+		// Invariant: it closes the channel on exit.
+		close(workChan)
+	}()
+	if batchSize >= 2*maxWorkers {
+		// Split the work on the batch dimension only.
+		batchStep := batchSize / maxWorkers
+		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
+			workChan <- workItem{
+				batchIdx, batchIdx + min(batchStep, batchSize-batchIdx),
+				0, lhsCrossSize,
+				0, rhsCrossSize}
+		}
+		return
+	}
 
-		// Loop 4 (p): Tiling K (Depth)
-		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
-			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-			packRHS(rhs, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+	// First maxWorkers batch examples are handled as one at a time:
+	batchIdx := 0
+	if batchSize >= maxWorkers {
+		for ; batchIdx < maxWorkers; batchIdx++ {
+			workChan <- workItem{
+				batchIdx, 1,
+				0, lhsCrossSize,
+				0, rhsCrossSize}
+		}
+	}
 
-			// Loop 3 (ic): Tiling M (Output Rows)
-			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
-				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
-
-				// PACK LHS
-				packLHS(lhs, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
-
-				basicSymmetricPanel(
-					packedLHS, packedRHS, packedOutput,
-					params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-					contractingPanelWidth,
-					lhsPanelHeight, rhsPanelWidth,
-				)
-
-				// Accumulate (or write) packedOutput to output.
-				effectiveBeta := beta
-				if contractingPanelIdx > 0 {
-					effectiveBeta = 1
-				}
-				applyPackedOutput(
-					packedOutput, output,
-					alpha, effectiveBeta,
-					params.RHSPanelCrossSize,
-					lhsPanelRowIdx, rhsPanelColIdx,
-					rhsCrossSize,
-					lhsPanelHeight, rhsPanelWidth)
+	// The remaining work is split into RHS or LHS slices.
+	batchCountRemaining := batchSize - batchIdx
+	if batchCountRemaining == 0 {
+		return // We are finished.
+	}
+	splitFactor := (maxWorkers + batchCountRemaining - 1) / batchCountRemaining
+	if lhsCrossSize > rhsCrossSize {
+		// Split on the LHS dimension, in multiples of LHSPanelCrossSize.
+		lhsSplitSize := (lhsCrossSize + splitFactor - 1) / splitFactor
+		lhsSplitSize = max(1, lhsSplitSize/params.LHSPanelCrossSize) * params.LHSPanelCrossSize
+		batchStart := batchIdx
+		for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
+			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
+				workChan <- workItem{
+					batchIdx, batchIdx + 1,
+					lhsRowIdx, lhsRowIdx + min(lhsSplitSize, lhsCrossSize-lhsRowIdx),
+					0, rhsCrossSize}
+			}
+		}
+	} else {
+		// Split on the RHS dimension, in multiples of RHSPanelCrossSize.
+		rhsSplitSize := (rhsCrossSize + splitFactor - 1) / splitFactor
+		rhsSplitSize = max(1, rhsSplitSize/params.RHSPanelCrossSize) * params.RHSPanelCrossSize
+		batchStart := batchIdx
+		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
+			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
+				workChan <- workItem{
+					batchIdx, batchIdx + 1,
+					0, lhsCrossSize,
+					rhsColIdx, rhsColIdx + min(rhsSplitSize, rhsCrossSize-rhsColIdx)}
 			}
 		}
 	}
 }
 
-// basicSymmetricPanel implements the gemm for a lhs and rhs packed panels
-// into an output panel, using packedOutput as intermediate.
+// packRHS packs a slice of size [contractingRows, rhsCols] block from RHS into
+// the panel reshaped+transposed to [ceil(rhsCols/RHSL1KernelCols), contractingRows, RHSL1KernelCols],
+// padding the cols of the last strip with zeros if necessary.
 //
-// It uses register blocking: it divides the 4x4 matrix in 4 4x4 sub-matrices.
-// For each sub-matrix it iterates over k (contracting dim), accumulating the results
-// in local variables (registers).
-// finally it writes the results to output.
-//
-// It assumes lhsL1KernelRows=4 and rhsL1KernelCols=4.
-//
-// See basicSymmetricMicroKernel for documentation on arguments.
-func basicSymmetricPanel[T dtypes.Number](
-	packedLHS, packedRHS []T,
-	packedOutput []T,
-	lhsPanelRows, rhsPanelCols int,
-	contractingLen int,
-	lhsActiveRows, rhsActiveCols int,
-) {
-	const kernelRows = 2
-	const kernelCols = 4
+//   - src: [contractingSize, rhsCrossSize]
+//   - dst: a slice with enough size to hold the panel
+//   - srcRowStart: start row in src
+//   - srcColStart: start col in src
+//   - srcStrideCol: stride of src
+//   - contractingRows: number of rows to be copied in the panel (must fit total panel allocated size)
+//   - rhsCols: number of columns to be copied in the panel (excluding padding), will be padded to a RHSL1KernelCols
+//     multiple with zeros.
+//   - RHSL1KernelCols: number of columns in each "L1 kernel"
+func packRHS[T interface {
+	dtypes.NumberNotComplex | dtypes.NumberHalfPrecision
+}](src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+	dstIdx := 0
+	// Iterate over strips of width nr
+	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
+		// How many columns valid in this strip?
+		validCols := min(RHSL1KernelCols, rhsCols-stripColIdx)
 
-	// BCE hints
-	_ = packedLHS[contractingLen]
-	_ = packedRHS[contractingLen]
-	_ = packedOutput[lhsPanelRows*rhsPanelCols-1]
-
-	// Strides in the packed buffers for one block.
-	lhsBlockStride := kernelRows * contractingLen
-	rhsBlockStride := kernelCols * contractingLen
-	lhsOffset := 0
-
-	// Write active part of 4x4 block to output
-	// Helper to write a row
-	// Write active part of 4x4 block to output
-	// Bounds check is not needed as packedOutput is allocated to panel size, and we will discard
-	// whatever is written beyond the active part.
-
-	for rowIdx := 0; rowIdx < lhsActiveRows; rowIdx += kernelRows {
-		rhsOffset := 0
-		for colIdx := 0; colIdx < rhsActiveCols; colIdx += kernelCols {
-			// Process 2x4 block at (r, c)
-			// Accumulators for 2x4 block
-			var c00, c01, c02, c03 T
-			var c10, c11, c12, c13 T
-
-			idxLhs := lhsOffset
-			idxRhs := rhsOffset
-
-			// K-Loop unrolled by 4
-			k := 0
-			for ; k+3 < contractingLen; k += 4 {
-				// We need 4 steps.
-				// For each step (l is k offset):
-				//   load lhs (2 vals), load rhs (4 vals), fma.
-
-				// --- Step 0 ---
-				// BCE hint
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-				l0 := packedLHS[idxLhs]
-				l1 := packedLHS[idxLhs+1]
-
-				r0 := packedRHS[idxRhs]
-				r1 := packedRHS[idxRhs+1]
-				r2 := packedRHS[idxRhs+2]
-				r3 := packedRHS[idxRhs+3]
-
-				c00 += l0 * r0
-				c01 += l0 * r1
-				c02 += l0 * r2
-				c03 += l0 * r3
-				c10 += l1 * r0
-				c11 += l1 * r1
-				c12 += l1 * r2
-				c13 += l1 * r3
-
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 1 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-				l0 = packedLHS[idxLhs]
-				l1 = packedLHS[idxLhs+1]
-				r0 = packedRHS[idxRhs]
-				r1 = packedRHS[idxRhs+1]
-				r2 = packedRHS[idxRhs+2]
-				r3 = packedRHS[idxRhs+3]
-
-				c00 += l0 * r0
-				c01 += l0 * r1
-				c02 += l0 * r2
-				c03 += l0 * r3
-				c10 += l1 * r0
-				c11 += l1 * r1
-				c12 += l1 * r2
-				c13 += l1 * r3
-
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 2 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-				l0 = packedLHS[idxLhs]
-				l1 = packedLHS[idxLhs+1]
-				r0 = packedRHS[idxRhs]
-				r1 = packedRHS[idxRhs+1]
-				r2 = packedRHS[idxRhs+2]
-				r3 = packedRHS[idxRhs+3]
-
-				c00 += l0 * r0
-				c01 += l0 * r1
-				c02 += l0 * r2
-				c03 += l0 * r3
-				c10 += l1 * r0
-				c11 += l1 * r1
-				c12 += l1 * r2
-				c13 += l1 * r3
-
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 3 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-				l0 = packedLHS[idxLhs]
-				l1 = packedLHS[idxLhs+1]
-				r0 = packedRHS[idxRhs]
-				r1 = packedRHS[idxRhs+1]
-				r2 = packedRHS[idxRhs+2]
-				r3 = packedRHS[idxRhs+3]
-
-				c00 += l0 * r0
-				c01 += l0 * r1
-				c02 += l0 * r2
-				c03 += l0 * r3
-				c10 += l1 * r0
-				c11 += l1 * r1
-				c12 += l1 * r2
-				c13 += l1 * r3
-
-				idxLhs += kernelRows
-				idxRhs += kernelCols
+		// Iterate over rows (k)
+		for row := range contractingRows {
+			srcRow := srcRowStart + row
+			srcColBase := srcColStart + stripColIdx
+			srcIdx := (srcRow * srcStrideCol) + srcColBase
+			// Copy valid columns
+			copy(dst[dstIdx:], src[srcIdx:srcIdx+validCols])
+			dstIdx += validCols
+			// Zero-pad if strip is incomplete (edge of matrix)
+			for c := validCols; c < RHSL1KernelCols; c++ {
+				dst[dstIdx] = T(0)
+				dstIdx++
 			}
-
-			// K-Loop Tail
-			for ; k < contractingLen; k++ {
-				l0 := packedLHS[idxLhs]
-				l1 := packedLHS[idxLhs+1]
-
-				r0 := packedRHS[idxRhs]
-				r1 := packedRHS[idxRhs+1]
-				r2 := packedRHS[idxRhs+2]
-				r3 := packedRHS[idxRhs+3]
-
-				c00 += l0 * r0
-				c01 += l0 * r1
-				c02 += l0 * r2
-				c03 += l0 * r3
-				c10 += l1 * r0
-				c11 += l1 * r1
-				c12 += l1 * r2
-				c13 += l1 * r3
-
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-			}
-
-			// Optimization: write full 2x4 block directly to packedOutput.
-			// The buffer is large enough even for fringe blocks.
-			// Row 0
-			rowOffset := rowIdx*rhsPanelCols + colIdx
-			packedOutput[rowOffset] = c00
-			packedOutput[rowOffset+1] = c01
-			packedOutput[rowOffset+2] = c02
-			packedOutput[rowOffset+3] = c03
-
-			// Row 1
-			rowOffset1 := rowOffset + rhsPanelCols
-			packedOutput[rowOffset1] = c10
-			packedOutput[rowOffset1+1] = c11
-			packedOutput[rowOffset1+2] = c12
-			packedOutput[rowOffset1+3] = c13
-
-			rhsOffset += rhsBlockStride
 		}
-		lhsOffset += lhsBlockStride
+	}
+}
+
+// packLHS packs a slice of size [lhsRows, contractingCols] block from LHS into
+// a [ceil(lhsRows/lhsL1KernelRows), contractingCols, lhsL1KernelRows] "panel"
+// (a block of size Mr x Kc) from LHS.
+// It rearranges data into horizontal strips of height Mr (lhsL1BlockRows).
+//
+// How it is called:
+//
+//	packLHS(lhs, packedLhs, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
+//		lhsPanelHeight, contractingPanelWidth,
+//		params.LHSL1KernelRows)
+func packLHS[T interface {
+	dtypes.NumberNotComplex | dtypes.NumberHalfPrecision
+}](src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int) {
+	dstIdx := 0
+	// Iterate over strips of height mr
+	for stripRowIdx := 0; stripRowIdx < lhsRows; stripRowIdx += lhsL1KernelRows {
+		validRows := min(lhsL1KernelRows, lhsRows-stripRowIdx)
+
+		// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
+		for col := range contractingCols {
+			srcCol := srcColStart + col
+			srcRowBase := srcRowStart + stripRowIdx
+
+			// Copy valid "rows" (they are the last axis in the returned panel)
+			for row := range validRows {
+				srcIdx := ((srcRowBase + row) * srcRowStride) + srcCol
+				dst[dstIdx] = src[srcIdx]
+				dstIdx++
+			}
+
+			// Zero-pad
+			for r := validRows; r < lhsL1KernelRows; r++ {
+				dst[dstIdx] = T(0)
+				dstIdx++
+			}
+		}
 	}
 }
 
 // applyPackedOutput applies the computed packedOutput to the final output.
-func applyPackedOutput[T dtypes.Number](
+func noSIMDApplyPackedOutput[T dtypes.NumberNotComplex](
 	packedOutput, output []T,
-	alpha, beta T,
+	isFirstContractingPanel bool,
 	packedOutputRowStride int,
 	lhsRowOffset, rhsColOffset int, // Global output offsets
 	outputRowStride int,
 	height, width int, // actual amount of data to copy
 ) {
-	for r := range height {
-		packedRowOffset := r * packedOutputRowStride
-		outRowOffset := (lhsRowOffset+r)*outputRowStride + rhsColOffset
-		for c := range width {
-			val := packedOutput[packedRowOffset+c]
-			basicWriteScalar(output, outRowOffset+c, alpha, beta, val)
+	outputRowIdx := lhsRowOffset*outputRowStride + rhsColOffset
+	packedRowIdx := 0
+	if isFirstContractingPanel {
+		// First contracting panel, so we overwrite to the output (as it may not have been zero-initialized).
+		for range height {
+			packedColIdx := packedRowIdx
+			outputColIdx := outputRowIdx
+			for range width {
+				val := packedOutput[packedRowIdx]
+				packedColIdx++
+				output[outputColIdx] = val
+				outputColIdx++
+			}
+			packedRowIdx += packedOutputRowStride
+			outputRowIdx += outputRowStride
+		}
+	} else {
+		// Not the first contracting panel, so we need to add to the existing values.
+		for range height {
+			packedColIdx := packedRowIdx
+			outputColIdx := outputRowIdx
+			for range width {
+				val := packedOutput[packedRowIdx]
+				packedColIdx++
+				output[outputColIdx] += val
+				outputColIdx++
+			}
+			packedRowIdx += packedOutputRowStride
+			outputRowIdx += outputRowStride
 		}
 	}
 }
-*/

@@ -23,11 +23,9 @@ func TestNoSIMD(t *testing.T) {
 		backendtest.TestDotGeneral(t, backend)
 	})
 
-	/*
-		t.Run("Large", func(t *testing.T) {
-			nontransposed.ForceSmallVariant = false
-			nontransposed.ForceLargeVariant = true
-			// TODO: implement test
-		})
-	*/
+	t.Run("Large", func(t *testing.T) {
+		nontransposed.ForceSmallVariant = false
+		nontransposed.ForceLargeVariant = true
+		backendtest.TestDotGeneral(t, backend)
+	})
 }

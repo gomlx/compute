@@ -5,7 +5,6 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	"github.com/gomlx/compute/internal/gobackend/workerspool"
 	"k8s.io/klog/v2"
 )
 
@@ -31,10 +30,10 @@ func (key *ImplementationKey) String() string {
 type DotGeneralExecFn[I, O interface {
 	dtypes.Number | dtypes.NumberHalfPrecision
 }] func(
+	backend *gobackend.Backend,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O,
-	pool *workerspool.Pool)
+	output []O)
 
 type ImplementationRegistration struct {
 	// implFn holds the DotGeneralExecFn[InputDType, OutputDType] for the specific ImplementationKey.
@@ -128,8 +127,8 @@ func CallRegisteredImplementation(
 	if err != nil {
 		panic(err)
 	}
-	callFn := callFnAny.(func(any, any, any, any, int, int, int, int, *workerspool.Pool))
-	callFn(implFnAny, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, backend.Workers)
+	callFn := callFnAny.(func(*gobackend.Backend, any, any, any, any, int, int, int, int))
+	callFn(backend, implFnAny, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize)
 }
 
 var (
@@ -147,13 +146,13 @@ var (
 func callImplementationGeneric[I, O interface {
 	dtypes.Number | dtypes.NumberHalfPrecision
 }](
+	backend *gobackend.Backend,
 	implFnAny any,
 	lhsAny, rhsAny, outputAny any,
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	pool *workerspool.Pool) {
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int) {
 	lhs := lhsAny.([]I)
 	rhs := rhsAny.([]I)
 	output := outputAny.([]O)
 	implFn := implFnAny.(DotGeneralExecFn[I, O])
-	implFn(lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, pool)
+	implFn(backend, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 }
