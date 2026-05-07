@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/envutil"
 	"k8s.io/klog/v2"
 )
 
@@ -40,7 +41,12 @@ var (
 )
 
 func init() {
-	registerNoSIMD(false)
+	enabled := envutil.MustReadBool("GOMLX_DOT_NOSIMD", true)
+	if enabled {
+		registerNoSIMD(false)
+	} else {
+		klog.Info("NoSIMD disabled")
+	}
 }
 
 func RegisterNoSIMDForTests() {
@@ -288,7 +294,7 @@ func noSIMDApplyPackedOutput[T dtypes.NumberNotComplex](
 			packedColIdx := packedRowIdx
 			outputColIdx := outputRowIdx
 			for range width {
-				val := packedOutput[packedRowIdx]
+				val := packedOutput[packedColIdx]
 				packedColIdx++
 				output[outputColIdx] = val
 				outputColIdx++
@@ -302,7 +308,7 @@ func noSIMDApplyPackedOutput[T dtypes.NumberNotComplex](
 			packedColIdx := packedRowIdx
 			outputColIdx := outputRowIdx
 			for range width {
-				val := packedOutput[packedRowIdx]
+				val := packedOutput[packedColIdx]
 				packedColIdx++
 				output[outputColIdx] += val
 				outputColIdx++
