@@ -51,44 +51,43 @@ func TestPackLHS(t *testing.T) {
 }
 
 func TestPackRHS(t *testing.T) {
-	contractingRows := 3
-	rhsCols := 5
-	rhsL1KernelCols := 4
-	src := make([]float32, contractingRows*rhsCols)
-	for i := range src {
-		src[i] = float32(i + 1)
-	}
-
-	// Calculate dst size: ceil(rhsCols/rhsL1KernelCols) * contractingRows * rhsL1KernelCols
-	numStrips := (rhsCols + rhsL1KernelCols - 1) / rhsL1KernelCols
-	dstSize := numStrips * contractingRows * rhsL1KernelCols
-	dst := make([]float32, dstSize)
-
-	packRHS(src, dst, 0, 0, rhsCols, contractingRows, rhsCols, rhsL1KernelCols)
-
-	// We don't have an AVX512 version for packRHS yet, so we just verify the noSIMD one.
-	// Expected layout: strips of width rhsL1KernelCols.
-	// Strip 0: cols 0, 1, 2, 3. Strip 1: col 4 (padded).
-	// Strip 0, Row 0: [1, 2, 3, 4]
-	// Strip 0, Row 1: [6, 7, 8, 9]
-	// Strip 0, Row 2: [11, 12, 13, 14]
-	// Strip 1, Row 0: [5, 0, 0, 0]
-	// Strip 1, Row 1: [10, 0, 0, 0]
-	// Strip 1, Row 2: [15, 0, 0, 0]
+	rhsL1KernelCols := 32
 	
-	expected := []float32{
-		1, 2, 3, 4,
-		6, 7, 8, 9,
-		11, 12, 13, 14,
-		5, 0, 0, 0,
-		10, 0, 0, 0,
-		15, 0, 0, 0,
+	testCases := []struct {
+		rows, cols int
+		rowStart, colStart int
+	}{
+		{3, 32, 0, 0},
+		{5, 64, 2, 3},
+		{10, 100, 0, 0},
+		{3, 10, 0, 0},
 	}
 
-	for i := range expected {
-		if dst[i] != expected[i] {
-			t.Errorf("Mismatch at index %d: got %f, expected %f", i, dst[i], expected[i])
-		}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+			totalRows := tc.rows + tc.rowStart + 2
+			totalCols := tc.cols + tc.colStart + 2
+			src := make([]float32, totalRows*totalCols)
+			for i := range src {
+				src[i] = float32(i + 1)
+			}
+
+			// Calculate dst size
+			numStrips := (tc.cols + rhsL1KernelCols - 1) / rhsL1KernelCols
+			dstSize := numStrips * tc.rows * rhsL1KernelCols
+			dstNoSIMD := make([]float32, dstSize)
+			dstAVX512 := make([]float32, dstSize)
+
+			packRHS(src, dstNoSIMD, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			avx512PackRHSFloat32(src, dstAVX512, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+
+			for i := range dstNoSIMD {
+				if dstNoSIMD[i] != dstAVX512[i] {
+					t.Errorf("Mismatch at index %d: noSIMD=%f, avx512=%f", i, dstNoSIMD[i], dstAVX512[i])
+					if i > 10 { break }
+				}
+			}
+		})
 	}
 }
 

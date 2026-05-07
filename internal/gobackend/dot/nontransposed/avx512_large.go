@@ -152,14 +152,14 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-			packRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			avx512PackRHSFloat32(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols) //alt:f32
+			//alt:bf16 avx512PackRHSBFloat16(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
-
-				// PACK LHS
-				avx512PackLHSFloat32(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+				avx512PackLHSFloat32(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32
+				//alt:bf16 avx512PackLHSBFloat16(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
 
 				avx512LargePanelFloat32( //alt:f32
 					//alt:bf16 avx512LargePanelBFloat16(
@@ -398,6 +398,45 @@ func avx512ApplyPackedOutputFloat32( //alt:f32
 			// Next row.
 			packedRowIdx += packedOutputRowStride
 			outputRowIdx += outputRowStride
+		}
+	}
+}
+
+// avx512PackRHSFloat32 packs a slice of size [contractingRows, rhsCols] block from RHS into
+// the panel reshaped+transposed to [ceil(rhsCols/RHSL1KernelCols), contractingRows, RHSL1KernelCols],
+// padding the cols of the last strip with zeros if necessary.
+func avx512PackRHSFloat32(src, dst []float32, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+	dstIdx := 0
+	// Iterate over strips of width nr
+	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
+		// How many columns valid in this strip?
+		validCols := min(RHSL1KernelCols, rhsCols-stripColIdx)
+		srcIdxBase := (srcRowStart * srcStrideCol) + srcColStart + stripColIdx
+
+		if validCols == 32 && RHSL1KernelCols == 32 {
+			// Fast path: no zero padding needed, and we can use AVX512
+			for range contractingRows {
+				// Copy 32 columns using two ZMM registers (16 elements each)
+				v0 := archsimd.LoadFloat32x16(castToArray16(&src[srcIdxBase]))
+				v1 := archsimd.LoadFloat32x16(castToArray16(&src[srcIdxBase+16]))
+				v0.Store(castToArray16(&dst[dstIdx]))
+				v1.Store(castToArray16(&dst[dstIdx+16]))
+				dstIdx += 32
+				srcIdxBase += srcStrideCol
+			}
+		} else {
+			// Iterate over rows (k)
+			for range contractingRows {
+				// Copy valid columns
+				copy(dst[dstIdx:], src[srcIdxBase:srcIdxBase+validCols])
+				dstIdx += validCols
+				srcIdxBase += srcStrideCol
+				// Zero-pad if strip is incomplete (edge of matrix)
+				for c := validCols; c < RHSL1KernelCols; c++ {
+					dst[dstIdx] = 0
+					dstIdx++
+				}
+			}
 		}
 	}
 }
