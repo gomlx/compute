@@ -147,7 +147,7 @@ func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonH
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 
 				// PACK LHS
-				packLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+				unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
 
 				//alt:generic largeNoSIMDPanel(
 				largeNoSIMDPanelHalfPrecision( //alt:half

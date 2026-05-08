@@ -5,15 +5,27 @@ package nontransposed
 import (
 	"fmt"
 	"testing"
+
+	"github.com/gomlx/compute/dtypes/bfloat16"
 )
 
 // PackLHSFn is the signature for LHS packing functions.
-type PackLHSFn func(src, dst []float32, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int)
+type PackLHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int)
 
 // PackRHSFn is the signature for RHS packing functions.
-type PackRHSFn func(src, dst []float32, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
+type PackRHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
 
-func runPackLHSTests(t *testing.T, name string, packLHSFn PackLHSFn, lhsL1KernelRows int) {
+// ApplyPackedOutputFn is the signature for functions that apply packed output to the final output.
+type ApplyPackedOutputFn func(
+	packedOutput, output []float32,
+	isFirstContractingPanel bool,
+	packedOutputRowStride int,
+	lhsRowOffset, rhsColOffset int,
+	outputRowStride int,
+	height, width int,
+)
+
+func runPackLHSTests(t *testing.T, packLHSFn PackLHSFn[float32], lhsL1KernelRows int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -30,7 +42,7 @@ func runPackLHSTests(t *testing.T, name string, packLHSFn PackLHSFn, lhsL1Kernel
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s/LHS/%dx%d_at_%d_%d", name, tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+		t.Run(fmt.Sprintf("LHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
 			src := make([]float32, totalRows*totalCols)
@@ -57,7 +69,7 @@ func runPackLHSTests(t *testing.T, name string, packLHSFn PackLHSFn, lhsL1Kernel
 	}
 }
 
-func runPackRHSTests(t *testing.T, name string, packRHSFn PackRHSFn, rhsL1KernelCols int) {
+func runPackRHSTests(t *testing.T, packRHSFn PackRHSFn[float32], rhsL1KernelCols int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -72,7 +84,7 @@ func runPackRHSTests(t *testing.T, name string, packRHSFn PackRHSFn, rhsL1Kernel
 	}
 
 	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s/RHS/%dx%d_at_%d_%d", name, tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+		t.Run(fmt.Sprintf("RHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
 			src := make([]float32, totalRows*totalCols)
@@ -99,42 +111,95 @@ func runPackRHSTests(t *testing.T, name string, packRHSFn PackRHSFn, rhsL1Kernel
 	}
 }
 
-func TestPackAVX512(t *testing.T) {
-	runPackLHSTests(t, "AVX512", avx512PackLHSFloat32, 4)
-	runPackRHSTests(t, "AVX512", avx512PackRHSFloat32, 32)
-}
-
-func TestApplyPackedOutput(t *testing.T) {
+func runApplyPackedOutputTests(t *testing.T, applyFn ApplyPackedOutputFn) {
 	height := 3
 	width := 5
 	packedOutputRowStride := 8
 	outputRowStride := 6
-	
+
 	packedOutput := make([]float32, height*packedOutputRowStride)
 	for i := range packedOutput {
 		packedOutput[i] = float32(i + 1)
 	}
-	
-	outputNoSIMD := make([]float32, height*outputRowStride + 2) // +2 for offset
-	outputAVX512 := make([]float32, height*outputRowStride + 2)
-	
-	// Test isFirstContractingPanel = true
-	noSIMDApplyPackedOutput(packedOutput, outputNoSIMD, true, packedOutputRowStride, 0, 1, outputRowStride, height, width)
-	avx512ApplyPackedOutputFloat32(packedOutput, outputAVX512, true, packedOutputRowStride, 0, 1, outputRowStride, height, width)
-	
-	for i := range outputNoSIMD {
-		if outputNoSIMD[i] != outputAVX512[i] {
-			t.Errorf("First panel: Mismatch at index %d: noSIMD=%f, avx512=%f", i, outputNoSIMD[i], outputAVX512[i])
-		}
-	}
-	
-	// Test isFirstContractingPanel = false (accumulation)
-	noSIMDApplyPackedOutput(packedOutput, outputNoSIMD, false, packedOutputRowStride, 0, 1, outputRowStride, height, width)
-	avx512ApplyPackedOutputFloat32(packedOutput, outputAVX512, false, packedOutputRowStride, 0, 1, outputRowStride, height, width)
 
-	for i := range outputNoSIMD {
-		if outputNoSIMD[i] != outputAVX512[i] {
-			t.Errorf("Accumulation: Mismatch at index %d: noSIMD=%f, avx512=%f", i, outputNoSIMD[i], outputAVX512[i])
+	outputNoSIMD := make([]float32, height*outputRowStride+2) // +2 for offset
+	outputActual := make([]float32, height*outputRowStride+2)
+
+	// Test isFirstContractingPanel = true
+	t.Run("Apply/Overwrite", func(t *testing.T) {
+		noSIMDApplyPackedOutput(packedOutput, outputNoSIMD, true, packedOutputRowStride, 0, 1, outputRowStride, height, width)
+		applyFn(packedOutput, outputActual, true, packedOutputRowStride, 0, 1, outputRowStride, height, width)
+
+		for i := range outputNoSIMD {
+			if outputNoSIMD[i] != outputActual[i] {
+				t.Fatalf("First panel: Mismatch at index %d: expected %f, got %f", i, outputNoSIMD[i], outputActual[i])
+			}
 		}
+	})
+
+	// Test isFirstContractingPanel = false (accumulation)
+	t.Run("Apply/Accumulate", func(t *testing.T) {
+		noSIMDApplyPackedOutput(packedOutput, outputNoSIMD, false, packedOutputRowStride, 0, 1, outputRowStride, height, width)
+		applyFn(packedOutput, outputActual, false, packedOutputRowStride, 0, 1, outputRowStride, height, width)
+
+		for i := range outputNoSIMD {
+			if outputNoSIMD[i] != outputActual[i] {
+				t.Fatalf("Accumulation: Mismatch at index %d: expected %f, got %f", i, outputNoSIMD[i], outputActual[i])
+			}
+		}
+	})
+}
+
+func TestUnsafe(t *testing.T) {
+	t.Run("Pack", func(t *testing.T) {
+		runPackLHSTests(t, unsafePackLHS[float32], 4)
+	})
+}
+
+func runBenchmarkPackLHS[T Number](b *testing.B, name string, packFn PackLHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelRows int) {
+	src := make([]T, totalRows*totalCols)
+	for i := range src {
+		src[i] = T(i)
 	}
+	maxStrips := (panelRows + kernelRows - 1) / kernelRows
+	dstSize := maxStrips * panelCols * kernelRows
+	dst := make([]T, dstSize)
+
+	b.Run(name, func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for rowStart := 0; rowStart < totalRows; rowStart += panelRows {
+				copyRows := panelRows
+				if rowStart+copyRows > totalRows {
+					copyRows = totalRows - rowStart
+				}
+				for colStart := 0; colStart < totalCols; colStart += panelCols {
+					contractingCols := panelCols
+					if colStart+contractingCols > totalCols {
+						contractingCols = totalCols - colStart
+					}
+					packFn(src, dst, rowStart, colStart, totalCols, copyRows, contractingCols, kernelRows)
+				}
+			}
+		}
+	})
+}
+
+func BenchmarkNoSIMD(b *testing.B) {
+	const totalRows, totalCols = 1536, 1920
+	const panelRows, panelCols = 24, 128
+
+	b.Run("PackLHS/kernelRows=4", func(b *testing.B) {
+		kernelRows := 4
+		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+	})
+	b.Run("PackLHS/kernelRows=32", func(b *testing.B) {
+		kernelRows := 32
+		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+	})
 }

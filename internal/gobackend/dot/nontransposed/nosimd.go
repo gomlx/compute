@@ -3,6 +3,8 @@
 package nontransposed
 
 import (
+	"unsafe"
+
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
@@ -245,54 +247,127 @@ func packRHS[T Number](src, dst []T, srcRowStart, srcColStart, srcStrideCol, con
 	}
 }
 
-// packLHS packs a slice of size [lhsRows, contractingCols] block from LHS into
-// a [ceil(lhsRows/lhsL1KernelRows), contractingCols, lhsL1KernelRows] "panel"
-// (a block of size Mr x Kc) from LHS.
-// It rearranges data into horizontal strips of height Mr (lhsL1BlockRows).
+// packLHS packs a block of size [copyRows, contractingCols] from the lhs matrix into a panel.
+// The panel is structured as [ceil(copyRows/kernelRows), contractingCols, kernelRows].
+// It rearranges data into horizontal strips of height kernelRows.
 //
-// How it is called:
+// Notice, it can also be used to pack a RHS, if the RHS has a transposed layout
+// (shaped [rhsCrossSize, contractingSize])
 //
-//	packLHS(lhs, packedLhs, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
-//		lhsPanelHeight, contractingPanelWidth,
-//		params.LHSL1KernelRows)
-func packLHS[T Number](src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int) {
-	dstIdx := 0
-	// Iterate over strips of height mr
-	for stripRowIdx := 0; stripRowIdx < lhsRows; stripRowIdx += lhsL1KernelRows {
-		validRows := min(lhsL1KernelRows, lhsRows-stripRowIdx)
-		srcIdxBase := ((srcRowStart + stripRowIdx) * srcRowStride) + srcColStart
+//   - lhs: matrix [lhsRows, lhsCols], where lhsRows >= lhsRowStart + copyRows.
+//   - panel: packed panel with enough space to store the [numStrips, contractingCols, kernelRows].
+//     Where numStrips = ceil(copyRows / kernelRows), the last strip padded with 0s.
+//   - lhsRowStart, lhsColStart: start of the slice that will be packed into the panel.
+//   - lhsCols: number of columns in the lhs matrix (row stride).
+//   - copyRows: how many rows of lhs to copy to the panel.
+//   - contractingCols: number of columns to copy to the panel.
+//   - kernelRows: we are packing in strips of kernelRows size.
+//     For this AVX512 implementation kernelRows must be a multiple of 4, it will panic otherwise.
+func packLHS[T Number](
+	lhs, panel []T,
+	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
+	panelIdx := 0
+	fullStripsRows := (copyRows / kernelRows) * kernelRows
 
-		if validRows == lhsL1KernelRows {
-			// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
+	// Iterate over full strips of height kernelRows
+	for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
+		srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
+
+		for r := range kernelRows {
+			srcIdx := srcIdxBase + r*lhsCols
+			pIdx := panelIdx + r
 			for col := range contractingCols {
-				srcIdx := srcIdxBase + col
-
-				// Copy valid "rows" (they are the last axis in the returned panel)
-				for range validRows {
-					dst[dstIdx] = src[srcIdx]
-					dstIdx++
-					srcIdx += srcRowStride
-				}
-			}
-		} else {
-			// Iterate over columns (contracting size k), we want LHS to be traversed K-first in the kernel
-			for col := range contractingCols {
-				srcIdx := srcIdxBase + col
-
-				// Copy valid "rows" (they are the last axis in the returned panel)
-				for range validRows {
-					dst[dstIdx] = src[srcIdx]
-					dstIdx++
-					srcIdx += srcRowStride
-				}
-
-				// Zero-pad
-				for r := validRows; r < lhsL1KernelRows; r++ {
-					dst[dstIdx] = T(0)
-					dstIdx++
-				}
+				panel[pIdx] = lhs[srcIdx+col]
+				pIdx += kernelRows
 			}
 		}
+		panelIdx += contractingCols * kernelRows
+	}
+
+	// Last strip
+	if fullStripsRows < copyRows {
+		stripRowIdx := fullStripsRows
+		validRows := copyRows - stripRowIdx
+		srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
+
+		for r := range validRows {
+			srcIdx := srcIdxBase + r*lhsCols
+			pIdx := panelIdx + r
+			for col := range contractingCols {
+				panel[pIdx] = lhs[srcIdx+col]
+				pIdx += kernelRows
+			}
+		}
+
+		for r := validRows; r < kernelRows; r++ {
+			pIdx := panelIdx + r
+			for range contractingCols {
+				panel[pIdx] = T(0)
+				pIdx += kernelRows
+			}
+		}
+		panelIdx += contractingCols * kernelRows
+	}
+}
+
+// unsafePackLHS is identical to packLHS but eliminates boundary checks by using unsafe pointers.
+// This has a 10% improvement gain over packLHS.
+func unsafePackLHS[T Number](
+	lhs, panel []T,
+	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
+	if copyRows == 0 || contractingCols == 0 {
+		return
+	}
+
+	panelPtr := uintptr(unsafe.Pointer(&panel[0]))
+	lhsPtr := uintptr(unsafe.Pointer(&lhs[0]))
+	elemSize := unsafe.Sizeof(T(0))
+	kernelRowsBytes := uintptr(kernelRows) * elemSize
+
+	fullStripsRows := (copyRows / kernelRows) * kernelRows
+
+	// Iterate over full strips of height kernelRows
+	for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
+		srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
+
+		for r := range kernelRows {
+			pSrc := lhsPtr + uintptr(srcIdxBase+r*lhsCols)*elemSize
+			pDst := panelPtr + uintptr(r)*elemSize
+
+			for range contractingCols {
+				*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
+				pSrc += elemSize
+				pDst += kernelRowsBytes
+			}
+		}
+		panelPtr += uintptr(contractingCols) * kernelRowsBytes
+	}
+
+	// Last strip
+	if fullStripsRows < copyRows {
+		stripRowIdx := fullStripsRows
+		validRows := copyRows - stripRowIdx
+		srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
+
+		for r := range validRows {
+			pSrc := lhsPtr + uintptr(srcIdxBase+r*lhsCols)*elemSize
+			pDst := panelPtr + uintptr(r)*elemSize
+
+			for range contractingCols {
+				*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
+				pSrc += elemSize
+				pDst += kernelRowsBytes
+			}
+		}
+
+		for r := validRows; r < kernelRows; r++ {
+			pDst := panelPtr + uintptr(r)*elemSize
+			for range contractingCols {
+				*(*T)(unsafe.Pointer(pDst)) = T(0)
+				pDst += kernelRowsBytes
+			}
+		}
+		panelPtr += uintptr(contractingCols) * kernelRowsBytes
 	}
 }
 

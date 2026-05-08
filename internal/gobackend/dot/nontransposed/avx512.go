@@ -23,14 +23,22 @@ import (
 // NOT YET: go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16
 
 var (
-	// AVX512Params16Registers are the parameters to use if there are 16 SIMD registers available.
-	// It still needs to be adjusted to the size of the registers (in terms )
-	AVX512Params16Registers = CacheParams{
+	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
+	AVX512ParamsFloat32 = CacheParams{
 		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
 		RHSL1KernelCols:      32,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 16 values
 		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
 		LHSPanelCrossSize:    24,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
 		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
+	}
+
+	// AVX512ParamsBFloat16 are the parameters to use for BFloat16, tuned for the 16 registers implementations.
+	AVX512ParamsBFloat16 = CacheParams{
+		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
+		RHSL1KernelCols:      32,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 16 values
+		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
+		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
 	}
 )
 
