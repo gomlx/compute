@@ -188,6 +188,13 @@ func BenchmarkNoSIMD(b *testing.B) {
 	const totalRows, totalCols = 1536, 1920
 	const panelRows, panelCols = 24, 128
 
+	b.Run("PackLHS/kernelRows=2", func(b *testing.B) {
+		kernelRows := 2
+		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+	})
 	b.Run("PackLHS/kernelRows=4", func(b *testing.B) {
 		kernelRows := 4
 		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
