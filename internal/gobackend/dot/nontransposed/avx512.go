@@ -345,22 +345,13 @@ func avx512PackLHSKernelRows4[T Number](
 					panelPtr += kernelRowsBytes
 				}
 			case 2:
-				var tmp0, tmp1, tmp2, tmp3 [64]uint8
-				v0.Store(&tmp0)
-				v1.Store(&tmp1)
-				v2.Store(&tmp2)
-				v3.Store(&tmp3)
-				t0 := (*[32]uint16)(unsafe.Pointer(&tmp0))
-				t1 := (*[32]uint16)(unsafe.Pointer(&tmp1))
-				t2 := (*[32]uint16)(unsafe.Pointer(&tmp2))
-				t3 := (*[32]uint16)(unsafe.Pointer(&tmp3))
-				for i := uintptr(0); i < 32; i++ {
-					*(*uint16)(unsafe.Pointer(panelPtr)) = t0[i]
-					*(*uint16)(unsafe.Pointer(panelPtr + 2)) = t1[i]
-					*(*uint16)(unsafe.Pointer(panelPtr + 4)) = t2[i]
-					*(*uint16)(unsafe.Pointer(panelPtr + 6)) = t3[i]
-					panelPtr += kernelRowsBytes
-				}
+				t0, t1, t2, t3 := avx512Transpose4x32x16bits(v0.AsUint16x32(), v1.AsUint16x32(), v2.AsUint16x32(), v3.AsUint16x32())
+				t0.Store((*[32]uint16)(unsafe.Pointer(panelPtr)))
+				t1.Store((*[32]uint16)(unsafe.Pointer(panelPtr + 64)))
+				t2.Store((*[32]uint16)(unsafe.Pointer(panelPtr + 128)))
+				t3.Store((*[32]uint16)(unsafe.Pointer(panelPtr + 192)))
+				panelPtr += 256 // 4 x 16 x uint32
+
 			case 1:
 				var tmp0, tmp1, tmp2, tmp3 [64]uint8
 				v0.Store(&tmp0)
@@ -450,56 +441,4 @@ func avx512PackLHSKernelRows4[T Number](
 			panelPtr += kernelRowsBytes
 		}
 	}
-}
-
-// avx512Transpose4x16x32bits transposes 4 rows of 16x32-bit elements (uint32) into
-// 16 rows of 4 32 bit elements, where each 4 rows of 4 elements is output together in one ZMM register.
-func avx512Transpose4x16x32bits(v0, v1, v2, v3 archsimd.Uint32x16) (row0to4, row4to8, row8to12, row12to16 archsimd.Uint32x16) {
-	var (
-		t0Indices = [16]uint32{
-			0, 16, 0, 0, // Strip 0
-			1, 17, 0, 0, // Strip 1
-			2, 18, 0, 0, // Strip 2
-			3, 19, 0, 0, // Strip 3
-		}
-		t1Indices = [16]uint32{
-			0 + 4, 16 + 4, 0, 0, // Strip 0
-			1 + 4, 17 + 4, 0, 0, // Strip 1
-			2 + 4, 18 + 4, 0, 0, // Strip 2
-			3 + 4, 19 + 4, 0, 0, // Strip 3
-		}
-		t2Indices = [16]uint32{
-			0 + 8, 16 + 8, 0, 0, // Strip 0
-			1 + 8, 17 + 8, 0, 0, // Strip 1
-			2 + 8, 18 + 8, 0, 0, // Strip 2
-			3 + 8, 19 + 8, 0, 0, // Strip 3
-		}
-		t3Indices = [16]uint32{
-			0 + 12, 16 + 12, 0, 0, // Strip 0
-			1 + 12, 17 + 12, 0, 0, // Strip 1
-			2 + 12, 18 + 12, 0, 0, // Strip 2
-			3 + 12, 19 + 12, 0, 0, // Strip 3
-		}
-	)
-	{
-		t00 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t0Indices))
-		t01 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t0Indices))
-		row0to4 = t00.InterleaveLoGrouped(t01)
-	}
-	{
-		t10 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t1Indices))
-		t11 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t1Indices))
-		row4to8 = t10.InterleaveLoGrouped(t11)
-	}
-	{
-		t20 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t2Indices))
-		t21 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t2Indices))
-		row8to12 = t20.InterleaveLoGrouped(t21)
-	}
-	{
-		t30 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t3Indices))
-		t31 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t3Indices))
-		row12to16 = t30.InterleaveLoGrouped(t31)
-	}
-	return
 }

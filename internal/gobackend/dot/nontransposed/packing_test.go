@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/support/testutil"
 )
 
 // PackLHSFn is the signature for LHS packing functions.
@@ -25,7 +27,7 @@ type ApplyPackedOutputFn func(
 	height, width int,
 )
 
-func runPackLHSTests(t *testing.T, packLHSFn PackLHSFn[float32], lhsL1KernelRows int) {
+func runPackLHSTests[T NumberNonHalf](t *testing.T, packLHSFn PackLHSFn[T], lhsL1KernelRows int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -45,16 +47,15 @@ func runPackLHSTests(t *testing.T, packLHSFn PackLHSFn[float32], lhsL1KernelRows
 		t.Run(fmt.Sprintf("LHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
-			src := make([]float32, totalRows*totalCols)
+			src := make([]T, totalRows*totalCols)
 			for i := range src {
-				src[i] = float32(i + 1)
+				src[i] = T(i)
 			}
 
 			numStrips := (tc.rows + lhsL1KernelRows - 1) / lhsL1KernelRows
 			dstSize := numStrips * tc.cols * lhsL1KernelRows
-			dstExpected := make([]float32, dstSize)
-			dstActual := make([]float32, dstSize)
-
+			dstExpected := make([]T, dstSize)
+			dstActual := make([]T, dstSize)
 			// Reference implementation
 			packLHS(src, dstExpected, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
 			// Implementation under test
@@ -62,14 +63,57 @@ func runPackLHSTests(t *testing.T, packLHSFn PackLHSFn[float32], lhsL1KernelRows
 
 			for i := range dstExpected {
 				if dstExpected[i] != dstActual[i] {
-					t.Fatalf("Mismatch at index %d: expected %f, got %f", i, dstExpected[i], dstActual[i])
+					t.Fatalf("Mismatch at index %d: expected %v, got %v", i, dstExpected[i], dstActual[i])
 				}
 			}
 		})
 	}
 }
 
-func runPackRHSTests(t *testing.T, packRHSFn PackRHSFn[float32], rhsL1KernelCols int) {
+func runPackLHSTestsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](
+	t *testing.T, packLHSFn PackLHSFn[T], lhsL1KernelRows int) {
+	testCases := []struct {
+		rows, cols         int
+		rowStart, colStart int
+	}{
+		{rows: 5, cols: 20, rowStart: 0, colStart: 0},
+		{rows: 5, cols: 20, rowStart: 2, colStart: 3},
+		{rows: 4, cols: 16, rowStart: 0, colStart: 0},
+		{rows: 4, cols: 15, rowStart: 0, colStart: 0},
+		{rows: 8, cols: 32, rowStart: 0, colStart: 0},
+		{rows: 3, cols: 10, rowStart: 0, colStart: 0},
+		// Larger test cases
+		{rows: 128, cols: 256, rowStart: 7, colStart: 11},
+		{rows: 127, cols: 255, rowStart: 0, colStart: 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("LHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+			totalRows := tc.rows + tc.rowStart + 2
+			totalCols := tc.cols + tc.colStart + 2
+			src := make([]T, totalRows*totalCols)
+			for i := range src {
+				P(&src[i]).SetFloat32(float32(i))
+			}
+			numStrips := (tc.rows + lhsL1KernelRows - 1) / lhsL1KernelRows
+			dstSize := numStrips * tc.cols * lhsL1KernelRows
+			dstExpected := make([]T, dstSize)
+			dstActual := make([]T, dstSize)
+			// Reference implementation
+			packLHS(src, dstExpected, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
+			// Implementation under test
+			packLHSFn(src, dstActual, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, lhsL1KernelRows)
+
+			for i := range dstExpected {
+				if dstExpected[i] != dstActual[i] {
+					t.Fatalf("Mismatch at index %d: expected %s, got %s", i, dstExpected[i], dstActual[i])
+				}
+			}
+		})
+	}
+}
+
+func runPackRHSTests[T NumberNonHalf](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -87,25 +131,63 @@ func runPackRHSTests(t *testing.T, packRHSFn PackRHSFn[float32], rhsL1KernelCols
 		t.Run(fmt.Sprintf("RHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
 			totalRows := tc.rows + tc.rowStart + 2
 			totalCols := tc.cols + tc.colStart + 2
-			src := make([]float32, totalRows*totalCols)
+			src := make([]T, totalRows*totalCols)
 			for i := range src {
-				src[i] = float32(i + 1)
+				src[i] = T(i + 1)
 			}
 
 			numStrips := (tc.cols + rhsL1KernelCols - 1) / rhsL1KernelCols
 			dstSize := numStrips * tc.rows * rhsL1KernelCols
-			dstExpected := make([]float32, dstSize)
-			dstActual := make([]float32, dstSize)
+			want := make([]T, dstSize)
+			got := make([]T, dstSize)
 
 			// Reference implementation
-			packRHS(src, dstExpected, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			packRHS(src, want, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
 			// Implementation under test
-			packRHSFn(src, dstActual, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			packRHSFn(src, got, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
 
-			for i := range dstExpected {
-				if dstExpected[i] != dstActual[i] {
-					t.Fatalf("Mismatch at index %d: expected %f, got %f", i, dstExpected[i], dstActual[i])
-				}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Mismatch (-want / +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func runPackRHSTestsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
+	testCases := []struct {
+		rows, cols         int
+		rowStart, colStart int
+	}{
+		{rows: 3, cols: 32, rowStart: 0, colStart: 0},
+		{rows: 5, cols: 64, rowStart: 2, colStart: 3},
+		{rows: 10, cols: 100, rowStart: 0, colStart: 0},
+		{rows: 3, cols: 10, rowStart: 0, colStart: 0},
+		// Larger test cases
+		{rows: 256, cols: 128, rowStart: 13, colStart: 17},
+		{rows: 255, cols: 127, rowStart: 0, colStart: 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("RHS/%dx%d_at_%d_%d", tc.rows, tc.cols, tc.rowStart, tc.colStart), func(t *testing.T) {
+			totalRows := tc.rows + tc.rowStart + 2
+			totalCols := tc.cols + tc.colStart + 2
+			src := make([]T, totalRows*totalCols)
+			for i := range src {
+				P(&src[i]).SetFloat32(float32(i + 1))
+			}
+
+			numStrips := (tc.cols + rhsL1KernelCols - 1) / rhsL1KernelCols
+			dstSize := numStrips * tc.rows * rhsL1KernelCols
+			want := make([]T, dstSize)
+			got := make([]T, dstSize)
+
+			// Reference implementation
+			packRHS(src, want, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+			// Implementation under test
+			packRHSFn(src, got, tc.rowStart, tc.colStart, totalCols, tc.rows, tc.cols, rhsL1KernelCols)
+
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Mismatch (-want / +got):\n%s", diff)
 			}
 		})
 	}

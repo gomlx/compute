@@ -30,9 +30,15 @@ func TestAVX512(t *testing.T) {
 	backendtest.TestDotGeneral(t, backend)
 
 	t.Run("Pack", func(t *testing.T) {
-		runPackLHSTests(t, avx512PackLHSKernelRows4, 4)
-		runPackRHSTests(t, avx512PackRHSNonTransposed[float32], 32)
-		runApplyPackedOutputTests(t, avx512ApplyPackedOutputFloat32)
+		t.Run("Float32", func(t *testing.T) {
+			runPackLHSTests(t, avx512PackLHSKernelRows4[float32], 4)
+			runPackRHSTests(t, avx512PackRHSNonTransposed[float32], 32)
+			runApplyPackedOutputTests(t, avx512ApplyPackedOutputFloat32)
+		})
+		t.Run("BFloat16", func(t *testing.T) {
+			runPackLHSTestsHalfPrecision(t, avx512PackLHSKernelRows4[bfloat16.BFloat16], 4)
+			runPackRHSTestsHalfPrecision(t, avx512PackRHSNonTransposed[bfloat16.BFloat16], 32)
+		})
 	})
 
 	t.Run("Transpose/4x16x32bits", func(t *testing.T) {
@@ -46,17 +52,17 @@ func TestAVX512(t *testing.T) {
 		v2 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[2*16])))
 		v3 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[3*16])))
 
-		fmt.Printf("v0: [%s]\n", transposeIndices(v0))
-		fmt.Printf("v1: [%s]\n", transposeIndices(v1))
-		fmt.Printf("v2: [%s]\n", transposeIndices(v2))
-		fmt.Printf("v3: [%s]\n", transposeIndices(v3))
-
 		q0, q1, q2, q3 := avx512Transpose4x16x32bits(v0, v1, v2, v3)
 
-		fmt.Printf("q0: [%s]\n", transposeIndices(q0))
-		fmt.Printf("q1: [%s]\n", transposeIndices(q1))
-		fmt.Printf("q2: [%s]\n", transposeIndices(q2))
-		fmt.Printf("q3: [%s]\n", transposeIndices(q3))
+		fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x16x32bits(v0))
+		fmt.Printf("v1: [%s]\n", transposeIndicesFor4x16x32bits(v1))
+		fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
+			transposeIndicesFor4x16x32bits(v0.InterleaveLoGrouped(v1)))
+
+		fmt.Printf("q0: [%s]\n", transposeIndicesFor4x16x32bits(q0))
+		fmt.Printf("q1: [%s]\n", transposeIndicesFor4x16x32bits(q1))
+		fmt.Printf("q2: [%s]\n", transposeIndicesFor4x16x32bits(q2))
+		fmt.Printf("q3: [%s]\n", transposeIndicesFor4x16x32bits(q3))
 
 		var output [4 * 16]uint32
 		q0.Store((*[16]uint32)(unsafe.Pointer(&output[0*16])))
@@ -74,9 +80,50 @@ func TestAVX512(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("Transpose/4x32x16bits", func(t *testing.T) {
+		var input [4 * 32]uint16
+		for i := range input {
+			input[i] = uint16(i)
+		}
+
+		v0 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[0*32])))
+		v1 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[1*32])))
+		v2 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[2*32])))
+		v3 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[3*32])))
+
+		q0, q1, q2, q3 := avx512Transpose4x32x16bits(v0, v1, v2, v3)
+
+		fmt.Printf("\nv0: [%s]\n", transposeIndicesFor4x32x16bits(v0))
+		fmt.Printf("v1: [%s]\n", transposeIndicesFor4x32x16bits(v1))
+		fmt.Printf("v0.InterleaveLoGrouped(v1)= [%s]\n\n",
+			transposeIndicesFor4x32x16bits(v0.InterleaveLoGrouped(v1)))
+
+		fmt.Printf("q0: [%s]\n", transposeIndicesFor4x32x16bits(q0))
+		fmt.Printf("q1: [%s]\n", transposeIndicesFor4x32x16bits(q1))
+		fmt.Printf("q2: [%s]\n", transposeIndicesFor4x32x16bits(q2))
+		fmt.Printf("q3: [%s]\n", transposeIndicesFor4x32x16bits(q3))
+
+		var output [4 * 32]uint16
+		q0.Store((*[32]uint16)(unsafe.Pointer(&output[0*32])))
+		q1.Store((*[32]uint16)(unsafe.Pointer(&output[1*32])))
+		q2.Store((*[32]uint16)(unsafe.Pointer(&output[2*32])))
+		q3.Store((*[32]uint16)(unsafe.Pointer(&output[3*32])))
+
+		for c := range 32 { // logical column
+			for r := range 4 { // logical row
+				expected := uint16(r*32 + c)
+				got := output[c*4+r]
+				if got != expected {
+					t.Errorf("At output col %d, row %d: got %d, expected %d", c, r, got, expected)
+				}
+			}
+		}
+	})
+
 }
 
-func transposeIndices(vec archsimd.Uint32x16) string {
+func transposeIndicesFor4x16x32bits(vec archsimd.Uint32x16) string {
 	var sb strings.Builder
 	var values [16]uint32
 	vec.Store(&values)
@@ -86,6 +133,21 @@ func transposeIndices(vec archsimd.Uint32x16) string {
 		}
 		vecNum := val / 16
 		vecIdx := val % 16
+		sb.WriteString(fmt.Sprintf("v_{%d,%d}", vecNum, vecIdx))
+	}
+	return sb.String()
+}
+
+func transposeIndicesFor4x32x16bits(vec archsimd.Uint16x32) string {
+	var sb strings.Builder
+	var values [32]uint16
+	vec.Store(&values)
+	for i, val := range values {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		vecNum := val / 32
+		vecIdx := val % 32
 		sb.WriteString(fmt.Sprintf("v_{%d,%d}", vecNum, vecIdx))
 	}
 	return sb.String()
