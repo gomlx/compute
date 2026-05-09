@@ -105,7 +105,15 @@ func FindRegisteredImplementation(layout Layout, inputDType, outputDType dtypes.
 			return reg
 		}
 	}
-	return registeredImplementations[key]
+	reg := registeredImplementations[key]
+	if klog.V(1).Enabled() {
+		if reg != nil {
+			klog.V(1).Infof("DotGeneral algorithm %q for key %s found", reg.name, key)
+		} else {
+			klog.V(1).Infof("DotGeneral algorithm not found for key %s", key)
+		}
+	}
+	return reg
 }
 
 // CallRegisteredImplementation calls the registered implementation for the given
@@ -137,7 +145,7 @@ var (
 	//gobackend:dtypemap_pair callImplementationGeneric uints same
 	//gobackend:dtypemap_pair callImplementationGeneric uints uint32,uint64
 	//gobackend:dtypemap_pair callImplementationGeneric floats floats
-	//gobackend:dtypemap_pair callImplementationGeneric half float32
+	//gobackend:dtypemap_pair callImplementationGeneric half float32,half
 	callImplementationDTypePairMap = gobackend.NewDTypePairMap("callImplementationGeneric")
 )
 

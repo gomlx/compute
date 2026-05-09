@@ -119,8 +119,12 @@ func init() {
 	callImplementationDTypePairMap.Register(dtypes.Float64, dtypes.Float32, gobackend.PriorityGeneric, callImplementationGeneric[float64, float32])
 	callImplementationDTypePairMap.Register(dtypes.Float64, dtypes.Float64, gobackend.PriorityGeneric, callImplementationGeneric[float64, float64])
 
-	// DTypePairMap: callImplementationDTypePairMap (half, float32)
+	// DTypePairMap: callImplementationDTypePairMap (half, float32,half)
+	callImplementationDTypePairMap.Register(dtypes.BFloat16, dtypes.BFloat16, gobackend.PriorityGeneric, callImplementationGeneric[bfloat16.BFloat16, bfloat16.BFloat16])
+	callImplementationDTypePairMap.Register(dtypes.BFloat16, dtypes.Float16, gobackend.PriorityGeneric, callImplementationGeneric[bfloat16.BFloat16, float16.Float16])
 	callImplementationDTypePairMap.Register(dtypes.BFloat16, dtypes.Float32, gobackend.PriorityGeneric, callImplementationGeneric[bfloat16.BFloat16, float32])
+	callImplementationDTypePairMap.Register(dtypes.Float16, dtypes.BFloat16, gobackend.PriorityGeneric, callImplementationGeneric[float16.Float16, bfloat16.BFloat16])
+	callImplementationDTypePairMap.Register(dtypes.Float16, dtypes.Float16, gobackend.PriorityGeneric, callImplementationGeneric[float16.Float16, float16.Float16])
 	callImplementationDTypePairMap.Register(dtypes.Float16, dtypes.Float32, gobackend.PriorityGeneric, callImplementationGeneric[float16.Float16, float32])
 
 }
