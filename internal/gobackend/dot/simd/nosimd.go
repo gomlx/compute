@@ -16,6 +16,7 @@ import (
 // Auto-generate alternate specialized versions of noSIMD operations -- for half-precision input data types.
 //go:generate go run ../../../cmd/alternates_generator -base=nosimd_router.go -tags=half
 //go:generate go run ../../../cmd/alternates_generator -base=nosimd_small.go -tags=half
+//go:generate go run ../../../cmd/alternates_generator -base=nosimd_small_safe.go -tags=half
 //go:generate go run ../../../cmd/alternates_generator -base=nosimd_large.go -tags=half
 
 var (
