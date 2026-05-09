@@ -7,6 +7,7 @@ package simd
 import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"k8s.io/klog/v2"
 )
 
@@ -18,6 +19,7 @@ import (
 //alt:generic func noSIMDRouter[I, O dtypes.NumberNotComplex](
 func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
 	backend *gobackend.Backend,
+	layout dot.Layout,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O) {

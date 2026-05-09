@@ -30,7 +30,7 @@ func (key *ImplementationKey) String() string {
 type DotGeneralExecFn[I, O interface {
 	dtypes.Number | dtypes.NumberHalfPrecision
 }] func(
-	backend *gobackend.Backend,
+	backend *gobackend.Backend, layout Layout,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O)
@@ -135,8 +135,8 @@ func CallRegisteredImplementation(
 	if err != nil {
 		panic(err)
 	}
-	callFn := callFnAny.(func(*gobackend.Backend, any, any, any, any, int, int, int, int))
-	callFn(backend, implFnAny, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize)
+	callFn := callFnAny.(func(*gobackend.Backend, any, Layout, any, any, any, int, int, int, int))
+	callFn(backend, implFnAny, params.Layout, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize)
 }
 
 var (
@@ -156,11 +156,12 @@ func callImplementationGeneric[I, O interface {
 }](
 	backend *gobackend.Backend,
 	implFnAny any,
+	layout Layout,
 	lhsAny, rhsAny, outputAny any,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int) {
 	lhs := lhsAny.([]I)
 	rhs := rhsAny.([]I)
 	output := outputAny.([]O)
 	implFn := implFnAny.(DotGeneralExecFn[I, O])
-	implFn(backend, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 }

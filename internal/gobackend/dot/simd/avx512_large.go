@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/pkg/errors"
 	//alt:bf16 "github.com/gomlx/compute/dtypes/bfloat16"
 )
@@ -24,6 +25,7 @@ import (
 func avx512LargeFloat32( //alt:f32
 	//alt:bf16 func avx512LargeBFloat16(
 	backend *gobackend.Backend,
+	layout dot.Layout,
 	lhs, rhs []float32, //alt:f32
 	//alt:bf16 lhs, rhs []bfloat16.BFloat16,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
