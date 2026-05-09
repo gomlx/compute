@@ -1,4 +1,4 @@
-package nontransposed
+package simd
 
 import (
 	"github.com/gomlx/compute/dtypes"

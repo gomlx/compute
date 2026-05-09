@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _ExecutionPathName = "AutoSelectPathSmallTransposedPathBlockedPathSmallMatMulPathPackgemmPathHighwayPathCheckPath"
+const _ExecutionPathName = "AutoSelectPathSmallTransposedPathBlockedPathSmallMatMulPathCheckPath"
 
-var _ExecutionPathIndex = [...]uint8{0, 14, 33, 44, 59, 71, 82, 91}
+var _ExecutionPathIndex = [...]uint8{0, 14, 33, 44, 59, 68}
 
-const _ExecutionPathLowerName = "autoselectpathsmalltransposedpathblockedpathsmallmatmulpathpackgemmpathhighwaypathcheckpath"
+const _ExecutionPathLowerName = "autoselectpathsmalltransposedpathblockedpathsmallmatmulpathcheckpath"
 
 func (i ExecutionPath) String() string {
 	if i < 0 || i >= ExecutionPath(len(_ExecutionPathIndex)-1) {
@@ -28,12 +28,10 @@ func _ExecutionPathNoOp() {
 	_ = x[SmallTransposedPath-(1)]
 	_ = x[BlockedPath-(2)]
 	_ = x[SmallMatMulPath-(3)]
-	_ = x[PackgemmPath-(4)]
-	_ = x[HighwayPath-(5)]
-	_ = x[CheckPath-(6)]
+	_ = x[CheckPath-(4)]
 }
 
-var _ExecutionPathValues = []ExecutionPath{AutoSelectPath, SmallTransposedPath, BlockedPath, SmallMatMulPath, PackgemmPath, HighwayPath, CheckPath}
+var _ExecutionPathValues = []ExecutionPath{AutoSelectPath, SmallTransposedPath, BlockedPath, SmallMatMulPath, CheckPath}
 
 var _ExecutionPathNameToValueMap = map[string]ExecutionPath{
 	_ExecutionPathName[0:14]:       AutoSelectPath,
@@ -44,12 +42,8 @@ var _ExecutionPathNameToValueMap = map[string]ExecutionPath{
 	_ExecutionPathLowerName[33:44]: BlockedPath,
 	_ExecutionPathName[44:59]:      SmallMatMulPath,
 	_ExecutionPathLowerName[44:59]: SmallMatMulPath,
-	_ExecutionPathName[59:71]:      PackgemmPath,
-	_ExecutionPathLowerName[59:71]: PackgemmPath,
-	_ExecutionPathName[71:82]:      HighwayPath,
-	_ExecutionPathLowerName[71:82]: HighwayPath,
-	_ExecutionPathName[82:91]:      CheckPath,
-	_ExecutionPathLowerName[82:91]: CheckPath,
+	_ExecutionPathName[59:68]:      CheckPath,
+	_ExecutionPathLowerName[59:68]: CheckPath,
 }
 
 var _ExecutionPathNames = []string{
@@ -57,9 +51,7 @@ var _ExecutionPathNames = []string{
 	_ExecutionPathName[14:33],
 	_ExecutionPathName[33:44],
 	_ExecutionPathName[44:59],
-	_ExecutionPathName[59:71],
-	_ExecutionPathName[71:82],
-	_ExecutionPathName[82:91],
+	_ExecutionPathName[59:68],
 }
 
 // ExecutionPathString retrieves an enum value from the enum constants string name.

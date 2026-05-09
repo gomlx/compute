@@ -73,12 +73,6 @@ func New(config string) (compute.Backend, error) {
 			}
 			b.Workers.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
-		case "packgemm":
-			// Enable packgemm algorithm choice.
-			b.EnablePackgemm = true
-		case "highway":
-			// Enable highway algorithm choice.
-			b.EnableHighway = true
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
 			// The default is running parallel if it's the only thing executing, otherwise sequentially.
@@ -104,9 +98,6 @@ func New(config string) (compute.Backend, error) {
 			if err != nil {
 				return nil, err
 			}
-		}
-		if b.EnablePackgemm && b.EnableHighway {
-			return nil, errors.Errorf("cannot enable both packgemm and highway, choose one or the other")
 		}
 	}
 	return b, nil
@@ -134,12 +125,6 @@ type Backend struct {
 
 	// OpsExecutionType defines how to execute the ops of a computation.
 	OpsExecutionType OpsExecutionType
-
-	// EnablePackgemm is true if packgemm is enabled.
-	EnablePackgemm bool
-
-	// EnableHighway is true if highway algorithm is enabled.
-	EnableHighway bool
 
 	// isFinalized is true if the backend has been isFinalized.
 	isFinalized bool

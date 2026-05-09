@@ -2,7 +2,7 @@
 // - Base source file (edit this one): nosimd_large.go
 // - Tag used for this generation: half
 
-package nontransposed
+package simd
 
 import (
 	"sync"

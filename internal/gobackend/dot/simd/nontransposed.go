@@ -1,4 +1,9 @@
-package nontransposed
+// Package simd implements various SIMD versions of matrix multiplication (used by DotGeneral),
+// and despite the name, it includes a backoff no-SIMD implementations.
+//
+// It includes implementations for "non-transposed" ([N,K]x[K,M] -> [N,M]) and "transposed" ([N,K]x[M,K]->[N,M])
+// layouts.
+package simd
 
 import (
 	"github.com/gomlx/compute/dtypes"
@@ -11,7 +16,7 @@ const (
 	// EnabledEnv is the environment variable that controls whether the non-transposed
 	// implementations are enabled.
 	// It's on by default, and can be disabled by setting it to false.
-	EnabledEnv = "GOMLX_DOT_NONTRANSPOSED"
+	EnabledEnv = "GOMLX_DOT_SIMD"
 )
 
 // Block/packs parameters for current architecture.

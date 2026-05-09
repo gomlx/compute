@@ -12,8 +12,6 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	_ "github.com/gomlx/compute/internal/gobackend/defaultpkgs"
 	"github.com/gomlx/compute/internal/gobackend/dot"
-	"github.com/gomlx/compute/internal/gobackend/dot/highway"
-	"github.com/gomlx/compute/internal/gobackend/dot/packgemm"
 	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
@@ -160,14 +158,7 @@ func TestDotGeneral_ForcePaths(t *testing.T) {
 	rhs := [][][]float32{{{1, 1}, {1, 1}, {1, 1}}}
 	want := [][]float32{{1, 4}, {2, 5}, {3, 6}}
 
-	for _, execPath := range []dot.ExecutionPath{dot.SmallTransposedPath, dot.BlockedPath, dot.SmallMatMulPath, dot.PackgemmPath, dot.HighwayPath, dot.CheckPath} {
-		if execPath == dot.PackgemmPath && (!goBackend.EnablePackgemm || !packgemm.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
-			continue
-		}
-		if execPath == dot.HighwayPath && (!goBackend.EnableHighway || !highway.HasDTypeSupport(dtypes.Float32, dtypes.Float32)) {
-			continue
-		}
-
+	for _, execPath := range []dot.ExecutionPath{dot.SmallTransposedPath, dot.BlockedPath, dot.SmallMatMulPath, dot.CheckPath} {
 		goBackend.DotGeneralForceExecutionPath = int(execPath)
 		t.Run(execPath.String(), func(t *testing.T) {
 			y1, err := testutil.Exec1(backend, []any{lhs, rhs}, func(f compute.Function, params []compute.Value) (compute.Value, error) {

@@ -1,31 +1,31 @@
-package nontransposed_test
+package simd_test
 
 import (
 	"testing"
 
 	"github.com/gomlx/compute/internal/gobackend/dot"
-	"github.com/gomlx/compute/internal/gobackend/dot/nontransposed"
+	"github.com/gomlx/compute/internal/gobackend/dot/simd"
 	"github.com/gomlx/compute/support/backendtest"
 )
 
 func TestNoSIMD(t *testing.T) {
 	defer func() {
 		dot.ResetTestRegistrations()
-		nontransposed.ForceSmallVariant = false
-		nontransposed.ForceLargeVariant = false
+		simd.ForceSmallVariant = false
+		simd.ForceLargeVariant = false
 	}()
 	dot.ResetTestRegistrations()
-	nontransposed.RegisterNoSIMDForTests()
+	simd.RegisterNoSIMDForTests()
 
 	t.Run("Small", func(t *testing.T) {
-		nontransposed.ForceSmallVariant = true
-		nontransposed.ForceLargeVariant = false
+		simd.ForceSmallVariant = true
+		simd.ForceLargeVariant = false
 		backendtest.TestDotGeneral(t, backend)
 	})
 
 	t.Run("Large", func(t *testing.T) {
-		nontransposed.ForceSmallVariant = false
-		nontransposed.ForceLargeVariant = true
+		simd.ForceSmallVariant = false
+		simd.ForceLargeVariant = true
 		backendtest.TestDotGeneral(t, backend)
 	})
 }

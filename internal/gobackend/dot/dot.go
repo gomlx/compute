@@ -1,17 +1,25 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-// Package dot implements a general-purpose "dot product" ("Einsum") computation.
+// Package dot implements a general-purpose "dot product" ("Einsum")
+// computation.
 //
-// It has various implmentations, each optimized for different circumstances:
+// It provides a registration system for the underlying "MatMul" (matrix
+// multiplication) implementations -- to it allows pluggability of different
+// implementations, so one can easily experiment with it. The sub-package `simd`
+// provides the base implementation, that despite the name also includes a
+// no-SIMD fallback.
 //
-//   - "normalized": the general implementation that works for any shape/dtype.
-//   - "blocked": a cache-tiled algorithm that is faster for larger inputs.
-//   - "smallmatmul": optimized for small matrices.
-//   - "packgemm": uses the "packgemm" library for matrix multiplication.
-//   - "highway": uses the "highway" library for matrix multiplication.
-//   - "check": a debug path that checks all implementations against each other.
+// The actual "MatMul" implementation used is in part selected at build-time
+// (depending on the architecture and tags), at initialization time (based on
+// presence of SIMD features) and during graph-build time, based on the input
+// shapes, layout and dtypes.
 //
-// The actual implementation used is selected at graph-build time based on the input shapes and dtypes.
+// Environment variables that can be used to disable certain features:
+//
+//   - GOMLX_DOT_SIMD: set to false to disable the default SIMD and no-SIMD implementations --
+//     if you haven't added other plugin implementations, it will effectively disable DotGeneral.
+//   - GOMLX_SIMD_AVX512: set to false to disable the AVX512 implementation, even if the runtime architecture allows it.
+//   - GOMLX_SIMD_AVX2: set to false to disable the AVX2 implementation, even if the runtime architecture allows it.
 package dot
 
 import (
@@ -25,8 +33,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/gobackend"
-	"github.com/gomlx/compute/internal/gobackend/dot/highway"
-	"github.com/gomlx/compute/internal/gobackend/dot/packgemm"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -40,9 +46,8 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeDotGeneral, gobackend.PriorityGeneric, execDotGeneral)
 	gobackend.RegisterDotGeneral.Register(DotGeneral, gobackend.PriorityGeneric)
 
-	// Register DotGeneral config options for the backend.
 	for _, option := range []string{"dotgeneral_normalized", "dotgeneral_blocked", "dotgeneral_check",
-		"dotgeneral_smallmatmul", "dotgeneral_packgemm", "dotgeneral_highway"} {
+		"dotgeneral_smallmatmul"} {
 		gobackend.KnownOptionsSetters[option] = SetBackendOption
 	}
 }
@@ -127,14 +132,6 @@ func SetBackendOption(b *gobackend.Backend, key string) error {
 	case "dotgeneral_smallmatmul":
 		// Force DotGeneral to use the SmallMatMul fast path (for small float32 matrices).
 		b.DotGeneralForceExecutionPath = int(SmallMatMulPath)
-	case "dotgeneral_packgemm":
-		// Force DotGeneral to use the packgemm for large matmuls.
-		b.EnablePackgemm = true
-		b.DotGeneralForceExecutionPath = int(PackgemmPath)
-	case "dotgeneral_highway":
-		// Force DotGeneral to use the highway for large matmuls.
-		b.EnableHighway = true
-		b.DotGeneralForceExecutionPath = int(HighwayPath)
 	default:
 		return errors.Errorf("unknown configuration option %q for Go backend!? It shouldn't have been registered, please report an issue in GoMLX.", key)
 	}
@@ -394,10 +391,6 @@ const (
 	BlockedPath
 	// SmallMatMulPath uses the SmallMatMul fast path (small float32 matrices in standard order)
 	SmallMatMulPath
-	// PackgemmPath uses the packgemm package with a fast matmul algorithm with continuous packing of the matrices.
-	PackgemmPath
-	// HighwayPath uses the highway package (uses go-highway) with a fast matmul algorithm with continuous packing of the matrices.
-	HighwayPath
 	// CheckPath runs both paths and compares outputs (for debugging)
 	CheckPath
 )
@@ -414,10 +407,6 @@ func selectExecPath(backend *gobackend.Backend, params *NodeData) ExecutionPath 
 		switch {
 		case execPath == SmallMatMulPath && params.Layout == LayoutNonTransposed:
 			return execPath
-		case execPath == PackgemmPath && params.Layout == LayoutNonTransposed && packgemm.HasDTypeSupport(params.InputDType, params.OutputDType):
-			return execPath
-		case execPath == HighwayPath && params.Layout == LayoutNonTransposed && highway.HasDTypeSupport(params.InputDType, params.OutputDType):
-			return execPath
 		case execPath == SmallTransposedPath && params.Layout == LayoutNonTransposed:
 			return execPath
 		case execPath == BlockedPath && params.Layout == LayoutNonTransposed:
@@ -426,18 +415,6 @@ func selectExecPath(backend *gobackend.Backend, params *NodeData) ExecutionPath 
 		klog.V(1).Infof(
 			"DotGeneral: forced path %s is invalid for problem with input dtype %s, output dtype %s and layout (%s)\n",
 			execPath, params.InputDType, params.OutputDType, params.Layout)
-	}
-
-	// GEMM path:
-	if backend.EnablePackgemm && packgemm.HasDTypeSupport(params.InputDType, params.OutputDType) &&
-		params.Layout == LayoutNonTransposed {
-		return PackgemmPath
-	}
-
-	// Highway path:
-	if backend.EnableHighway && highway.HasDTypeSupport(params.InputDType, params.OutputDType) &&
-		params.Layout == LayoutNonTransposed {
-		return HighwayPath
 	}
 
 	// Check for SmallMatMul fast path first.
@@ -495,7 +472,6 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 		hasBatch := len(rhsBlockData.batchAxes) > 0 && rhsBlockData.batchSize > 1 // batchSize is the same for lhs and rhs
 		err = execDotGeneralBlocked(backend, lhs, rhs, hasBatch, params, output)
-		inputDType := lhs.RawShape.DType
 
 		// Now run checks against other algorithms.
 		if err == nil && params.execPath == CheckPath {
@@ -541,42 +517,6 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 				}
 			}
 
-			// GEMM specialized executor.
-			if backend.EnablePackgemm && IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
-				rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) &&
-				packgemm.HasDTypeSupport(inputDType, inputDType) {
-				err = packgemm.GEMM(float32(1), float32(0), lhsRaw.Flat.([]float32), rhsRaw.Flat.([]float32),
-					params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
-					output2.Flat.([]float32),
-					getBufAllocator[float32](backend), getBufReleaser(backend), backend.Workers)
-				if err == nil {
-					err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
-				}
-				if err != nil {
-					backend.PutBuffer(output2)
-					backend.PutBuffer(output)
-					return nil, err
-				}
-			}
-
-			// Highway MatMul specialized executor.
-			if backend.EnableHighway && IsMatMulOrder(lhsRaw.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
-				rhsRaw.RawShape, params.RHSContractingAxes, params.RHSBatchAxes) &&
-				highway.HasDTypeSupport(inputDType, inputDType) {
-				err = highway.MatMulDynamic(inputDType, outputShape.DType, lhsRaw.Flat, rhsRaw.Flat,
-					params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
-					output2.Flat,
-					getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
-				if err == nil {
-					err = dotGeneralCheckVersions(backend, lhs, rhs, params, output, output2)
-				}
-				if err != nil {
-					backend.PutBuffer(output2)
-					backend.PutBuffer(output)
-					return nil, err
-				}
-			}
-
 			backend.PutBuffer(output2) // Discard second output, no longer needed
 			return output, nil
 		}
@@ -599,28 +539,6 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		// Transpose-based normalized path for small matrices
 		output.Zeros()
 		err = execSmallTransposed(backend, lhs, rhs, params, output)
-
-	case PackgemmPath:
-		// Custom GEMM path for large "malmul" order.
-		inputDType := lhs.RawShape.DType
-		outputDType := output.RawShape.DType
-		if err = packgemm.GEMMDynamic(inputDType, outputDType, 1, 0, lhs.Flat.([]float32), rhs.Flat.([]float32),
-			params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
-			output.Flat.([]float32),
-			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers); err != nil {
-			return nil, err
-		}
-		return output, nil
-
-	case HighwayPath:
-		// Highway MatMul path for large "malmul" order.
-		inputDType := lhs.RawShape.DType
-		outputDType := output.RawShape.DType
-		err = highway.MatMulDynamic(inputDType, outputDType, lhs.Flat, rhs.Flat,
-			params.BatchSize, params.LHSCrossSize, params.RHSCrossSize, params.ContractingSize,
-			output.Flat,
-			getAnyBufAllocator(backend, inputDType), getBufReleaser(backend), backend.Workers)
-		return output, nil
 
 	default:
 		err = errors.Errorf("unknown execution path %d for DotGeneral", params.execPath)
@@ -708,36 +626,4 @@ func dotGeneralCheckVersionsCmp(outputLarge, outputSmall *gobackend.Buffer) (mes
 			"found %d mismatches (out of %d values) between DotGeneral large and small versions", mismatches, outputLarge.RawShape.Size())
 	}
 	return
-}
-
-// getBufAllocator returns a buffer allocator for the given numeric type.
-// TODO: change signature to return the error
-func getBufAllocator[T dtypes.NumberNotComplex](backend *gobackend.Backend) packgemm.BufAllocFn[T] {
-	dtype := dtypes.FromGenericsType[T]()
-	return func(size int) (ref any, data []T) {
-		buf, err := backend.GetBuffer(shapes.Make(dtype, size))
-		if err != nil {
-			return nil, nil
-		}
-		return buf, buf.Flat.([]T)
-	}
-}
-
-// getAnyBufAllocator returns a buffer allocator for the given dtype.
-// TODO: change signature to return the error
-func getAnyBufAllocator(backend *gobackend.Backend, dtype dtypes.DType) packgemm.BufAllocAnyFn {
-	return func(size int) (ref any, data any) {
-		buf, err := backend.GetBuffer(shapes.Make(dtype, size))
-		if err != nil {
-			return nil, nil
-		}
-		return buf, buf.Flat
-	}
-}
-
-// getBufReleaser returns a buffer releaser for the given numeric type.
-func getBufReleaser(backend *gobackend.Backend) packgemm.BufReleaseFn {
-	return func(ref any) {
-		backend.PutBuffer(ref.(*gobackend.Buffer))
-	}
 }

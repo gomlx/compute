@@ -33,7 +33,7 @@ func (d *nodeFusedAttentionQKVProjection) EqualNodeData(other gobackend.NodeData
 // FusedAttentionQKVProjection performs fused Query-Key-Value projection.
 //
 // The matmul (x @ wQKV) is delegated to DotGeneral, which selects the optimal
-// execution path (blocked, packgemm, highway, etc.) at build time. The fused
+// execution path by a combination of build and runtime. The fused
 // executor then splits the result into Q/K/V and adds biases.
 func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, biasV compute.Value, queryDim, keyValueDim int) (queryOut, keyOut, valueOut compute.Value, err error) {
 	values := []compute.Value{x, wQKV}
@@ -70,7 +70,7 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 	vShape := shapes.Make(xNode.Shape.DType, kvDims...)
 
 	// Build DotGeneral sub-node for the matmul: x @ wQKV.
-	// This delegates to the optimized matmul infrastructure (blocked, packgemm, highway, etc.).
+	// This delegates to the optimized matmul infrastructure.
 	dotResult, dotErr := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
 	if dotErr != nil {
 		return nil, nil, nil, errors.WithMessagef(dotErr, "FusedAttentionQKVProjection: DotGeneral")

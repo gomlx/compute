@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package nontransposed
+package simd
 
 // The AVX512 implementation must have one generate version per dtype pair, since generics are not supported in archsimd.
 // (Maybe a later version with go-highway or midway will change that)
