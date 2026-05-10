@@ -73,6 +73,7 @@ func avx512LargeBFloat16( //alt:bf16
 			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			//alt:f32 avx512LargeMatrixSliceFloat32(
 			avx512LargeMatrixSliceBFloat16( //alt:bf16
+				layout,
 				batchLHS, batchRHS, batchOutput,
 				lhsCrossSize, rhsCrossSize, contractingSize,
 				0, lhsCrossSize, 0, rhsCrossSize,
@@ -122,6 +123,7 @@ func avx512LargeBFloat16( //alt:bf16
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
 				//alt:f32 avx512LargeMatrixSliceFloat32(
 				avx512LargeMatrixSliceBFloat16( //alt:bf16
+					layout,
 					batchLhs, batchRhs, batchOutput,
 					lhsCrossSize, rhsCrossSize, contractingSize,
 					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
@@ -143,6 +145,7 @@ func avx512LargeBFloat16( //alt:bf16
 //
 //alt:f32 func avx512LargeMatrixSliceFloat32(
 func avx512LargeMatrixSliceBFloat16( //alt:bf16
+	layout dot.Layout,
 	//alt:f32 lhsMatrix, rhsMatrix []float32, outputMatrix []float32,
 	lhsMatrix, rhsMatrix []bfloat16.BFloat16, outputMatrix []float32, //alt:bf16
 	lhsCrossSize, rhsCrossSize, contractingSize int,
@@ -165,7 +168,13 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-			avx512PackRHSNonTransposed(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			if layout == dot.LayoutNonTransposed {
+				avx512PackRHSNonTransposed(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+			} else {
+				// For LayoutTransposed, the rhs has the same layout as the lhs, so we use packLHS instead.
+				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize,
+					rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
+			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {

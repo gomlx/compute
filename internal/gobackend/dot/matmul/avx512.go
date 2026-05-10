@@ -21,6 +21,7 @@ import (
 )
 
 // Auto-generate alternate specialized versions of AVX512 operations -- for half-precision input data types.
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16
 
 var (
@@ -59,8 +60,11 @@ func RegisterAVX512ForTests() {
 }
 
 func registerAVX512(forTests bool) {
-	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512LargeFloat32, PriorityAVX512, forTests)
-	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeBFloat16, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, PriorityAVX512, forTests)
+
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
 }
 
 // castToArray16 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
