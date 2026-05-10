@@ -21,13 +21,26 @@ func TestAVX512(t *testing.T) {
 	// Force AVX512 variant only for NonTransposed.
 	defer func() {
 		dot.ResetTestRegistrations()
+		ForceSmallVariant = false
+		ForceLargeVariant = false
 	}()
 	dot.ResetTestRegistrations()
 	RegisterAVX512ForTests()
 
 	backend := compute.MustNew()
 	defer backend.Finalize()
-	backendtest.TestDotGeneral(t, backend)
+
+	t.Run("Small", func(t *testing.T) {
+		ForceSmallVariant = true
+		ForceLargeVariant = false
+		backendtest.TestDotGeneral(t, backend)
+	})
+
+	t.Run("Large", func(t *testing.T) {
+		ForceSmallVariant = false
+		ForceLargeVariant = true
+		backendtest.TestDotGeneral(t, backend)
+	})
 
 	t.Run("Pack", func(t *testing.T) {
 		t.Run("Float32", func(t *testing.T) {
