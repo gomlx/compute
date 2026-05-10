@@ -8,7 +8,6 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"k8s.io/klog/v2"
-
 	//alt:bf16 "github.com/gomlx/compute/dtypes/bfloat16"
 )
 
@@ -42,25 +41,36 @@ func avx512RouterFloat32( //alt:f32
 		// Vector width: 16 for float32, 32 for bfloat16
 		const vecWidth = 16 //alt:f32
 		//alt:bf16 const vecWidth = 32
-		if contractingSize >= vecWidth {
-			avx512SmallFloat32Parallel( //alt:f32
-				//alt:bf16 avx512SmallBFloat16Parallel(
-				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-			return
-		}
 
 		if layout == dot.LayoutNonTransposed {
-			noSIMDRouter[float32, float32]( //alt:f32
-				//alt:bf16 noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32](
+			if rhsCrossSize > vecWidth {
+				avx512SmallFloat32Parallel( //alt:f32
+					//alt:bf16 avx512SmallBFloat16Parallel(
+					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+				return
+			}
+			// No benefit from SIMD:
+			noSIMDRouter( //alt:f32
+				//alt:bf16 noSIMDHalfPrecisionRouter(
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			return
 		} else {
-			noSIMDRouter[float32, float32]( //alt:f32
-				//alt:bf16 noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32](
+			// Transposed matmul:
+			if contractingSize >= vecWidth {
+				avx512SmallFloat32Parallel( //alt:f32
+					//alt:bf16 avx512SmallBFloat16Parallel(
+					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+				return
+			}
+			// No benefit from SIMD:
+			noSIMDRouter( //alt:f32
+				//alt:bf16 noSIMDHalfPrecisionRouter(
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		}
 		return
 	}
 
+	// Use the efficient large matrix version:
 	avx512LargeFloat32( //alt:f32
 		//alt:bf16 avx512LargeBFloat16(
 		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)

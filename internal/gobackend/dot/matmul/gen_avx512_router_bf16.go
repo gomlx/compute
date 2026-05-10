@@ -9,11 +9,10 @@
 package matmul
 
 import (
+	"github.com/gomlx/compute/dtypes/bfloat16" //alt:bf16
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"k8s.io/klog/v2"
-
-	"github.com/gomlx/compute/dtypes/bfloat16" //alt:bf16
 )
 
 // avx512RouterFloat32 implements a router that decides between the small no-SIMD version
@@ -47,25 +46,36 @@ func avx512RouterBFloat16( //alt:bf16
 		// Vector width: 16 for float32, 32 for bfloat16
 		//alt:f32 const vecWidth = 16
 		const vecWidth = 32 //alt:bf16
-		if contractingSize >= vecWidth {
-			//alt:f32 avx512SmallFloat32Parallel(
-			avx512SmallBFloat16Parallel( //alt:bf16
-				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-			return
-		}
 
 		if layout == dot.LayoutNonTransposed {
-			//alt:f32 noSIMDRouter[float32, float32](
-			noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32]( //alt:bf16
+			if rhsCrossSize > vecWidth {
+				//alt:f32 avx512SmallFloat32Parallel(
+				avx512SmallBFloat16Parallel( //alt:bf16
+					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+				return
+			}
+			// No benefit from SIMD:
+			//alt:f32 noSIMDRouter(
+			noSIMDHalfPrecisionRouter( //alt:bf16
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			return
 		} else {
-			//alt:f32 noSIMDRouter[float32, float32](
-			noSIMDHalfPrecisionRouter[bfloat16.BFloat16, float32]( //alt:bf16
+			// Transposed matmul:
+			if contractingSize >= vecWidth {
+				//alt:f32 avx512SmallFloat32Parallel(
+				avx512SmallBFloat16Parallel( //alt:bf16
+					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+				return
+			}
+			// No benefit from SIMD:
+			//alt:f32 noSIMDRouter(
+			noSIMDHalfPrecisionRouter( //alt:bf16
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		}
 		return
 	}
 
+	// Use the efficient large matrix version:
 	//alt:f32 avx512LargeFloat32(
 	avx512LargeBFloat16( //alt:bf16
 		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
