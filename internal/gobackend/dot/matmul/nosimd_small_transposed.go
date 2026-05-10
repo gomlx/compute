@@ -47,10 +47,10 @@ func smallNoSIMDGenericParallelTransposed[I, O dtypes.NumberNotComplex]( //alt:g
 	})
 }
 
-// smallNoSIMDGeneric implements a non-SIMD matrix multiplication for the non-transposed layout.
+// smallNoSIMDGenericTransposed implements a non-SIMD matrix multiplication for the transposed layout.
 //
 // lhs:    shape [batchSize, lhsCrossSize, contractingSize].
-// rhs:    shape [batchSize, contractingSize, rhsCrossSize].
+// rhs:    shape [batchSize, rhsCrossSize, contractingSize]. (note: transposed)
 // output: shape [batchSize, lhsCrossSize, rhsCrossSize].
 //
 // It is used for small inputs, where packing the data is not worth the cost.
@@ -93,149 +93,35 @@ func smallNoSIMDGenericTransposed[I, O dtypes.NumberNotComplex]( //alt:generic
 	outputBase := outputPtr + uintptr(batchStart)*outputByteStride
 
 	for range batchCount {
-		row := 0
-		// Main Loop: Process 3 rows at a time
-		for ; row+2 < lhsCrossSize; row += 3 {
-			// Pre-calculate base indices for the 3 LHS rows
-			lRow0Base := lhsBase + uintptr(row*contractingSize)*iSize
-			lRow1Base := lRow0Base + uintptr(contractingSize)*iSize
-			lRow2Base := lRow1Base + uintptr(contractingSize)*iSize
+		for row := range lhsCrossSize {
+			lRowBase := lhsBase + uintptr(row*contractingSize)*iSize
 
-			col := 0
-			// Main Tile: Process 4 columns at a time
-			for ; col+3 < rhsCrossSize; col += 4 {
-				var c00, c01, c02, c03 O
-				var c10, c11, c12, c13 O
-				var c20, c21, c22, c23 O
+			for col := range rhsCrossSize {
+				rColBase := rhsBase + uintptr(col*contractingSize)*iSize
+				var acc O
 
-				// rIdx tracks the current row in the RHS for these 4 columns
-				rIdx := rhsBase + uintptr(col)*iSize
-				l0Idx := lRow0Base
-				l1Idx := lRow1Base
-				l2Idx := lRow2Base
-				for range contractingSize {
+				lIdx := lRowBase
+				rIdx := rColBase
 
-					// Load RHS row segment
+				var contractingIdx int
+				for ; contractingIdx+3 < contractingSize; contractingIdx += 4 {
+					l0 := *(*I)(unsafe.Pointer(lIdx))           //alt:generic
+					l1 := *(*I)(unsafe.Pointer(lIdx + iSize))   //alt:generic
+					l2 := *(*I)(unsafe.Pointer(lIdx + 2*iSize)) //alt:generic
+					l3 := *(*I)(unsafe.Pointer(lIdx + 3*iSize)) //alt:generic
 					r0 := *(*I)(unsafe.Pointer(rIdx))           //alt:generic
 					r1 := *(*I)(unsafe.Pointer(rIdx + iSize))   //alt:generic
 					r2 := *(*I)(unsafe.Pointer(rIdx + 2*iSize)) //alt:generic
 					r3 := *(*I)(unsafe.Pointer(rIdx + 3*iSize)) //alt:generic
+
+					//alt:half l0 := (*(*I)(unsafe.Pointer(lIdx))).Float32()
+					//alt:half l1 := (*(*I)(unsafe.Pointer(lIdx + iSize))).Float32()
+					//alt:half l2 := (*(*I)(unsafe.Pointer(lIdx + 2*iSize))).Float32()
+					//alt:half l3 := (*(*I)(unsafe.Pointer(lIdx + 3*iSize))).Float32()
 					//alt:half r0 := (*(*I)(unsafe.Pointer(rIdx))).Float32()
 					//alt:half r1 := (*(*I)(unsafe.Pointer(rIdx + iSize))).Float32()
 					//alt:half r2 := (*(*I)(unsafe.Pointer(rIdx + 2*iSize))).Float32()
 					//alt:half r3 := (*(*I)(unsafe.Pointer(rIdx + 3*iSize))).Float32()
-
-					// Row 0
-					l0 := *(*I)(unsafe.Pointer(l0Idx)) //alt:generic
-					//alt:half l0 := (*(*I)(unsafe.Pointer(l0Idx))).Float32()
-					c00 += O(l0 * r0)
-					c01 += O(l0 * r1)
-					c02 += O(l0 * r2)
-					c03 += O(l0 * r3)
-					// Row 1
-					l1 := *(*I)(unsafe.Pointer(l1Idx)) //alt:generic
-					//alt:half l1 := (*(*I)(unsafe.Pointer(l1Idx))).Float32()
-					c10 += O(l1 * r0)
-					c11 += O(l1 * r1)
-					c12 += O(l1 * r2)
-					c13 += O(l1 * r3)
-					// Row 2
-					l2 := *(*I)(unsafe.Pointer(l2Idx)) //alt:generic
-					//alt:half l2 := (*(*I)(unsafe.Pointer(l2Idx))).Float32()
-					c20 += O(l2 * r0)
-					c21 += O(l2 * r1)
-					c22 += O(l2 * r2)
-					c23 += O(l2 * r3)
-
-					rIdx += uintptr(rhsCrossSize) * iSize
-					l0Idx += iSize
-					l1Idx += iSize
-					l2Idx += iSize
-				}
-
-				// Write 3x4 tile results
-				outputIdx0 := outputBase + uintptr(row*rhsCrossSize+col)*oSize
-				outputIdx1 := outputIdx0 + uintptr(rhsCrossSize)*oSize
-				outputIdx2 := outputIdx0 + uintptr(2*rhsCrossSize)*oSize
-
-				*(*O)(unsafe.Pointer(outputIdx0)) = c00
-				*(*O)(unsafe.Pointer(outputIdx0 + oSize)) = c01
-				*(*O)(unsafe.Pointer(outputIdx0 + 2*oSize)) = c02
-				*(*O)(unsafe.Pointer(outputIdx0 + 3*oSize)) = c03
-				*(*O)(unsafe.Pointer(outputIdx1)) = c10
-				*(*O)(unsafe.Pointer(outputIdx1 + oSize)) = c11
-				*(*O)(unsafe.Pointer(outputIdx1 + 2*oSize)) = c12
-				*(*O)(unsafe.Pointer(outputIdx1 + 3*oSize)) = c13
-				*(*O)(unsafe.Pointer(outputIdx2)) = c20
-				*(*O)(unsafe.Pointer(outputIdx2 + oSize)) = c21
-				*(*O)(unsafe.Pointer(outputIdx2 + 2*oSize)) = c22
-				*(*O)(unsafe.Pointer(outputIdx2 + 3*oSize)) = c23
-			}
-
-			// Columns-fringe: handle remaining columns for the current 3 rows
-			for ; col < rhsCrossSize; col++ {
-				var c0, c1, c2 O
-				rIdx := rhsBase + uintptr(col)*iSize
-				l0Idx := lRow0Base
-				l1Idx := lRow1Base
-				l2Idx := lRow2Base
-				for range contractingSize {
-					rk := *(*I)(unsafe.Pointer(rIdx)) //alt:generic
-					//alt:half rk := (*(*I)(unsafe.Pointer(rIdx))).Float32()
-					l0 := *(*I)(unsafe.Pointer(l0Idx)) //alt:generic
-					l1 := *(*I)(unsafe.Pointer(l1Idx)) //alt:generic
-					l2 := *(*I)(unsafe.Pointer(l2Idx)) //alt:generic
-					//alt:half l0 := (*(*I)(unsafe.Pointer(l0Idx))).Float32()
-					//alt:half l1 := (*(*I)(unsafe.Pointer(l1Idx))).Float32()
-					//alt:half l2 := (*(*I)(unsafe.Pointer(l2Idx))).Float32()
-
-					c0 += O(l0 * rk)
-					c1 += O(l1 * rk)
-					c2 += O(l2 * rk)
-
-					rIdx += uintptr(rhsCrossSize) * iSize
-					l0Idx += iSize
-					l1Idx += iSize
-					l2Idx += iSize
-				}
-				outputIdx := outputBase + uintptr(row*rhsCrossSize+col)*oSize
-				*(*O)(unsafe.Pointer(outputIdx)) = c0
-				*(*O)(unsafe.Pointer(outputIdx + uintptr(rhsCrossSize)*oSize)) = c1
-				*(*O)(unsafe.Pointer(outputIdx + uintptr(2*rhsCrossSize)*oSize)) = c2
-			}
-		}
-
-		// Row-Fringe: Handle remaining rows (fewer than 3)
-		outputIdx := outputBase + uintptr(row*rhsCrossSize)*oSize
-		for ; row < lhsCrossSize; row++ {
-			for col := range rhsCrossSize {
-				var acc O
-				lhsIdx := lhsBase + uintptr(row*contractingSize)*iSize
-				rhsIdx0 := rhsBase + uintptr(col)*iSize
-				rhsIdx1 := rhsIdx0 + uintptr(rhsCrossSize)*iSize
-				rhsIdx2 := rhsIdx0 + uintptr(2*rhsCrossSize)*iSize
-				rhsIdx3 := rhsIdx0 + uintptr(3*rhsCrossSize)*iSize
-				rhs4ColStride := uintptr(rhsCrossSize*4) * iSize
-
-				var contractingIdx int
-				for ; contractingIdx+3 < contractingSize; contractingIdx += 4 {
-					l0 := *(*I)(unsafe.Pointer(lhsIdx))           //alt:generic
-					l1 := *(*I)(unsafe.Pointer(lhsIdx + iSize))   //alt:generic
-					l2 := *(*I)(unsafe.Pointer(lhsIdx + 2*iSize)) //alt:generic
-					l3 := *(*I)(unsafe.Pointer(lhsIdx + 3*iSize)) //alt:generic
-					r0 := *(*I)(unsafe.Pointer(rhsIdx0))          //alt:generic
-					r1 := *(*I)(unsafe.Pointer(rhsIdx1))          //alt:generic
-					r2 := *(*I)(unsafe.Pointer(rhsIdx2))          //alt:generic
-					r3 := *(*I)(unsafe.Pointer(rhsIdx3))          //alt:generic
-
-					//alt:half l0 := (*(*I)(unsafe.Pointer(lhsIdx))).Float32()
-					//alt:half l1 := (*(*I)(unsafe.Pointer(lhsIdx + iSize))).Float32()
-					//alt:half l2 := (*(*I)(unsafe.Pointer(lhsIdx + 2*iSize))).Float32()
-					//alt:half l3 := (*(*I)(unsafe.Pointer(lhsIdx + 3*iSize))).Float32()
-					//alt:half r0 := (*(*I)(unsafe.Pointer(rhsIdx0))).Float32()
-					//alt:half r1 := (*(*I)(unsafe.Pointer(rhsIdx1))).Float32()
-					//alt:half r2 := (*(*I)(unsafe.Pointer(rhsIdx2))).Float32()
-					//alt:half r3 := (*(*I)(unsafe.Pointer(rhsIdx3))).Float32()
 
 					v0 := O(l0 * r0)
 					v1 := O(l1 * r1)
@@ -243,23 +129,21 @@ func smallNoSIMDGenericTransposed[I, O dtypes.NumberNotComplex]( //alt:generic
 					v3 := O(l3 * r3)
 
 					acc += v0 + v1 + v2 + v3
-					lhsIdx += 4 * iSize
-					rhsIdx0 += rhs4ColStride
-					rhsIdx1 += rhs4ColStride
-					rhsIdx2 += rhs4ColStride
-					rhsIdx3 += rhs4ColStride
+					lIdx += 4 * iSize
+					rIdx += 4 * iSize
 				}
 				for ; contractingIdx < contractingSize; contractingIdx++ {
-					l0 := *(*I)(unsafe.Pointer(lhsIdx))  //alt:generic
-					r0 := *(*I)(unsafe.Pointer(rhsIdx0)) //alt:generic
-					//alt:half l0 := (*(*I)(unsafe.Pointer(lhsIdx))).Float32()
-					//alt:half r0 := (*(*I)(unsafe.Pointer(rhsIdx0))).Float32()
+					l0 := *(*I)(unsafe.Pointer(lIdx)) //alt:generic
+					r0 := *(*I)(unsafe.Pointer(rIdx)) //alt:generic
+					//alt:half l0 := (*(*I)(unsafe.Pointer(lIdx))).Float32()
+					//alt:half r0 := (*(*I)(unsafe.Pointer(rIdx))).Float32()
 					acc += O(l0 * r0)
-					lhsIdx += iSize
-					rhsIdx0 += uintptr(rhsCrossSize) * iSize
+					lIdx += iSize
+					rIdx += iSize
 				}
+
+				outputIdx := outputBase + uintptr(row*rhsCrossSize+col)*oSize
 				*(*O)(unsafe.Pointer(outputIdx)) = acc
-				outputIdx += oSize
 			}
 		}
 

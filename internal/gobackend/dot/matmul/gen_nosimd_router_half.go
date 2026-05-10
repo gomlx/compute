@@ -28,8 +28,20 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 	flopsPerMatrix := lhsCrossSize * rhsCrossSize * contractingSize
 	flops := batchSize * flopsPerMatrix
 	_ = flops
-	if !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold) {
-		klog.V(1).Infof("Using small variant for NonTransposed non-SIMD dot-product kernel")
+	useSmallVariant := !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold)
+	if klog.V(1).Enabled() {
+		variant := "large"
+		if useSmallVariant {
+			variant = "small"
+		}
+		klog.Infof("Using %s variant for non-SIMD dot-product kernel, layout=%s, "+
+			"lhs=[%d, %d, %d], rhs=[%d, %d, %d], output=[%d, %d, %d]",
+			variant, layout, batchSize, lhsCrossSize, contractingSize,
+			batchSize, rhsCrossSize, contractingSize,
+			batchSize, lhsCrossSize, rhsCrossSize)
+	}
+
+	if useSmallVariant {
 		matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
 		matricesPerWorker = min(matricesPerWorker, batchSize)
 		maxWorkers := 1
@@ -73,7 +85,6 @@ func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComp
 		}
 
 	} else {
-		klog.V(1).Infof("Using large variant for NonTransposed non-SIMD dot-product kernel")
 		//alt:generic largeNoSIMDGeneric(
 		largeNoSIMDHalfPrecision( //alt:half
 			backend,

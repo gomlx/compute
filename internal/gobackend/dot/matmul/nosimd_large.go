@@ -141,8 +141,8 @@ func largeNoSIMDMatrixSlice[I, O NumberNonHalf]( //alt:generic
 				packRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
 			} else {
 				// For LayoutTransposed, the rhs has the same layout as the lhs, so we use packLHS instead.
-				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, rhsCrossSize,
-					contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize,
+					rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
 			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
