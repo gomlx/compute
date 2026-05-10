@@ -22,6 +22,7 @@ import (
 
 // Auto-generate alternate specialized versions of AVX512 operations -- for half-precision input data types.
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16
 
 var (
@@ -65,6 +66,14 @@ func registerAVX512(forTests bool) {
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
+}
+
+// avx512ReduceSumFloat32x16 performs a horizontal reduction of a Float32x16 vector.
+func avx512ReduceSumFloat32x16(x16 archsimd.Float32x16) float32 {
+	x8 := x16.GetHi().Add(x16.GetLo())
+	x4 := x8.GetHi().Add(x8.GetLo())
+	x4sum := x4.AddPairs(x4)
+	return x4sum.GetElem(0) + x4sum.GetElem(1)
 }
 
 // castToArray16 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
