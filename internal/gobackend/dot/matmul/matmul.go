@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	// EnabledEnv is the environment variable that controls whether the non-transposed
+	// EnabledEnv is the environment variable that controls whether the default matmul
 	// implementations are enabled.
 	// It's on by default, and can be disabled by setting it to false.
-	EnabledEnv = "GOMLX_DOT_SIMD"
+	EnabledEnv = "GOMLX_DOT_MATMUL"
 )
 
 // Block/packs parameters for current architecture.
