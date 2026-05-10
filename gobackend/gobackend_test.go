@@ -61,5 +61,6 @@ func TestMain(m *testing.M) {
 //
 //	$ go test -bench=. -benchmem
 func BenchmarkGoBackend(b *testing.B) {
+	fmt.Printf("Running benchmarks on backend: %s, %s\n", backend.Name(), backend.Description())
 	backendtest.RunAllBenchmarks(b, backend)
 }
