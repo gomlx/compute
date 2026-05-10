@@ -363,7 +363,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			model: "adult-demo",
 		},
 		{
-			name:        "[128, 4]x[4, 1] -> [128, 1]/non-transposed",
+			name:        "non-transposed/[128, 4]x[4, 1] -> [128, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 128, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 1),
 			lhsContract: []int{1},
@@ -372,7 +372,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[128, 69]x[69, 4] -> [128, 4]/non-transposed",
+			name:        "non-transposed/[128, 69]x[69, 4] -> [128, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 128, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 69, 4),
 			lhsContract: []int{1},
@@ -381,7 +381,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "#3/non-transposed",
+			name:        "non-transposed/[25, 4]x[4, 1] -> [25, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 25, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 1),
 			lhsContract: []int{1},
@@ -390,7 +390,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[25, 69]x[69, 4] -> [25, 4]/non-transposed",
+			name:        "non-transposed/[25, 69]x[69, 4] -> [25, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 25, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 69, 4),
 			lhsContract: []int{1},
@@ -399,7 +399,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[49, 4]x[4, 1] -> [49, 1]/non-transposed",
+			name:        "non-transposed/[49, 4]x[4, 1] -> [49, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 49, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 1),
 			lhsContract: []int{1},
@@ -408,7 +408,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[49, 69]x[69, 4] -> [49, 4]/non-transposed",
+			name:        "non-transposed/[49, 69]x[69, 4] -> [49, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 49, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 69, 4),
 			lhsContract: []int{1},
@@ -417,7 +417,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[128, 4]x[1, 4] -> [128, 1]/transposed",
+			name:        "transposed/[128, 4]x[1, 4] -> [128, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 128, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 1, 4),
 			lhsContract: []int{1},
@@ -426,7 +426,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[128, 69]x[4, 69] -> [128, 4]/transposed",
+			name:        "transposed/[128, 69]x[4, 69] -> [128, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 128, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 69),
 			lhsContract: []int{1},
@@ -435,7 +435,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[25, 4]x[1, 4] -> [25, 1]/transposed",
+			name:        "transposed/[25, 4]x[1, 4] -> [25, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 25, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 1, 4),
 			lhsContract: []int{1},
@@ -444,7 +444,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[25, 69]x[4, 69] -> [25, 4]/transposed",
+			name:        "transposed/[25, 69]x[4, 69] -> [25, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 25, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 69),
 			lhsContract: []int{1},
@@ -453,7 +453,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[49, 4]x[1, 4] -> [49, 1]/transposed",
+			name:        "transposed/[49, 4]x[1, 4] -> [49, 1]",
 			lhsShape:    shapes.Make(dtypes.Float32, 49, 4),
 			rhsShape:    shapes.Make(dtypes.Float32, 1, 4),
 			lhsContract: []int{1},
@@ -462,7 +462,7 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			rhsBatch:    []int{},
 		},
 		{
-			name:        "[49, 69]x[4, 64] -> [49, 4]/transposed",
+			name:        "transposed/[49, 69]x[4, 64] -> [49, 4]",
 			lhsShape:    shapes.Make(dtypes.Float32, 49, 69),
 			rhsShape:    shapes.Make(dtypes.Float32, 4, 69),
 			lhsContract: []int{1},
@@ -475,9 +475,18 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			model: "test-cases",
 		},
 		{
-			name:        "[32, 20]x[20, 64]->[32, 64]/non-transposed",
+			name:        "non-transposed/float32/[32, 20]x[20, 64]->[32, 64]",
 			lhsShape:    shapes.Make(dtypes.Float32, 32, 20),
 			rhsShape:    shapes.Make(dtypes.Float32, 20, 64),
+			lhsContract: []int{1},
+			rhsContract: []int{0},
+			lhsBatch:    []int{},
+			rhsBatch:    []int{},
+		},
+		{
+			name:        "non-transposed/bfloat16/[32, 20]x[20, 64]->[32, 64]",
+			lhsShape:    shapes.Make(dtypes.BFloat16, 32, 20),
+			rhsShape:    shapes.Make(dtypes.BFloat16, 20, 64),
 			lhsContract: []int{1},
 			rhsContract: []int{0},
 			lhsBatch:    []int{},
@@ -507,13 +516,24 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 					// Next model.
 					break
 				}
-				lhsData := randomFloat32(benchCase.lhsShape.Size())
-				rhsData := randomFloat32(benchCase.rhsShape.Size())
 
+				var lhsData, rhsData any
+				switch benchCase.lhsShape.DType {
+				case dtypes.Float32:
+					lhsData = randomFloat32(benchCase.lhsShape.Size())
+					rhsData = randomFloat32(benchCase.rhsShape.Size())
+				case dtypes.BFloat16:
+					lhsData = randomBFloat16(benchCase.lhsShape.Size())
+					rhsData = randomBFloat16(benchCase.rhsShape.Size())
+				}
 				b.Run(benchCase.name, func(b *testing.B) {
 					be, err := newBenchExec(backend, []shapes.Shape{benchCase.lhsShape, benchCase.rhsShape}, []any{lhsData, rhsData},
 						func(f compute.Function, params []compute.Value) (compute.Value, error) {
-							return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, compute.DotGeneralConfig{})
+							config := compute.DotGeneralConfig{}
+							if benchCase.lhsShape.DType == dtypes.BFloat16 {
+								config.OutputDType = dtypes.Float32
+							}
+							return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, config)
 						})
 					if err != nil {
 						b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)

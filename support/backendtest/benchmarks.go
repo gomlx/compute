@@ -9,6 +9,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/shapes"
 	"k8s.io/klog/v2"
@@ -150,6 +151,14 @@ func randomFloat32(n int) []float32 {
 	data := make([]float32, n)
 	for i := range data {
 		data[i] = rand.Float32()*2 - 1
+	}
+	return data
+}
+
+func randomBFloat16(n int) []bfloat16.BFloat16 {
+	data := make([]bfloat16.BFloat16, n)
+	for i := range data {
+		data[i] = bfloat16.FromFloat32(rand.Float32()*2 - 1)
 	}
 	return data
 }
