@@ -79,7 +79,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 		}
 	})
 
-	t.Run("Float32", func(t *testing.T) {
+	t.Run("shuffled-axes", func(t *testing.T) {
 		// Larger example, with multiple axes.
 		got, err := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
 			// We construct the input constants directly inside the compute.Function since we don't have
