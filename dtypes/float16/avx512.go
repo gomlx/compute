@@ -9,6 +9,17 @@ import (
 	"unsafe"
 )
 
+// LoadFloat16x32 loads 32 Float16 values from the given pointer into a Float16x32 vector.
+//
+// The pointer must be aligned to 32 bytes, just like usual AVX512 loads.
+//
+// Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
+// If not available, don't use this, it will crash!
+func LoadFloat16x32(ptr *[32]Float16) Float16x32 {
+	vec := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(ptr)))
+	return Float16x32(vec)
+}
+
 // Float16x32 is an alias for archsimd.Uint16x32 with corresponding utility methods.
 //
 // Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
@@ -17,15 +28,21 @@ type Float16x32 archsimd.Uint16x32
 
 // ToFloat32 converts a vector of 32 float16 values (as an archsimd.Uint16x32) to two vectors of 16 float32 values
 // (as archsimd.Float32x16).
+//
+// Note: we currently do the arithmetic to convert ourselves, because there is no `archsimd` function/method that
+// maps to the VCVTPH2PS family of instructions. I tried to write a small function in assembly to do it but
+// the cost of writing the vector to the stack when calling and returning to the function (since assembly
+// functions can't be inlined) turned out to be as slow as doing the arithmetic in the available AVX512
+// operations in Go. Hopefully, in the future Go will add some ConvertToFloat32 methods to archsimd.
 func (v Float16x32) ToFloat32() (lo, hi archsimd.Float32x16) {
 	// Cast back to use the archsimd methods
 	vec := archsimd.Uint16x32(v)
-	lo32 := convert16To32(vec.GetLo().ExtendToUint32())
-	hi32 := convert16To32(vec.GetHi().ExtendToUint32())
+	lo32 := convertF16ToF32(vec.GetLo().ExtendToUint32())
+	hi32 := convertF16ToF32(vec.GetHi().ExtendToUint32())
 	return lo32.AsFloat32x16(), hi32.AsFloat32x16()
 }
 
-func convert16To32(v archsimd.Uint32x16) archsimd.Uint32x16 {
+func convertF16ToF32(v archsimd.Uint32x16) archsimd.Uint32x16 {
 	sign := v.And(archsimd.BroadcastUint32x16(0x8000)).ShiftAllLeft(16)
 	exp := v.And(archsimd.BroadcastUint32x16(0x7C00)).ShiftAllRight(10)
 	mantissa := v.And(archsimd.BroadcastUint32x16(0x03FF))
@@ -68,14 +85,5 @@ func convert16To32(v archsimd.Uint32x16) archsimd.Uint32x16 {
 	res = res.Or(denormRes.And(isDenormBits))
 	return res
 }
+//*/
 
-// LoadFloat16x32 loads 32 Float16 values from the given pointer into a Float16x32 vector.
-//
-// The pointer must be aligned to 32 bytes, just like usual AVX512 loads.
-//
-// Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
-// If not available, don't use this, it will crash!
-func LoadFloat16x32(ptr *[32]Float16) Float16x32 {
-	vec := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(ptr)))
-	return Float16x32(vec)
-}
