@@ -37,12 +37,12 @@ type Float16x32 archsimd.Uint16x32
 func (v Float16x32) ToFloat32() (lo, hi archsimd.Float32x16) {
 	// Cast back to use the archsimd methods
 	vec := archsimd.Uint16x32(v)
-	lo32 := convertF16ToF32(vec.GetLo().ExtendToUint32())
-	hi32 := convertF16ToF32(vec.GetHi().ExtendToUint32())
+	lo32 := avx512ConvertF16ToF32(vec.GetLo().ExtendToUint32())
+	hi32 := avx512ConvertF16ToF32(vec.GetHi().ExtendToUint32())
 	return lo32.AsFloat32x16(), hi32.AsFloat32x16()
 }
 
-func convertF16ToF32(v archsimd.Uint32x16) archsimd.Uint32x16 {
+func avx512ConvertF16ToF32(v archsimd.Uint32x16) archsimd.Uint32x16 {
 	sign := v.And(archsimd.BroadcastUint32x16(0x8000)).ShiftAllLeft(16)
 	exp := v.And(archsimd.BroadcastUint32x16(0x7C00)).ShiftAllRight(10)
 	mantissa := v.And(archsimd.BroadcastUint32x16(0x03FF))
