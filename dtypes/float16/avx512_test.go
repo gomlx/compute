@@ -7,6 +7,7 @@ package float16
 import (
 	"fmt"
 	"math"
+	"simd/archsimd"
 	"testing"
 )
 

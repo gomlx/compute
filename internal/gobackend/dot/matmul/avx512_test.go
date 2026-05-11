@@ -18,6 +18,10 @@ import (
 )
 
 func TestAVX512(t *testing.T) {
+	if !archsimd.X86.AVX512() {
+		t.Skip("AVX512 is not supported on this architecture")
+	}
+
 	// Force AVX512 variant only for NonTransposed.
 	defer func() {
 		dot.ResetTestRegistrations()
