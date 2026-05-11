@@ -35,6 +35,9 @@ func TestFloat16x32ToFloat32(t *testing.T) {
 }
 
 func TestFloat16x32SpecialValues(t *testing.T) {
+	if !archsimd.X86.AVX512() {
+		t.Skip("AVX512 is not supported on this architecture")
+	}
 	specialValues := []float32{
 		0.0, -0.0,
 		1.0, -1.0,
