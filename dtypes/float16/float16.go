@@ -69,6 +69,36 @@ func (f *Float16) SetFloat64(v float64) {
 	*f = FromFloat64(v)
 }
 
+type signedTypes interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
+
+type unsignedTypes interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+type floatTypes interface {
+	~float32 | ~float64
+}
+
+type numberTypes interface {
+	signedTypes | unsignedTypes | floatTypes
+}
+
+// From converts the value from a standard numeric type to Float16.
+func From[T numberTypes](value T) Float16 {
+	return FromFloat32(float32(value))
+}
+
+// FromNumbers converts a variadic list of numeric values to a []Float16.
+func FromNumbers[T numberTypes](values ...T) []Float16 {
+	out := make([]Float16, len(values))
+	for i, v := range values {
+		out[i] = From(v)
+	}
+	return out
+}
+
 // FromFloat32 converts a float32 to a Float16.
 func FromFloat32(x float32) Float16 {
 	bits := math.Float32bits(x)

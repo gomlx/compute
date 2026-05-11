@@ -31,7 +31,9 @@ type MapInfo struct {
 
 type MapPairInfo struct {
 	MapName, Generic string
+	Same             bool
 	DTypes1, DTypes2 []DTypeInfo
+	SpecName         string
 }
 
 type Data struct {
@@ -107,6 +109,7 @@ func parseTypeGroups(groupsStr string) []DTypeInfo {
 		return dtypesFloat16
 	}
 	var ints, uints, floats, half, boolean, packed bool
+	var dtypes []DTypeInfo
 	parts := strings.Split(groupsStr, ",")
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -123,9 +126,42 @@ func parseTypeGroups(groupsStr string) []DTypeInfo {
 			boolean = true
 		case "packed":
 			packed = true
+		case "float32":
+			dtypes = append(dtypes, DTypeInfo{"Float32", "float32"})
+		case "float64":
+			dtypes = append(dtypes, DTypeInfo{"Float64", "float64"})
+		case "float16":
+			dtypes = append(dtypes, DTypeInfo{"Float16", "float16.Float16"})
+		case "bfloat16":
+			dtypes = append(dtypes, DTypeInfo{"BFloat16", "bfloat16.BFloat16"})
+		case "int8":
+			dtypes = append(dtypes, DTypeInfo{"Int8", "int8"})
+		case "int16":
+			dtypes = append(dtypes, DTypeInfo{"Int16", "int16"})
+		case "int32":
+			dtypes = append(dtypes, DTypeInfo{"Int32", "int32"})
+		case "int64":
+			dtypes = append(dtypes, DTypeInfo{"Int64", "int64"})
+		case "uint8":
+			dtypes = append(dtypes, DTypeInfo{"Uint8", "uint8"})
+		case "uint16":
+			dtypes = append(dtypes, DTypeInfo{"Uint16", "uint16"})
+		case "uint32":
+			dtypes = append(dtypes, DTypeInfo{"Uint32", "uint32"})
+		case "uint64":
+			dtypes = append(dtypes, DTypeInfo{"Uint64", "uint64"})
+		case "int2":
+			dtypes = append(dtypes, DTypeInfo{"Int2", "uint8"})
+		case "int4":
+			dtypes = append(dtypes, DTypeInfo{"Int4", "uint8"})
+		case "uint2":
+			dtypes = append(dtypes, DTypeInfo{"Uint2", "uint8"})
+		case "uint4":
+			dtypes = append(dtypes, DTypeInfo{"Uint4", "uint8"})
 		}
 	}
-	return makeDTypes(ints, uints, floats, half, boolean, packed)
+	dtypes = append(dtypes, makeDTypes(ints, uints, floats, half, boolean, packed)...)
+	return dtypes
 }
 
 func parseFiles(dir string) (Data, error) {
@@ -183,6 +219,7 @@ func parseFiles(dir string) (Data, error) {
 								typeGroups := match[2]
 								dtypes := parseTypeGroups(typeGroups)
 								slices.SortFunc(dtypes, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
+								dtypes = slices.Compact(dtypes)
 								d.Maps = append(d.Maps, MapInfo{
 									MapName: mapName,
 									Generic: generic,
@@ -194,13 +231,21 @@ func parseFiles(dir string) (Data, error) {
 								typeGroups2 := match[3]
 								dtypes1 := parseTypeGroups(typeGroups1)
 								slices.SortFunc(dtypes1, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
-								dtypes2 := parseTypeGroups(typeGroups2)
-								slices.SortFunc(dtypes2, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
+								dtypes1 = slices.Compact(dtypes1)
+								var dtypes2 []DTypeInfo
+								same := typeGroups2 == "same"
+								if !same {
+									dtypes2 = parseTypeGroups(typeGroups2)
+									slices.SortFunc(dtypes2, func(a, b DTypeInfo) int { return strings.Compare(a.DType, b.DType) })
+									dtypes2 = slices.Compact(dtypes2)
+								}
 								d.PairMaps = append(d.PairMaps, MapPairInfo{
-									MapName: mapName,
-									Generic: generic,
-									DTypes1: dtypes1,
-									DTypes2: dtypes2,
+									MapName:  mapName,
+									Generic:  generic,
+									Same:     same,
+									DTypes1:  dtypes1,
+									DTypes2:  dtypes2,
+									SpecName: fmt.Sprintf("%s, %s", typeGroups1, typeGroups2),
 								})
 							}
 						}
@@ -249,6 +294,9 @@ import (
 {{- end}}
 )
 
+type _ = bfloat16.BFloat16
+type _ = float16.Float16
+type _ = dtypes.Number
 
 func init() {
 {{$prefix := .PriorityPrefix}}
@@ -264,15 +312,20 @@ func init() {
 
 {{- range .PairMaps}}
 
-	// DTypePairMap: {{.MapName}}
+	// DTypePairMap: {{.MapName}} ({{.SpecName}})
 {{- $mapName := .MapName }}
 {{- $generic := .Generic }}
+{{- $same := .Same }}
 {{- $dtypes2 := .DTypes2 }}
 {{- range .DTypes1 }}
 {{- $dtype1 := .DType }}
 {{- $goType1 := .GoType }}
+{{- if $same }}
+	{{$mapName}}.Register(dtypes.{{$dtype1}}, dtypes.{{$dtype1}}, {{$prefix}}PriorityGeneric, {{$generic}}[{{$goType1}}, {{$goType1}}])
+{{- else }}
 {{- range $dtypes2 }}
 	{{$mapName}}.Register(dtypes.{{$dtype1}}, dtypes.{{.DType}}, {{$prefix}}PriorityGeneric, {{$generic}}[{{$goType1}}, {{.GoType}}])
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

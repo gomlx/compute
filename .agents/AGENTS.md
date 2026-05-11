@@ -100,3 +100,67 @@ Normal code files are prefixed with the following copyright line:
 ```
 
 Auto-generated files don't need a copyright, but should include a comment with the tool use to generate them.
+
+## How to use SIMD in Go with archsimd
+
+Go 1.25 introduced experimental SIMD support through the `simd/archsimd` package. This allows for writing architecture-independent SIMD code while still leveraging specialized hardware instructions (like AVX-512 on x86).
+
+### Enabling archsimd
+
+To use archsimd, you must:
+1. Use a compatible Go version (1.25+).
+2. Set the environment variable `GOEXPERIMENT=simd` during build and test.
+3. Use the `//go:build goexperiment.simd` build tag in your files.
+
+### Common Vector Types
+
+Vectors are named by their element type and the number of elements. They usually come in three widths:
+
+| Width | Type Examples | Hardware Target (x86) |
+| :--- | :--- | :--- |
+| **128-bit** | `Float32x4`, `Int32x4`, `Uint16x8`, `Int8x16` | SSE |
+| **256-bit** | `Float32x8`, `Int32x8`, `Uint16x16`, `Int8x32` | AVX, AVX2 |
+| **512-bit** | `Float32x16`, `Int32x16`, `Uint16x32`, `Int8x64` | AVX-512 |
+
+Other types include `Float64x2/x4/x8`, `Uint64x2/x4/x8`, and corresponding `Mask` types (e.g., `Mask32x16`).
+
+### Basic Usage Example
+
+```go
+//go:build amd64 && goexperiment.simd
+
+package mypackage
+
+import "simd/archsimd"
+
+func AddSlices(a, b, res []float32) {
+    for i := 0; i < len(a); i += 16 {
+        va := archsimd.LoadFloat32x16((*[16]float32)(&a[i]))
+        vb := archsimd.LoadFloat32x16((*[16]float32)(&b[i]))
+        vres := va.Add(vb)
+        vres.Store((*[16]float32)(&res[i]))
+    }
+}
+```
+
+### Summary of Found Operations
+
+| Category | Operations |
+| :--- | :--- |
+| **Arithmetic** | `Add`, `Sub`, `Mul`, `Div`, `Sqrt`, `Abs`, `Min`, `Max` |
+| **Logical** | `And`, `Or`, `Xor`, `AndNot` |
+| **Shift** | `ShiftAllLeft(bits uint64)`, `ShiftAllRight`, `ShiftLeft(v Vector)` (variable per-element) |
+| **Conversion** | `ExtendToUint32`, `AsUint32x16` (bit-cast), `ConvertToFloat32` (value cast) |
+| **Comparison** | `Equal`, `NotEqual`, `Greater`, `Less`, `GreaterEqual`, `IsZero` |
+| **Special** | `LeadingZeros`, `BroadcastUint32x16(val)`, `GetHi()`, `GetLo()` |
+| **Masking** | `Merge(other, mask)`, `Masked(mask)`, `mask.ToInt32x16()` |
+
+### Working with Masks and Bit Manipulation
+
+Masks are returned by comparison operations (e.g., `v.Equal(zero)` returns a `Mask`).
+- **Merging**: `res = trueVal.Merge(falseVal, mask)` returns `trueVal` where `mask` is true, and `falseVal` otherwise.
+- **Bitmask Vector**: To get a vector where all bits are set based on a mask, use `mask.ToInt32x16().AsUint32x16()`. This is useful for manual bitwise manipulation when `Merge` behavior is complex.
+
+### Architecture Specifics
+
+While `archsimd` is cross-architecture, some operations may only be available on certain platforms or require specific CPU features (like AVX-512). Always check for support using `archsimd.X86.AVX512()` or similar checks in `init()`.

@@ -616,6 +616,16 @@ type NumberNotComplex interface {
 	float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64
 }
 
+// NumberComplex represents the Go complex types corresponding to supported DType's.
+type NumberComplex interface {
+	complex64 | complex128
+}
+
+// NumberHalfPrecision represents the Go half-precision types corresponding to supported DType's.
+type NumberHalfPrecision interface {
+	float16.Float16 | bfloat16.BFloat16
+}
+
 // GoFloat represent a continuous Go numeric type, supported by GoMLX.
 // It doesn't include complex numbers.
 type GoFloat interface {

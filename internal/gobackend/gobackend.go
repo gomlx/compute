@@ -73,12 +73,6 @@ func New(config string) (compute.Backend, error) {
 			}
 			b.Workers.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
-		case "packgemm":
-			// Enable packgemm algorithm choice.
-			b.EnablePackgemm = true
-		case "highway":
-			// Enable highway algorithm choice.
-			b.EnableHighway = true
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
 			// The default is running parallel if it's the only thing executing, otherwise sequentially.
@@ -105,9 +99,6 @@ func New(config string) (compute.Backend, error) {
 				return nil, err
 			}
 		}
-		if b.EnablePackgemm && b.EnableHighway {
-			return nil, errors.Errorf("cannot enable both packgemm and highway, choose one or the other")
-		}
 	}
 	return b, nil
 }
@@ -127,19 +118,8 @@ type Backend struct {
 
 	NumLiveExecutions atomic.Int32
 
-	// DotGeneralForceExecutionPath forces a specific DotGeneral execution strategy.
-	// Default (autoSelectPath, the zero value) selects based on matrix size.
-	// When set to normalizedPath, blockedPath, or checkPath, it overrides the automatic selection.
-	DotGeneralForceExecutionPath int
-
 	// OpsExecutionType defines how to execute the ops of a computation.
 	OpsExecutionType OpsExecutionType
-
-	// EnablePackgemm is true if packgemm is enabled.
-	EnablePackgemm bool
-
-	// EnableHighway is true if highway algorithm is enabled.
-	EnableHighway bool
 
 	// isFinalized is true if the backend has been isFinalized.
 	isFinalized bool
@@ -161,7 +141,7 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return "Go Portable Compute Backend"
+	return fmt.Sprintf("Go Portable Compute Backend (parallelism=%d)", b.Workers.MaxParallelism())
 }
 
 // NumDevices return the number of devices available for this Backend.

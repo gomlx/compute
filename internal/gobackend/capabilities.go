@@ -134,11 +134,14 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeSort:  true,
 
 		// Fused operations:
-		compute.OpTypeFusedSoftmax:                   true,
-		compute.OpTypeFusedLayerNorm:                 true,
-		compute.OpTypeFusedGelu:                      true,
-		compute.OpTypeFusedDense:                     true,
-		compute.OpTypeFusedScaledDotProductAttention: true,
+		compute.OpTypeFusedSoftmax:   true,
+		compute.OpTypeFusedLayerNorm: true,
+		compute.OpTypeFusedGelu:      true,
+		compute.OpTypeFusedDense:     true,
+		// - Fused SPDA: Temporarily DISABLED, the new matmul with SIMD support is much faster (+3x faster),
+		//   so this fused op ends up being slower. TODO: add a SIMD version of the fused SPDA -- or split it
+		//   into a normal matmul (and use the SIMD matmul) + a fused softmax.
+		compute.OpTypeFusedScaledDotProductAttention: false,
 		compute.OpTypeFusedAttentionQKVProjection:    true,
 		compute.OpTypeFusedQuantizedDense:            true,
 		compute.OpTypeQuantizedEmbeddingLookup:       true,

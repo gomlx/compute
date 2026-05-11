@@ -8,6 +8,10 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 )
 
+type _ = bfloat16.BFloat16
+type _ = float16.Float16
+type _ = dtypes.Number
+
 func init() {
 
 	// DTypeMap: fillBufferDTypeMap

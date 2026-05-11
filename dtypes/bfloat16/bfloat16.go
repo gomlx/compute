@@ -60,6 +60,36 @@ func FromFloat32s(values ...float32) []BFloat16 {
 	return out
 }
 
+type signedTypes interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64
+}
+
+type unsignedTypes interface {
+	~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+type floatTypes interface {
+	~float32 | ~float64
+}
+
+type numberTypes interface {
+	signedTypes | unsignedTypes | floatTypes
+}
+
+// From converts the value from a standard numeric type to BFloat16.
+func From[T numberTypes](value T) BFloat16 {
+	return FromFloat32(float32(value))
+}
+
+// FromNumbers converts a variadic list of numeric values to a []BFloat16.
+func FromNumbers[T numberTypes](values ...T) []BFloat16 {
+	out := make([]BFloat16, len(values))
+	for i, v := range values {
+		out[i] = From(v)
+	}
+	return out
+}
+
 // FromBits convert an uint16 to a BFloat16.
 func FromBits(uint16 uint16) BFloat16 {
 	return BFloat16(uint16)
