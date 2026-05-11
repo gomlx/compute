@@ -12,8 +12,32 @@ import (
 )
 
 // FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
-// Both AxesLayoutBHSD and AxesLayoutBSHD are supported; the executor transposes
-// BSHD inputs to BHSD internally.
+//
+// output = softmax(query @ key^T * scale + mask) @ value, computed per-head with GQA support.
+//
+// Inputs:
+//   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
+//     For AxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
+//     key/value [batch, numKVHeads, kvLen, headDim].
+//     For AxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
+//     key/value [batch, kvLen, numKVHeads, headDim].
+//   - mask: [seqLen, kvLen] (seqLen is the query sequence length): optional (can be nil) mask
+//     that can be either boolean or additive (any dtype other than Bool). See also causal below.
+//     Boolean mask: true = attend, false = ignore.
+//     Float/additive mask: added to scores before softmax.
+//     Must be broadcastable to the score tensor shape.
+//
+// Parameters:
+//   - numHeads: number of query attention heads
+//   - numKVHeads: number of key/value attention heads (for GQA; numHeads must be divisible by numKVHeads)
+//   - axesLayout: determines the axis ordering of query/key/value tensors
+//   - scale: scaling factor applied to query @ key^T (typically 1/sqrt(headDim))
+//   - causal: if true, apply causal (lower-triangular) mask. Callers (e.g. attention.Core)
+//     treat causal and mask as mutually exclusive, folding causal into the mask before calling
+//     this method when both are needed. Backends may assume they won't both be set.
+//   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
+//
+// Output: same shape as query.
 func FusedScaledDotProductAttention(
 	f *gobackend.Function,
 	query, key, value, mask compute.Value,
@@ -25,8 +49,13 @@ func FusedScaledDotProductAttention(
 }
 
 func init() {
-	gobackend.RegisterFusedScaledDotProductAttention.Register(FusedScaledDotProductAttention, gobackend.PriorityGeneric)
-	gobackend.SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, gobackend.PriorityTyped, execFusedScaledDotProductAttention)
+	// DISABLED: the new matmul with SIMD support is much faster (+3x faster), so thi fused op ends up being slower,
+	// at least in a small sentence embedding model.
+	// TODO: add a SIMD version and re-evaluate.
+	if false {
+		gobackend.RegisterFusedScaledDotProductAttention.Register(FusedScaledDotProductAttention, gobackend.PriorityGeneric)
+		gobackend.SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, gobackend.PriorityTyped, execFusedScaledDotProductAttention)
+	}
 }
 
 type nodeScaledDotProductAttention struct {
