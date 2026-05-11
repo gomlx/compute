@@ -13,6 +13,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/support/backendtest"
 )
@@ -55,6 +56,10 @@ func TestAVX512(t *testing.T) {
 		t.Run("BFloat16", func(t *testing.T) {
 			runPackLHSTestsHalfPrecision(t, avx512PackLHSKernelRows4[bfloat16.BFloat16], 4)
 			runPackRHSTestsHalfPrecision(t, avx512PackRHSNonTransposed[bfloat16.BFloat16], 32)
+		})
+		t.Run("Float16", func(t *testing.T) {
+			runPackLHSTestsHalfPrecision(t, avx512PackLHSKernelRows4[float16.Float16], 4)
+			runPackRHSTestsHalfPrecision(t, avx512PackRHSNonTransposed[float16.Float16], 32)
 		})
 		t.Run("Float64", func(t *testing.T) {
 			runPackLHSTests(t, avx512PackLHSKernelRows4[float64], 4)

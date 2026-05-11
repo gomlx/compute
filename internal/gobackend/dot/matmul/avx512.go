@@ -21,9 +21,9 @@ import (
 )
 
 // Auto-generate alternate specialized versions of AVX512 operations -- for half-precision input data types.
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16,f64
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16,f64
-//go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f16,f64
 
 var (
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
@@ -43,6 +43,9 @@ var (
 		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
 		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
 	}
+
+	// AVX512ParamsFloat16 are the parameters to use for Float16, tuned for the 16 registers implementations.
+	AVX512ParamsFloat16 = AVX512ParamsBFloat16
 
 	// AVX512ParamsFloat64 are the parameters to use for Float64, tuned for the 16 registers implementations.
 	AVX512ParamsFloat64 = CacheParams{
@@ -75,6 +78,9 @@ func registerAVX512(forTests bool) {
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, PriorityAVX512, forTests)
+
+	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, PriorityAVX512, forTests)
+	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, PriorityAVX512, forTests)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, PriorityAVX512, forTests)

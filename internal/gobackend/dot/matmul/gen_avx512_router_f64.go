@@ -13,6 +13,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"k8s.io/klog/v2"
 	//alt:bf16  "github.com/gomlx/compute/dtypes/bfloat16"
+	//alt:f16  "github.com/gomlx/compute/dtypes/float16"
 )
 
 // avx512RouterFloat32 implements a router that decides between the small no-SIMD version
@@ -20,14 +21,16 @@ import (
 //
 //alt:f32 func avx512RouterFloat32(
 //alt:bf16  func avx512RouterBFloat16(
+//alt:f16  func avx512RouterFloat16(
 func avx512RouterFloat64( //alt:f64
 	backend *gobackend.Backend,
 	layout dot.Layout,
 	//alt:f32 lhs, rhs []float32,
 	//alt:bf16  lhs, rhs []bfloat16.BFloat16,
+	//alt:f16  lhs, rhs []float16.Float16,
 	lhs, rhs []float64, //alt:f64
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	//alt:f32|bf16 output []float32) {
+	//alt:f32|bf16|f16 output []float32) {
 	output []float64) { //alt:f64
 
 	// Check if small matrix multiplication kernel can be used.
@@ -46,15 +49,17 @@ func avx512RouterFloat64( //alt:f64
 	}
 
 	if useSmallVariant {
-		// Vector width: 16 for float32, 32 for bfloat16, 8 for float64
+		// Vector width: 16 for float32, 32 for bfloat16/float16, 8 for float64
 		//alt:f32 const vecWidth = 16
 		//alt:bf16  const vecWidth = 32
+		//alt:f16  const vecWidth = 32
 		const vecWidth = 8 //alt:f64
 
 		if layout == dot.LayoutNonTransposed {
 			if rhsCrossSize > vecWidth {
 				//alt:f32 avx512SmallFloat32Parallel(
 				//alt:bf16  avx512SmallBFloat16Parallel(
+				//alt:f16  avx512SmallFloat16Parallel(
 				avx512SmallFloat64Parallel( //alt:f64
 					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 				return
@@ -62,6 +67,7 @@ func avx512RouterFloat64( //alt:f64
 			// No benefit from SIMD:
 			//alt:f32 noSIMDRouter(
 			//alt:bf16  noSIMDHalfPrecisionRouter(
+			//alt:f16  noSIMDHalfPrecisionRouter(
 			noSIMDRouter( //alt:f64
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 			return
@@ -70,6 +76,7 @@ func avx512RouterFloat64( //alt:f64
 			if contractingSize >= vecWidth {
 				//alt:f32 avx512SmallFloat32Parallel(
 				//alt:bf16  avx512SmallBFloat16Parallel(
+				//alt:f16  avx512SmallFloat16Parallel(
 				avx512SmallFloat64Parallel( //alt:f64
 					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 				return
@@ -77,6 +84,7 @@ func avx512RouterFloat64( //alt:f64
 			// No benefit from SIMD:
 			//alt:f32 noSIMDRouter(
 			//alt:bf16  noSIMDHalfPrecisionRouter(
+			//alt:f16  noSIMDHalfPrecisionRouter(
 			noSIMDRouter( //alt:f64
 				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		}
@@ -86,6 +94,7 @@ func avx512RouterFloat64( //alt:f64
 	// Use the efficient large matrix version:
 	//alt:f32 avx512LargeFloat32(
 	//alt:bf16  avx512LargeBFloat16(
+	//alt:f16  avx512LargeFloat16(
 	avx512LargeFloat64( //alt:f64
 		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 }
