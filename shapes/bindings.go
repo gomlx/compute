@@ -132,19 +132,17 @@ func UnifyAxisNames(s1, s2 Shape) ([]string, error) {
 	if s1.Rank() != s2.Rank() {
 		return nil, errors.Errorf("UnifyAxisNames: rank mismatch: %d vs %d", s1.Rank(), s2.Rank())
 	}
+	if s1.AxisNames == nil {
+		return s2.AxisNames, nil
+	}
+	if s2.AxisNames == nil {
+		return s1.AxisNames, nil
+	}
 	result := make([]string, s1.Rank())
 	for i := range result {
-		name1 := ""
-		if s1.AxisNames != nil {
-			name1 = s1.AxisNames[i]
-		}
-		name2 := ""
-		if s2.AxisNames != nil {
-			name2 = s2.AxisNames[i]
-		}
-		unified, err := UnifyAxisName(name1, name2)
+		unified, err := UnifyAxisName(s1.AxisNames[i], s2.AxisNames[i])
 		if err != nil {
-			return nil, errors.Wrapf(err, "axis %d", i)
+			return nil, errors.WithMessagef(err, "axis %d", i)
 		}
 		result[i] = unified
 	}
