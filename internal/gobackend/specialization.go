@@ -66,18 +66,6 @@ func extractBindingsFromInputs(params []*Node, inputs []*Buffer) (shapes.AxisBin
 // multiOutputsNodes pointers to the resolved copies, and recomputes
 // shape-dependent node.Data for operations that implement RecomputableNodeData.
 func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *ShapeSpecialization, err error) {
-	// shapes.Shape.Resolve panics on missing bindings, non-positive values, or unnamed
-	// dynamic axes. Recover those panics and surface them as errors.
-	defer func() {
-		if r := recover(); r != nil {
-			spec = nil
-			if rErr, ok := r.(error); ok {
-				err = errors.WithMessage(rErr, "createSpecialization")
-			} else {
-				err = errors.Errorf("createSpecialization: %v", r)
-			}
-		}
-	}()
 
 	origNodes := e.builder.MainFn.Nodes
 	resolved := make([]*Node, len(origNodes))
@@ -87,12 +75,16 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 		if orig == nil {
 			continue
 		}
+		resolvedShape, err := orig.Shape.Resolve(bindings)
+		if err != nil {
+			return nil, errors.WithMessage(err, "createSpecialization: Shape.Resolve")
+		}
 		n := &Node{
 			Index:              orig.Index,
 			Inputs:             orig.Inputs,
 			CapturedInputs:     orig.CapturedInputs,
 			OpType:             orig.OpType,
-			Shape:              orig.Shape.Resolve(bindings),
+			Shape:              resolvedShape,
 			Builder:            orig.Builder,
 			Function:           orig.Function,
 			Data:               orig.Data,
@@ -104,7 +96,10 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 		if orig.MultiOutputsShapes != nil {
 			n.MultiOutputsShapes = make([]shapes.Shape, len(orig.MultiOutputsShapes))
 			for j, s := range orig.MultiOutputsShapes {
-				n.MultiOutputsShapes[j] = s.Resolve(bindings)
+				n.MultiOutputsShapes[j], err = s.Resolve(bindings)
+				if err != nil {
+					return nil, errors.WithMessage(err, "createSpecialization: Shape.Resolve multi-output")
+				}
 			}
 			// MultiOutputsNodes will be rewired in the second pass.
 			n.MultiOutputsNodes = orig.MultiOutputsNodes

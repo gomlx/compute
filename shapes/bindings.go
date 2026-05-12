@@ -29,13 +29,15 @@ func (b AxisBindings) Key() string {
 	return strings.Join(parts, ",")
 }
 
-// Resolve returns a new Shape with all dynamic dimensions replaced by their bound values.
+// Resolve returns a new Shape with all dynamic dimensions replaced by their bound values --
+// except if the original shape was not dynamic, then it is returned as is (not a copy).
+//
 // The resolved shape retains its AxisNames for provenance/debugging.
 //
-// Panics if a named dynamic axis has no corresponding binding, or if the binding is non-positive.
-func (s Shape) Resolve(bindings AxisBindings) Shape {
+// Returns an error a named dynamic axis has no corresponding binding, or if the binding is non-positive.
+func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 	if !s.IsDynamic() {
-		return s
+		return s, nil
 	}
 	resolved := s.Clone()
 	for i, dim := range resolved.Dimensions {
@@ -44,18 +46,18 @@ func (s Shape) Resolve(bindings AxisBindings) Shape {
 		}
 		name := resolved.AxisName(i)
 		if name == "" {
-			panic(errors.Errorf("Shape.Resolve: dynamic axis %d has no name and cannot be resolved: %s", i, s))
+			return Shape{}, errors.Errorf("Shape.Resolve: dynamic axis %d has no name and cannot be resolved: %s", i, s)
 		}
 		val, ok := bindings[name]
 		if !ok {
-			panic(errors.Errorf("Shape.Resolve: no binding for axis %q in shape %s", name, s))
+			return Shape{}, errors.Errorf("Shape.Resolve: no binding for axis %q in shape %s", name, s)
 		}
 		if val <= 0 {
-			panic(errors.Errorf("Shape.Resolve: binding for axis %q must be positive, got %d", name, val))
+			return Shape{}, errors.Errorf("Shape.Resolve: binding for axis %q must be positive, got %d", name, val)
 		}
 		resolved.Dimensions[i] = val
 	}
-	return resolved
+	return resolved, nil
 }
 
 // ExtractBindings extracts axis bindings by comparing a template shape (with named dynamic axes)

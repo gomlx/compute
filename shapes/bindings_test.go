@@ -24,7 +24,8 @@ func TestAxisBindings_Key(t *testing.T) {
 func TestResolve(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
 	bindings := AxisBindings{"batch": 32}
-	resolved := s.Resolve(bindings)
+	resolved, err := s.Resolve(bindings)
+	require.NoError(t, err)
 
 	require.Equal(t, []int{32, 512}, resolved.Dimensions)
 	require.Equal(t, []string{"batch", ""}, resolved.AxisNames)
@@ -34,7 +35,8 @@ func TestResolve(t *testing.T) {
 func TestResolve_MultipleAxes(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, -1, 768}, []string{"batch", "seq_len", ""})
 	bindings := AxisBindings{"batch": 8, "seq_len": 256}
-	resolved := s.Resolve(bindings)
+	resolved, err := s.Resolve(bindings)
+	require.NoError(t, err)
 
 	require.Equal(t, []int{8, 256, 768}, resolved.Dimensions)
 }
@@ -42,19 +44,23 @@ func TestResolve_MultipleAxes(t *testing.T) {
 func TestResolve_StaticShape(t *testing.T) {
 	s := Make(dtypes.Float32, 32, 512)
 	// Resolve on static shape returns same shape (no-op).
-	resolved := s.Resolve(AxisBindings{"batch": 64})
+	resolved, err := s.Resolve(AxisBindings{"batch": 64})
+	require.NoError(t, err)
 	require.True(t, s.Equal(resolved))
 }
 
 func TestResolve_MissingBinding(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
-	require.Panics(t, func() { s.Resolve(AxisBindings{}) })
+	_, err := s.Resolve(AxisBindings{})
+	require.Error(t, err)
 }
 
 func TestResolve_NonPositiveBinding(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
-	require.Panics(t, func() { s.Resolve(AxisBindings{"batch": 0}) })
-	require.Panics(t, func() { s.Resolve(AxisBindings{"batch": -5}) })
+	_, err := s.Resolve(AxisBindings{"batch": 0})
+	require.Error(t, err)
+	_, err = s.Resolve(AxisBindings{"batch": -5})
+	require.Error(t, err)
 }
 
 func TestExtractBindings(t *testing.T) {
@@ -200,7 +206,8 @@ func TestRoundTrip_ExtractAndResolve(t *testing.T) {
 	bindings, err := ExtractBindings(template, concrete)
 	require.NoError(t, err)
 
-	resolved := template.Resolve(bindings)
+	resolved, err := template.Resolve(bindings)
+	require.NoError(t, err)
 	require.Equal(t, concrete.Dimensions, resolved.Dimensions)
 	require.False(t, resolved.IsDynamic())
 }
