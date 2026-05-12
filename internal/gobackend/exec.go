@@ -208,7 +208,7 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 			return nil, errors.Errorf("Execute: input buffer #%d flat data is set to nil (!?)", ii)
 		}
 		nodeInput := params[ii]
-		if !nodeInput.Shape.HasDynamicDims() {
+		if !nodeInput.Shape.IsDynamic() {
 			if !inputBuffer.RawShape.EqualDimensions(nodeInput.Shape) {
 				return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected shape %s, got %s",
 					nodeInput.Data.(*NodeParameter).Name, ii, e.builder.name, nodeInput.Shape, inputBuffer.RawShape)

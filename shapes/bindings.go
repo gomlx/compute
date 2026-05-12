@@ -38,7 +38,7 @@ func (b AxisBindings) Key() string {
 //
 // Panics if a named dynamic axis has no corresponding binding, or if the binding is non-positive.
 func (s Shape) Resolve(bindings AxisBindings) Shape {
-	if !s.HasDynamicDims() {
+	if !s.IsDynamic() {
 		return s
 	}
 	resolved := s.Clone()

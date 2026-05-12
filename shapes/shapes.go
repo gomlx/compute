@@ -87,12 +87,16 @@ type Shape struct {
 }
 
 // Make returns a Shape structure filled with the values given.
+//
+// See MakeDynamic for shapes with dynamic and/or named axes.
 // See MakeTuple for tuple shapes.
 func Make(dtype dtypes.DType, dimensions ...int) Shape {
 	s := Shape{Dimensions: slices.Clone(dimensions), DType: dtype}
 	for _, dim := range dimensions {
 		if dim < 0 {
-			panic(errors.Errorf("shapes.Make(%s): cannot create a shape with an axis with dimension < 0", s))
+			panic(errors.Errorf(
+				"shapes.Make(%s): cannot create a shape with an axis with dimension < 0 "+
+					"-- see MakeDynamic to create dynamic shapes", s))
 		}
 	}
 	return s
@@ -148,24 +152,28 @@ func (s Shape) String() string {
 	if s.Rank() == 0 {
 		return fmt.Sprintf("(%s)", s.DType)
 	}
-	if s.AxisNames != nil {
-		parts := make([]string, s.Rank())
-		for i, dim := range s.Dimensions {
+	parts := make([]string, s.Rank())
+	for i, dim := range s.Dimensions {
+		if dim == DynamicDim {
+			parts[i] = "?"
+		} else {
+			parts[i] = fmt.Sprintf("%d", dim)
+		}
+		if len(s.AxisNames) > i {
 			name := s.AxisNames[i]
 			if name != "" {
-				parts[i] = fmt.Sprintf("%s=%d", name, dim)
-			} else {
-				parts[i] = fmt.Sprintf("%d", dim)
+				parts[i] = fmt.Sprintf("%s=%s", name, parts[i])
 			}
 		}
-		return fmt.Sprintf("(%s)[%s]", s.DType, strings.Join(parts, " "))
 	}
-	return fmt.Sprintf("(%s)%v", s.DType, s.Dimensions)
+	return fmt.Sprintf("(%s)[%s]", s.DType, strings.Join(parts, ", "))
 }
 
 // Size returns the number of elements (not bytes) for this shape. It's the product of all dimensions.
 //
-// For the number of bytes used to store this shape, see Shape.Memory.
+// It panics if s.IsDynamic().
+//
+// For the number of bytes used to store this shape, see Shape.ByteSize.
 func (s Shape) Size() (size int) {
 	size = 1
 	for _, d := range s.Dimensions {
@@ -183,7 +191,6 @@ func (s Shape) Size() (size int) {
 // Notice scalars are not zero in size -- they have size one, but rank zero.
 func (s Shape) IsZeroSize() bool {
 	return slices.Contains(s.Dimensions, 0)
-
 }
 
 // ByteSize returns the number of bytes used to store an array of the given shape.
@@ -243,7 +250,9 @@ func (s Shape) Equal(s2 Shape) bool {
 	return axisNamesEqual(s.AxisNames, s2.AxisNames)
 }
 
-// EqualDimensions compares two shapes for equality of dimensions. Dtypes can be different.
+// EqualDimensions compares two shapes for equality of dimensions.
+//
+// DType and axis names are ignored.
 func (s Shape) EqualDimensions(s2 Shape) bool {
 	if s.IsTuple() {
 		if !s2.IsTuple() {
@@ -284,7 +293,9 @@ func (s Shape) Clone() (s2 Shape) {
 }
 
 // gobFormatV1 is a marker value used to distinguish the new gob format (with AxisNames)
-// from the old format (without). In the old format, this position held numTuples (>= 0).
+// from the old format (without).
+//
+// In the old format, the corresponding gob-encoded position held numTuples (>= 0).
 const gobFormatV1 = -1
 
 // GobSerialize shape in binary format.
@@ -308,12 +319,18 @@ func (s Shape) GobSerialize(encoder *gob.Encoder) (err error) {
 	}
 	enc(s.DType)
 	enc(s.Dimensions)
+
+	// Encode the format version: currently gobFormatV1.
 	enc(gobFormatV1)
+
+	// Encode the axis names.
 	hasAxisNames := s.AxisNames != nil
 	enc(hasAxisNames)
 	if hasAxisNames {
 		enc(s.AxisNames)
 	}
+
+	// Encode the tuple shapes.
 	enc(len(s.TupleShapes))
 	if err != nil {
 		return
@@ -328,7 +345,7 @@ func (s Shape) GobSerialize(encoder *gob.Encoder) (err error) {
 }
 
 // GobDeserialize a Shape. Returns new Shape or an error.
-// Handles both the old format (without AxisNames) and the v1 format (with AxisNames).
+// Handles both the old format (without a format version) and the v1 format (with AxisNames).
 func GobDeserialize(decoder *gob.Decoder) (s Shape, err error) {
 	dec := func(data any) {
 		if err != nil {
@@ -342,14 +359,16 @@ func GobDeserialize(decoder *gob.Decoder) (s Shape, err error) {
 	dec(&s.DType)
 	dec(&s.Dimensions)
 
-	// Read version marker or numTuples (for backward compat).
+	// Read version version or numTuples (for backward compat).
 	// Old format: this int is numTuples (>= 0).
 	// New format (v1): this int is -1, followed by hasAxisNames, [axisNames], numTuples.
-	var marker int
-	dec(&marker)
+	var version int
+	dec(&version)
 
 	var numTuples int
-	if marker == gobFormatV1 {
+
+	switch {
+	case version == gobFormatV1:
 		// New format: read axis names, then numTuples.
 		var hasAxisNames bool
 		dec(&hasAxisNames)
@@ -357,9 +376,13 @@ func GobDeserialize(decoder *gob.Decoder) (s Shape, err error) {
 			dec(&s.AxisNames)
 		}
 		dec(&numTuples)
-	} else {
-		// Old format: marker is numTuples directly.
-		numTuples = marker
+
+	case version >= 0:
+		// Old vormat, where instead of version we have numTuples.
+		numTuples = version
+
+	default:
+		err = errors.Errorf("unknown Shape format version %d !? (maybe input came from a newer GoMLX version?)", version)
 	}
 
 	if err != nil {

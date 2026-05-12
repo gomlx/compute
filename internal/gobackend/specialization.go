@@ -29,7 +29,7 @@ type ShapeSpecialization struct {
 // hasDynamicParameters returns true if any parameter node has dynamic dimensions.
 func hasDynamicParameters(params []*Node) bool {
 	for _, p := range params {
-		if p.Shape.HasDynamicDims() {
+		if p.Shape.IsDynamic() {
 			return true
 		}
 	}
@@ -42,7 +42,7 @@ func hasDynamicParameters(params []*Node) bool {
 func extractBindingsFromInputs(params []*Node, inputs []*Buffer) (shapes.AxisBindings, error) {
 	var allBindings []shapes.AxisBindings
 	for i, param := range params {
-		if !param.Shape.HasDynamicDims() {
+		if !param.Shape.IsDynamic() {
 			continue
 		}
 		b, err := shapes.ExtractBindings(param.Shape, inputs[i].RawShape)
@@ -150,13 +150,13 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 // anyInputHasDynamicDims returns true if any input (including captured) of the node has dynamic dimensions.
 func anyInputHasDynamicDims(n *Node) bool {
 	for _, input := range n.Inputs {
-		if input.Shape.HasDynamicDims() {
+		if input.Shape.IsDynamic() {
 			return true
 		}
 	}
 	for _, closureCaptures := range n.CapturedInputs {
 		for _, capturedInput := range closureCaptures {
-			if capturedInput.Shape.HasDynamicDims() {
+			if capturedInput.Shape.IsDynamic() {
 				return true
 			}
 		}

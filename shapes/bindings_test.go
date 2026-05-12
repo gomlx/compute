@@ -28,7 +28,7 @@ func TestResolve(t *testing.T) {
 
 	require.Equal(t, []int{32, 512}, resolved.Dimensions)
 	require.Equal(t, []string{"batch", ""}, resolved.AxisNames)
-	require.False(t, resolved.HasDynamicDims())
+	require.False(t, resolved.IsDynamic())
 }
 
 func TestResolve_MultipleAxes(t *testing.T) {
@@ -202,5 +202,5 @@ func TestRoundTrip_ExtractAndResolve(t *testing.T) {
 
 	resolved := template.Resolve(bindings)
 	require.Equal(t, concrete.Dimensions, resolved.Dimensions)
-	require.False(t, resolved.HasDynamicDims())
+	require.False(t, resolved.IsDynamic())
 }

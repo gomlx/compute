@@ -20,7 +20,7 @@ func (s Shape) Strides() (strides []int) {
 	if rank == 0 {
 		return
 	}
-	if s.HasDynamicDims() {
+	if s.IsDynamic() {
 		panic(errors.Errorf("Shape.Strides() called on shape with dynamic dimensions: %s", s))
 	}
 	strides = make([]int, rank)
@@ -45,7 +45,7 @@ func (s Shape) Strides() (strides []int) {
 // To avoid allocating the slice of indices, the yielded indices is owned by the Iter() method:
 // don't change it inside the loop.
 func (s Shape) Iter() iter.Seq2[int, []int] {
-	if s.HasDynamicDims() {
+	if s.IsDynamic() {
 		panic(errors.Errorf("Shape.Iter() called on shape with dynamic dimensions: %s", s))
 	}
 	indices := make([]int, s.Rank())
@@ -63,7 +63,7 @@ func (s Shape) Iter() iter.Seq2[int, []int] {
 //
 // It expects len(indices) == s.Rank(). It will panic otherwise.
 func (s Shape) IterOn(indices []int) iter.Seq2[int, []int] {
-	if s.HasDynamicDims() {
+	if s.IsDynamic() {
 		panic(errors.Errorf("Shape.IterOn() called on shape with dynamic dimensions: %s", s))
 	}
 	if len(indices) != s.Rank() {
@@ -211,7 +211,7 @@ func (s Shape) IterOn(indices []int) iter.Seq2[int, []int] {
 //	    fmt.Printf("flatIdx=%d, indices=%v\n", flatIdx, indices)
 //	}
 func (s Shape) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[int, []int] {
-	if s.HasDynamicDims() {
+	if s.IsDynamic() {
 		panic(errors.Errorf("Shape.IterOnAxes() called on shape with dynamic dimensions: %s", s))
 	}
 	rank := s.Rank()

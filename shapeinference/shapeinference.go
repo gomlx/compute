@@ -401,7 +401,7 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 //
 // Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
 func Reshape(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
-	if operand.HasDynamicDims() {
+	if operand.IsDynamic() {
 		// Dynamic path: skip size validation (deferred to specialization time).
 		// DynamicDim values in target dims are allowed — they propagate through
 		// reshape operations and are resolved during shape specialization.

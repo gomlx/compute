@@ -44,24 +44,24 @@ func TestMakeDynamic_Panics(t *testing.T) {
 
 func TestHasDynamicDims(t *testing.T) {
 	static := Make(dtypes.Float32, 32, 512)
-	require.False(t, static.HasDynamicDims())
+	require.False(t, static.IsDynamic())
 
 	dynamic := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
-	require.True(t, dynamic.HasDynamicDims())
+	require.True(t, dynamic.IsDynamic())
 }
 
 func TestIsDynamicDim(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
-	require.True(t, s.IsDynamicDim(0))
-	require.False(t, s.IsDynamicDim(1))
+	require.True(t, s.IsAxisDynamic(0))
+	require.False(t, s.IsAxisDynamic(1))
 
 	// Negative indexing.
-	require.False(t, s.IsDynamicDim(-1))
-	require.True(t, s.IsDynamicDim(-2))
+	require.False(t, s.IsAxisDynamic(-1))
+	require.True(t, s.IsAxisDynamic(-2))
 
 	// Out of bounds.
-	require.Panics(t, func() { s.IsDynamicDim(2) })
-	require.Panics(t, func() { s.IsDynamicDim(-3) })
+	require.Panics(t, func() { s.IsAxisDynamic(2) })
+	require.Panics(t, func() { s.IsAxisDynamic(-3) })
 }
 
 func TestAxisName(t *testing.T) {
@@ -129,14 +129,14 @@ func TestShape_Clone_WithAxisNames(t *testing.T) {
 func TestShape_String_WithAxisNames(t *testing.T) {
 	s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
 	str := s.String()
-	require.Equal(t, "(Float32)[batch=-1 512]", str)
+	require.Equal(t, "(Float32)[batch=?, 512]", str)
 
 	s2 := MakeDynamic(dtypes.Float32, []int{-1, -1, 768}, []string{"batch", "seq_len", ""})
-	require.Equal(t, "(Float32)[batch=-1 seq_len=-1 768]", s2.String())
+	require.Equal(t, "(Float32)[batch=?, seq_len=?, 768]", s2.String())
 
 	// Named static axes.
 	s3 := Make(dtypes.Float32, 32, 512).WithAxisNames("batch", "features")
-	require.Equal(t, "(Float32)[batch=32 features=512]", s3.String())
+	require.Equal(t, "(Float32)[batch=32, features=512]", s3.String())
 }
 
 func TestShape_Size_PanicsOnDynamic(t *testing.T) {

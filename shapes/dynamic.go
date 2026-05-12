@@ -48,25 +48,20 @@ func MakeDynamic(dtype dtypes.DType, dimensions []int, axisNames []string) Shape
 	}
 }
 
-// HasDynamicDims returns true if any dimension is dynamic (DynamicDim).
-func (s Shape) HasDynamicDims() bool {
-	for _, d := range s.Dimensions {
-		if d == DynamicDim {
-			return true
-		}
-	}
-	return false
+// IsDynamic returns true if any dimension is dynamic (DynamicDim).
+func (s Shape) IsDynamic() bool {
+	return slices.Contains(s.Dimensions, DynamicDim)
 }
 
-// IsDynamicDim returns true if the given axis has a dynamic dimension (DynamicDim).
+// IsAxisDynamic returns true if the given axis has a dynamic dimension (DynamicDim).
 // axis supports negative indexing (e.g., -1 for the last axis).
-func (s Shape) IsDynamicDim(axis int) bool {
+func (s Shape) IsAxisDynamic(axis int) bool {
 	adjustedAxis := axis
 	if adjustedAxis < 0 {
 		adjustedAxis += s.Rank()
 	}
 	if adjustedAxis < 0 || adjustedAxis >= s.Rank() {
-		panic(errors.Errorf("Shape.IsDynamicDim(%d) out-of-bounds for rank %d (shape=%s)", axis, s.Rank(), s))
+		panic(errors.Errorf("Shape.IsAxisDynamic(%d) out-of-bounds for rank %d (shape=%s)", axis, s.Rank(), s))
 	}
 	return s.Dimensions[adjustedAxis] == DynamicDim
 }
