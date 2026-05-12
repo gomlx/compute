@@ -11,8 +11,11 @@
 // Any dynamic dimension must be named (it must have a non-empty AxisName), so their values can be
 // inferred when needed (see AxisBindings).
 //
-// Go float16 and bfloat16 support uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
-// and [github.com/gomlx/compute/dtypes/bfloat16].
+// ## Immutable Semantics
+//
+// The Shape object should be immutable semantic after creation: function that need to mutate shapes
+// should clone first (see Shape.Clone), mutate, and return the updated (and henceforward immutable) shape.
+// It's ok to simply copy shapes (shallow copy) if they are not meant to be mutated.
 //
 // ## Glossary
 //
