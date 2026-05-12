@@ -2,11 +2,14 @@
 
 // Package shapes define Shape and DType and associated tools.
 //
-// Shape represents the shape (rank, dimensions, and DType) of either a Tensor or the expected
-// shape of a node in a computation Graph. DType indicates the data type for a Tensor's unit element.
+// Shape represents the shape (rank, dimensions for each axis, and DType) of either a Tensor or the expected
+// shape of a node in a computation graph. DType indicates the data type for a Tensor's unit element.
 //
-// Shape and DType are used both by the concrete tensor values (see pkg/core/tensors package) and when
-// working on the symbolic computation graph (see pkg/core/graph package).
+// Optionally, the shape can also carry axes names.
+//
+// It also supports "dynamic shapes", where one or more axis has an undefined (DynamicDim == -1) dimension.
+// Any dynamic dimension must be named (it must have a non-empty AxisName), so their values can be
+// inferred when needed (see AxisBindings).
 //
 // Go float16 and bfloat16 support uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
 // and [github.com/gomlx/compute/dtypes/bfloat16].
@@ -14,43 +17,28 @@
 // ## Glossary
 //
 //   - Rank: number of axes (dimensions) of a Tensor.
-//   - Axis: is the index of a dimension on a multidimensional Tensor. Sometimes used
+//   - Axis: is the index of a dimension on a multidimensional array (tensor). Sometimes used
 //     interchangeably with Dimension, but here we try to refer to a dimension index as "axis"
-//     (plural axes), and its size as its dimension.
+//     (plural axes), and its size as its dimension. An axis may also have an associated name.
 //   - Dimension: the size of a multi-dimension Tensor in one of its axes. See the example below.
+//   - DynamicDim (-1): special dimension value that indicates the axis is dynamic (unknown at graph building
+//     and compilation time). Axes with dynamic dimensions must be named.
 //   - DType: the data type of the unit element in a tensor. Enumeration defined in github.com/gomlx/compute/dtypes
 //   - Scalar: is a shape where there are no axes (or dimensions), only a single value
 //     of the associated DType.
 //
 // Example: The multi-dimensional array `[][]int32{{0, 1, 2}, {3, 4, 5}}` if converted to a Tensor
-// would have shape `(int32)[2 3]`. We say it has rank 2 (so 2 axes), axis 0 has
+// would have shape `(int32)[2, 3]`. We say it has rank 2 (so 2 axes), axis 0 has
 // dimension 2, and axis 1 has dimension 3. This shape could be created with
 // `shapes.Make(int32, 2, 3)`.
 //
-// ## Asserts
+// ## Creating a new shape:
 //
-// When coding ML models, one delicate part is keeping tabs on the shape of
-// graph nodes -- unfortunately, there is no compile-time checking of values,
-// so validation only happens in runtime. To facilitate and also to serve as code documentation,
-// this package provides two variations of _assert_ functionality. Examples:
-//
-// AssertRank and AssertDims check that the rank and dimensions of the given
-// object (that has a `Shape` method) match, otherwise it panics. The `-1` means
-// the dimension is unchecked (it can be anything).
-//
-//	func modelGraph(ctx *context.Context, spec any, inputs []*Node) ([]*Node) {
-//		_ = spec  // Not needed here, we know the dataset.
-//		shapes.AssertRank(inputs, 2)
-//		batchSize := inputs.Shape().Dimensions[0]
-//		logits := layers.Dense(ctx, inputs[0], /* useBias= */ true, /* outputDim= */ 1)
-//		shapes.AssertDims(logits, batchSize, -1)
-//		return []*Node{logits}
-//	}
-//
-// ```
-//
-// If you don't want to panic, but instead return an error through the `graph.Graph`, you can
-// use the `Node.AssertDims()` method. So it would look like `logits.AssertDims(batchSize, -1)`.
+//   - Make(dtype, dimensions...int): create a concrete (no dynamic axes) un-named shape.
+//   - MakeDynamic(dtype, dimensions []int, axesNames []string): create a shape with (optional) dynamic axes
+//     and axes names. Dynamic axes must have an associated name, while concrete axes are usually unnamed ("").
+//   - MakeTuple(shapes...): internal use, create a shape that represents a tuple of shapes. Internal use, and subject
+//     to change.
 package shapes
 
 import (

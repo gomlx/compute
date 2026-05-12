@@ -5,9 +5,9 @@ package shapes
 import (
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
+	"github.com/gomlx/gomlx/pkg/support/xslices"
 	"github.com/pkg/errors"
 )
 
@@ -21,11 +21,7 @@ func (b AxisBindings) Key() string {
 	if len(b) == 0 {
 		return ""
 	}
-	names := make([]string, 0, len(b))
-	for name := range b {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := xslices.SortedKeys(b)
 	parts := make([]string, len(names))
 	for i, name := range names {
 		parts[i] = fmt.Sprintf("%s=%d", name, b[name])
