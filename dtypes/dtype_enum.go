@@ -4,10 +4,15 @@ package dtypes
 
 //go:generate go tool enumer -type=DType -yaml -json -text -values -output=gen_dtype_enumer.go dtype_enum.go
 
-// DType is an enum represents the data type of a buffer or a scalar.
+// DType is an enum represents the data type of any buffer, scalar, tensor, multi-dimensional array, etc.
 //
 // Not all DType are supported by all backends. This is a collection of all data types GoMLX
 // know about and some more it doesn't yet handle.
+//
+// ## Half-precision data types
+//
+// Float16 and BFloat16 support in Go uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
+// and [github.com/gomlx/compute/dtypes/bfloat16].
 type DType int32
 
 const (

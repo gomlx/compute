@@ -10,7 +10,7 @@
 //
 // ## Half-precision data types
 //
-// Float16 and BFloat16 support uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
+// Float16 and BFloat16 support in Go uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
 // and [github.com/gomlx/compute/dtypes/bfloat16].
 package dtypes
 
