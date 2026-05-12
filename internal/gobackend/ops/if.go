@@ -128,7 +128,7 @@ func execIf(
 	}
 
 	// Execute the branch with proper donation of captured values
-	outputs, err := branchFn.Compiled.Execute(backend, nil, nil, capturedInputs, donateCaptures)
+	outputs, err := branchFn.Compiled.Execute(backend, nil, nil, capturedInputs, donateCaptures, nil)
 	if err != nil {
 		return nil, errors.WithMessagef(err, "If: executing branch")
 	}

@@ -185,6 +185,15 @@ type Node struct {
 	Data any
 }
 
+// RecomputableNodeData is an interface that can be implemented by the Data field of a Node
+// to allow recomputing shape-dependent metadata when specializing a dynamic graph.
+type RecomputableNodeData interface {
+	// Recompute shape-dependent metadata from the resolved input shapes.
+	// Returns a new Data object (or the same one if it's mutable and updated in-place).
+	Recompute(backend *Backend, resolvedNodes []*Node, originalNode *Node) (any, error)
+}
+
+
 // MultiOutputValues converts a multi-output node's outputs to []compute.Value.
 func (node *Node) MultiOutputValues() []compute.Value {
 	outputs := make([]compute.Value, len(node.MultiOutputsNodes))

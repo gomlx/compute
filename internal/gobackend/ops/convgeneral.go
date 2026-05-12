@@ -146,6 +146,40 @@ type convNode struct {
 	dilatedInputSpatialDims []int
 }
 
+// Recompute implements gobackend.RecomputableNodeData for convNode.
+func (c *convNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	inputShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	kernelShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
+
+	newData := &convNode{
+		axes:               c.axes,
+		strides:            slices.Clone(c.strides),
+		paddings:           slices.Clone(c.paddings),
+		inputDilations:     slices.Clone(c.inputDilations),
+		kernelDilations:    slices.Clone(c.kernelDilations),
+		channelGroupCount:  c.channelGroupCount,
+		batchGroupCount:    c.batchGroupCount,
+		hasInputDilations:  c.hasInputDilations,
+		hasKernelDilations: c.hasKernelDilations,
+	}
+
+	newData.inputStrides = inputShape.Strides()
+	newData.kernelStrides = kernelShape.Strides()
+
+	spatialRank := inputShape.Rank() - 2
+	newData.dilatedInputSpatialDims = make([]int, spatialRank)
+	newData.inputSpatialStrides = make([]int, spatialRank)
+	for spatialIdx, inputAxis := range c.axes.InputSpatial {
+		newData.inputSpatialStrides[spatialIdx] = newData.inputStrides[inputAxis]
+		dim := inputShape.Dimensions[inputAxis]
+		if dim > 0 {
+			newData.dilatedInputSpatialDims[spatialIdx] = (dim-1)*c.inputDilations[spatialIdx] + 1
+		}
+	}
+
+	return newData, nil
+}
+
 // EqualNodeData implements nodeDataComparable for convNode.
 func (c *convNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*convNode)

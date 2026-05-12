@@ -169,8 +169,9 @@ type funcExecBuffers struct {
 // capturedInputs are the values captured from parent scopes (for closures).
 // donateCaptures indicates which captured inputs can be donated to the closure.
 // If donateCaptures is nil, no captured inputs will be donated.
+// spec is the shape specialization for the current execution, or nil for static graphs.
 func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate []bool, capturedInputs []*Buffer,
-	donateCaptures []bool) ([]*Buffer, error) {
+	donateCaptures []bool, spec *ShapeSpecialization) ([]*Buffer, error) {
 	// Use function's parameters (not builder.inputs) for proper function/closure support
 	funcParams := fe.Function.Parameters
 	if len(inputs) != len(funcParams) {
@@ -232,9 +233,9 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// Execute
 	var err error
 	if executionMode == OpsExecutionSequential {
-		err = fe.executeSequentially(backend, execBuf)
+		err = fe.executeSequentially(backend, execBuf, spec)
 	} else {
-		err = fe.executeParallel(backend, execBuf)
+		err = fe.executeParallel(backend, execBuf, spec)
 	}
 	if err != nil {
 		fe.ExecutionBuffersPool.Put(execBuf)
@@ -283,7 +284,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 }
 
 // executeSequentially executes nodes one after another in topological order.
-func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *funcExecBuffers) error {
+func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization) error {
 	// Pre-allocate input buffers for reuse
 	execBuf.opInputBuffers = make([]*Buffer, fe.MaxInputs)
 	execBuf.opInputsOwned = make([]bool, fe.MaxInputs)
@@ -303,7 +304,10 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 		}
 
 		node := fe.Function.Nodes[nodeIdx]
-		if err := fe.executeNode(backend, node, execBuf); err != nil {
+		if spec != nil {
+			node = spec.resolvedNodes[nodeIdx]
+		}
+		if err := fe.executeNode(backend, node, execBuf, spec); err != nil {
 			return err
 		}
 	}
@@ -311,7 +315,7 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 }
 
 // executeParallel executes nodes in parallel based on dependency graph.
-func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExecBuffers) error {
+func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization) error {
 	var (
 		readyToExecute chan int
 		collectErrors  []error
@@ -354,6 +358,9 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		nodeExecFn := func() {
 			defer wg.Done()
 			node := fe.Function.Nodes[nodeIdx]
+			if spec != nil {
+				node = spec.resolvedNodes[nodeIdx]
+			}
 
 			defer func(nodeIdx int) {
 				execMu.Lock()
@@ -404,7 +411,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 				return
 			}
 
-			if err := fe.executeNode(backend, node, execBuf); err != nil {
+			if err := fe.executeNode(backend, node, execBuf, spec); err != nil {
 				appendErrorFn(err)
 				return
 			}
@@ -425,7 +432,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 }
 
 // executeNode executes a single node and stores its result.
-func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf *funcExecBuffers) error {
+func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf *funcExecBuffers, spec *ShapeSpecialization) error {
 	nodeIdx := node.Index
 
 	// Handle constants specially

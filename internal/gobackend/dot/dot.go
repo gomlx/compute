@@ -55,6 +55,51 @@ type NodeData struct {
 	implementation *ImplementationRegistration
 }
 
+// SetSizes computes and sets the internal sizes (BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize)
+// from the concrete LHS and RHS shapes.
+func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
+	numBatchAxes := len(d.LHSBatchAxes)
+	d.BatchSize = 1
+	for i := range numBatchAxes {
+		d.BatchSize *= lhsShape.Dimensions[d.LHSBatchAxes[i]]
+	}
+
+	d.ContractingSize = 1
+	for _, axis := range d.LHSContractingAxes {
+		d.ContractingSize *= lhsShape.Dimensions[axis]
+	}
+
+	lhsRank := lhsShape.Rank()
+	d.LHSCrossSize = 1
+	isBatchOrContractingLHS := make([]bool, lhsRank)
+	for _, axis := range d.LHSBatchAxes {
+		isBatchOrContractingLHS[axis] = true
+	}
+	for _, axis := range d.LHSContractingAxes {
+		isBatchOrContractingLHS[axis] = true
+	}
+	for axis := 0; axis < lhsRank; axis++ {
+		if !isBatchOrContractingLHS[axis] {
+			d.LHSCrossSize *= lhsShape.Dimensions[axis]
+		}
+	}
+
+	rhsRank := rhsShape.Rank()
+	d.RHSCrossSize = 1
+	isBatchOrContractingRHS := make([]bool, rhsRank)
+	for _, axis := range d.RHSBatchAxes {
+		isBatchOrContractingRHS[axis] = true
+	}
+	for _, axis := range d.RHSContractingAxes {
+		isBatchOrContractingRHS[axis] = true
+	}
+	for axis := 0; axis < rhsRank; axis++ {
+		if !isBatchOrContractingRHS[axis] {
+			d.RHSCrossSize *= rhsShape.Dimensions[axis]
+		}
+	}
+}
+
 // EqualNodeData implements nodeDataComparable for dotGeneralNodeData.
 func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*NodeData)
@@ -70,31 +115,36 @@ func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 		slices.Equal(d.RHSBatchAxes, o.RHSBatchAxes)
 }
 
-// SetSizes sets the dot-general sizes according to the axes dimensions.
-// Assumes shape has been normalized to one of the two supported layouts.
-func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
-	d.BatchSize = 1
-	if len(d.LHSBatchAxes) > 0 {
-		d.BatchSize = lhsShape.Dimensions[d.LHSBatchAxes[0]]
+// Recompute implements gobackend.RecomputableNodeData for NodeData.
+func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	newData := &NodeData{
+		InputDType:         d.InputDType,
+		OutputDType:        d.OutputDType,
+		Config:             d.Config,
+		Layout:             d.Layout,
+		LHSContractingAxes: slices.Clone(d.LHSContractingAxes),
+		LHSBatchAxes:       slices.Clone(d.LHSBatchAxes),
+		RHSContractingAxes: slices.Clone(d.RHSContractingAxes),
+		RHSBatchAxes:       slices.Clone(d.RHSBatchAxes),
 	}
-	d.LHSCrossSize = 1
-	for i, dim := range lhsShape.Dimensions {
-		if !slices.Contains(d.LHSContractingAxes, i) && !slices.Contains(d.LHSBatchAxes, i) {
-			d.LHSCrossSize *= dim
-		}
+
+	// Get resolved (concrete) input shapes.
+	lhsShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	rhsShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
+
+	// Recompute sizes from concrete shapes.
+	newData.SetSizes(lhsShape, rhsShape)
+
+	// Re-find implementation (might change based on new sizes).
+	newData.implementation = FindRegisteredImplementation(newData.Layout, newData.InputDType, newData.OutputDType)
+	if newData.implementation == nil {
+		return nil, errors.Errorf("specialization: no DotGeneral implementation found for layout=%s and dtypes=%s,%s",
+			newData.Layout, newData.InputDType, newData.OutputDType)
 	}
-	d.RHSCrossSize = 1
-	for i, dim := range rhsShape.Dimensions {
-		if !slices.Contains(d.RHSContractingAxes, i) && !slices.Contains(d.RHSBatchAxes, i) {
-			d.RHSCrossSize *= dim
-		}
-	}
-	d.ContractingSize = 1
-	if len(d.LHSContractingAxes) > 0 {
-		// We could have gotten from lhs or rhs, they must match.
-		d.ContractingSize = lhsShape.Dimensions[d.LHSContractingAxes[0]]
-	}
+
+	return newData, nil
 }
+
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
 // for a general vector product -- a generalized "Einsum". Each axis can be:

@@ -203,8 +203,10 @@ func (f Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 //   - Contracted (contracting axes), where the output does multiply the values and reduce sum
 //     those dimensions.
 //
-// It follows that the resulting dimension number starts with the batch dimension, then the 'lhs'
-// non-contracting/non-batch dimension, and finally the 'rhs' non-contracting/non-batch dimension.
+// The resulting shape is [batchIndices..., <lhs cross indices...>, <rhs cross indices...>], the
+// indices come in the order they were provided. The output dtype is by default the same as
+// the input, except if configured otherwise in config.OutputDType.
+//
 // It provides the basic means of implementing Einsum.
 func (f Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeDotGeneral)
