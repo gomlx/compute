@@ -42,6 +42,11 @@
 //     and axes names. Dynamic axes must have an associated name, while concrete axes are usually unnamed ("").
 //   - MakeTuple(shapes...): internal use, create a shape that represents a tuple of shapes. Internal use, and subject
 //     to change.
+//
+// # Iterators and Strides
+//
+// Shapes support several iteration facilities.
+// See [Shape.Iter], [Shape.IterOn], [Shape.IterOnAxes] and [Shape.Strides].
 package shapes
 
 import (

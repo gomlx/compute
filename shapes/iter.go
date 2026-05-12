@@ -14,14 +14,11 @@ import (
 //
 // Notice the strides are **not in bytes**, but in indices.
 //
-// Panics if any dimension is dynamic (DynamicDim).
+// It panics if any dimension is dynamic (DynamicDim), see Shape.IsDynamic.
 func (s Shape) Strides() (strides []int) {
 	rank := s.Rank()
 	if rank == 0 {
 		return
-	}
-	if s.IsDynamic() {
-		panic(errors.Errorf("Shape.Strides() called on shape with dynamic dimensions: %s", s))
 	}
 	strides = make([]int, rank)
 	if s.IsZeroSize() {
@@ -29,9 +26,24 @@ func (s Shape) Strides() (strides []int) {
 		return
 	}
 	currentStride := 1
-	for dim := rank - 1; dim >= 0; dim-- {
-		strides[dim] = currentStride
-		currentStride *= s.Dimensions[dim]
+	for axis := rank - 1; axis >= 0; axis-- {
+		strides[axis] = currentStride
+		dim := s.Dimensions[axis]
+		if dim <= 0 {
+			switch dim {
+			case DynamicDim:
+				panic(errors.Errorf("Shape.Strides() called on shape with dynamic dimensions: %s", s))
+			case 0:
+				for i := range strides {
+					strides[i] = 0
+				}
+				return strides
+			default:
+				panic(errors.Errorf("Shape.Strides() called on shape with invalid negative dimension %d at axis %d: %s",
+					dim, axis, s))
+			}
+		}
+		currentStride *= dim
 	}
 	return
 }
