@@ -648,6 +648,11 @@ type StandardOps interface {
 	// Reshape reshapes x to the new dimensions.
 	// Total size cannot change, it's just a "reinterpretation" of the same flat data.
 	// The dtype remains the same, see ConvertDType to actually convert the values.
+	//
+	// This version of reshape doesn't support reshaping dynamic dimensions (axes with [shapes.DynamicDim]).
+	// Any dynamic dimensions in the input must be matched by dynamic dimensions in the output, and their
+	// axis names are preserved. If new axes are created, the dynamic axis in the input x and dimensions are
+	// matched in order.
 	Reshape(x Value, dimensions ...int) (Value, error)
 
 	// Reverse returns x with the values for the given dimensions reversed, that is,

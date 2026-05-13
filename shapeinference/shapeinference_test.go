@@ -794,7 +794,7 @@ func TestBinaryOp_AxisNames(t *testing.T) {
 	t.Run("OneNamed", func(t *testing.T) {
 		// lhs has names, rhs does not → adopt lhs names.
 		lhs := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		rhs := S(F32, 32, 512)
+		rhs := S(F32, 1, 512)
 		output, err := BinaryOp(OpTypeAdd, lhs, rhs)
 		require.NoError(t, err)
 		require.Equal(t, []string{"batch", ""}, output.AxisNames)
@@ -813,7 +813,7 @@ func TestBinaryOp_AxisNames(t *testing.T) {
 		rhs := SD(F32, []int{-1, 512}, []string{"time", ""})
 		_, err := BinaryOp(OpTypeAdd, lhs, rhs)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "axis name conflict")
+		require.Contains(t, err.Error(), "different axis names")
 	})
 
 	t.Run("DynamicBroadcast", func(t *testing.T) {
@@ -1058,5 +1058,21 @@ func TestReshapeOp_Dynamic(t *testing.T) {
 		output, err := Reshape(s, []int{-1, 8, 64})
 		require.NoError(t, err)
 		require.Equal(t, []int{-1, 8, 64}, output.Dimensions)
+		require.Equal(t, []string{"batch", "", ""}, output.AxisNames)
+	})
+
+	t.Run("MultipleDynamicDims", func(t *testing.T) {
+		s := SD(F32, []int{10, -1, 512, -1}, []string{"", "batch", "", "seq"})
+		output, err := Reshape(s, []int{-1, -1, 8, 640})
+		require.NoError(t, err)
+		require.Equal(t, []int{-1, -1, 8, 640}, output.Dimensions)
+		require.Equal(t, []string{"batch", "seq", "", ""}, output.AxisNames)
+	})
+
+	t.Run("MismatchedDynamicDims", func(t *testing.T) {
+		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		_, err := Reshape(s, []int{-1, -1, 64})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "requires the number of dynamic dimensions in the input (1) to match the target dims (2)")
 	})
 }

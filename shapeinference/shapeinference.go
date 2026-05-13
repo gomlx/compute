@@ -440,22 +440,77 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 // Reshape to the given dimensions: trivial output shape, but this function also checks
 // that the sizes are the same.
 //
-// Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
+// This version of reshape doesn't support reshaping dynamic dimensions (axes with [shapes.DynamicDim]).
+// Any dynamic dimensions in the input must be matched by dynamic dimensions in the output, and their
+// axis names are preserved. If new axes are created, the dynamic axis in the input x and dimensions are
+// matched in order.
 func Reshape(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
-	if operand.IsDynamic() {
-		// Dynamic path: skip size validation (deferred to specialization time).
-		// DynamicDim values in target dims are allowed — they propagate through
-		// reshape operations and are resolved during shape specialization.
-		output = shapes.Shape{DType: operand.DType, Dimensions: slices.Clone(dims)}
-		return output, nil
+	outputIsDynamic := slices.Contains(dims, shapes.DynamicDim)
+	if !operand.IsDynamic() {
+		if outputIsDynamic {
+			err = errors.Errorf(
+				"Reshape() cannot reshape a concrete shape (%s) to a dynamic dimension (target dims=%v)",
+				operand, dims)
+			return shapes.Invalid(), err
+		}
+
+		output = shapes.Make(operand.DType, dims...)
+		if operand.Size() != output.Size() {
+			err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
+				operand, dims)
+			return shapes.Invalid(), err
+		}
+		return
 	}
-	output = shapes.Make(operand.DType, dims...)
-	if operand.Size() != output.Size() {
-		err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
+
+	// Dynamic path: skip size validation (deferred to specialization time).
+	if !outputIsDynamic {
+		err = errors.Errorf(
+			"Reshape() cannot reshape a dynamic shape to a concrete shape; got input=%s target dims=%v",
 			operand, dims)
 		return shapes.Invalid(), err
 	}
-	return
+
+	// Extract dynamic axis names from operand in order.
+	var dynamicNames []string
+	for i, d := range operand.Dimensions {
+		if d == shapes.DynamicDim {
+			// We can assume operand.AxisNames has the same length as operand.Dimensions
+			// when the shape is dynamic.
+			dynamicNames = append(dynamicNames, operand.AxisNames[i])
+		}
+	}
+
+	// Count dynamic axes in the target dims.
+	numTargetDynamic := 0
+	for _, d := range dims {
+		if d == shapes.DynamicDim {
+			numTargetDynamic++
+		}
+	}
+
+	if len(dynamicNames) != numTargetDynamic {
+		err = errors.Errorf(
+			"Reshape() requires the number of dynamic dimensions in the input (%d) to match the target dims (%d); got input=%s target dims=%v",
+			len(dynamicNames), numTargetDynamic, operand, dims)
+		return shapes.Invalid(), err
+	}
+
+	// Build output axis names, mapping dynamic axes in order.
+	// This also preserves the invariant that len(axisNames) == len(dims) for dynamic shapes.
+	axisNames := make([]string, len(dims))
+	dynIdx := 0
+	for i, d := range dims {
+		if d == shapes.DynamicDim {
+			axisNames[i] = dynamicNames[dynIdx]
+			dynIdx++
+		}
+	}
+
+	// DynamicDim values in target dims are allowed — they propagate through
+	// reshape operations and are resolved during shape specialization.
+	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
+	return output, nil
 }
 
 // Transpose all axes of the operand.
