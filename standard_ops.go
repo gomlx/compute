@@ -221,6 +221,13 @@ type StandardOps interface {
 	//     will generate output
 	//     {{1 , 1},
 	//     {2 , 2}}
+	//
+	// Dynamic shapes: the operand axes with dynamic lengths ([shapes.DynamicDim]) cannot be broadcast and must
+	// be preserved as dynamic in the output -- their axis names must match in the outputShape
+	// (in the corresponding axis).
+	// But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
+	// or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
+	// by any input parameter will result in an error.
 	BroadcastInDim(x Value, outputShape shapes.Shape, broadcastAxes []int) (Value, error)
 
 	// Ceil returns the Op that represents the output of the corresponding operation.

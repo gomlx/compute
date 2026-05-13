@@ -24,6 +24,9 @@ const DynamicDim = -1
 //
 // axisNames must have the same length as dimensions. Use "" for unnamed axes.
 //
+// Axis names starting with "=" or "#" are reserved for internal (backend implementation) use and shouldn't e
+// used by end users.
+//
 // Example:
 //
 //	shapes.MakeDynamic(dtypes.F32, []int{-1, 512}, []string{"batch", ""})
