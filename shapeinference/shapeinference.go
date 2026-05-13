@@ -11,7 +11,27 @@
 // The majority of the unary functions don't change the shape, except those that explicitly say that in their name,
 // like Reshape, etc.
 //
-// For the remainder ops, it defines one function per OpType, except for trivial ones and a few that are not implemented yet (e.g.: FFT.)
+// For the remainder ops, it defines one function per OpType.
+//
+// ## Dynamic Shapes
+//
+// This package supports "dynamic shapes" where one or more dimensions of a tensor are unknown at
+// graph build time. These dimensions are represented by the [shapes.DynamicDim] sentinel value (-1).
+//
+// When dynamic shapes are involved, shape inference follows these principles:
+//
+//   - **Validation Deferral:** Many validation checks that depend on concrete dimension sizes (like
+//     checking if a reshape is valid, or if slice indices are within bounds) are deferred.
+//     These checks are typically performed by the backend during "shape specialization"
+//     once the concrete shapes are known.
+//   - **Propagation:** Symbolic dimensions propagate through operations. For example, in a [BinaryOp],
+//     if one operand has a dynamic dimension and the other has a matching static dimension or is also
+//     dynamic, the output dimension will be dynamic.
+//   - **Broadcasting:** During [BinaryOp] or [BroadcastInDim], a dimension of 1 is considered
+//     compatible with a [shapes.DynamicDim] and will be broadcast to it.
+//   - **Axis Names:** Axis names are used to track and validate symbolic axes across operations.
+//     If multiple operands have named axes, [shapes.UnifyAxisNames] is used to ensure they match
+//     and to propagate them to the output.
 package shapeinference
 
 import (
