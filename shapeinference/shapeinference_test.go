@@ -1220,18 +1220,15 @@ func TestConcatenateOp_AxisNames(t *testing.T) {
 
 	t.Run("ConcatAxisNameConflictDrops", func(t *testing.T) {
 		// Different names on the concat axis → name is dropped for that axis.
-		s1 := SD(F32, []int{-1, -1}, []string{"batch", "a"})
-		s2 := SD(F32, []int{-1, -1}, []string{"batch", "b"})
-		output, err := Concatenate([]shapes.Shape{s1, s2}, 1) // concat on axis 1
-		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
+		s1 := SD(F32, []int{-1, 10}, []string{"batch", "a"})
+		s2 := SD(F32, []int{-1, 10}, []string{"batch", "b"})
+		_, err := Concatenate([]shapes.Shape{s1, s2}, 0) // concat on axis 0 (dynamic)
+		if err == nil {
+			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
 		}
-		if ok, diff := testutil.IsEqual("batch", output.AxisNames[0]); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, "batch", output.AxisNames[0])
+		if !strings.Contains(err.Error(), "concatenation on a dynamic axis") {
+			t.Errorf("Expected error message to mention concatenation on dynamic axis, got: %v", err)
 		}
-		if ok, diff := testutil.IsEqual("", output.AxisNames[1]); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, "", output.AxisNames[1])
-		} // dropped due to conflict
 	})
 
 	t.Run("NonConcatAxisNameConflictErrors", func(t *testing.T) {
@@ -1249,12 +1246,9 @@ func TestConcatenateOp_AxisNames(t *testing.T) {
 	t.Run("DynamicConcatAxis", func(t *testing.T) {
 		s1 := SD(F32, []int{-1, -1}, []string{"batch", "seq"})
 		s2 := SD(F32, []int{-1, 128}, []string{"batch", ""})
-		output, err := Concatenate([]shapes.Shape{s1, s2}, 1)
-		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
-		}
-		if ok, diff := testutil.IsEqual(shapes.DynamicDim, output.Dimensions[1]); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, shapes.DynamicDim, output.Dimensions[1])
+		_, err := Concatenate([]shapes.Shape{s1, s2}, 1) // Concatenating on dynamic axis 1
+		if err == nil {
+			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
 		}
 	})
 }
@@ -1276,7 +1270,8 @@ func TestSliceOp_AxisNames(t *testing.T) {
 
 	t.Run("DynamicAxis", func(t *testing.T) {
 		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		output, err := Slice(s, []int{0, 0}, []int{0, 256}, []int{1, 1})
+		// Use -1 for limit to mean "full axis" (results in -1 dimension).
+		output, err := Slice(s, []int{0, 0}, []int{-1, 256}, []int{1, 1})
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -1411,43 +1406,142 @@ func TestDotGeneral_DynamicAndNames(t *testing.T) {
 	})
 }
 
-func TestReshapeOp_Dynamic(t *testing.T) {
-	t.Run("PropagatesDynamicDim", func(t *testing.T) {
-		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		output, err := Reshape(s, []int{-1, 8, 64})
-		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
-		}
-		if ok, diff := testutil.IsEqual([]int{-1, 8, 64}, output.Dimensions); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, 8, 64}, output.Dimensions)
-		}
-		if ok, diff := testutil.IsEqual([]string{"batch", "", ""}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "", ""}, output.AxisNames)
-		}
-	})
-
-	t.Run("MultipleDynamicDims", func(t *testing.T) {
-		s := SD(F32, []int{10, -1, 512, -1}, []string{"", "batch", "", "seq"})
-		output, err := Reshape(s, []int{-1, -1, 8, 640})
-		if err != nil {
-			t.Fatalf("Expected no error, got %v", err)
-		}
-		if ok, diff := testutil.IsEqual([]int{-1, -1, 8, 640}, output.Dimensions); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, -1, 8, 640}, output.Dimensions)
-		}
-		if ok, diff := testutil.IsEqual([]string{"batch", "seq", "", ""}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "seq", "", ""}, output.AxisNames)
-		}
-	})
-
-	t.Run("MismatchedDynamicDims", func(t *testing.T) {
-		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		_, err := Reshape(s, []int{-1, -1, 64})
+func TestConcatenateOp_Dynamic(t *testing.T) {
+	t.Run("ConcatOnDynamicAxis", func(t *testing.T) {
+		// Concatenating on a dynamic axis should currently be an error because we can't
+		// represent the resulting size (e.g. batchSize + batchSize) symbolically.
+		s1 := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		s2 := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		_, err := Concatenate([]shapes.Shape{s1, s2}, 0)
 		if err == nil {
-			t.Fatalf("Expected error, got nil")
+			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
 		}
-		if !strings.Contains(err.Error(), "requires the number of dynamic dimensions in the input (1) to match the target dims (2)") {
-			t.Fatalf("Expected %v to contain %v", err.Error(), "requires the number of dynamic dimensions in the input (1) to match the target dims (2)")
+		if !strings.Contains(err.Error(), "concatenation on a dynamic axis") {
+			t.Errorf("Expected error message to mention concatenation on dynamic axis, got: %v", err)
+		}
+	})
+
+	t.Run("ConcatPreservesDynamicNonConcatAxes", func(t *testing.T) {
+		s1 := SD(F32, []int{-1, 10}, []string{"batch", ""})
+		s2 := SD(F32, []int{-1, 20}, []string{"batch", ""})
+		output, err := Concatenate([]shapes.Shape{s1, s2}, 1)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int{-1, 30}, output.Dimensions); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, 30}, output.Dimensions)
+		}
+		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
+		}
+	})
+}
+
+func TestSliceOp_DynamicCorrect(t *testing.T) {
+	t.Run("StaticSliceOfDynamicAxis", func(t *testing.T) {
+		// Slicing a dynamic axis with static bounds should result in a static output size.
+		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		output, err := Slice(s, []int{0, 0}, []int{10, 256}, []int{1, 1})
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		// The first axis should now be static size 10.
+		if ok, diff := testutil.IsEqual([]int{10, 256}, output.Dimensions); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{10, 256}, output.Dimensions)
+		}
+	})
+}
+
+func TestPadOp_Dynamic(t *testing.T) {
+	t.Run("PadOnDynamicAxis", func(t *testing.T) {
+		// Padding on a dynamic axis should be an error if padding is non-zero.
+		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		_, err := Pad(s, PadAxis{Start: 1, End: 1})
+		if err == nil {
+			t.Fatalf("Expected error when padding on dynamic axis, but got nil")
+		}
+		if !strings.Contains(err.Error(), "padding on a dynamic axis") {
+			t.Errorf("Expected error message to mention padding on dynamic axis, got: %v", err)
+		}
+	})
+
+	t.Run("ZeroPadOnDynamicAxis", func(t *testing.T) {
+		// Zero padding on a dynamic axis should be allowed.
+		s := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		output, err := Pad(s, PadAxis{Start: 0, End: 0})
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int{-1, 512}, output.Dimensions); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, 512}, output.Dimensions)
+		}
+	})
+}
+
+func TestGatherOp_Dynamic(t *testing.T) {
+	t.Run("PropagatesBatchNames", func(t *testing.T) {
+		operand := S(F32, 10, 20)
+		startIndices := SD(I32, []int{-1, 1}, []string{"batch", ""})
+		output, err := Gather(
+			operand, startIndices, 1,
+			[]int{1}, []int{0}, []int{0}, []int{1, 20}, false,
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
+			t.Fatalf("Expected axis names %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
+		}
+	})
+}
+
+func TestReduceOp_Dynamic(t *testing.T) {
+	t.Run("PreservesOtherDynamicAxes", func(t *testing.T) {
+		s := SD(F32, []int{-1, 10, -1}, []string{"batch", "", "seq"})
+		output, err := Reduce(s, []int{1}) // Reduce middle axis
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int{-1, -1}, output.Dimensions); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, -1}, output.Dimensions)
+		}
+		if ok, diff := testutil.IsEqual([]string{"batch", "seq"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "seq"}, output.AxisNames)
+		}
+	})
+}
+
+func TestArgMinMaxOp_Dynamic(t *testing.T) {
+	t.Run("PreservesOtherDynamicAxes", func(t *testing.T) {
+		s := SD(F32, []int{-1, 10, -1}, []string{"batch", "", "seq"})
+		output, err := ArgMinMax(s, 1, dtypes.Int32)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int{-1, -1}, output.Dimensions); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, -1}, output.Dimensions)
+		}
+		if ok, diff := testutil.IsEqual([]string{"batch", "seq"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "seq"}, output.AxisNames)
+		}
+	})
+}
+
+func TestScatterOp_Dynamic(t *testing.T) {
+	t.Run("AllowsDynamicOperandAndUpdates", func(t *testing.T) {
+		operand := SD(F32, []int{-1, 10}, []string{"batch", ""})
+		indices := S(I32, 5, 1)
+		updates := SD(F32, []int{5, 10}, []string{"", ""})
+		// Scatter 5 updates to the dynamic batch axis
+		output, err := Scatter(
+			operand, indices, updates, 1,
+			[]int{1}, []int{0}, []int{0},
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !output.Equal(operand) {
+			t.Fatalf("Expected output to be equal to operand")
 		}
 	})
 }

@@ -48,7 +48,11 @@ func DotGeneral(
 		}
 		lDim := lhs.Dimensions[axis]
 		rDim := rhs.Dimensions[rAxis]
-		if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
+		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
+			if lhs.AxisName(axis) != rhs.AxisName(rAxis) {
+				return output, errors.Errorf("DotGeneral contracting axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			}
+		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
 			return output, errors.Errorf("DotGeneral contracting dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
 		}
 	}
@@ -68,7 +72,11 @@ func DotGeneral(
 		}
 		lDim := lhs.Dimensions[axis]
 		rDim := rhs.Dimensions[rAxis]
-		if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
+		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
+			if lhs.AxisName(axis) != rhs.AxisName(rAxis) {
+				return output, errors.Errorf("DotGeneral batch axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			}
+		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
 			return output, errors.Errorf("DotGeneral batch dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
 		}
 	}

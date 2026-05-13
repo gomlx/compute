@@ -137,6 +137,9 @@ type StandardOps interface {
 	//
 	//	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=1, isMin=true) -> {1, 0}  // (it chooses the 0 and the -3)
 	//	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=0, isMin=false) -> {0, 1, 0} // (it chooses the 2, 4, and 7)
+	//
+	// Dynamic shapes: ArgMinMax on a dynamic axis removes that axis (and its name), preserving names
+	// of other dynamic axes.
 	ArgMinMax(x Value, axis int, outputDType dtypes.DType, isMin bool) (Value, error)
 
 	// BatchNormForInference implements batch normalization for inference.
@@ -188,6 +191,9 @@ type StandardOps interface {
 	//
 	// 	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
 	// 	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
+	//
+	// Dynamic shapes: Bitcasting that collapses or expands a dynamic dimension is currently not
+	// supported (requires axis expressions).
 	Bitcast(operand Value, targetDType dtypes.DType) (Value, error)
 
 	// BitCount returns the number of bits that are set to one.
@@ -254,6 +260,9 @@ type StandardOps interface {
 	// All axes that are not being concatenated must match dimensions, except on the axes being concatenated.
 	// It doesn't work with scalars -- use ExpandAxes.
 	// If there is only one operand, it is returned and this is a no-op.
+	//
+	// Dynamic shapes: Concatenation on a dynamic axis is currently not supported, because the resulting
+	// size (e.g. batchSize + batchSize) cannot be represented symbolically yet (requires axis expressions).
 	Concatenate(axis int, operands ...Value) (Value, error)
 
 	// Conj returns the conjugate of a complex number. E.g: Conj(1+3i) = 1-3i
@@ -288,6 +297,9 @@ type StandardOps interface {
 	// Note:
 	//   - Another common term for "channels" is "features".
 	//   - "Kernel" is also commonly called "weights" or "filters".
+	//
+	// Dynamic shapes: Operation on a dynamic spatial axis that changes its size (stride > 1, padding != 0,
+	// window > 1, etc.) is currently not supported (requires axis expressions).
 	ConvGeneral(
 		input, kernel Value,
 		axes ConvolveAxesConfig,
@@ -322,6 +334,8 @@ type StandardOps interface {
 	// the input, except if configured otherwise in config.OutputDType.
 	//
 	// It provides the basic means of implementing Einsum.
+	//
+	// Dynamic shapes: Aligned or contracted dynamic axes must have the same name for both lhs and rhs.
 	DotGeneral(
 		lhs Value,
 		lhsContractingAxes, lhsBatchAxes []int,
@@ -442,6 +456,10 @@ type StandardOps interface {
 	//
 	// Out-of-bound (and negative) indices <i> are adjusted with max(min(<i>, axisDimension-1), 0), meaning they
 	// are taken from the border of the axes.
+	//
+	// Dynamic shapes: Batch axes (from startIndices) and offset axes (from operand) preserve their names
+	// in the output. If an offset axis is partially sliced (sliceSize != operand dimension), its name is dropped.
+	//
 	// TODO: Add batch support: operandBatchingAxes and startIndicesBatchingAxes.
 	Gather(
 		operand, startIndices Value,
@@ -547,6 +565,9 @@ type StandardOps interface {
 	// Pad injects padding on the start, end, or interior (in between each element) of the given operand.
 	// There must be at most `operand.Rank()` axesConfig values. Missing PadAxis are assumed to be zeros,
 	// that is, no padding for those axes.
+	//
+	// Dynamic shapes: Padding on a dynamic axis is currently not supported if the padding is non-zero,
+	// because the resulting size cannot be represented symbolically yet (requires axis expressions).
 	Pad(x, fillValue Value, axesConfig ...PadAxis) (Value, error)
 
 	// Pow returns the Op that represents the output of the corresponding operation.
@@ -641,6 +662,9 @@ type StandardOps interface {
 	//   If nil, it's assumed to be 1 (no dilation) for each axis. Values must be >= 1.
 	// - paddings: virtual padding to be added to the input at the edges (start and end) of each axis.
 	//   If nil, it's assumed to be 0 for each axis.
+	//
+	// Dynamic shapes: Operation on a dynamic axis that changes its size (stride > 1, padding != 0,
+	// window > 1, etc.) is currently not supported (requires axis expressions).
 	ReduceWindow(
 		input Value,
 		reductionType ReduceOpType,
@@ -682,6 +706,9 @@ type StandardOps interface {
 	Rsqrt(x Value) (Value, error)
 
 	// ScatterMax scatter values from updates pointed by scatterIndices to operand, by taking the Max.
+	//
+	// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+	// that change the size of dynamic axes are not supported.
 	ScatterMax(
 		operand, scatterIndices, updates Value,
 		indexVectorAxis int,
@@ -690,6 +717,9 @@ type StandardOps interface {
 	) (Value, error)
 
 	// ScatterMin scatter values from updates pointed by scatterIndices to operand, by taking the Min.
+	//
+	// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+	// that change the size of dynamic axes are not supported.
 	ScatterMin(
 		operand, scatterIndices, updates Value,
 		indexVectorAxis int,
@@ -698,6 +728,9 @@ type StandardOps interface {
 	) (Value, error)
 
 	// ScatterSum values from updates pointed by scatterIndices to operand.
+	//
+	// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+	// that change the size of dynamic axes are not supported.
 	ScatterSum(
 		operand, scatterIndices, updates Value,
 		indexVectorAxis int,
@@ -744,6 +777,11 @@ type StandardOps interface {
 	// Examples:
 	// 	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={4}, strides=nil) -> {2, 3}
 	// 	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
+	//
+	// Dynamic shapes: A limit index can be set to `shapes.DynamicDim` (-1) to indicate the end of
+	// the dimension. Partial slices of dynamic axes are currently not supported if they result in
+	// a dynamic-sized output (requires axis expressions). Slicing a dynamic axis with static
+	// bounds (e.g. from 0 to 10) results in a static output size (e.g. 10).
 	Slice(x Value, starts, limits, strides []int) (Value, error)
 
 	// Sqrt returns the Op that represents the output of the corresponding operation.
