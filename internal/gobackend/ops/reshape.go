@@ -21,7 +21,7 @@ func Reshape(f *gobackend.Function, operandValue compute.Value, dims ...int) (co
 	}
 	operand := inputs[0]
 	opType := compute.OpTypeReshape
-	outputShape, err := shapeinference.ReshapeOp(operand.Shape, dims)
+	outputShape, err := shapeinference.Reshape(operand.Shape, dims)
 	if err != nil {
 		return nil, err
 	}

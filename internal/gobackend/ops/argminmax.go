@@ -46,7 +46,7 @@ func ArgMinMax(f *gobackend.Function,
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.ArgMinMaxOp(operand.Shape, axis, outputDType)
+	outputShape, err := shapeinference.ArgMinMax(operand.Shape, axis, outputDType)
 	if err != nil {
 		return nil, err
 	}

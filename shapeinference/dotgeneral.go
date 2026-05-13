@@ -46,8 +46,14 @@ func DotGeneral(
 		if rAxis < 0 || rAxis >= rhs.Rank() {
 			return output, errors.Errorf("DotGeneral rhs contracting axis %d out of bounds for rank %d", rAxis, rhs.Rank())
 		}
-		if lhs.Dimensions[axis] != rhs.Dimensions[rAxis] {
-			return output, errors.Errorf("DotGeneral contracting dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lhs.Dimensions[axis], rAxis, rhs.Dimensions[rAxis])
+		lDim := lhs.Dimensions[axis]
+		rDim := rhs.Dimensions[rAxis]
+		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
+			if lhs.AxisName(axis) != rhs.AxisName(rAxis) {
+				return output, errors.Errorf("DotGeneral contracting axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			}
+		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
+			return output, errors.Errorf("DotGeneral contracting dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
 		}
 	}
 
@@ -64,8 +70,14 @@ func DotGeneral(
 		if rAxis < 0 || rAxis >= rhs.Rank() {
 			return output, errors.Errorf("DotGeneral rhs batch axis %d out of bounds for rank %d", rAxis, rhs.Rank())
 		}
-		if lhs.Dimensions[axis] != rhs.Dimensions[rAxis] {
-			return output, errors.Errorf("DotGeneral batch dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lhs.Dimensions[axis], rAxis, rhs.Dimensions[rAxis])
+		lDim := lhs.Dimensions[axis]
+		rDim := rhs.Dimensions[rAxis]
+		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
+			if lhs.AxisName(axis) != rhs.AxisName(rAxis) {
+				return output, errors.Errorf("DotGeneral batch axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			}
+		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
+			return output, errors.Errorf("DotGeneral batch dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
 		}
 	}
 
@@ -90,20 +102,50 @@ func DotGeneral(
 
 	outputRank := len(lhsBatchAxes) + (lhs.Rank() - len(lhsBatchAxes) - len(lhsContractingAxes)) + (rhs.Rank() - len(rhsBatchAxes) - len(rhsContractingAxes))
 	dims := make([]int, 0, outputRank)
+	var axisNames []string
+	if lhs.AxisNames != nil || rhs.AxisNames != nil {
+		axisNames = make([]string, 0, outputRank)
+	}
 
-	for _, axis := range lhsBatchAxes {
-		dims = append(dims, lhs.Dimensions[axis])
+	for i, axis := range lhsBatchAxes {
+		lDim := lhs.Dimensions[axis]
+		rDim := rhs.Dimensions[rhsBatchAxes[i]]
+		if lDim == shapes.DynamicDim || rDim == shapes.DynamicDim {
+			dims = append(dims, shapes.DynamicDim)
+		} else {
+			dims = append(dims, lDim)
+		}
+		if axisNames != nil {
+			lName := lhs.AxisName(axis)
+			rName := rhs.AxisName(rhsBatchAxes[i])
+			unified, err := shapes.UnifyAxisName(lName, rName)
+			if err != nil {
+				return output, errors.Wrapf(err, "axis name conflict in DotGeneral batch axis %d", i)
+			}
+			axisNames = append(axisNames, unified)
+		}
 	}
 	for axis := 0; axis < lhs.Rank(); axis++ {
 		if !isLHSUsed[axis] {
 			dims = append(dims, lhs.Dimensions[axis])
+			if axisNames != nil {
+				axisNames = append(axisNames, lhs.AxisName(axis))
+			}
 		}
 	}
 	for axis := 0; axis < rhs.Rank(); axis++ {
 		if !isRHSUsed[axis] {
 			dims = append(dims, rhs.Dimensions[axis])
+			if axisNames != nil {
+				axisNames = append(axisNames, rhs.AxisName(axis))
+			}
 		}
 	}
 
-	return shapes.Make(outDType, dims...), nil
+	output = shapes.Shape{
+		DType:      outDType,
+		Dimensions: dims,
+		AxisNames:  axisNames,
+	}
+	return output, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/sets"
+	"github.com/pkg/errors"
 )
 
 func init() {
@@ -19,6 +20,41 @@ type gatherNode struct {
 	indexVectorAxis                                                  int
 	offsetOutputAxes, collapsedSlicesAxes, startIndexMap, sliceSizes []int
 	indicesAreSorted                                                 bool
+}
+
+// Recompute implements gobackend.RecomputableNodeData for gatherNode.
+func (g *gatherNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	operandShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+
+	// Check if any sliceSize needs updating.
+	needsUpdate := false
+	for i, s := range g.sliceSizes {
+		if s == shapes.DynamicDim {
+			if operandShape.Dimensions[i] == shapes.DynamicDim {
+				return nil, errors.Errorf("recomputeGatherData: operand axis %d is still DynamicDim after resolution", i)
+			}
+			needsUpdate = true
+			break
+		}
+	}
+	if !needsUpdate {
+		return g, nil
+	}
+
+	newData := &gatherNode{
+		indexVectorAxis:     g.indexVectorAxis,
+		offsetOutputAxes:    slices.Clone(g.offsetOutputAxes),
+		collapsedSlicesAxes: slices.Clone(g.collapsedSlicesAxes),
+		startIndexMap:       slices.Clone(g.startIndexMap),
+		sliceSizes:          slices.Clone(g.sliceSizes),
+		indicesAreSorted:    g.indicesAreSorted,
+	}
+	for i, s := range newData.sliceSizes {
+		if s == shapes.DynamicDim {
+			newData.sliceSizes[i] = operandShape.Dimensions[i]
+		}
+	}
+	return newData, nil
 }
 
 // EqualNodeData implements nodeDataComparable for gatherNode.

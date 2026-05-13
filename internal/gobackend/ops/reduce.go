@@ -100,7 +100,7 @@ func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operandValu
 			axes = append(axes, axis)
 		}
 	}
-	outputShape, err := shapeinference.ReduceOp(operand.Shape, axes)
+	outputShape, err := shapeinference.Reduce(operand.Shape, axes)
 	if err != nil {
 		return nil, err
 	}

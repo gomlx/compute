@@ -51,7 +51,7 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 	input, kernel := inputs[0], inputs[1]
 
 	// Run shape inference.
-	outputShape, err := shapeinference.ConvGeneralOp(input.Shape, kernel.Shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
+	outputShape, err := shapeinference.ConvGeneral(input.Shape, kernel.Shape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 	if err != nil {
 		err = errors.WithMessagef(err, "ConvGeneral: input=%s, kernel=%s, output=%s, axes=%+v, strides=%v, paddings=%v, inputDilations=%v, kernelDilations=%v, channelGroupCount=%d, batchGroupCount=%d\n",
 			input.Shape, kernel.Shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
@@ -144,6 +144,40 @@ type convNode struct {
 	// dilatedInputSpatialDims holds the dimensions of the input spatial axes after applying the dilations.
 	// For non-dilated dimensions it's the same as the original dimension.
 	dilatedInputSpatialDims []int
+}
+
+// Recompute implements gobackend.RecomputableNodeData for convNode.
+func (c *convNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	inputShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	kernelShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
+
+	newData := &convNode{
+		axes:               c.axes,
+		strides:            slices.Clone(c.strides),
+		paddings:           slices.Clone(c.paddings),
+		inputDilations:     slices.Clone(c.inputDilations),
+		kernelDilations:    slices.Clone(c.kernelDilations),
+		channelGroupCount:  c.channelGroupCount,
+		batchGroupCount:    c.batchGroupCount,
+		hasInputDilations:  c.hasInputDilations,
+		hasKernelDilations: c.hasKernelDilations,
+	}
+
+	newData.inputStrides = inputShape.Strides()
+	newData.kernelStrides = kernelShape.Strides()
+
+	spatialRank := inputShape.Rank() - 2
+	newData.dilatedInputSpatialDims = make([]int, spatialRank)
+	newData.inputSpatialStrides = make([]int, spatialRank)
+	for spatialIdx, inputAxis := range c.axes.InputSpatial {
+		newData.inputSpatialStrides[spatialIdx] = newData.inputStrides[inputAxis]
+		dim := inputShape.Dimensions[inputAxis]
+		if dim > 0 {
+			newData.dilatedInputSpatialDims[spatialIdx] = (dim-1)*c.inputDilations[spatialIdx] + 1
+		}
+	}
+
+	return newData, nil
 }
 
 // EqualNodeData implements nodeDataComparable for convNode.

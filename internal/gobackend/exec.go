@@ -3,6 +3,8 @@
 package gobackend
 
 import (
+	"sync"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -23,6 +25,10 @@ type Executable struct {
 
 	// mainFn is the compiled main function.
 	mainFn *FunctionExecutable
+
+	// specializations caches resolved-shape versions of the graph for dynamic graphs.
+	// map[string]*ShapeSpecialization where key is bindings.Key()
+	specializations sync.Map
 }
 
 // Compile time check.
@@ -39,6 +45,7 @@ var _ compute.Executable = (*Executable)(nil)
 func (e *Executable) Finalize() {
 	e.builder.Finalize()
 	e.builder = nil
+	e.specializations.Clear()
 }
 
 // Inputs returns the list of parameters names and shapes, in order created by the Builder.Parameter calls.
@@ -201,17 +208,46 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 			return nil, errors.Errorf("Execute: input buffer #%d flat data is set to nil (!?)", ii)
 		}
 		nodeInput := params[ii]
-		if !inputBuffer.RawShape.Equal(nodeInput.Shape) {
-			paramName := nodeInput.Data.(*NodeParameter).Name
-			return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected shape %s, got %s",
-				paramName, ii, e.builder.name, nodeInput.Shape, inputBuffer.RawShape)
+		if !nodeInput.Shape.IsDynamic() {
+			if !inputBuffer.RawShape.EqualDimensions(nodeInput.Shape) {
+				return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected shape %s, got %s",
+					nodeInput.Data.(*NodeParameter).Name, ii, e.builder.name, nodeInput.Shape, inputBuffer.RawShape)
+			}
+			if inputBuffer.RawShape.DType != nodeInput.Shape.DType {
+				return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected DType %s, got %s",
+					nodeInput.Data.(*NodeParameter).Name, ii, e.builder.name, nodeInput.Shape.DType, inputBuffer.RawShape.DType)
+			}
+		} else {
+			// In the case of dynamic shapes, we only check the DType and Rank.
+			// The dimensions are used to extract bindings below.
+			if inputBuffer.RawShape.DType != nodeInput.Shape.DType {
+				return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected DType %s, got %s",
+					nodeInput.Data.(*NodeParameter).Name, ii, e.builder.name, nodeInput.Shape.DType, inputBuffer.RawShape.DType)
+			}
+			if inputBuffer.RawShape.Rank() != nodeInput.Shape.Rank() {
+				return nil, errors.Errorf("Execute: parameter %q (input #%d) for %q: expected rank %d, got %d",
+					nodeInput.Data.(*NodeParameter).Name, ii, e.builder.name, nodeInput.Shape.Rank(), inputBuffer.RawShape.Rank())
+			}
 		}
 		bufInputs[ii] = inputBuffer
 	}
 
+	// Handle dynamic shapes: extract bindings and get specialization.
+	var spec *ShapeSpecialization
+	if hasDynamicParameters(params) {
+		bindings, err := extractBindingsFromInputs(params, bufInputs)
+		if err != nil {
+			return nil, errors.WithMessage(err, "Execute")
+		}
+		spec, err = e.getOrCreateSpecialization(bindings)
+		if err != nil {
+			return nil, errors.WithMessage(err, "Execute")
+		}
+	}
+
 	// Delegate to FunctionExecutable
 	// Main function doesn't have captured values, so pass nil for both
-	outputs, err := e.mainFn.Execute(e.backend, bufInputs, donate, nil, nil)
+	outputs, err := e.mainFn.Execute(e.backend, bufInputs, donate, nil, nil, spec)
 	if err != nil {
 		return nil, err
 	}

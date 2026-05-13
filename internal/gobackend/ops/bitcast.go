@@ -35,7 +35,7 @@ func Bitcast(f *gobackend.Function, operandOp compute.Value, targetDType dtypes.
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.BitcastOp(operand.Shape, targetDType)
+	outputShape, err := shapeinference.Bitcast(operand.Shape, targetDType)
 	if err != nil {
 		return nil, err
 	}

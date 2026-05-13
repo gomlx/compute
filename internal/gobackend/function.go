@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
 )
 
@@ -52,6 +53,9 @@ type Function struct {
 	// compiled holds pre-compiled execution info.
 	// This is set during Return() to allow efficient execution.
 	Compiled *FunctionExecutable
+
+	// knownDynamicAxisNames holds all dynamic axis names introduced by parameters.
+	knownDynamicAxisNames sets.Set[string]
 }
 
 // capturedNodeData is the data stored in a captured value node.
@@ -325,6 +329,20 @@ func (f *Function) Parameter(name string, shape shapes.Shape, sharding *compute.
 	}
 	n, _ := f.GetOrCreateNode(compute.OpTypeParameter, shape, nil, data)
 	f.Parameters = append(f.Parameters, n)
+
+	rootFn := f
+	for rootFn.RawParent != nil {
+		rootFn = rootFn.RawParent
+	}
+	if rootFn.knownDynamicAxisNames == nil {
+		rootFn.knownDynamicAxisNames = sets.Make[string]()
+	}
+	for i, dim := range shape.Dimensions {
+		if dim == shapes.DynamicDim && shape.AxisNames != nil && shape.AxisNames[i] != "" {
+			rootFn.knownDynamicAxisNames.Insert(shape.AxisNames[i])
+		}
+	}
+
 	return n, nil
 }
 
@@ -408,4 +426,16 @@ func (f *Function) AllReduce(_ []compute.Value, _ compute.ReduceOpType, _ [][]in
 	return nil, errors.Wrapf(
 		notimplemented.NotImplementedError,
 		"AllReduce not supported for %q builder", BackendName)
+}
+
+// KnownDynamicAxisNames returns the set of dynamically defined axis names known by the function.
+func (f *Function) KnownDynamicAxisNames() sets.Set[string] {
+	rootFn := f
+	for rootFn.RawParent != nil {
+		rootFn = rootFn.RawParent
+	}
+	if rootFn.knownDynamicAxisNames == nil {
+		rootFn.knownDynamicAxisNames = sets.Make[string]()
+	}
+	return rootFn.knownDynamicAxisNames
 }

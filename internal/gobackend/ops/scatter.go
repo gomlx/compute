@@ -102,7 +102,7 @@ func scatterImpls(
 	}
 	operand, indices, updates := inputs[0], inputs[1], inputs[2]
 	// Check that parameters are valid.
-	outputShape, err := shapeinference.ScatterOp(
+	outputShape, err := shapeinference.Scatter(
 		operand.Shape,
 		indices.Shape,
 		updates.Shape,

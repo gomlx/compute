@@ -453,7 +453,7 @@ func TestCompiledClosureExecute(t *testing.T) {
 
 	// Execute the closure
 	b := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(b, []*gobackend.Buffer{xBuf, yBuf}, nil, nil, nil)
+	outputs, err := cc.Execute(b, []*gobackend.Buffer{xBuf, yBuf}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -531,7 +531,7 @@ func TestCompiledClosureMultipleExecutions(t *testing.T) {
 		}
 		inputBuf := inputBuf_compute.(*gobackend.Buffer)
 
-		outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
+		outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("Execution %d failed: %+v", i, err)
 		}
@@ -584,7 +584,7 @@ func TestCompiledClosureWithConstants(t *testing.T) {
 
 	// Execute with no inputs
 	goBackend := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{}, nil, nil, nil)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -647,7 +647,7 @@ func TestCompiledClosureMultipleOutputs(t *testing.T) {
 	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{5.0, 10.0})
 
 	b := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
+	outputs, err := cc.Execute(b, []*gobackend.Buffer{inputBuf}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -731,7 +731,7 @@ func TestCompiledClosureChainedOperations(t *testing.T) {
 	inputBuf := makeBuffer(t, shapes.Make(dtypes.Float32, 2), []float32{1.0, 2.0})
 
 	goBackend := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, nil, nil)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -787,7 +787,7 @@ func TestCompiledClosureInputValidation(t *testing.T) {
 	goBackend := backend.(*gobackend.Backend)
 
 	// Too few inputs
-	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf}, nil, nil, nil)
+	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf}, nil, nil, nil, nil)
 	if err == nil {
 		t.Errorf("Expected error for too few inputs")
 	} else if !strings.Contains(err.Error(), "expects 2 inputs, got 1") {
@@ -795,7 +795,7 @@ func TestCompiledClosureInputValidation(t *testing.T) {
 	}
 
 	// Too many inputs
-	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf, xBuf, xBuf}, nil, nil, nil)
+	_, err = cc.Execute(goBackend, []*gobackend.Buffer{xBuf, xBuf, xBuf}, nil, nil, nil, nil)
 	if err == nil {
 		t.Errorf("Expected error for too many inputs")
 	} else if !strings.Contains(err.Error(), "expects 2 inputs, got 3") {
@@ -932,7 +932,7 @@ func TestClosureExecuteWithCapturedValues(t *testing.T) {
 	// Execute the closure with captured values
 	// Expected: [10, 20] + [1, 2] = [11, 22]
 	goBackend := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -1020,7 +1020,7 @@ func TestClosureExecuteWithNestedCapturedValues(t *testing.T) {
 	// Execute the nested closure with captured values
 	// Expected: [100, 200] * [2, 3] = [200, 600]
 	goBackend := backend.(*gobackend.Backend)
-	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil)
+	outputs, err := cc.Execute(goBackend, []*gobackend.Buffer{inputBuf}, nil, []*gobackend.Buffer{capturedBuf}, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}

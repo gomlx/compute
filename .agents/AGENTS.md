@@ -66,6 +66,16 @@ includes a comment stating which tool was used to generate them.
 All errors should include a stack-trace, using the `github.com/pkg/errors` package.
 Whenever printing an error, use `"%+v"` format so the full stack is printed.
 
+### Shapes
+
+- The Shape object should be immutable semantic after creation: function that need to mutate shapes
+  should clone first (see Shape.Clone), mutate, and return the updated (and henceforward immutable) shape.
+- It's ok to simply copy shapes (shallow copy) if they are not meant to be mutated.
+- Shape can have named axes (see `shapes.MakeDynamic`).
+- Shape can be dynamic -- dynamic axes are represented by the sentinel value `shapes.DynamicDim` (-1).
+  If they are dynamic, they must be named (see `shapes.MakeDynamic`), and the dynamic axes must have a name != "".
+  Non-dynamic axes can also be named, but it's not required (the shape.AxisNames can be nil, or their name == "").
+
 ### Modern Go Style
 
 - Use generics where possible.
@@ -82,7 +92,8 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 
 - For backend tests that could be used for any backend, write them in `support/backendtest` so other
   backends can benefit.
-
+- We DONT depend on testify or other test libraries: we are trying to minimize external dependencies.
+- Use the locally defined `support/testutil` for test utilities for equality (or InDelta or InRelativeDelta comparisons of buffers, etc.).
 
 ### Follow Existing Patterns
 

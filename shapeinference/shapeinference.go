@@ -11,7 +11,27 @@
 // The majority of the unary functions don't change the shape, except those that explicitly say that in their name,
 // like Reshape, etc.
 //
-// For the remainder ops, it defines one function per OpType, except for trivial ones and a few that are not implemented yet (e.g.: FFT.)
+// For the remainder ops, it defines one function per OpType.
+//
+// ## Dynamic Shapes
+//
+// This package supports "dynamic shapes" where one or more dimensions of a tensor are unknown at
+// graph build time. These dimensions are represented by the [shapes.DynamicDim] sentinel value (-1).
+//
+// When dynamic shapes are involved, shape inference follows these principles:
+//
+//   - **Validation Deferral:** Many validation checks that depend on concrete dimension sizes (like
+//     checking if a reshape is valid, or if slice indices are within bounds) are deferred.
+//     These checks are typically performed by the backend during "shape specialization"
+//     once the concrete shapes are known.
+//   - **Propagation:** Symbolic dimensions propagate through operations. For example, in a [BinaryOp],
+//     if one operand has a dynamic dimension and the other has a matching static dimension or is also
+//     dynamic, the output dimension will be dynamic.
+//   - **Broadcasting:** During [BinaryOp] or [BroadcastInDim], a dimension of 1 is considered
+//     compatible with a [shapes.DynamicDim] and will be broadcast to it.
+//   - **Axis Names:** Axis names are used to track and validate symbolic axes across operations.
+//     If multiple operands have named axes, [shapes.UnifyAxisNames] is used to ensure they match
+//     and to propagate them to the output.
 package shapeinference
 
 import (
@@ -215,11 +235,13 @@ func BinaryOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output sh
 		return
 	}
 	if NumberOperations.Has(opType) && !(lhsShape.DType.IsInt() || lhsShape.DType.IsFloat() || lhsShape.DType.IsComplex()) {
-		err = errors.Errorf("numeric BinaryOp %s must have a number (Int32, Float32, Complex64, ...) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf("numeric BinaryOp %s must have a number (Int32, Float32, BFloat16, Complex64, ...) "+
+			"data type as input, got %s", opType, lhsShape)
 		return
 	}
 	if FloatOperations.Has(opType) && !lhsShape.DType.IsFloat() {
-		err = errors.Errorf("float BinaryOp %s must have a float (Float32, Float64, ...) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf("float BinaryOp %s must have a float (Float32, Float64, ...) data type as input, got %s",
+			opType, lhsShape)
 		return
 	}
 	if FloatOrComplexOperations.Has(opType) && !(lhsShape.DType.IsFloat() || lhsShape.DType.IsComplex()) {
@@ -227,7 +249,9 @@ func BinaryOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output sh
 		return
 	}
 	if ComplexOperations.Has(opType) && !lhsShape.DType.IsComplex() {
-		err = errors.Errorf("complex BinaryOp %s must have a complex (Complex64, Complex128) data type as input, got %s", opType, lhsShape)
+		err = errors.Errorf(
+			"complex BinaryOp %s must have a complex (Complex64, Complex128) data type as input, got %s",
+			opType, lhsShape)
 		return
 	}
 
@@ -245,25 +269,59 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 
 	// Other cases, either the dimensions match or one of them is 1.
 	if lhsShape.Rank() != rhsShape.Rank() {
-		err = errors.Errorf("if operands are not scalars, their rank must match for BinaryOp (%s), got shapes %s and %s",
+		err = errors.Errorf("if operands are not scalars, their rank must match for BinaryOp (%s); got shapes %s and %s",
 			opType, lhsShape, rhsShape)
-		return
+		return shapes.Invalid(), err
 	}
 	output = lhsShape.Clone()
 	for axis := range output.Rank() {
 		lhsDim := lhsShape.Dimensions[axis]
 		rhsDim := rhsShape.Dimensions[axis]
+		if lhsDim == shapes.DynamicDim || rhsDim == shapes.DynamicDim {
+			// At least one side is dynamic.
+			if lhsDim == 1 {
+				output.Dimensions[axis] = rhsDim // broadcast: use rhs (possibly dynamic)
+			} else if rhsDim == 1 {
+				output.Dimensions[axis] = lhsDim // broadcast: use lhs (possibly dynamic)
+			} else if lhsDim == rhsDim {
+				// Both dynamic: they must have mathing symbolic value.
+				if lhsShape.AxisNames[axis] != rhsShape.AxisNames[axis] {
+					err = errors.Errorf(
+						"axis #%d is dynamic for both operands, but have different axis names for BinaryOp (%s), "+
+							"they cannot be implicitly broadcast; got shapes %s and %s",
+						axis, opType, lhsShape, rhsShape)
+					return shapes.Invalid(), err
+				}
+				output.Dimensions[axis] = shapes.DynamicDim // both dynamic or one dynamic non-broadcast
+			} else {
+				// One side is dynamic and the other is not 1.
+				err = errors.Errorf(
+					"axis #%d is dynamic for one operand, and the other is not 1 for BinaryOp (%s), "+
+						"they can't be implicitly broadcast; got shapes %s and %s",
+					axis, opType, lhsShape, rhsShape)
+				return shapes.Invalid(), err
+			}
+			continue
+		}
 		if lhsDim != 1 && rhsDim != 1 && lhsDim != rhsDim {
-			err = errors.Errorf("dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got shapes %s and %s",
+			err = errors.Errorf(
+				"dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got shapes %s and %s",
 				axis, opType, lhsShape, rhsShape)
-			return
+			return shapes.Invalid(), err
 		}
 		output.Dimensions[axis] = max(lhsDim, rhsDim)
 	}
-	return
+
+	// Unify axis names.
+	output.AxisNames, err = shapes.UnifyAxisNames(lhsShape, rhsShape)
+	if err != nil {
+		return shapes.Invalid(), errors.Wrapf(err, "axis name conflict in BinaryOp (%s)", opType)
+	}
+	return output, nil
 }
 
-// ComparisonOp returns the broadcast shape with dtype set to Bool, for comparison operations (Equal, LessThan, GreaterOrEqual, etc.)
+// ComparisonOp returns the broadcast shape with dtype set to Bool, for comparison operations (Equal, LessThan,
+// GreaterOrEqual, etc.)
 func ComparisonOp(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (output shapes.Shape, err error) {
 	if !ComparisonOperations.Has(opType) {
 		err = errors.Errorf("operation %s is not in the ComparisonOperations set, cannot process it with ComparisonOp", opType)
@@ -334,7 +392,7 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 	return
 }
 
-// WhereOp returns the shape resulting from the Where operation.
+// Where returns the shape resulting from the Where operation.
 //
 // Shape constraints for the operation:
 //
@@ -345,7 +403,7 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 //
 // Note: If you need to select between values of different dtypes, use ConvertDType to convert them
 // to a common dtype before calling Where.
-func WhereOp(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
+func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
 	if condition.DType != dtypes.Bool {
 		err = errors.Errorf("condition for Where() must be a boolean, got %s instead", condition)
 		return
@@ -379,24 +437,86 @@ func WhereOp(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err 
 	return
 }
 
-// ReshapeOp to the given dimensions: trivial output shape, but this function also checks
+// Reshape to the given dimensions: trivial output shape, but this function also checks
 // that the sizes are the same.
 //
-// Notice the compute.Reshape doesn't support auto-scaling dimensions (set to -1), as graph.Reshape does.
-func ReshapeOp(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
-	output = shapes.Make(operand.DType, dims...)
-	if operand.Size() != output.Size() {
-		err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
+// This version of reshape doesn't support reshaping dynamic dimensions (axes with [shapes.DynamicDim]).
+// Any dynamic dimensions in the input must be matched by dynamic dimensions in the output, and their
+// axis names are preserved. If new axes are created, the dynamic axis in the input x and dimensions are
+// matched in order.
+func Reshape(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
+	outputIsDynamic := slices.Contains(dims, shapes.DynamicDim)
+	if !operand.IsDynamic() {
+		if outputIsDynamic {
+			err = errors.Errorf(
+				"Reshape() cannot reshape a concrete shape (%s) to a dynamic dimension (target dims=%v)",
+				operand, dims)
+			return shapes.Invalid(), err
+		}
+
+		output = shapes.Make(operand.DType, dims...)
+		if operand.Size() != output.Size() {
+			err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
+				operand, dims)
+			return shapes.Invalid(), err
+		}
+		return
+	}
+
+	// Dynamic path: skip size validation (deferred to specialization time).
+	if !outputIsDynamic {
+		err = errors.Errorf(
+			"Reshape() cannot reshape a dynamic shape to a concrete shape; got input=%s target dims=%v",
 			operand, dims)
 		return shapes.Invalid(), err
 	}
-	return
+
+	// Extract dynamic axis names from operand in order.
+	var dynamicNames []string
+	for i, d := range operand.Dimensions {
+		if d == shapes.DynamicDim {
+			// We can assume operand.AxisNames has the same length as operand.Dimensions
+			// when the shape is dynamic.
+			dynamicNames = append(dynamicNames, operand.AxisNames[i])
+		}
+	}
+
+	// Count dynamic axes in the target dims.
+	numTargetDynamic := 0
+	for _, d := range dims {
+		if d == shapes.DynamicDim {
+			numTargetDynamic++
+		}
+	}
+
+	if len(dynamicNames) != numTargetDynamic {
+		err = errors.Errorf(
+			"Reshape() requires the number of dynamic dimensions in the input (%d) to match the target dims (%d); got input=%s target dims=%v",
+			len(dynamicNames), numTargetDynamic, operand, dims)
+		return shapes.Invalid(), err
+	}
+
+	// Build output axis names, mapping dynamic axes in order.
+	// This also preserves the invariant that len(axisNames) == len(dims) for dynamic shapes.
+	axisNames := make([]string, len(dims))
+	dynIdx := 0
+	for i, d := range dims {
+		if d == shapes.DynamicDim {
+			axisNames[i] = dynamicNames[dynIdx]
+			dynIdx++
+		}
+	}
+
+	// DynamicDim values in target dims are allowed — they propagate through
+	// reshape operations and are resolved during shape specialization.
+	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
+	return output, nil
 }
 
-// TransposeOp all axes of the operand.
+// Transpose all axes of the operand.
 // There must be one value in permutations for each axis in the operand.
 // The output will have: output.Shape.Dimension[ii] = operand.Shape.Dimension[permutations[i]].
-func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape, err error) {
+func Transpose(operand shapes.Shape, permutations []int) (output shapes.Shape, err error) {
 	rank := operand.Rank()
 	if len(permutations) != rank {
 		err = errors.Errorf("Transpose() requires all axes permutations to be defined, operand has shape %s, but %d permutations were given",
@@ -427,12 +547,25 @@ func TransposeOp(operand shapes.Shape, permutations []int) (output shapes.Shape,
 	for axis := range output.Dimensions {
 		srcAxis := permutations[axis]
 		output.Dimensions[axis] = operand.Dimensions[srcAxis]
+		if operand.AxisNames != nil {
+			output.AxisNames[axis] = operand.AxisNames[srcAxis]
+		}
 	}
 	return
 }
 
-// BroadcastInDimOp verifies that the arguments are valid. The output shape is already known, so nothing is returned.
-func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) error {
+// BroadcastInDim verifies that the arguments are valid.
+//
+// The output shape is the same as the input is already known, so nothing is returned.
+//
+// Dynamic shapes: When broadcasting, an operand axis with a dynamic length
+// cannot be broadcast and must be preserved as dynamic in the output -- their axis names
+// must exactly match in the outputShape.
+// But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
+// or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
+// by any input parameter will result in an error.
+func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int,
+	knownDynamicAxisNames sets.Set[string]) error {
 	if len(broadcastAxes) != operand.Rank() {
 		return errors.Errorf("there must be exactly one broadcastAxes (%v) per axis in the operand (%s)",
 			broadcastAxes, operand)
@@ -442,7 +575,9 @@ func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) er
 	preservedSet := sets.Make[int](len(broadcastAxes))
 	for axisInOperand, axisInOutput := range broadcastAxes {
 		if axisInOutput < 0 || axisInOutput >= outputShape.Rank() {
-			return errors.Errorf("broadcastAxes (%v) defines a value out-of-range (%d-th value -> %d), they must be between 0 and outputShape.Rank()-1=%d",
+			return errors.Errorf(
+				"broadcastAxes (%v) defines a value out-of-range (%d-th value -> %d), they must be "+
+					"between 0 and outputShape.Rank()-1=%d",
 				broadcastAxes, axisInOperand, axisInOutput, outputShape.Rank()-1)
 		}
 		if preservedSet.Has(axisInOutput) {
@@ -450,26 +585,70 @@ func BroadcastInDimOp(operand, outputShape shapes.Shape, broadcastAxes []int) er
 				broadcastAxes, axisInOutput, axisInOperand, outputShape.Rank()-1)
 		}
 		preservedSet.Insert(axisInOutput)
-		if operand.Dimensions[axisInOperand] != 1 && operand.Dimensions[axisInOperand] != outputShape.Dimensions[axisInOutput] {
+		inDim := operand.Dimensions[axisInOperand]
+		outDim := outputShape.Dimensions[axisInOutput]
+
+		if inDim == shapes.DynamicDim {
+			if outDim != shapes.DynamicDim {
+				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must be preserved as dynamic in output shape %s", axisInOperand, operand, axisInOperand, axisInOutput, outputShape)
+			}
+			nameOperand := ""
+			if operand.AxisNames != nil {
+				nameOperand = operand.AxisNames[axisInOperand]
+			}
+			nameOutput := ""
+			if outputShape.AxisNames != nil {
+				nameOutput = outputShape.AxisNames[axisInOutput]
+			}
+			if nameOperand != nameOutput {
+				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve its axis name %q, but output shape %s has axis name %q", axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, outputShape, nameOutput)
+			}
+		} else if inDim != 1 && inDim != outDim {
 			return errors.Errorf("the values of outputShape (%v) that are being broadcast (listed in broadcastAxes) "+
 				"must match the corresponding value in the operand shape (%s) or be 1 (if broadcasting), "+
 				"but the value of outputShape.Dimensions[%d]=%d does not match the value in operand.Shape().Dimensions[%d]=%d",
-				outputShape, operand, axisInOutput, outputShape.Dimensions[axisInOutput], axisInOperand, operand.Dimensions[axisInOperand])
+				outputShape, operand, axisInOutput, outDim, axisInOperand, inDim)
+		}
+
+		if outDim == shapes.DynamicDim && inDim != shapes.DynamicDim {
+			// Newly introduced dynamic axis by broadcasting dimension 1
+			name := ""
+			if outputShape.AxisNames != nil {
+				name = outputShape.AxisNames[axisInOutput]
+			}
+			if knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(name) {
+				return errors.Errorf("cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters (axis %d with name %q, known: %v)", axisInOutput, name, knownDynamicAxisNames)
+			}
+		}
+	}
+
+	for axisInOutput, outDim := range outputShape.Dimensions {
+		if !preservedSet.Has(axisInOutput) && outDim == shapes.DynamicDim {
+			name := ""
+			if outputShape.AxisNames != nil {
+				name = outputShape.AxisNames[axisInOutput]
+			}
+			if knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(name) {
+				return errors.Errorf("cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters (axis %d with name %q, known: %v)", axisInOutput, name, knownDynamicAxisNames)
+			}
 		}
 	}
 	return nil
 }
 
-// ReduceOp works for the ReduceMax, ReduceMin, ReduceSum and ReduceProduct ops.
-func ReduceOp(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
+// Reduce works for the ReduceMax, ReduceMin, ReduceSum and ReduceProduct ops.
+func Reduce(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
 	if len(axes) == 0 {
 		return operand, nil
 	}
-	output = shapes.Make(operand.DType)
+	output = shapes.Shape{DType: operand.DType}
 	outputRank := operand.Rank() - len(axes)
 	if outputRank > 0 {
 		// Copy over dimensions that will stay.
 		output.Dimensions = make([]int, 0, outputRank)
+		if operand.AxisNames != nil {
+			output.AxisNames = make([]string, 0, outputRank)
+		}
 		for _, axis := range axes {
 			if axis < 0 || axis >= operand.Rank() {
 				return shapes.Invalid(), errors.Errorf("Reduce operation require each axis to be 0 <= axis < rank, but got invalid axis %d for shape %s", axis, operand)
@@ -479,6 +658,9 @@ func ReduceOp(operand shapes.Shape, axes []int) (output shapes.Shape, err error)
 		for axis, dim := range operand.Dimensions {
 			if !axesSet.Has(axis) {
 				output.Dimensions = append(output.Dimensions, dim)
+				if operand.AxisNames != nil {
+					output.AxisNames = append(output.AxisNames, operand.AxisNames[axis])
+				}
 			}
 		}
 	}
@@ -521,10 +703,14 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 		return output, errors.Errorf("sliceSizes must have one value per operand axes, so it length (%d) must match operand rank (%d)", len(sliceSizes), operand.Rank())
 	}
 	for axis, sliceSize := range sliceSizes {
+		if sliceSize == shapes.DynamicDim {
+			// Dynamic slice size: skip validation, will be resolved at specialization time.
+			continue
+		}
 		if sliceSize < 0 {
 			return output, errors.Errorf("sliceSize %d for axis %d is negative, it must be non-negative", sliceSize, axis)
 		}
-		if operand.Dimensions[axis] < sliceSize {
+		if operand.Dimensions[axis] != shapes.DynamicDim && operand.Dimensions[axis] < sliceSize {
 			return output, errors.Errorf("sliceSize %d for axis %d is larger than the corresponding operand dimension %d", sliceSize, axis, operand.Dimensions[axis])
 		}
 	}
@@ -567,11 +753,12 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 	// - Remaining axes are filled in order from the batch axes, taken from startIndices.
 	output = shapes.Make(operand.DType)
 	output.Dimensions = make([]int, batchRank+len(offsetOutputAxes))
+	output.AxisNames = make([]string, output.Rank())
 
 	setOffsetOutputAxes := sets.Make[int]()
 	for _, offsetOutputAxis := range offsetOutputAxes {
 		if offsetOutputAxis < 0 || offsetOutputAxis >= output.Rank() {
-			return shapes.Invalid(), errors.Errorf("offset output axis %d is out of range for output of rank %d", offsetOutputAxis, output.Rank())
+			return shapes.Invalid(), errors.Errorf("offset output axis %d is out of range for output of rank %d", output.Rank(), output.Rank())
 		}
 		if setOffsetOutputAxes.Has(offsetOutputAxis) {
 			return shapes.Invalid(), errors.Errorf("offset output axis %d is defined more than once: offsetOutputAxes=%v", offsetOutputAxis, offsetOutputAxes)
@@ -579,12 +766,22 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 		setOffsetOutputAxes.Insert(offsetOutputAxis)
 	}
 	offsetDims := make([]int, 0, len(offsetOutputAxes))
+	offsetNames := make([]string, 0, len(offsetOutputAxes))
 	for axis, sliceSize := range sliceSizes {
 		if setCollapsedAxes.Has(axis) {
 			// This is a collapsed axis and not used as an offset.
 			continue
 		}
 		offsetDims = append(offsetDims, sliceSize)
+		name := ""
+		if operand.AxisNames != nil {
+			name = operand.AxisNames[axis]
+		}
+		if sliceSize != operand.Dimensions[axis] {
+			// Sliced axis: it's not the same symbolic dimension anymore.
+			name = ""
+		}
+		offsetNames = append(offsetNames, name)
 	}
 	offsetDimsIdx := 0
 	batchDimsIdx := 0
@@ -592,6 +789,7 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 		if setOffsetOutputAxes.Has(axis) {
 			// Take an offset dimension from sliceSizes:
 			output.Dimensions[axis] = offsetDims[offsetDimsIdx]
+			output.AxisNames[axis] = offsetNames[offsetDimsIdx]
 			offsetDimsIdx++
 		} else {
 			// Take a batch dimension:
@@ -599,15 +797,18 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 				batchDimsIdx++
 			}
 			output.Dimensions[axis] = startIndices.Dimensions[batchDimsIdx]
+			if startIndices.AxisNames != nil {
+				output.AxisNames[axis] = startIndices.AxisNames[batchDimsIdx]
+			}
 			batchDimsIdx++
 		}
 	}
 	return output, nil
 }
 
-// ConcatenateOp calculates the output shape of a Concatenate operation.
+// Concatenate calculates the output shape of a Concatenate operation.
 // It takes a slice of input shapes and the dimension along which to concatenate.
-func ConcatenateOp(inputs []shapes.Shape, axis int) (output shapes.Shape, err error) {
+func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err error) {
 	if len(inputs) == 0 {
 		return shapes.Invalid(), errors.Errorf("ConcatenateOp requires at least one input shape")
 	}
@@ -645,23 +846,63 @@ func ConcatenateOp(inputs []shapes.Shape, axis int) (output shapes.Shape, err er
 
 		for d := range rank {
 			if d == axis {
-				output.Dimensions[d] += currentShape.Dimensions[d]
+				// For concat axis: if either is dynamic, result is dynamic.
+				if output.Dimensions[d] == shapes.DynamicDim || currentShape.Dimensions[d] == shapes.DynamicDim {
+					// Concatenating on a dynamic axis is not supported yet, because we
+					// don't have axis expressions to represent the new size.
+					return shapes.Invalid(), errors.Errorf("ConcatenateOp: concatenation on a dynamic axis (%d, names %q and %q) is not supported yet (requires axis expressions)",
+						d, output.AxisName(d), currentShape.AxisName(d))
+				} else {
+					output.Dimensions[d] += currentShape.Dimensions[d]
+				}
 			} else {
-				if currentShape.Dimensions[d] != output.Dimensions[d] {
+				// For non-concat axes: allow dynamic dims on either side.
+				if output.Dimensions[d] == shapes.DynamicDim || currentShape.Dimensions[d] == shapes.DynamicDim {
+					// Dynamic dims are assumed compatible; keep dynamic.
+					if output.Dimensions[d] != shapes.DynamicDim {
+						output.Dimensions[d] = currentShape.Dimensions[d]
+					}
+				} else if currentShape.Dimensions[d] != output.Dimensions[d] {
 					return shapes.Invalid(), errors.Errorf("mismatched dimensions for ConcatenateOp at axis %d (non-concatenation axis): input #0 has %d, input #%d has %d",
 						d, output.Dimensions[d], i, currentShape.Dimensions[d])
 				}
+			}
+		}
+
+		// Unify axis names from current input.
+		if output.AxisNames != nil || currentShape.AxisNames != nil {
+			for d := range rank {
+				outputName := ""
+				if output.AxisNames != nil {
+					outputName = output.AxisNames[d]
+				}
+				inputName := ""
+				if currentShape.AxisNames != nil {
+					inputName = currentShape.AxisNames[d]
+				}
+				unified, nameErr := shapes.UnifyAxisName(outputName, inputName)
+				if nameErr != nil {
+					if d != axis {
+						return shapes.Invalid(), errors.Wrapf(nameErr, "axis name conflict at axis %d in ConcatenateOp", d)
+					}
+					// Concat axis with different names: drop the name.
+					unified = ""
+				}
+				if output.AxisNames == nil {
+					output.AxisNames = make([]string, rank)
+				}
+				output.AxisNames[d] = unified
 			}
 		}
 	}
 	return output, nil
 }
 
-// ScatterOp checks that the parameters are consistent. The output shape returned is the unchanged operand -- the scattered
+// Scatter checks that the parameters are consistent. The output shape returned is the unchanged operand -- the scattered
 // updates are applied to the operand, but its shape is unchanged.
 //
 // The Scatter operations indicesAreSorted and uniqueIndices don't play a role in this.
-func ScatterOp(operand, indices, updates shapes.Shape, indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int) (output shapes.Shape, err error) {
+func Scatter(operand, indices, updates shapes.Shape, indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int) (output shapes.Shape, err error) {
 	if operand.DType == dtypes.InvalidDType || indices.DType == dtypes.InvalidDType || updates.DType == dtypes.InvalidDType {
 		return shapes.Invalid(), errors.Errorf("invalid shape for operand (%s), indices (%s) or updates (%s) for ScatterOp", operand, indices, updates)
 	}
@@ -682,7 +923,7 @@ func ScatterOp(operand, indices, updates shapes.Shape, indexVectorAxis int, upda
 	if indexVectorAxis < indices.Rank() {
 		numIndexedAxes = indices.Dimensions[indexVectorAxis]
 	}
-	if len(scatterAxesToOperandAxes) != numIndexedAxes {
+	if numIndexedAxes != shapes.DynamicDim && len(scatterAxesToOperandAxes) != numIndexedAxes {
 		return shapes.Invalid(), errors.Errorf("scatterAxesToOperandAxes length (%d) must match the size of indices's indexVectorAxis dimension (%d)",
 			len(scatterAxesToOperandAxes), indices.Dimensions[indexVectorAxis])
 	}
@@ -729,21 +970,23 @@ func ScatterOp(operand, indices, updates shapes.Shape, indexVectorAxis int, upda
 	}
 	for ii, updatesAxis := range updateWindowAxes {
 		operandAxis := operandUpdatedWindowAxes[ii]
-		if updates.Dimensions[updatesAxis] > operand.Dimensions[operandAxis] {
+		uDim := updates.Dimensions[updatesAxis]
+		oDim := operand.Dimensions[operandAxis]
+		if uDim != shapes.DynamicDim && oDim != shapes.DynamicDim && uDim > oDim {
 			return shapes.Invalid(), errors.Errorf("updates.Dimensions[axis=%d](%d) > operand.Dimensions[axis=%d](%d), updates won't fit into the operand",
-				updatesAxis, updates.Dimensions[updatesAxis], operandAxis, operand.Dimensions[operandAxis])
+				updatesAxis, uDim, operandAxis, oDim)
 		}
 	}
 	return operand, nil
 }
 
-// SliceOp calculates the output shape for a Slice operation.
+// Slice calculates the output shape for a Slice operation.
 // It checks that starts, limits, and strides have the correct length (matching operand rank),
 // and that the slice parameters are valid for the operand's dimensions.
 // Strides must be positive.
-func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes.Shape, err error) {
+func Slice(operand shapes.Shape, starts, limits, strides []int) (output shapes.Shape, err error) {
 	rank := operand.Rank()
-	opName := "SliceOp"
+	opName := "Slice"
 	if operand.DType == dtypes.InvalidDType {
 		return shapes.Invalid(), errors.Errorf("%s: invalid operand shape %s", opName, operand)
 	}
@@ -760,6 +1003,7 @@ func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes
 	output = shapes.Shape{
 		DType:      operand.DType,
 		Dimensions: make([]int, rank),
+		AxisNames:  slices.Clone(operand.AxisNames),
 	}
 
 	for axis := range rank {
@@ -770,6 +1014,32 @@ func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes
 			return shapes.Invalid(), errors.Errorf("%s: stride must be positive, but got stride[%d]=%d for operand shape %s",
 				opName, axis, stride, operand)
 		}
+
+		// The first one is always taken, so we use the ceiling of the division.
+		outputDimSize := (limit - start + (stride - 1)) / stride
+
+		// Skip bounds validation for dynamic axes.
+		if dimSize == shapes.DynamicDim {
+			// If outputDimSize is static (which it is here because starts/limits are []int),
+			// we can return it as static.
+			output.Dimensions[axis] = outputDimSize
+			if outputDimSize == shapes.DynamicDim {
+				// Remains dynamic: it must have a name.
+				// For now we only support "full" slices of dynamic axes to keep the same name.
+				if start != 0 || stride != 1 || limit != shapes.DynamicDim {
+					return shapes.Invalid(), errors.Errorf("%s: partial slice of a dynamic axis (%d, name %q) is not supported yet (requires axis expressions)",
+						opName, axis, operand.AxisName(axis))
+				}
+				// Identity slice: keep the name.
+			} else {
+				// Became static: drop the name (no longer a dynamic axis).
+				if output.AxisNames != nil {
+					output.AxisNames[axis] = ""
+				}
+			}
+			continue
+		}
+
 		if start < 0 || start > dimSize {
 			return shapes.Invalid(), errors.Errorf("%s: start index %d is out of bounds for axis %d with size %d (operand shape %s)",
 				opName, start, axis, dimSize, operand)
@@ -780,17 +1050,63 @@ func SliceOp(operand shapes.Shape, starts, limits, strides []int) (output shapes
 				opName, limit, axis, start, dimSize, operand)
 		}
 
-		// The first one is always taken, so we use the ceiling of the division.
-		outputDimSize := (limit - start + (stride - 1)) / stride
 		output.Dimensions[axis] = outputDimSize
 	}
 
 	return output, nil
 }
 
-// ArgMinMaxOp calculates the output shape for an ArgMinMax operation.
+// DynamicSlice calculates the output shape for a DynamicSlice operation.
+func DynamicSlice(operand shapes.Shape, sliceSizes []int) (output shapes.Shape, err error) {
+	if operand.DType == dtypes.InvalidDType {
+		return output, errors.Errorf("invalid operand shape %s for DynamicSlice", operand)
+	}
+	if len(sliceSizes) != operand.Rank() {
+		return output, errors.Errorf("sliceSizes must have one value per operand axes, so it length (%d) must match operand rank (%d)", len(sliceSizes), operand.Rank())
+	}
+	for axis, sliceSize := range sliceSizes {
+		if sliceSize == shapes.DynamicDim {
+			// Dynamic slice size: skip validation, will be resolved at specialization time.
+			continue
+		}
+		if sliceSize < 0 {
+			return output, errors.Errorf("sliceSize %d for axis %d is negative, it must be non-negative", sliceSize, axis)
+		}
+		if operand.Dimensions[axis] != shapes.DynamicDim && operand.Dimensions[axis] < sliceSize {
+			return output, errors.Errorf("sliceSize %d for axis %d is larger than the corresponding operand dimension %d", sliceSize, axis, operand.Dimensions[axis])
+		}
+	}
+	output = shapes.Shape{
+		DType:      operand.DType,
+		Dimensions: slices.Clone(sliceSizes),
+		AxisNames:  make([]string, operand.Rank()),
+	}
+	for axis, sliceSize := range sliceSizes {
+		if operand.AxisNames != nil {
+			if sliceSize == operand.Dimensions[axis] {
+				output.AxisNames[axis] = operand.AxisNames[axis]
+			}
+		}
+	}
+	return output, nil
+}
+
+// DynamicUpdateSlice calculates the output shape for a DynamicUpdateSlice operation.
+func DynamicUpdateSlice(operand, update shapes.Shape) (output shapes.Shape, err error) {
+	if operand.DType != update.DType {
+		return shapes.Invalid(), errors.Errorf("DynamicUpdateSlice requires operand and update to have the same DType, got %s and %s",
+			operand.DType, update.DType)
+	}
+	if operand.Rank() != update.Rank() {
+		return shapes.Invalid(), errors.Errorf("DynamicUpdateSlice requires operand and update to have the same rank, got rank %d and %d",
+			operand.Rank(), update.Rank())
+	}
+	return operand.Clone(), nil
+}
+
+// ArgMinMax calculates the output shape for an ArgMinMax operation.
 // It will be the shape of the operand minus the "reduce" axis.
-func ArgMinMaxOp(operand shapes.Shape, axis int, outputDType dtypes.DType) (output shapes.Shape, err error) {
+func ArgMinMax(operand shapes.Shape, axis int, outputDType dtypes.DType) (output shapes.Shape, err error) {
 	if !outputDType.IsInt() {
 		err = errors.Errorf("ArgMinMax outputDType must be an integer type, got %s", outputDType)
 		return
@@ -809,14 +1125,24 @@ func ArgMinMaxOp(operand shapes.Shape, axis int, outputDType dtypes.DType) (outp
 	}
 	newDims := slices.Clone(operand.Dimensions)
 	newDims = slices.Delete(newDims, axis, axis+1)
-	output = shapes.Make(outputDType, newDims...)
+	// Build output shape directly to support dynamic dims (-1).
+	output = shapes.Shape{
+		DType:      outputDType,
+		Dimensions: newDims,
+	}
+	// Remove the axis name at the deleted position.
+	if operand.AxisNames != nil {
+		newNames := slices.Clone(operand.AxisNames)
+		newNames = slices.Delete(newNames, axis, axis+1)
+		output.AxisNames = newNames
+	}
 	return
 }
 
-// ReduceWindowOp returns the expected output shape for the operation.
+// ReduceWindow returns the expected output shape for the operation.
 //
 // Notice it doesn't take as input the reductionType parameter, since it doesn't affect the output shape.
-func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
+func ReduceWindow(operand shapes.Shape, windowDimensions, strides, baseDilations, windowDilations []int, paddings [][2]int) (shapes.Shape, error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: invalid operand shape %s", operand)
 	}
@@ -832,8 +1158,8 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilati
 	if len(paddings) != 0 && len(paddings) != rank {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: len(paddings)=%d, but operand rank is %d", len(paddings), rank)
 	}
-	if inputDilations != nil && len(inputDilations) != rank {
-		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: inputDilations is not nil and len(inputDilations)=%d, but operand rank is %d", len(inputDilations), rank)
+	if baseDilations != nil && len(baseDilations) != rank {
+		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: baseDilations is not nil and len(baseDilations)=%d, but operand rank is %d", len(baseDilations), rank)
 	}
 	if windowDilations != nil && len(windowDilations) != rank {
 		return shapes.Invalid(), errors.Errorf("ReduceWindowOp: windowDilations is not nil and len(windowDilations)=%d, but operand rank is %d", len(windowDilations), rank)
@@ -849,7 +1175,7 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilati
 	// Each output dimension is calculated orthogonally to the others.
 	outputDims := make([]int, rank)
 	for i := range rank {
-		inputDim := operand.Dimensions[i] // Already validated to be > 0 by shapes.Make
+		inputDim := operand.Dimensions[i]
 		windowDim := 1
 		if len(windowDimensions) > 0 {
 			windowDim = windowDimensions[i]
@@ -874,10 +1200,10 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilati
 		}
 
 		baseDilation := 1
-		if inputDilations != nil {
-			baseDilation = inputDilations[i]
+		if baseDilations != nil {
+			baseDilation = baseDilations[i]
 			if baseDilation < 1 {
-				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: inputDilations[%d]=%d must be >= 1 for operand shape %s", i, baseDilation, operand)
+				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: baseDilations[%d]=%d must be >= 1 for operand shape %s", i, baseDilation, operand)
 			}
 		}
 
@@ -887,6 +1213,18 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilati
 			if windowDilation < 1 {
 				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: windowDilations[%d]=%d must be >= 1 for operand shape %s", i, windowDilation, operand)
 			}
+		}
+
+		// Skip output size calculation for dynamic axes — output is also dynamic.
+		if inputDim == shapes.DynamicDim {
+			// If it's a dynamic dimension, we currently don't support any operation that
+			// changes its size, because we don't have axis expressions to represent the new size.
+			if windowDim != 1 || stride != 1 || paddingLow != 0 || paddingHigh != 0 || baseDilation != 1 || windowDilation != 1 {
+				return shapes.Invalid(), errors.Errorf("ReduceWindowOp: operation on a dynamic axis (%d, name %q) that changes its size is not supported yet (requires axis expressions)",
+					i, operand.AxisName(i))
+			}
+			outputDims[i] = shapes.DynamicDim
+			continue
 		}
 
 		// Effective input dimension after base dilation.
@@ -912,11 +1250,17 @@ func ReduceWindowOp(operand shapes.Shape, windowDimensions, strides, inputDilati
 		outputDims[i] = numerator/stride + 1
 	}
 
-	return shapes.Make(operand.DType, outputDims...), nil
+	// Build output shape directly to support dynamic dims (-1) in output.
+	result := shapes.Shape{
+		DType:      operand.DType,
+		Dimensions: outputDims,
+		AxisNames:  slices.Clone(operand.AxisNames),
+	}
+	return result, nil
 }
 
-// ConvGeneralOp returns the expected output shape for the ConvGeneral operation.
-func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
+// ConvGeneral returns the expected output shape for the ConvGeneral operation.
+func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	strides []int, paddings [][2]int,
 	inputDilations, kernelDilations []int,
 	channelGroupCount, batchGroupCount int) (shapes.Shape, error) {
@@ -1028,14 +1372,16 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	if channelGroupCount < 1 {
 		return errorf("channelGroupCount=%d must be >= 1 for input shape %s", channelGroupCount, input)
 	}
-	if inputChannels%channelGroupCount != 0 {
-		return errorf("input channels dimension %d must be divisible by channelGroupCount %d", inputChannels, channelGroupCount)
+	if inputChannels != shapes.DynamicDim {
+		if inputChannels%channelGroupCount != 0 {
+			return errorf("input channels dimension %d must be divisible by channelGroupCount %d", inputChannels, channelGroupCount)
+		}
 	}
 	if outputChannels%channelGroupCount != 0 {
 		return errorf("kernel output channels dimension %d must be divisible by channelGroupCount %d", outputChannels, channelGroupCount)
 	}
 	kernelInputChannels := kernel.Dim(axes.KernelInputChannels)
-	if inputChannels != kernelInputChannels*channelGroupCount {
+	if inputChannels != shapes.DynamicDim && inputChannels != kernelInputChannels*channelGroupCount {
 		return errorf("we must have inputChannels (=%d) = kernelInputChannels (=%d) * channelGroupCount (=%d) -- input shape is %s, kernel shape is %s",
 			inputChannels, kernelInputChannels, channelGroupCount, input, kernel)
 	}
@@ -1045,7 +1391,7 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	if batchGroupCount < 1 {
 		return errorf("batchGroupCount=%d must be >= 1 for input shape %s", batchGroupCount, input)
 	}
-	if inputBatch%batchGroupCount != 0 {
+	if inputBatch != shapes.DynamicDim && inputBatch%batchGroupCount != 0 {
 		return errorf("input batch dimension %d must be divisible by batchGroupCount %d", inputBatch, batchGroupCount)
 	}
 	if outputChannels%batchGroupCount != 0 {
@@ -1054,28 +1400,44 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 
 	// Find the output shape.
 	output := input.Clone()
-	output.Dimensions[axes.OutputBatch] = inputBatch / batchGroupCount
+	if inputBatch == shapes.DynamicDim {
+		output.Dimensions[axes.OutputBatch] = shapes.DynamicDim
+	} else {
+		output.Dimensions[axes.OutputBatch] = inputBatch / batchGroupCount
+	}
 	output.Dimensions[axes.OutputChannels] = outputChannels
 
 	for spatialAxisIdx, inputAxis := range axes.InputSpatial {
 		inputDim := input.Dim(inputAxis)
+
 		filterAxis := axes.KernelSpatial[spatialAxisIdx]
 		kernelDim := kernel.Dim(filterAxis)
 		stride := 1
 		var padding [2]int
-
-		if len(strides) > 0 {
+		if strides != nil {
 			stride = strides[spatialAxisIdx]
 		}
-		if len(paddings) > 0 {
+		if paddings != nil {
 			padding = paddings[spatialAxisIdx]
 		}
 		inputDilation, kernelDilation := 1, 1
-		if len(inputDilations) > 0 {
+		if inputDilations != nil {
 			inputDilation = inputDilations[spatialAxisIdx]
 		}
-		if len(kernelDilations) > 0 {
+		if kernelDilations != nil {
 			kernelDilation = kernelDilations[spatialAxisIdx]
+		}
+
+		// Dynamic spatial dims: propagate DynamicDim without arithmetic.
+		if inputDim == shapes.DynamicDim {
+			// If it's a dynamic dimension, we currently don't support any operation that
+			// changes its size, because we don't have axis expressions to represent the new size.
+			if kernelDim != 1 || stride != 1 || padding[0] != 0 || padding[1] != 0 || inputDilation != 1 || kernelDilation != 1 {
+				return shapes.Invalid(), errors.Errorf("ConvGeneralOp: operation on a dynamic axis (%d, name %q) that changes its size is not supported yet (requires axis expressions)",
+					inputAxis, input.AxisName(inputAxis))
+			}
+			output.Dimensions[axes.OutputSpatial[spatialAxisIdx]] = shapes.DynamicDim
+			continue
 		}
 
 		// Calculate outputDim of the convolution.
@@ -1105,8 +1467,8 @@ func ConvGeneralOp(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	return output, nil
 }
 
-// BitcastOp calculates the output shape for a Bitcast operation.
-func BitcastOp(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shape, err error) {
+// Bitcast calculates the output shape for a Bitcast operation.
+func Bitcast(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shape, err error) {
 	if operand.DType == targetDType {
 		return operand, nil
 	}
@@ -1126,17 +1488,28 @@ func BitcastOp(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Sh
 		// Larger target: collapse the last axis.
 		ratio := targetBits / operandBits
 		lastDim := dims[len(dims)-1]
+		if lastDim == shapes.DynamicDim {
+			return shapes.Invalid(), errors.Errorf("Bitcast: cannot collapse a dynamic last dimension (axis %d, name %q)",
+				len(dims)-1, operand.AxisName(-1))
+		}
 		if lastDim != ratio {
 			return shapes.Invalid(), errors.Errorf("Bitcast: last dim %d is not equal to element-size ratio operandBits(%d)/targetBits(%d)=%d", lastDim, operandBits, targetBits, ratio)
 		}
 		dims = dims[:len(dims)-1]
 	}
-	output = shapes.Make(targetDType, dims...)
+
+	names := make([]string, len(dims))
+	for i := range min(len(dims), operand.Rank()) {
+		if operand.AxisNames != nil {
+			names[i] = operand.AxisNames[i]
+		}
+	}
+	output = shapes.MakeDynamic(targetDType, dims, names)
 	return output, nil
 }
 
-// PadOp returns the expected output shape for the Pad operation.
-func PadOp(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
+// Pad returns the expected output shape for the Pad operation.
+func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("PadOp: invalid operand shape %s", operand)
 	}
@@ -1151,6 +1524,16 @@ func PadOp(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.S
 			return shapes.Invalid(), errors.Errorf("PadOp: interior padding must be non-negative, got %d for axis %d", config.Interior, axis)
 		}
 		dim := operand.Dimensions[axis]
+		if dim == shapes.DynamicDim {
+			// If it's a dynamic dimension, we currently don't support padding, because we
+			// don't have axis expressions to represent the new size.
+			if config.Start != 0 || config.End != 0 || config.Interior != 0 {
+				return shapes.Invalid(), errors.Errorf("PadOp: padding on a dynamic axis (%d, name %q) is not supported yet (requires axis expressions)",
+					axis, operand.AxisName(axis))
+			}
+			continue
+		}
+
 		interiorPadding := 0
 		if dim > 0 {
 			interiorPadding = (dim - 1) * config.Interior

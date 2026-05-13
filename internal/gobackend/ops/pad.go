@@ -23,7 +23,7 @@ func Pad(f *gobackend.Function, operandOp, fillValueOp compute.Value, axesConfig
 	}
 	operand, fillValue := inputs[0], inputs[1]
 
-	outputShape, err := shapeinference.PadOp(operand.Shape, axesConfig...)
+	outputShape, err := shapeinference.Pad(operand.Shape, axesConfig...)
 	if err != nil {
 		return nil, err
 	}

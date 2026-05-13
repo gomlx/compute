@@ -264,7 +264,7 @@ func execSort(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 					}
 
 					// Execute comparator - DON'T donate captured inputs, they're reused
-					compOutputs, err := compFn.Compiled.Execute(backend, compInputs, nil, compCaptured, nil)
+					compOutputs, err := compFn.Compiled.Execute(backend, compInputs, nil, compCaptured, nil, nil)
 					if err != nil {
 						panic(err) // Abort sort immediately
 					}

@@ -242,7 +242,7 @@ func TestConvGeneralOp(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			output, err := ConvGeneralOp(tc.input, tc.kernel, tc.axes,
+			output, err := ConvGeneral(tc.input, tc.kernel, tc.axes,
 				tc.strides, tc.paddings, tc.inputDilations, tc.kernelDilations,
 				tc.channelGroupCount, tc.batchGroupCount)
 			if tc.expectedError != "" {

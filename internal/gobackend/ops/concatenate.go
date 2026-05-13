@@ -31,7 +31,7 @@ func Concatenate(f *gobackend.Function, axis int, operandOps ...compute.Value) (
 	for i, opNode := range operands {
 		inputShapes[i] = opNode.Shape
 	}
-	outputShape, err := shapeinference.ConcatenateOp(inputShapes, axis)
+	outputShape, err := shapeinference.Concatenate(inputShapes, axis)
 	if err != nil {
 		return nil, err
 	}

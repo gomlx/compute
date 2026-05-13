@@ -81,7 +81,7 @@ func execCall(
 	data := node.Data.(*callNode) //nolint:errcheck
 	targetFn := data.target
 
-	outputs, err := targetFn.Compiled.Execute(backend, inputs, inputsOwned, nil, nil)
+	outputs, err := targetFn.Compiled.Execute(backend, inputs, inputsOwned, nil, nil, nil)
 	// Mark donated inputs as consumed.
 	for i, owned := range inputsOwned {
 		if owned {

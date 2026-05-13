@@ -142,7 +142,7 @@ func execWhile(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	// Loop while condition is true
 	for iter := 0; ; iter++ {
 		// Evaluate condition - DON'T donate state or captured buffers since we may need them
-		condOutputs, err := condFn.Compiled.Execute(backend, state, nil, condCaptured, nil)
+		condOutputs, err := condFn.Compiled.Execute(backend, state, nil, condCaptured, nil, nil)
 		if err != nil {
 			return nil, errors.WithMessagef(err, "While: evaluating condition at iteration %d", iter)
 		}
@@ -167,7 +167,7 @@ func execWhile(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 
 		// Execute body to get new state
 		// DON'T donate captured buffers - they're reused across iterations
-		newState, err := bodyFn.Compiled.Execute(backend, state, donateState, bodyCaptured, nil)
+		newState, err := bodyFn.Compiled.Execute(backend, state, donateState, bodyCaptured, nil, nil)
 		// After bodyFn, all donated state is consumed.
 		donateState = donateAll // After first iteration, we always own everything
 

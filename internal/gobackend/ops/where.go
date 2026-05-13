@@ -18,7 +18,7 @@ func Where(f *gobackend.Function, conditionOp, onTrueOp, onFalseOp compute.Value
 		return nil, err
 	}
 	condition, onTrue, onFalse := inputs[0], inputs[1], inputs[2]
-	outputShape, err := shapeinference.WhereOp(condition.Shape, onTrue.Shape, onFalse.Shape)
+	outputShape, err := shapeinference.Where(condition.Shape, onTrue.Shape, onFalse.Shape)
 	if err != nil {
 		return nil, err
 	}

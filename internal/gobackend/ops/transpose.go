@@ -30,7 +30,7 @@ func Transpose(f *gobackend.Function, operandValue compute.Value, permutations .
 	}
 	operand := inputs[0]
 
-	outputShape, err := shapeinference.TransposeOp(operand.Shape, permutations)
+	outputShape, err := shapeinference.Transpose(operand.Shape, permutations)
 	if err != nil {
 		// This should have been validated during graph build, but we check again just in case.
 		return nil, err

@@ -13,6 +13,8 @@ import (
 // in memory, the one used everywhere in GoMLX.
 //
 // Notice the strides are **not in bytes**, but in indices.
+//
+// It panics if any dimension is dynamic (DynamicDim), see Shape.IsDynamic.
 func (s Shape) Strides() (strides []int) {
 	rank := s.Rank()
 	if rank == 0 {
@@ -24,9 +26,24 @@ func (s Shape) Strides() (strides []int) {
 		return
 	}
 	currentStride := 1
-	for dim := rank - 1; dim >= 0; dim-- {
-		strides[dim] = currentStride
-		currentStride *= s.Dimensions[dim]
+	for axis := rank - 1; axis >= 0; axis-- {
+		strides[axis] = currentStride
+		dim := s.Dimensions[axis]
+		if dim <= 0 {
+			switch dim {
+			case DynamicDim:
+				panic(errors.Errorf("Shape.Strides() called on shape with dynamic dimensions: %s", s))
+			case 0:
+				for i := range strides {
+					strides[i] = 0
+				}
+				return strides
+			default:
+				panic(errors.Errorf("Shape.Strides() called on shape with invalid negative dimension %d at axis %d: %s",
+					dim, axis, s))
+			}
+		}
+		currentStride *= dim
 	}
 	return
 }
@@ -35,9 +52,14 @@ func (s Shape) Strides() (strides []int) {
 //
 // It yields the flat index (counter) and a slice of indices for each axis.
 //
+// Panics if any dimension is dynamic (DynamicDim).
+//
 // To avoid allocating the slice of indices, the yielded indices is owned by the Iter() method:
 // don't change it inside the loop.
 func (s Shape) Iter() iter.Seq2[int, []int] {
+	if s.IsDynamic() {
+		panic(errors.Errorf("Shape.Iter() called on shape with dynamic dimensions: %s", s))
+	}
 	indices := make([]int, s.Rank())
 	return s.IterOn(indices)
 }
@@ -46,11 +68,16 @@ func (s Shape) Iter() iter.Seq2[int, []int] {
 //
 // It yields the flat index (counter) and a slice of indices for each axis.
 //
+// Panics if any dimension is dynamic (DynamicDim).
+//
 // The iteration updates the indices on the given indices slice.
 // During the iteration the caller shouldn't modify the slice of indices, otherwise it will lead to undefined behavior.
 //
 // It expects len(indices) == s.Rank(). It will panic otherwise.
 func (s Shape) IterOn(indices []int) iter.Seq2[int, []int] {
+	if s.IsDynamic() {
+		panic(errors.Errorf("Shape.IterOn() called on shape with dynamic dimensions: %s", s))
+	}
 	if len(indices) != s.Rank() {
 		panic(errors.Errorf("Shape.IterOn given len(indices) == %d, want it to be equal to the rank %d", len(indices), s.Rank()))
 	}
@@ -166,6 +193,8 @@ func (s Shape) IterOn(indices []int) iter.Seq2[int, []int] {
 // It yields the flat index and the update indices for all axes of the shape (not only the one in axes).
 // The indices not pointed by axesToIterate are not touched.
 //
+// Panics if any dimension is dynamic (DynamicDim).
+//
 // Args:
 //   - axesToIterate: axes of the shape to iterate over. They must be 0 <= axis < rank.
 //     Axes not included here are not touched in the indices.
@@ -194,6 +223,9 @@ func (s Shape) IterOn(indices []int) iter.Seq2[int, []int] {
 //	    fmt.Printf("flatIdx=%d, indices=%v\n", flatIdx, indices)
 //	}
 func (s Shape) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[int, []int] {
+	if s.IsDynamic() {
+		panic(errors.Errorf("Shape.IterOnAxes() called on shape with dynamic dimensions: %s", s))
+	}
 	rank := s.Rank()
 
 	// Validate and initialize strides
@@ -246,7 +278,7 @@ func (s Shape) IterOnAxes(axesToIterate, strides, indices []int) iter.Seq2[int, 
 			}
 
 			// Increment indices to the next set of coordinates
-			// (row-major order: the last axis changes fastest).
+			// (row-major order: the last index changes fastest).
 			for axisIdx := len(axesToIterate) - 1; axisIdx >= 0; axisIdx-- {
 				axis := axesToIterate[axisIdx]
 				indices[axis]++

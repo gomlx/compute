@@ -7,3 +7,8 @@
   - Fixed definition of `Bitcast` when casting to a larger target dtype: the rank is shrinked by 1.
 - Package `support`:
   - The following packages were moved from `github.com/gomlx/gomlx/pkg/support/...` to `support/...`: `xslices`, `xsync`, `sets` and `humanize`.
+
+- Package `shapes`: added initial support for dynamic shapes (see `./docs/DynamicShapes.md` for overall idea):
+  - Add `Shape.Resolve(AxisBindings) (Shape, error)` method.
+  - Add `Shape.IsDynamic()` method.
+  - Add `DynamicDim` type.

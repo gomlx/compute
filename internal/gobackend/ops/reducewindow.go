@@ -64,7 +64,7 @@ func ReduceWindow(f *gobackend.Function,
 		return nil, err
 	}
 	operand := inputs[0]
-	outputShape, err := shapeinference.ReduceWindowOp(
+	outputShape, err := shapeinference.ReduceWindow(
 		operand.Shape,
 		windowDimensions,
 		strides,

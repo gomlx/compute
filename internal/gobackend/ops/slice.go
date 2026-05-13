@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
 
@@ -17,6 +18,37 @@ func init() {
 // sliceNode is attached to the gobackend.Node.data field for Slice.
 type sliceNode struct {
 	starts, limits, strides []int
+}
+
+// Recompute implements gobackend.RecomputableNodeData for sliceNode.
+func (s *sliceNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	operandShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+
+	needsUpdate := false
+	for i, lim := range s.limits {
+		if lim == shapes.DynamicDim {
+			if operandShape.Dimensions[i] == shapes.DynamicDim {
+				return nil, errors.Errorf("recomputeSliceData: operand axis %d is still DynamicDim after resolution", i)
+			}
+			needsUpdate = true
+			break
+		}
+	}
+	if !needsUpdate {
+		return s, nil
+	}
+
+	newData := &sliceNode{
+		starts:  slices.Clone(s.starts),
+		limits:  slices.Clone(s.limits),
+		strides: slices.Clone(s.strides),
+	}
+	for i, lim := range newData.limits {
+		if lim == shapes.DynamicDim {
+			newData.limits[i] = operandShape.Dimensions[i]
+		}
+	}
+	return newData, nil
 }
 
 // EqualNodeData implements nodeDataComparable for sliceNode.
@@ -62,20 +94,26 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 		strides: make([]int, rank),
 	}
 	for axis := 0; axis < rank; axis++ {
+		dimSize := operand.Shape.Dimensions[axis]
+
 		// Start
 		start := starts[axis]
-		if start < 0 {
-			start = operand.Shape.Dimensions[axis] + start
+		if dimSize != shapes.DynamicDim {
+			if start < 0 {
+				start = dimSize + start
+			}
+			start = min(max(start, 0), dimSize)
 		}
-		start = min(max(start, 0), operand.Shape.Dimensions[axis])
 		data.starts[axis] = start
 
 		// Limit
 		limit := limits[axis]
-		if limit < 0 {
-			limit = operand.Shape.Dimensions[axis] + limit
+		if dimSize != shapes.DynamicDim {
+			if limit < 0 {
+				limit = dimSize + limit
+			}
+			limit = min(max(limit, 0), dimSize)
 		}
-		limit = min(max(limit, 0), operand.Shape.Dimensions[axis])
 		data.limits[axis] = limit
 
 		// Stride
@@ -87,7 +125,7 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 	}
 
 	// Calculate output shape.
-	outputShape, err := shapeinference.SliceOp(operand.Shape, data.starts, data.limits, data.strides)
+	outputShape, err := shapeinference.Slice(operand.Shape, data.starts, data.limits, data.strides)
 	if err != nil {
 		return nil, err
 	}

@@ -1,10 +1,17 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-// Package dtypes includes the DType enum for all supported data types for GoMLX.
+// Package dtypes includes the DType enum for all supported data types for GoMLX and the compute backends.
 //
-// It includes several converters to/from Go native types (and reflect.Type), and constants for min/max values for
-// types, slice of DType types manipulation, etc. It also includes some constraint interfaces to be used with generics
+// It includes several converters to/from Go native types (using generic functions and reflect.Type), and
+// constants for min/max values for types, slice of DType types manipulation, etc.
+//
+// It also includes some constraint interfaces to be used with generics
 // (Number, NumberNotComplex, GoFloat).
+//
+// ## Half-precision data types
+//
+// Float16 and BFloat16 support in Go uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
+// and [github.com/gomlx/compute/dtypes/bfloat16].
 package dtypes
 
 import (

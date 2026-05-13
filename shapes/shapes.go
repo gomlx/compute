@@ -2,55 +2,51 @@
 
 // Package shapes define Shape and DType and associated tools.
 //
-// Shape represents the shape (rank, dimensions, and DType) of either a Tensor or the expected
-// shape of a node in a computation Graph. DType indicates the data type for a Tensor's unit element.
+// Shape represents the shape (rank, dimensions for each axis, and DType) of either a Tensor or the expected
+// shape of a node in a computation graph. DType indicates the data type for a Tensor's unit element.
 //
-// Shape and DType are used both by the concrete tensor values (see pkg/core/tensors package) and when
-// working on the symbolic computation graph (see pkg/core/graph package).
+// Optionally, the shape can also carry axes names.
 //
-// Go float16 and bfloat16 support uses the simple implementations in [github.com/gomlx/compute/dtypes/float16]
-// and [github.com/gomlx/compute/dtypes/bfloat16].
+// It also supports "dynamic shapes", where one or more axis has an undefined (DynamicDim == -1) dimension.
+// Any dynamic dimension must be named (it must have a non-empty AxisName), so their values can be
+// inferred when needed (see AxisBindings).
+//
+// ## Immutable Semantics
+//
+// The Shape object should be immutable semantic after creation: function that need to mutate shapes
+// should clone first (see Shape.Clone), mutate, and return the updated (and henceforward immutable) shape.
+// It's ok to simply copy shapes (shallow copy) if they are not meant to be mutated.
 //
 // ## Glossary
 //
 //   - Rank: number of axes (dimensions) of a Tensor.
-//   - Axis: is the index of a dimension on a multidimensional Tensor. Sometimes used
+//   - Axis: is the index of a dimension on a multidimensional array (tensor). Sometimes used
 //     interchangeably with Dimension, but here we try to refer to a dimension index as "axis"
-//     (plural axes), and its size as its dimension.
+//     (plural axes), and its size as its dimension. An axis may also have an associated name.
 //   - Dimension: the size of a multi-dimension Tensor in one of its axes. See the example below.
+//   - DynamicDim (-1): special dimension value that indicates the axis is dynamic (unknown at graph building
+//     and compilation time). Axes with dynamic dimensions must be named.
 //   - DType: the data type of the unit element in a tensor. Enumeration defined in github.com/gomlx/compute/dtypes
 //   - Scalar: is a shape where there are no axes (or dimensions), only a single value
 //     of the associated DType.
 //
 // Example: The multi-dimensional array `[][]int32{{0, 1, 2}, {3, 4, 5}}` if converted to a Tensor
-// would have shape `(int32)[2 3]`. We say it has rank 2 (so 2 axes), axis 0 has
+// would have shape `(int32)[2, 3]`. We say it has rank 2 (so 2 axes), axis 0 has
 // dimension 2, and axis 1 has dimension 3. This shape could be created with
 // `shapes.Make(int32, 2, 3)`.
 //
-// ## Asserts
+// ## Creating a new shape:
 //
-// When coding ML models, one delicate part is keeping tabs on the shape of
-// graph nodes -- unfortunately, there is no compile-time checking of values,
-// so validation only happens in runtime. To facilitate and also to serve as code documentation,
-// this package provides two variations of _assert_ functionality. Examples:
+//   - Make(dtype, dimensions...int): create a concrete (no dynamic axes) un-named shape.
+//   - MakeDynamic(dtype, dimensions []int, axesNames []string): create a shape with (optional) dynamic axes
+//     and axes names. Dynamic axes must have an associated name, while concrete axes are usually unnamed ("").
+//   - MakeTuple(shapes...): internal use, create a shape that represents a tuple of shapes. Internal use, and subject
+//     to change.
 //
-// AssertRank and AssertDims check that the rank and dimensions of the given
-// object (that has a `Shape` method) match, otherwise it panics. The `-1` means
-// the dimension is unchecked (it can be anything).
+// # Iterators and Strides
 //
-//	func modelGraph(ctx *context.Context, spec any, inputs []*Node) ([]*Node) {
-//		_ = spec  // Not needed here, we know the dataset.
-//		shapes.AssertRank(inputs, 2)
-//		batchSize := inputs.Shape().Dimensions[0]
-//		logits := layers.Dense(ctx, inputs[0], /* useBias= */ true, /* outputDim= */ 1)
-//		shapes.AssertDims(logits, batchSize, -1)
-//		return []*Node{logits}
-//	}
-//
-// ```
-//
-// If you don't want to panic, but instead return an error through the `graph.Graph`, you can
-// use the `Node.AssertDims()` method. So it would look like `logits.AssertDims(batchSize, -1)`.
+// Shapes support several iteration facilities.
+// See [Shape.Iter], [Shape.IterOn], [Shape.IterOnAxes] and [Shape.Strides].
 package shapes
 
 import (
@@ -73,19 +69,30 @@ type Shape struct {
 	DType dtypes.DType
 
 	// Dimensions is the size of each axis. Its length determines the rank.
+	// A value of DynamicDim (-1) indicates a dynamic axis whose size is unknown at graph build time.
 	Dimensions []int
+
+	// AxisNames holds optional names for each axis. nil means no axis names (the default).
+	// When non-nil, len(AxisNames) must equal len(Dimensions).
+	// An empty string "" means the axis is unnamed. A non-empty string names the axis.
+	AxisNames []string `json:"axis_names,omitempty"`
+
 	// TupleShapes is used if this Shape represents a tuple of elements.
 	// Internal use only.
 	TupleShapes []Shape `json:"tuple,omitempty"` // Shapes of the tuple, if this is a tuple.
 }
 
 // Make returns a Shape structure filled with the values given.
+//
+// See MakeDynamic for shapes with dynamic and/or named axes.
 // See MakeTuple for tuple shapes.
 func Make(dtype dtypes.DType, dimensions ...int) Shape {
 	s := Shape{Dimensions: slices.Clone(dimensions), DType: dtype}
 	for _, dim := range dimensions {
 		if dim < 0 {
-			panic(errors.Errorf("shapes.Make(%s): cannot create a shape with an axis with dimension < 0", s))
+			panic(errors.Errorf(
+				"shapes.Make(%s): cannot create a shape with an axis with dimension < 0 "+
+					"-- see MakeDynamic to create dynamic shapes", s))
 		}
 	}
 	return s
@@ -141,15 +148,34 @@ func (s Shape) String() string {
 	if s.Rank() == 0 {
 		return fmt.Sprintf("(%s)", s.DType)
 	}
-	return fmt.Sprintf("(%s)%v", s.DType, s.Dimensions)
+	parts := make([]string, s.Rank())
+	for i, dim := range s.Dimensions {
+		if dim == DynamicDim {
+			parts[i] = "?"
+		} else {
+			parts[i] = fmt.Sprintf("%d", dim)
+		}
+		if len(s.AxisNames) > i {
+			name := s.AxisNames[i]
+			if name != "" {
+				parts[i] = fmt.Sprintf("%s=%s", name, parts[i])
+			}
+		}
+	}
+	return fmt.Sprintf("(%s)[%s]", s.DType, strings.Join(parts, ", "))
 }
 
 // Size returns the number of elements (not bytes) for this shape. It's the product of all dimensions.
 //
-// For the number of bytes used to store this shape, see Shape.Memory.
+// It panics if s.IsDynamic().
+//
+// For the number of bytes used to store this shape, see Shape.ByteSize.
 func (s Shape) Size() (size int) {
 	size = 1
 	for _, d := range s.Dimensions {
+		if d == DynamicDim {
+			panic(errors.Errorf("Shape.Size() called on shape with dynamic dimensions: %s", s))
+		}
 		size *= d
 	}
 	return
@@ -161,7 +187,6 @@ func (s Shape) Size() (size int) {
 // Notice scalars are not zero in size -- they have size one, but rank zero.
 func (s Shape) IsZeroSize() bool {
 	return slices.Contains(s.Dimensions, 0)
-
 }
 
 // ByteSize returns the number of bytes used to store an array of the given shape.
@@ -213,11 +238,17 @@ func (s Shape) Equal(s2 Shape) bool {
 	if s.IsScalar() {
 		return true
 	}
-	// For normal shapes just compare dimensions.
-	return slices.Equal(s.Dimensions, s2.Dimensions)
+	// Compare dimensions.
+	if !slices.Equal(s.Dimensions, s2.Dimensions) {
+		return false
+	}
+	// Compare axis names.
+	return axisNamesEqual(s.AxisNames, s2.AxisNames)
 }
 
-// EqualDimensions compares two shapes for equality of dimensions. Dtypes can be different.
+// EqualDimensions compares two shapes for equality of dimensions.
+//
+// DType and axis names are ignored.
 func (s Shape) EqualDimensions(s2 Shape) bool {
 	if s.IsTuple() {
 		if !s2.IsTuple() {
@@ -247,6 +278,7 @@ func (s Shape) EqualDimensions(s2 Shape) bool {
 func (s Shape) Clone() (s2 Shape) {
 	s2.DType = s.DType
 	s2.Dimensions = slices.Clone(s.Dimensions)
+	s2.AxisNames = slices.Clone(s.AxisNames)
 	if s.TupleSize() > 0 {
 		s2.TupleShapes = make([]Shape, 0, len(s.TupleShapes))
 		for _, subShape := range s.TupleShapes {
@@ -256,7 +288,21 @@ func (s Shape) Clone() (s2 Shape) {
 	return
 }
 
+// gobFormatV1 is a marker value used to distinguish the new gob format (with AxisNames)
+// from the old format (without).
+//
+// In the old format, the corresponding gob-encoded position held numTuples (>= 0).
+const gobFormatV1 = -1
+
 // GobSerialize shape in binary format.
+//
+// Format v1 (current): DType, Dimensions, -1 (version marker), hasAxisNames (bool),
+// [AxisNames if hasAxisNames], numTuples, [sub-shapes...].
+//
+// Old format: DType, Dimensions, numTuples, [sub-shapes...].
+// GobDeserialize handles both formats for backward compatibility (old data → new code).
+// Note: new-format data cannot be read by old code (the -1 marker would be interpreted
+// as numTuples, causing a panic). This is forward-compatible only.
 func (s Shape) GobSerialize(encoder *gob.Encoder) (err error) {
 	enc := func(e any) {
 		if err != nil {
@@ -269,6 +315,18 @@ func (s Shape) GobSerialize(encoder *gob.Encoder) (err error) {
 	}
 	enc(s.DType)
 	enc(s.Dimensions)
+
+	// Encode the format version: currently gobFormatV1.
+	enc(gobFormatV1)
+
+	// Encode the axis names.
+	hasAxisNames := s.AxisNames != nil
+	enc(hasAxisNames)
+	if hasAxisNames {
+		enc(s.AxisNames)
+	}
+
+	// Encode the tuple shapes.
 	enc(len(s.TupleShapes))
 	if err != nil {
 		return
@@ -283,6 +341,7 @@ func (s Shape) GobSerialize(encoder *gob.Encoder) (err error) {
 }
 
 // GobDeserialize a Shape. Returns new Shape or an error.
+// Handles both the old format (without a format version) and the v1 format (with AxisNames).
 func GobDeserialize(decoder *gob.Decoder) (s Shape, err error) {
 	dec := func(data any) {
 		if err != nil {
@@ -295,8 +354,33 @@ func GobDeserialize(decoder *gob.Decoder) (s Shape, err error) {
 	}
 	dec(&s.DType)
 	dec(&s.Dimensions)
+
+	// Read version version or numTuples (for backward compat).
+	// Old format: this int is numTuples (>= 0).
+	// New format (v1): this int is -1, followed by hasAxisNames, [axisNames], numTuples.
+	var version int
+	dec(&version)
+
 	var numTuples int
-	dec(&numTuples)
+
+	switch {
+	case version == gobFormatV1:
+		// New format: read axis names, then numTuples.
+		var hasAxisNames bool
+		dec(&hasAxisNames)
+		if hasAxisNames {
+			dec(&s.AxisNames)
+		}
+		dec(&numTuples)
+
+	case version >= 0:
+		// Old vormat, where instead of version we have numTuples.
+		numTuples = version
+
+	default:
+		err = errors.Errorf("unknown Shape format version %d !? (maybe input came from a newer GoMLX version?)", version)
+	}
+
 	if err != nil {
 		return
 	}
@@ -332,6 +416,15 @@ func ConcatenateDimensions(s1, s2 Shape) (shape Shape) {
 	shape.Dimensions = make([]int, s1.Rank()+s2.Rank())
 	copy(shape.Dimensions, s1.Dimensions)
 	copy(shape.Dimensions[s1.Rank():], s2.Dimensions)
+	if s1.AxisNames != nil || s2.AxisNames != nil {
+		shape.AxisNames = make([]string, s1.Rank()+s2.Rank())
+		if s1.AxisNames != nil {
+			copy(shape.AxisNames, s1.AxisNames)
+		}
+		if s2.AxisNames != nil {
+			copy(shape.AxisNames[s1.Rank():], s2.AxisNames)
+		}
+	}
 	return
 }
 

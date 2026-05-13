@@ -34,7 +34,7 @@ func avx512RouterFloat32( //alt:f32
 	if klog.V(1).Enabled() {
 		variant := "large (avx512)"
 		if useSmallVariant {
-			variant = "small (nosimd)"
+			variant = "small (avx512)"
 		}
 		klog.Infof("Using %s variant for AVX512 dot-product kernel, layout=%s, "+
 			"lhs=[%d, %d, %d], rhs=[%d, %d, %d], output=[%d, %d, %d]",
