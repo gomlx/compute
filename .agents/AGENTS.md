@@ -73,7 +73,8 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 - It's ok to simply copy shapes (shallow copy) if they are not meant to be mutated.
 - Shape can have named axes (see `shapes.MakeDynamic`).
 - Shape can be dynamic -- dynamic axes are represented by the sentinel value `shapes.DynamicDim` (-1).
-  If they are dynamic, the must be name (see `shapes.MakeDynamic`). Non-dynamic axes can also be named.
+  If they are dynamic, they must be named (see `shapes.MakeDynamic`), and the dynamic axes must have a name != "".
+  Non-dynamic axes can also be named, but it's not required (the shape.AxisNames can be nil, or their name == "").
 
 ### Modern Go Style
 
