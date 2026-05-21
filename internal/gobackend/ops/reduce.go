@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
 
@@ -139,43 +140,43 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	case compute.OpTypeReduceMax:
 		tmpAny, tmpErr := reduceMaxDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceMin:
 		tmpAny, tmpErr := reduceMinDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceSum:
 		tmpAny, tmpErr := reduceSumDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceProduct:
 		tmpAny, tmpErr := reduceProductDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceBitwiseAnd:
 		tmpAny, tmpErr := reduceBitwiseAndDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceBitwiseOr:
 		tmpAny, tmpErr := reduceBitwiseOrDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceBitwiseXor:
 		tmpAny, tmpErr := reduceBitwiseXorDTypeMap.Get(dtype)
 		if tmpErr != nil {
-			panic(tmpErr)
+			return nil, tmpErr
 		}
 		reduceFn = tmpAny.(GenericReduceFn)
 	case compute.OpTypeReduceLogicalAnd:
@@ -187,7 +188,10 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	default:
 		return nil, errors.Errorf("unsupported reduce op %s", node.OpType)
 	}
-	reduceFn(operand, output, it, dtype)
+	err = reduceFn(operand, output, it, dtype)
+	if err != nil {
+		return nil, err
+	}
 	return output, nil
 }
 
@@ -292,9 +296,9 @@ func init() {
 }
 
 // GenericReduceFn is the type for the reduction functions.
-type GenericReduceFn = func(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType)
+type GenericReduceFn = func(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error
 
-func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.LowestValue().(T)
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
@@ -305,9 +309,10 @@ func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		outputIdx := it.Next()
 		outputFlat[outputIdx] = max(outputFlat[outputIdx], value)
 	}
+	return nil
 }
 
-func execReduceMaxBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMaxBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.LowestValue().(bfloat16.BFloat16)
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
@@ -319,9 +324,10 @@ func execReduceMaxBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIt
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
 		outputFlat[outputIdx] = bfloat16.FromFloat32(max(a, b))
 	}
+	return nil
 }
 
-func execReduceMaxFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMaxFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.LowestValue().(float16.Float16)
 	outputFlat := output.Flat.([]float16.Float16)
 	for outputIdx := range outputFlat {
@@ -333,9 +339,10 @@ func execReduceMaxFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIte
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
 		outputFlat[outputIdx] = float16.FromFloat32(max(a, b))
 	}
+	return nil
 }
 
-func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.HighestValue().(T)
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
@@ -346,9 +353,10 @@ func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		outputIdx := it.Next()
 		outputFlat[outputIdx] = min(outputFlat[outputIdx], value)
 	}
+	return nil
 }
 
-func execReduceMinBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMinBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.HighestValue().(bfloat16.BFloat16)
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
 	for outputIdx := range outputFlat {
@@ -360,9 +368,10 @@ func execReduceMinBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIt
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
 		outputFlat[outputIdx] = bfloat16.FromFloat32(min(a, b))
 	}
+	return nil
 }
 
-func execReduceMinFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) {
+func execReduceMinFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
 	initialValue := dtype.HighestValue().(float16.Float16)
 	outputFlat := output.Flat.([]float16.Float16)
 	for outputIdx := range outputFlat {
@@ -374,9 +383,10 @@ func execReduceMinFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIte
 		a, b := outputFlat[outputIdx].Float32(), value.Float32()
 		outputFlat[outputIdx] = float16.FromFloat32(min(a, b))
 	}
+	return nil
 }
 
-func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = T(0)
@@ -386,35 +396,56 @@ func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		outputIdx := it.Next()
 		outputFlat[outputIdx] += value
 	}
+	return nil
 }
 
-func execReduceSumBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceSumBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = bfloat16.FromFloat32(0)
+	backend := output.RawBackend
+	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tempBuf)
+	accumulator := tempBuf.Flat.([]float32)
+	for i := range accumulator {
+		accumulator[i] = 0.0
 	}
 	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = bfloat16.FromFloat32(a + b)
+		accumulator[outputIdx] += value.Float32()
 	}
+	for i, val := range accumulator {
+		outputFlat[i] = bfloat16.FromFloat32(val)
+	}
+	return nil
 }
 
-func execReduceSumFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceSumFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = float16.FromFloat32(0)
+	backend := output.RawBackend
+	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tempBuf)
+	accumulator := tempBuf.Flat.([]float32)
+	for i := range accumulator {
+		accumulator[i] = 0.0
 	}
 	operandFlat := operand.Flat.([]float16.Float16)
 	for _, value := range operandFlat {
 		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(a + b)
+		accumulator[outputIdx] += value.Float32()
 	}
+	for i, val := range accumulator {
+		outputFlat[i] = float16.FromFloat32(val)
+	}
+	return nil
 }
 
-func execReduceProductGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceProductGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = T(1)
@@ -424,35 +455,56 @@ func execReduceProductGeneric[T gobackend.PODNumericConstraints](operand, output
 		outputIdx := it.Next()
 		outputFlat[outputIdx] *= value
 	}
+	return nil
 }
 
-func execReduceProductBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceProductBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = bfloat16.FromFloat32(1)
+	backend := output.RawBackend
+	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tempBuf)
+	accumulator := tempBuf.Flat.([]float32)
+	for i := range accumulator {
+		accumulator[i] = 1.0
 	}
 	operandFlat := operand.Flat.([]bfloat16.BFloat16)
 	for _, value := range operandFlat {
 		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = bfloat16.FromFloat32(a * b)
+		accumulator[outputIdx] *= value.Float32()
 	}
+	for i, val := range accumulator {
+		outputFlat[i] = bfloat16.FromFloat32(val)
+	}
+	return nil
 }
 
-func execReduceProductFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceProductFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = float16.FromFloat32(1)
+	backend := output.RawBackend
+	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tempBuf)
+	accumulator := tempBuf.Flat.([]float32)
+	for i := range accumulator {
+		accumulator[i] = 1.0
 	}
 	operandFlat := operand.Flat.([]float16.Float16)
 	for _, value := range operandFlat {
 		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(a * b)
+		accumulator[outputIdx] *= value.Float32()
 	}
+	for i, val := range accumulator {
+		outputFlat[i] = float16.FromFloat32(val)
+	}
+	return nil
 }
 
-func execReduceBitwiseAndGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceBitwiseAndGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
 	initialValue := ^T(0)
 	for outputIdx := range outputFlat {
@@ -463,9 +515,10 @@ func execReduceBitwiseAndGeneric[T gobackend.PODIntegerConstraints](operand, out
 		outputIdx := it.Next()
 		outputFlat[outputIdx] &= value
 	}
+	return nil
 }
 
-func execReduceBitwiseOrGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceBitwiseOrGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = T(0)
@@ -475,9 +528,10 @@ func execReduceBitwiseOrGeneric[T gobackend.PODIntegerConstraints](operand, outp
 		outputIdx := it.Next()
 		outputFlat[outputIdx] |= value
 	}
+	return nil
 }
 
-func execReduceBitwiseXorGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceBitwiseXorGeneric[T gobackend.PODIntegerConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = T(0)
@@ -487,9 +541,10 @@ func execReduceBitwiseXorGeneric[T gobackend.PODIntegerConstraints](operand, out
 		outputIdx := it.Next()
 		outputFlat[outputIdx] ^= value
 	}
+	return nil
 }
 
-func execReduceLogicalAnd(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceLogicalAnd(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = true
@@ -499,9 +554,10 @@ func execReduceLogicalAnd(operand, output *gobackend.Buffer, it *ReduceOutputIte
 		outputIdx := it.Next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] && value
 	}
+	return nil
 }
 
-func execReduceLogicalOr(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceLogicalOr(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = false
@@ -511,9 +567,10 @@ func execReduceLogicalOr(operand, output *gobackend.Buffer, it *ReduceOutputIter
 		outputIdx := it.Next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] || value
 	}
+	return nil
 }
 
-func execReduceLogicalXor(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) {
+func execReduceLogicalXor(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bool)
 	for outputIdx := range outputFlat {
 		outputFlat[outputIdx] = false
@@ -523,4 +580,5 @@ func execReduceLogicalXor(operand, output *gobackend.Buffer, it *ReduceOutputIte
 		outputIdx := it.Next()
 		outputFlat[outputIdx] = outputFlat[outputIdx] != value
 	}
+	return nil
 }
