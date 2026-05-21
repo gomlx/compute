@@ -26,9 +26,16 @@ func (f BFloat16) Float32() float32 {
 	return math.Float32frombits(uint32(f) << 16)
 }
 
-// FromFloat32 converts a float32 to a BFloat16.
+// FromFloat32 converts a float32 to a BFloat16 using round-to-nearest-even.
 func FromFloat32(x float32) BFloat16 {
-	return BFloat16(math.Float32bits(x) >> 16)
+	bits := math.Float32bits(x)
+	if (bits & 0x7F800000) == 0x7F800000 {
+		// NaN or Inf: preserve the bits without rounding
+		return BFloat16(bits >> 16)
+	}
+	// Round to nearest even
+	bits += 0x7FFF + ((bits >> 16) & 1)
+	return BFloat16(bits >> 16)
 }
 
 // SetFloat32 sets the values from a float32.

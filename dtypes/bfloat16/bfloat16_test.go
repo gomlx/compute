@@ -24,9 +24,10 @@ func TestBFloat16(t *testing.T) {
 		// 65504 in binary is 11111111111000000 (16 bits)
 		// bfloat16 has 7 bits of mantissa + 1 implicit = 8 bits.
 		// float32(65504) bits: 0x477FE000
-		// bfloat16(65504) bits: 0x477F -> 0x477F0000 in float32 = 65280
-		if got != 65280 {
-			t.Errorf("FromFloat32(65504) got %g, want 65280", got)
+		// With round-to-nearest-even, it rounds up:
+		// bfloat16(65504) bits: 0x4780 -> 0x47800000 in float32 = 65536
+		if got != 65536 {
+			t.Errorf("FromFloat32(65504) got %g, want 65536", got)
 		}
 	}
 
