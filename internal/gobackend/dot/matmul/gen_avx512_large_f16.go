@@ -287,7 +287,6 @@ func avx512LargeKernelFloat16( //alt:f16
 
 	// Loop 1 (ir): Micro-Kernel Rows (Mr == lhsL1BlockRows)
 	for lhsRowIdx := 0; lhsRowIdx < lhsActiveRows; lhsRowIdx += kernelRows {
-		idxRHS := 0
 		// Loop 2 (jr): Micro-Kernel Columns (Nr == rhsL1BlockCols)
 		for rhsColIdx := 0; rhsColIdx < rhsActiveCols; rhsColIdx += kernelCols {
 			// Output index calculation (relative to panel)
@@ -326,11 +325,11 @@ func avx512LargeKernelFloat16( //alt:f16
 
 			// 1. Calculate the total range the loop will touch
 			idxLHS := lhsRowIdx * contractingLen
+			idxRHS := rhsColIdx * contractingLen
 
 			// Get the base pointers once
 			rhsRowPtr := rhsBasePtr + uintptr(idxRHS*bytesPerInputElement)
 			lhsRowPtr := lhsBasePtr + uintptr(idxLHS*bytesPerInputElement)
-			idxRHS += contractingLen
 
 			rOffset := uintptr(0)
 			lOffset := uintptr(0)

@@ -31,6 +31,9 @@ func (f Function) Add(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 //
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=1, isMin=true) -> {1, 0}  // (it chooses the 0 and the -3)
 //	ArgMinMax(x={{2, 0, 7}, {-3, 4, 2}}, axis=0, isMin=false) -> {0, 1, 0} // (it chooses the 2, 4, and 7)
+//
+// Dynamic shapes: ArgMinMax on a dynamic axis removes that axis (and its name), preserving names
+// of other dynamic axes.
 func (f Function) ArgMinMax(x compute.Value, axis int, outputDType dtypes.DType, isMin bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeArgMinMax)
 }
@@ -60,6 +63,9 @@ func (f Function) BitCount(operand compute.Value) (compute.Value, error) {
 //
 //	Bitcast([1]uint32{0xdeadbeef}, dtypes.UInt16) -> [1][2]uint16{{0xbeef, 0xdead}} // Little-endian encoding.
 //	Bitcast([1][2]uint16{{0xbeef, 0xdead}}, dtypes.UInt32) -> [1]uint32{0xdeadbeef}
+//
+// Dynamic shapes: Bitcasting that collapses or expands a dynamic dimension is currently not
+// supported (requires axis expressions).
 func (f Function) Bitcast(operand compute.Value, targetDType dtypes.DType) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeBitcast)
 }
@@ -99,6 +105,13 @@ func (f Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Valu
 //     will generate output
 //     {{1 , 1},
 //     {2 , 2}}
+//
+// Dynamic shapes: When broadcasting, an operand axis with a dynamic length
+// cannot be broadcast and must be preserved as dynamic in the output -- their axis names
+// must exactly match in the outputShape.
+// But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
+// or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
+// by any input parameter will result in an error.
 func (f Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeBroadcastInDim)
 }
@@ -135,6 +148,9 @@ func (f Function) Complex(lhs compute.Value, rhs compute.Value) (compute.Value, 
 // All axes that are not being concatenated must match dimensions, except on the axes being concatenated.
 // It doesn't work with scalars -- use ExpandAxes.
 // If there is only one operand, it is returned and this is a no-op.
+//
+// Dynamic shapes: Concatenation on a dynamic axis is currently not supported, because the resulting
+// size (e.g. batchSize + batchSize) cannot be represented symbolically yet (requires axis expressions).
 func (f Function) Concatenate(axis int, operands ...compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeConcatenate)
 }
@@ -173,6 +189,9 @@ func (f Function) Conj(x compute.Value) (compute.Value, error) {
 // Note:
 //   - Another common term for "channels" is "features".
 //   - "Kernel" is also commonly called "weights" or "filters".
+//
+// Dynamic shapes: Operation on a dynamic spatial axis that changes its size (stride > 1, padding != 0,
+// window > 1, etc.) is currently not supported (requires axis expressions).
 func (f Function) ConvGeneral(input compute.Value, kernel compute.Value, axes compute.ConvolveAxesConfig, strides []int, paddings [][2]int, inputDilations []int, kernelDilations []int, channelGroupCount int, batchGroupCount int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeConvGeneral)
 }
@@ -208,6 +227,8 @@ func (f Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 // the input, except if configured otherwise in config.OutputDType.
 //
 // It provides the basic means of implementing Einsum.
+//
+// Dynamic shapes: Aligned or contracted dynamic axes must have the same name for both lhs and rhs.
 func (f Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeDotGeneral)
 }
@@ -432,6 +453,10 @@ func (f Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error)
 //
 // Out-of-bound (and negative) indices <i> are adjusted with max(min(<i>, axisDimension-1), 0), meaning they
 // are taken from the border of the axes.
+//
+// Dynamic shapes: Batch axes (from startIndices) and offset axes (from operand) preserve their names
+// in the output. If an offset axis is partially sliced (sliceSize != operand dimension), its name is dropped.
+//
 // TODO: Add batch support: operandBatchingAxes and startIndicesBatchingAxes.
 func (f Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeGather)
@@ -580,6 +605,9 @@ func (f Function) NotEqualTotalOrder(lhs compute.Value, rhs compute.Value) (comp
 // Pad injects padding on the start, end, or interior (in between each element) of the given operand.
 // There must be at most `operand.Rank()` axesConfig values. Missing PadAxis are assumed to be zeros,
 // that is, no padding for those axes.
+//
+// Dynamic shapes: Padding on a dynamic axis is currently not supported if the padding is non-zero,
+// because the resulting size cannot be represented symbolically yet (requires axis expressions).
 func (f Function) Pad(x compute.Value, fillValue compute.Value, axesConfig ...compute.PadAxis) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypePad)
 }
@@ -714,6 +742,11 @@ func (f Function) Rem(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 // Reshape reshapes x to the new dimensions.
 // Total size cannot change, it's just a "reinterpretation" of the same flat data.
 // The dtype remains the same, see ConvertDType to actually convert the values.
+//
+// This version of reshape doesn't support reshaping dynamic dimensions (axes with [shapes.DynamicDim]).
+// Any dynamic dimensions in the input must be matched by dynamic dimensions in the output, and their
+// axis names are preserved. If new axes are created, the dynamic axis in the input x and dimensions are
+// matched in order.
 func (f Function) Reshape(x compute.Value, dimensions ...int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeReshape)
 }
@@ -737,16 +770,25 @@ func (f Function) Rsqrt(x compute.Value) (compute.Value, error) {
 }
 
 // ScatterMax scatter values from updates pointed by scatterIndices to operand, by taking the Max.
+//
+// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+// that change the size of dynamic axes are not supported.
 func (f Function) ScatterMax(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeScatterMax)
 }
 
 // ScatterMin scatter values from updates pointed by scatterIndices to operand, by taking the Min.
+//
+// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+// that change the size of dynamic axes are not supported.
 func (f Function) ScatterMin(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeScatterMin)
 }
 
 // ScatterSum values from updates pointed by scatterIndices to operand.
+//
+// Dynamic shapes: Operand and updates shapes can have dynamic dimensions. Currently operations
+// that change the size of dynamic axes are not supported.
 func (f Function) ScatterSum(operand compute.Value, scatterIndices compute.Value, updates compute.Value, indexVectorAxis int, updateWindowAxes []int, insertedWindowAxes []int, scatterAxesToOperandAxes []int, indicesAreSorted bool, uniqueIndices bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeScatterSum)
 }
@@ -805,6 +847,11 @@ func (f Function) Sin(x compute.Value) (compute.Value, error) {
 //
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={4}, strides=nil) -> {2, 3}
 //	Slice(x={0, 1, 2, 3, 4}, starts={2}, limits={5}, strides={2}) -> {2, 4}
+//
+// Dynamic shapes: A limit index can be set to `shapes.DynamicDim` (-1) to indicate the end of
+// the dimension. Partial slices of dynamic axes are currently not supported if they result in
+// a dynamic-sized output (requires axis expressions). Slicing a dynamic axis with static
+// bounds (e.g. from 0 to 10) results in a static output size (e.g. 10).
 func (f Function) Slice(x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeSlice)
 }
