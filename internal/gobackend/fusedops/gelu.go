@@ -6,6 +6,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/pkg/errors"
 )
@@ -61,6 +63,22 @@ func execFusedGelu(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 		} else {
 			geluParallelizeChunked(backend, input.Flat.([]float64), output.Flat.([]float64), geluApproxChunk[float64])
 		}
+	case dtypes.BFloat16:
+		if data.exact {
+			geluParallelizeChunked(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16),
+				geluChunkHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
+		} else {
+			geluParallelizeChunked(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16),
+				geluApproxChunkHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
+		}
+	case dtypes.Float16:
+		if data.exact {
+			geluParallelizeChunked(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16),
+				geluChunkHalfPrecision[float16.Float16, *float16.Float16])
+		} else {
+			geluParallelizeChunked(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16),
+				geluApproxChunkHalfPrecision[float16.Float16, *float16.Float16])
+		}
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedGelu: dtype %s", input.RawShape.DType)
 	}
@@ -73,7 +91,7 @@ const geluMinParallelizeChunk = 4096
 // geluParallelizeChunked runs chunkFn over [0, n) in minParallelizeChunk-sized chunks
 // using the backend worker pool. Falls back to sequential if workers are unavailable
 // or n is small.
-func geluParallelizeChunked[T float32 | float64](backend *gobackend.Backend, input, output []T, chunkFn func(input, output []T)) {
+func geluParallelizeChunked[T any](backend *gobackend.Backend, input, output []T, chunkFn func(input, output []T)) {
 	n := len(input)
 	if backend != nil && backend.Workers.IsEnabled() && n > geluMinParallelizeChunk {
 		var wg sync.WaitGroup
@@ -103,5 +121,24 @@ func geluApproxChunk[T float32 | float64](input, output []T) {
 	for i, x := range input {
 		inner := sqrt2ByPi * (x + 0.044715*x*x*x)
 		output[i] = x * 0.5 * (1.0 + T(math.Tanh(float64(inner))))
+	}
+}
+
+func geluChunkHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](input, output []T) {
+	sqrt2Inv := float32(1.0 / math.Sqrt(2.0))
+	for i, x := range input {
+		xf := x.Float32()
+		val := xf * 0.5 * (1.0 + float32(math.Erf(float64(xf*sqrt2Inv))))
+		P(&output[i]).SetFloat32(val)
+	}
+}
+
+func geluApproxChunkHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](input, output []T) {
+	sqrt2ByPi := float32(math.Sqrt(2.0 / math.Pi))
+	for i, x := range input {
+		xf := x.Float32()
+		inner := sqrt2ByPi * (xf + 0.044715*xf*xf*xf)
+		val := xf * 0.5 * (1.0 + float32(math.Tanh(float64(inner))))
+		P(&output[i]).SetFloat32(val)
 	}
 }

@@ -204,7 +204,7 @@ func feedWorkItems(
 	if batchSize >= maxWorkers {
 		for ; batchIdx < maxWorkers; batchIdx++ {
 			workChan <- workItem{
-				batchIdx, 1,
+				batchIdx, batchIdx + 1,
 				0, lhsCrossSize,
 				0, rhsCrossSize}
 		}

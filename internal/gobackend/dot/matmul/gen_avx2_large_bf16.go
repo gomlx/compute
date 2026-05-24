@@ -9,7 +9,9 @@
 package matmul
 
 import (
+	"runtime"
 	"simd/archsimd"
+	"sync"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16" //alt:bf16
@@ -32,61 +34,149 @@ func avx2LargeBFloat16( //alt:bf16
 	//alt:f16  lhs, rhs []float16.Float16,
 	//alt:f64  lhs, rhs []float64,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []float32) { //alt:f32|bf16|f16
-	//alt:f64  output []float64) {
-
+	output []float32, //alt:f32|bf16|f16
+	//alt:f64  output []float64,
+) {
 	//alt:f32 params := AVX2ParamsFloat32
 	params := AVX2ParamsBFloat16 //alt:bf16
 	//alt:f16  params := AVX2ParamsFloat16
 	//alt:f64  params := AVX2ParamsFloat64
+	maxWorkers := backend.Workers.AdjustedMaxParallelism()
 
-	maxWorkers := 1
-	if backend.Workers != nil {
-		maxWorkers = backend.Workers.AdjustedMaxParallelism()
-	}
+	// Strides for each matrix in the batch.
+	lhsBatchStride := lhsCrossSize * contractingSize
+	rhsBatchStride := rhsCrossSize * contractingSize
+	outputBatchStride := lhsCrossSize * rhsCrossSize
 
 	if maxWorkers <= 1 {
-		for batchIdx := range batchSize {
+		// No parallelism, do each matrix multiplication in the batch sequentially.
+		//alt:f32 packedLHSRef, packedLHS, ok := GetBuffer[float32](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		packedLHSRef, packedLHS, ok := GetBuffer[bfloat16.BFloat16](backend, params.LHSPanelCrossSize*params.PanelContractingSize) //alt:bf16
+		//alt:f16  packedLHSRef, packedLHS, ok := GetBuffer[float16.Float16](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		//alt:f64  packedLHSRef, packedLHS, ok := GetBuffer[float64](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedLHSRef)
+		//alt:f32 packedRHSRef, packedRHS, ok := GetBuffer[float32](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		packedRHSRef, packedRHS, ok := GetBuffer[bfloat16.BFloat16](backend, params.PanelContractingSize*params.RHSPanelCrossSize) //alt:bf16
+		//alt:f16  packedRHSRef, packedRHS, ok := GetBuffer[float16.Float16](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		//alt:f64  packedRHSRef, packedRHS, ok := GetBuffer[float64](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedRHSRef)
+		packedOutputRef, packedOutput, ok := GetBuffer[float32](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+		//alt:f64  packedOutputRef, packedOutput, ok := GetBuffer[float64](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedOutputRef)
+		lhsFlatIdx := 0
+		rhsFlatIdx := 0
+		outputFlatIdx := 0
+		for range batchSize {
+			batchLHS := lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
+			batchRHS := rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
+			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			//alt:f32 avx2LargeMatrixSliceFloat32(
 			avx2LargeMatrixSliceBFloat16( //alt:bf16
 				//alt:f16  avx2LargeMatrixSliceFloat16(
 				//alt:f64  avx2LargeMatrixSliceFloat64(
-				lhs, rhs, output, batchIdx, lhsCrossSize, rhsCrossSize, contractingSize, layout, params)
+				layout,
+				batchLHS, batchRHS, batchOutput,
+				lhsCrossSize, rhsCrossSize, contractingSize,
+				0, lhsCrossSize, 0, rhsCrossSize,
+				params,
+				packedLHS, packedRHS, packedOutput,
+			)
+			lhsFlatIdx += lhsBatchStride
+			rhsFlatIdx += rhsBatchStride
+			outputFlatIdx += outputBatchStride
 		}
 		return
 	}
 
-	work := make(chan int, batchSize)
-	for batchIdx := range batchSize {
-		work <- batchIdx
-	}
-	close(work)
+	// 1. Split work in workItems.
+	workChan := make(chan workItem, max(2000, 2*maxWorkers))
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		feedWorkItems(
+			batchSize, lhsCrossSize, rhsCrossSize,
+			&params, maxWorkers, workChan)
+	})
 
+	// 2. Saturate (fan-out workers) on workItems.
 	backend.Workers.Saturate(func() {
-		for batchIdx := range work {
-			//alt:f32 avx2LargeMatrixSliceFloat32(
-			avx2LargeMatrixSliceBFloat16( //alt:bf16
-				//alt:f16  avx2LargeMatrixSliceFloat16(
-				//alt:f64  avx2LargeMatrixSliceFloat64(
-				lhs, rhs, output, batchIdx, lhsCrossSize, rhsCrossSize, contractingSize, layout, params)
+		//alt:f32 packedLHSRef, packedLHS, ok := GetBuffer[float32](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		packedLHSRef, packedLHS, ok := GetBuffer[bfloat16.BFloat16](backend, params.LHSPanelCrossSize*params.PanelContractingSize) //alt:bf16
+		//alt:f16  packedLHSRef, packedLHS, ok := GetBuffer[float16.Float16](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		//alt:f64  packedLHSRef, packedLHS, ok := GetBuffer[float64](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedLHSRef)
+		//alt:f32 packedRHSRef, packedRHS, ok := GetBuffer[float32](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		packedRHSRef, packedRHS, ok := GetBuffer[bfloat16.BFloat16](backend, params.PanelContractingSize*params.RHSPanelCrossSize) //alt:bf16
+		//alt:f16  packedRHSRef, packedRHS, ok := GetBuffer[float16.Float16](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		//alt:f64  packedRHSRef, packedRHS, ok := GetBuffer[float64](backend, params.PanelContractingSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedRHSRef)
+		packedOutputRef, packedOutput, ok := GetBuffer[float32](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+		//alt:f64  packedOutputRef, packedOutput, ok := GetBuffer[float64](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(packedOutputRef)
+		for item := range workChan {
+			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
+				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
+				batchRhs := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
+				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
+				//alt:f32 avx2LargeMatrixSliceFloat32(
+				avx2LargeMatrixSliceBFloat16( //alt:bf16
+					//alt:f16  avx2LargeMatrixSliceFloat16(
+					//alt:f64  avx2LargeMatrixSliceFloat64(
+					layout,
+					batchLhs, batchRhs, batchOutput,
+					lhsCrossSize, rhsCrossSize, contractingSize,
+					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
+					params,
+					packedLHS, packedRHS, packedOutput,
+				)
+			}
 		}
 	})
+	wg.Wait()
 }
 
+// avx2LargeMatrixSliceFloat32 performs a slice of the matrix multiplication on one example: lhs, rhs and output
+// must already have sliced one example of the batch dimension.
+//
+// Here there are no batch dimensions anymore, it only applies to a slice of one matrix (2D).
+//
+// packedLHS and packedRHS must be pre-allocated buffers of appropriate size.
+//
 //alt:f32 func avx2LargeMatrixSliceFloat32(
 func avx2LargeMatrixSliceBFloat16( //alt:bf16
 	//alt:f16  func avx2LargeMatrixSliceFloat16(
 	//alt:f64  func avx2LargeMatrixSliceFloat64(
-	//alt:f32 lhs, rhs []float32, output []float32,
-	lhs, rhs []bfloat16.BFloat16, output []float32, //alt:bf16
-	//alt:f16  lhs, rhs []float16.Float16, output []float32,
-	//alt:f64  lhs, rhs, output []float64,
-	batchIdx, lhsCrossSize, rhsCrossSize, contractingSize int,
-	layout dot.Layout, params CacheParams) {
-
-	if lhsCrossSize == 0 || rhsCrossSize == 0 || contractingSize == 0 {
-		return
-	}
+	layout dot.Layout,
+	//alt:f32 lhsMatrix, rhsMatrix []float32, outputMatrix []float32,
+	lhsMatrix, rhsMatrix []bfloat16.BFloat16, outputMatrix []float32, //alt:bf16
+	//alt:f16  lhsMatrix, rhsMatrix []float16.Float16, outputMatrix []float32,
+	//alt:f64  lhsMatrix, rhsMatrix []float64, outputMatrix []float64,
+	lhsCrossSize, rhsCrossSize, contractingSize int,
+	rowStart, rowEnd, colStart, colEnd int,
+	params CacheParams,
+	//alt:f32 packedLHS, packedRHS []float32, packedOutput []float32,
+	packedLHS, packedRHS []bfloat16.BFloat16, packedOutput []float32, //alt:bf16
+	//alt:f16  packedLHS, packedRHS []float16.Float16, packedOutput []float32,
+	//alt:f64  packedLHS, packedRHS []float64, packedOutput []float64,
+) {
+	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
 	if params.LHSL1KernelRows != 4 || params.RHSL1KernelCols != 16 { //alt:f32|bf16|f16
 		//alt:f64  if params.LHSL1KernelRows != 4 || params.RHSL1KernelCols != 8 {
@@ -95,142 +185,239 @@ func avx2LargeMatrixSliceBFloat16( //alt:bf16
 			params.LHSL1KernelRows, params.RHSL1KernelCols, params))
 	}
 
-	lhsStride := lhsCrossSize * contractingSize
-	rhsStride := contractingSize * rhsCrossSize
-	outputStride := lhsCrossSize * rhsCrossSize
-	lhsMatrix := lhs[batchIdx*lhsStride : (batchIdx+1)*lhsStride]
-	rhsMatrix := rhs[batchIdx*rhsStride : (batchIdx+1)*rhsStride]
-	outputMatrix := output[batchIdx*outputStride : (batchIdx+1)*outputStride]
+	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
+	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
+		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
 
-	//alt:f32 packedRHS := make([]float32, params.PanelContractingSize*params.RHSPanelCrossSize)
-	packedRHS := make([]bfloat16.BFloat16, params.PanelContractingSize*params.RHSPanelCrossSize) //alt:bf16
-	//alt:f16  packedRHS := make([]float16.Float16, params.PanelContractingSize*params.RHSPanelCrossSize)
-	//alt:f64  packedRHS := make([]float64, params.PanelContractingSize*params.RHSPanelCrossSize)
-	//alt:f32 packedLHS := make([]float32, params.LHSPanelCrossSize*params.PanelContractingSize)
-	packedLHS := make([]bfloat16.BFloat16, params.LHSPanelCrossSize*params.PanelContractingSize) //alt:bf16
-	//alt:f16  packedLHS := make([]float16.Float16, params.LHSPanelCrossSize*params.PanelContractingSize)
-	//alt:f64  packedLHS := make([]float64, params.LHSPanelCrossSize*params.PanelContractingSize)
-	packedOutput := make([]float32, params.LHSPanelCrossSize*params.RHSL1KernelCols) //alt:f32|bf16|f16
-	//alt:f64  packedOutput := make([]float64, params.LHSPanelCrossSize*params.RHSL1KernelCols)
-
-	for rhsPanelColIdx := 0; rhsPanelColIdx < rhsCrossSize; rhsPanelColIdx += params.RHSPanelCrossSize {
-		rhsPanelWidth := min(params.RHSPanelCrossSize, rhsCrossSize-rhsPanelColIdx)
-
+		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-			isFirstContractingPanel := contractingPanelIdx == 0
-
 			if layout == dot.LayoutNonTransposed {
 				avx2PackRHSNonTransposed(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
 			} else {
-				// RHS is [N, K]. Contracting dimension is the last one (K).
-				// We want to pack it into strips of width Nr (usually 16 for f32).
-				// This is like packing LHS with Mr=Nr.
-				packLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize, rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
+				// For LayoutTransposed, the rhs has the same layout as the lhs, so we use packLHS instead.
+				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize,
+					rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
 			}
 
-			for lhsPanelRowIdx := 0; lhsPanelRowIdx < lhsCrossSize; lhsPanelRowIdx += params.LHSPanelCrossSize {
-				lhsPanelHeight := min(params.LHSPanelCrossSize, lhsCrossSize-lhsPanelRowIdx)
+			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
+			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
+				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+				avx2PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32|bf16|f16|f64
 
-				avx2PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+				//alt:f32 avx2LargeKernelFloat32(
+				avx2LargeKernelBFloat16( //alt:bf16
+					//alt:f16  avx2LargeKernelFloat16(
+					//alt:f64  avx2LargeKernelFloat64(
+					packedLHS, packedRHS, packedOutput,
+					params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+					contractingPanelWidth,
+					lhsPanelHeight, rhsPanelWidth,
+				)
 
-				for rhsKernelColIdx := 0; rhsKernelColIdx < rhsPanelWidth; rhsKernelColIdx += params.RHSL1KernelCols {
-					//alt:f32 avx2LargeKernelFloat32(
-					avx2LargeKernelBFloat16( //alt:bf16
-						//alt:f16  avx2LargeKernelFloat16(
-						//alt:f64  avx2LargeKernelFloat64(
-						packedLHS, packedRHS, packedOutput, lhsPanelHeight, contractingPanelWidth, rhsKernelColIdx, params)
-
-					avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
-						//alt:f64  avx2ApplyPackedOutputFloat64(
-						packedOutput, outputMatrix, isFirstContractingPanel, params.RHSL1KernelCols, lhsPanelRowIdx, rhsPanelColIdx+rhsKernelColIdx, rhsCrossSize, lhsPanelHeight, min(params.RHSL1KernelCols, rhsPanelWidth-rhsKernelColIdx))
-				}
+				// Accumulate (or write) packedOutput to output.
+				isFirstContractingPanel := contractingPanelIdx == 0
+				avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
+					//alt:f64  avx2ApplyPackedOutputFloat64(
+					packedOutput, outputMatrix,
+					isFirstContractingPanel,
+					params.RHSPanelCrossSize,
+					lhsPanelRowIdx, rhsPanelColIdx,
+					rhsCrossSize,
+					lhsPanelHeight, rhsPanelWidth)
 			}
 		}
 	}
 }
 
+// avx2LargeKernelFloat32 implements a kernel of the matrix multiplication for
+// a lhs and rhs packed panels into an intermediate output panel.
+//
 //alt:f32 func avx2LargeKernelFloat32(
 func avx2LargeKernelBFloat16( //alt:bf16
 	//alt:f16  func avx2LargeKernelFloat16(
 	//alt:f64  func avx2LargeKernelFloat64(
-	//alt:f32 packedLHS, packedRHS []float32, packedOutput []float32,
-	packedLHS, packedRHS []bfloat16.BFloat16, packedOutput []float32, //alt:bf16
-	//alt:f16  packedLHS, packedRHS []float16.Float16, packedOutput []float32,
-	//alt:f64  packedLHS, packedRHS, packedOutput []float64,
-	lhsPanelHeight, contractingPanelWidth, rhsKernelColIdx int, params CacheParams) {
+	//alt:f32 packedLHS, packedRHS []float32,
+	packedLHS, packedRHS []bfloat16.BFloat16, //alt:bf16
+	//alt:f16  packedLHS, packedRHS []float16.Float16,
+	//alt:f64  packedLHS, packedRHS []float64,
+	packedOutput []float32, //alt:f32|bf16|f16
+	//alt:f64  packedOutput []float64,
+	lhsPanelRows, rhsPanelCols int,
+	contractingLen int,
+	lhsActiveRows, rhsActiveCols int,
+) {
+	defer func() {
+		runtime.KeepAlive(packedLHS)
+		runtime.KeepAlive(packedRHS)
+		runtime.KeepAlive(packedOutput)
+	}()
+	_ = lhsPanelRows // Not needed.
 
-	for i := range len(packedOutput) {
-		packedOutput[i] = 0
-	}
+	// BCE hints
+	_ = packedLHS[contractingLen*lhsActiveRows-1]
+	_ = packedRHS[contractingLen*rhsActiveCols-1]
+	_ = packedOutput[lhsActiveRows*rhsPanelCols-1]
 
-	lhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedLHS)))
-	rhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedRHS))) + uintptr(rhsKernelColIdx*contractingPanelWidth)*unsafe.Sizeof(packedRHS[0])
+	const (
+		// These must match params.LHSL1KernelRows and params.RHSL1KernelCols.
+		kernelRows = 4  //alt:f32|bf16|f16|f64
+		kernelCols = 16 //alt:f32|bf16|f16
+		//alt:f64  kernelCols = 8
+		outputNumLanes = 8 //alt:f32|bf16|f16
+		//alt:f64  outputNumLanes = 4
+		//alt:f32 bytesPerInputElement = 4
+		bytesPerInputElement = 2 //alt:bf16
+		//alt:f16  bytesPerInputElement = 2
+		//alt:f64  bytesPerInputElement = 8
+		bytesPerOutputElement = 4 //alt:f32|bf16|f16
+		//alt:f64  bytesPerOutputElement = 8
+	)
 
-	for row := 0; row < lhsPanelHeight; row += 4 {
-		// Load accumulation registers
-		var o0_0, o0_1, o1_0, o1_1, o2_0, o2_1, o3_0, o3_1 archsimd.Float32x8 //alt:f32|bf16|f16
-		//alt:f64  var o0_0, o0_1, o1_0, o1_1, o2_0, o2_1, o3_0, o3_1 archsimd.Float64x4
+	outputBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedOutput)))
+	rhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedRHS)))
+	lhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedLHS)))
 
-		for k := 0; k < contractingPanelWidth; k++ {
-			// Load LHS: 4 values for 4 rows
-			l_base := lhsPtr + uintptr(row*contractingPanelWidth+k*4)*unsafe.Sizeof(packedLHS[0])
-			//alt:f32 l0 := archsimd.BroadcastFloat32x8(*(*float32)(unsafe.Pointer(l_base)))
-			//alt:f32 l1 := archsimd.BroadcastFloat32x8(*(*float32)(unsafe.Pointer(l_base + 4)))
-			//alt:f32 l2 := archsimd.BroadcastFloat32x8(*(*float32)(unsafe.Pointer(l_base + 8)))
-			//alt:f32 l3 := archsimd.BroadcastFloat32x8(*(*float32)(unsafe.Pointer(l_base + 12)))
-			l0 := archsimd.BroadcastFloat32x8((*(*bfloat16.BFloat16)(unsafe.Pointer(l_base))).Float32())     //alt:bf16
-			l1 := archsimd.BroadcastFloat32x8((*(*bfloat16.BFloat16)(unsafe.Pointer(l_base + 2))).Float32()) //alt:bf16
-			l2 := archsimd.BroadcastFloat32x8((*(*bfloat16.BFloat16)(unsafe.Pointer(l_base + 4))).Float32()) //alt:bf16
-			l3 := archsimd.BroadcastFloat32x8((*(*bfloat16.BFloat16)(unsafe.Pointer(l_base + 6))).Float32()) //alt:bf16
-			//alt:f16  l0 := archsimd.BroadcastFloat32x8((*(*float16.Float16)(unsafe.Pointer(l_base))).Float32())
-			//alt:f16  l1 := archsimd.BroadcastFloat32x8((*(*float16.Float16)(unsafe.Pointer(l_base + 2))).Float32())
-			//alt:f16  l2 := archsimd.BroadcastFloat32x8((*(*float16.Float16)(unsafe.Pointer(l_base + 4))).Float32())
-			//alt:f16  l3 := archsimd.BroadcastFloat32x8((*(*float16.Float16)(unsafe.Pointer(l_base + 6))).Float32())
-			//alt:f64  l0 := archsimd.BroadcastFloat64x4(*(*float64)(unsafe.Pointer(l_base)))
-			//alt:f64  l1 := archsimd.BroadcastFloat64x4(*(*float64)(unsafe.Pointer(l_base + 8)))
-			//alt:f64  l2 := archsimd.BroadcastFloat64x4(*(*float64)(unsafe.Pointer(l_base + 16)))
-			//alt:f64  l3 := archsimd.BroadcastFloat64x4(*(*float64)(unsafe.Pointer(l_base + 24)))
+	// Loop 1 (ir): Micro-Kernel Rows (Mr == lhsL1BlockRows)
+	for lhsRowIdx := 0; lhsRowIdx < lhsActiveRows; lhsRowIdx += kernelRows {
+		// Loop 2 (jr): Micro-Kernel Columns (Nr == rhsL1BlockCols)
+		for rhsColIdx := 0; rhsColIdx < rhsActiveCols; rhsColIdx += kernelCols {
+			// Output index calculation (relative to panel)
+			outputRowStart := lhsRowIdx
+			outputColStart := rhsColIdx
+			outputStride := rhsPanelCols
 
-			// Load RHS: 16 values (2 YMM registers)
-			r_base := rhsPtr + uintptr(k*16)*unsafe.Sizeof(packedRHS[0]) //alt:f32|bf16|f16
-			//alt:f64  r_base := rhsPtr + uintptr(k*8)*unsafe.Sizeof(packedRHS[0])
-			//alt:f32 r0 := archsimd.LoadFloat32x8((*[8]float32)(unsafe.Pointer(r_base)))
-			//alt:f32 r1 := archsimd.LoadFloat32x8((*[8]float32)(unsafe.Pointer(r_base + 32)))
-			r0, r1 := bfloat16.LoadBFloat16x16((*[16]bfloat16.BFloat16)(unsafe.Pointer(r_base))).ToFloat32() //alt:bf16
-			//alt:f16  r0, r1 := float16.LoadFloat16x16((*[16]float16.Float16)(unsafe.Pointer(r_base))).ToFloat32()
-			//alt:f64  r0 := archsimd.LoadFloat64x4((*[4]float64)(unsafe.Pointer(r_base)))
-			//alt:f64  r1 := archsimd.LoadFloat64x4((*[4]float64)(unsafe.Pointer(r_base + 32)))
+			// ---------------------------------------------------------
+			// MICRO KERNEL BODY
+			// ---------------------------------------------------------
 
-			o0_0 = l0.MulAdd(r0, o0_0)
-			o0_1 = l0.MulAdd(r1, o0_1)
-			o1_0 = l1.MulAdd(r0, o1_0)
-			o1_1 = l1.MulAdd(r1, o1_1)
-			o2_0 = l2.MulAdd(r0, o2_0)
-			o2_1 = l2.MulAdd(r1, o2_1)
-			o3_0 = l3.MulAdd(r0, o3_0)
-			o3_1 = l3.MulAdd(r1, o3_1)
+			// ---------------------------------------------------------
+			// 2. Initialize Accumulators (Registers) to 0.0
+			// ---------------------------------------------------------
+			// We use 4 rows (Mr) worth of registers at a time.
+			accum_lhs0_rhs0 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs0_rhs0 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs0_rhs1 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs0_rhs1 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs1_rhs0 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs1_rhs0 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs1_rhs1 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs1_rhs1 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs2_rhs0 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs2_rhs0 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs2_rhs1 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs2_rhs1 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs3_rhs0 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs3_rhs0 := archsimd.BroadcastFloat64x4(0.0)
+			accum_lhs3_rhs1 := archsimd.BroadcastFloat32x8(0.0) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs3_rhs1 := archsimd.BroadcastFloat64x4(0.0)
+
+			// ------------------------------------------------------------
+			// Eliminate bound checks (BCE is not working well enough)
+			// ------------------------------------------------------------
+
+			// 1. Calculate the total range the loop will touch
+			idxLHS := lhsRowIdx * contractingLen
+			idxRHS := rhsColIdx * contractingLen
+
+			// Get the base pointers once
+			rhsRowPtr := rhsBasePtr + uintptr(idxRHS*bytesPerInputElement)
+			lhsRowPtr := lhsBasePtr + uintptr(idxLHS*bytesPerInputElement)
+
+			rOffset := uintptr(0)
+			lOffset := uintptr(0)
+
+			// Pre-calculate strides **in bytes**
+			rhsStride := uintptr(kernelCols * bytesPerInputElement)
+			lhsStride := uintptr(kernelRows * bytesPerInputElement)
+			rhsRegisterStride := uintptr(outputNumLanes * bytesPerInputElement)
+			_ = rhsRegisterStride // Not used by bf16/f16 path. //alt:bf16|f16
+
+			// ---------------------------------------------------------
+			// 3. The K-Loop (Dot Product)
+			// ---------------------------------------------------------
+			for range contractingLen {
+				// Load RHS (Broadcasting/Streaming)
+				rhsPtr0 := unsafe.Pointer(rhsRowPtr + rOffset)
+				//alt:f32|f64 rhsPtr1 := unsafe.Pointer(rhsRowPtr + rOffset + rhsRegisterStride)
+				//alt:f32 rhsVec0 := archsimd.LoadFloat32x8((*[8]float32)(rhsPtr0))
+				//alt:f64  rhsVec0 := archsimd.LoadFloat64x4((*[4]float64)(rhsPtr0))
+				//alt:f32 rhsVec1 := archsimd.LoadFloat32x8((*[8]float32)(rhsPtr1))
+				//alt:f64  rhsVec1 := archsimd.LoadFloat64x4((*[4]float64)(rhsPtr1))
+				rhsBF16 := bfloat16.LoadBFloat16x16((*[16]bfloat16.BFloat16)(rhsPtr0)) //alt:bf16
+				rhsVec0, rhsVec1 := rhsBF16.ToFloat32()                                //alt:bf16
+				//alt:f16  rhsF16 := float16.LoadFloat16x16((*[16]float16.Float16)(rhsPtr0))
+				//alt:f16  rhsVec0, rhsVec1 := rhsF16.ToFloat32()
+				rOffset += rhsStride
+
+				// Row 0
+				//alt:f32 lhsVal0 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 0)))
+				lhsVal0 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 0))).Float32() //alt:bf16
+				//alt:f16  lhsVal0 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 0))).Float32()
+				//alt:f64  lhsVal0 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 0)))
+				lhsVec0 := archsimd.BroadcastFloat32x8(lhsVal0) //alt:f32|bf16|f16
+				//alt:f64  lhsVec0 := archsimd.BroadcastFloat64x4(lhsVal0)
+				accum_lhs0_rhs0 = rhsVec0.MulAdd(lhsVec0, accum_lhs0_rhs0) //alt:f32|bf16|f16|f64
+				accum_lhs0_rhs1 = rhsVec1.MulAdd(lhsVec0, accum_lhs0_rhs1) //alt:f32|bf16|f16|f64
+
+				// Row 1
+				//alt:f32 lhsVal1 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement)))
+				lhsVal1 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement))).Float32() //alt:bf16
+				//alt:f16  lhsVal1 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement))).Float32()
+				//alt:f64  lhsVal1 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement)))
+				lhsVec1 := archsimd.BroadcastFloat32x8(lhsVal1) //alt:f32|bf16|f16
+				//alt:f64  lhsVec1 := archsimd.BroadcastFloat64x4(lhsVal1)
+				accum_lhs1_rhs0 = rhsVec0.MulAdd(lhsVec1, accum_lhs1_rhs0) //alt:f32|bf16|f16|f64
+				accum_lhs1_rhs1 = rhsVec1.MulAdd(lhsVec1, accum_lhs1_rhs1) //alt:f32|bf16|f16|f64
+
+				// Row 2
+				//alt:f32 lhsVal2 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement)))
+				lhsVal2 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement))).Float32() //alt:bf16
+				//alt:f16  lhsVal2 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement))).Float32()
+				//alt:f64  lhsVal2 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement)))
+				lhsVec2 := archsimd.BroadcastFloat32x8(lhsVal2) //alt:f32|bf16|f16
+				//alt:f64  lhsVec2 := archsimd.BroadcastFloat64x4(lhsVal2)
+				accum_lhs2_rhs0 = rhsVec0.MulAdd(lhsVec2, accum_lhs2_rhs0) //alt:f32|bf16|f16|f64
+				accum_lhs2_rhs1 = rhsVec1.MulAdd(lhsVec2, accum_lhs2_rhs1) //alt:f32|bf16|f16|f64
+
+				// Row 3
+				//alt:f32 lhsVal3 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement)))
+				lhsVal3 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement))).Float32() //alt:bf16
+				//alt:f16  lhsVal3 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement))).Float32()
+				//alt:f64  lhsVal3 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement)))
+				lhsVec3 := archsimd.BroadcastFloat32x8(lhsVal3) //alt:f32|bf16|f16
+				//alt:f64  lhsVec3 := archsimd.BroadcastFloat64x4(lhsVal3)
+				accum_lhs3_rhs0 = rhsVec0.MulAdd(lhsVec3, accum_lhs3_rhs0) //alt:f32|bf16|f16|f64
+				accum_lhs3_rhs1 = rhsVec1.MulAdd(lhsVec3, accum_lhs3_rhs1) //alt:f32|bf16|f16|f64
+
+				lOffset += lhsStride
+			}
+
+			// ---------------------------------------------------------
+			// 4. Write Back to Output
+			// ---------------------------------------------------------
+			outputIdx0 := uintptr((outputRowStart*outputStride + outputColStart) * bytesPerOutputElement)
+			outputIdx1 := outputIdx0 + uintptr(outputStride*bytesPerOutputElement)
+			outputIdx2 := outputIdx0 + uintptr(2*outputStride*bytesPerOutputElement)
+			outputIdx3 := outputIdx0 + uintptr(3*outputStride*bytesPerOutputElement)
+			registerStride := uintptr(outputNumLanes * bytesPerOutputElement)
+
+			accum_lhs0_rhs0.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs0_rhs0.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
+			accum_lhs0_rhs1.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs0_rhs1.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
+			accum_lhs1_rhs0.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs1_rhs0.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
+			accum_lhs1_rhs1.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs1_rhs1.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
+			accum_lhs2_rhs0.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs2_rhs0.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
+			accum_lhs2_rhs1.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs2_rhs1.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
+			accum_lhs3_rhs0.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs3_rhs0.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
+			accum_lhs3_rhs1.Store((*[8]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
+			//alt:f64  accum_lhs3_rhs1.Store((*[4]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
 		}
-
-		// Store accumulated values
-		o_base := uintptr(row*16) * unsafe.Sizeof(packedOutput[0]) //alt:f32|bf16|f16
-		//alt:f64  o_base := uintptr(row*8) * unsafe.Sizeof(packedOutput[0])
-		outputPtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedOutput))) + o_base
-		o0_0.Store((*[8]float32)(unsafe.Pointer(outputPtr)))       //alt:f32|bf16|f16
-		o0_1.Store((*[8]float32)(unsafe.Pointer(outputPtr + 32)))  //alt:f32|bf16|f16
-		o1_0.Store((*[8]float32)(unsafe.Pointer(outputPtr + 64)))  //alt:f32|bf16|f16
-		o1_1.Store((*[8]float32)(unsafe.Pointer(outputPtr + 96)))  //alt:f32|bf16|f16
-		o2_0.Store((*[8]float32)(unsafe.Pointer(outputPtr + 128))) //alt:f32|bf16|f16
-		o2_1.Store((*[8]float32)(unsafe.Pointer(outputPtr + 160))) //alt:f32|bf16|f16
-		o3_0.Store((*[8]float32)(unsafe.Pointer(outputPtr + 192))) //alt:f32|bf16|f16
-		o3_1.Store((*[8]float32)(unsafe.Pointer(outputPtr + 224))) //alt:f32|bf16|f16
-		//alt:f64  o0_0.Store((*[4]float64)(unsafe.Pointer(outputPtr)))
-		//alt:f64  o0_1.Store((*[4]float64)(unsafe.Pointer(outputPtr + 32)))
-		//alt:f64  o1_0.Store((*[4]float64)(unsafe.Pointer(outputPtr + 64)))
-		//alt:f64  o1_1.Store((*[4]float64)(unsafe.Pointer(outputPtr + 96)))
-		//alt:f64  o2_0.Store((*[4]float64)(unsafe.Pointer(outputPtr + 128)))
-		//alt:f64  o2_1.Store((*[4]float64)(unsafe.Pointer(outputPtr + 160)))
-		//alt:f64  o3_0.Store((*[4]float64)(unsafe.Pointer(outputPtr + 192)))
-		//alt:f64  o3_1.Store((*[4]float64)(unsafe.Pointer(outputPtr + 224)))
 	}
 }

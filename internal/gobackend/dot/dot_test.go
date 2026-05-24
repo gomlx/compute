@@ -63,3 +63,5 @@ func TestDotGeneral(t *testing.T) {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 }
+
+
