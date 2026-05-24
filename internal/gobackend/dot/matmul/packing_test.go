@@ -233,10 +233,13 @@ func runApplyPackedOutputTests[T NumberNonHalf](t *testing.T, applyFn ApplyPacke
 }
 
 func TestUnsafe(t *testing.T) {
-	t.Run("Pack", func(t *testing.T) {
-		runPackLHSTests(t, unsafePackLHS[float32], 4)
-	})
+	for _, kernelRows := range []int{2, 4, 16, 32} {
+		t.Run(fmt.Sprintf("Pack_kernelRows=%d", kernelRows), func(t *testing.T) {
+			runPackLHSTests(t, unsafePackLHS[float32], kernelRows)
+		})
+	}
 }
+
 
 func runBenchmarkPackLHS[T Number](b *testing.B, name string, packFn PackLHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelRows int) {
 	src := make([]T, totalRows*totalCols)
