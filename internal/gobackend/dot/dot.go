@@ -240,7 +240,24 @@ func DotGeneral(f *gobackend.Function,
 	}
 
 	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
-	normalizedOutputShape := shapes.Make(params.OutputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
+	var normalizedOutputShape shapes.Shape
+	if params.BatchSize == shapes.DynamicDim || params.LHSCrossSize == shapes.DynamicDim || params.RHSCrossSize == shapes.DynamicDim {
+		axisNames := make([]string, 3)
+		if params.BatchSize == shapes.DynamicDim {
+			axisNames[0] = findDynamicAxisName(lhs.Shape, params.LHSBatchAxes)
+		}
+		if params.LHSCrossSize == shapes.DynamicDim {
+			axisNames[1] = findDynamicCrossAxisName(lhs.Shape, params.LHSBatchAxes, params.LHSContractingAxes)
+		}
+		if params.RHSCrossSize == shapes.DynamicDim {
+			axisNames[2] = findDynamicCrossAxisName(rhs.Shape, params.RHSBatchAxes, params.RHSContractingAxes)
+		}
+		normalizedOutputShape = shapes.MakeDynamic(params.OutputDType,
+			[]int{params.BatchSize, params.LHSCrossSize, params.RHSCrossSize},
+			axisNames)
+	} else {
+		normalizedOutputShape = shapes.Make(params.OutputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
+	}
 	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, normalizedOutputShape, inputs, params)
 	if result.Shape.Equal(outputShape) {
 		// If no de-normalization is needed, return the result immediately.
@@ -373,4 +390,31 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	// Use registered implementation.
 	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
 	return output, nil
+}
+
+func findDynamicAxisName(shape shapes.Shape, axes []int) string {
+	for _, axis := range axes {
+		if shape.Dimensions[axis] == shapes.DynamicDim {
+			return shape.AxisName(axis)
+		}
+	}
+	return ""
+}
+
+func findDynamicCrossAxisName(shape shapes.Shape, batchAxes, contractingAxes []int) string {
+	isSpecial := make([]bool, shape.Rank())
+	for _, axis := range batchAxes {
+		isSpecial[axis] = true
+	}
+	for _, axis := range contractingAxes {
+		isSpecial[axis] = true
+	}
+	for axis := 0; axis < shape.Rank(); axis++ {
+		if !isSpecial[axis] {
+			if shape.Dimensions[axis] == shapes.DynamicDim {
+				return shape.AxisName(axis)
+			}
+		}
+	}
+	return ""
 }
