@@ -32,9 +32,8 @@ var NumericDTypes = []dtypes.DType{
 
 // Capabilities of the Go backend: the set of supported operations and data types.
 var Capabilities = compute.Capabilities{
-	// Functions indicates that the Go backend supports closures and named functions.
-	// This enables control flow operations like While, If, Sort that take closures as parameters.
-	Functions: true,
+	Functions:   true,
+	DynamicAxes: true,
 
 	Operations: map[compute.OpType]bool{
 		// Graph inputs (leaf nodes)
@@ -102,6 +101,8 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeIdentity:             true,
 		compute.OpTypeIota:                 true,
 		compute.OpTypePad:                  true,
+		compute.OpTypeDynamicDimensionSize: true,
+		compute.OpTypeDynamicShape:         true,
 		compute.OpTypeReduceBitwiseAnd:     true,
 		compute.OpTypeReduceBitwiseOr:      true,
 		compute.OpTypeReduceBitwiseXor:     true,

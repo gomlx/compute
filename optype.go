@@ -47,6 +47,8 @@ const (
 	OpTypeDotGeneral
 	OpTypeDynamicSlice
 	OpTypeDynamicUpdateSlice
+	OpTypeDynamicDimensionSize
+	OpTypeDynamicShape
 	OpTypeEqual
 	OpTypeEqualTotalOrder
 	OpTypeErf
