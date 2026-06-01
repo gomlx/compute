@@ -69,6 +69,7 @@ type Function interface {
 	// Shape returns the shape of the given Value.
 	//
 	// Notice, this doesn't create an op on the graph, it's purely for reporting/introspection.
+	// See DynamicShape and DynamicDimensionSize for the dynamic value of a shape when using dynamic shapes.
 	Shape(v Value) (shapes.Shape, error)
 
 	// Return marks the outputs of this function.

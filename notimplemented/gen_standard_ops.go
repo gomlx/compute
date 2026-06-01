@@ -233,6 +233,18 @@ func (f Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBat
 	return nil, f.baseErrFn(compute.OpTypeDotGeneral)
 }
 
+// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
+// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+func (f Function) DynamicDimensionSize(operand compute.Value, axis int) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicDimensionSize)
+}
+
+// DynamicShape returns the shape of the operand as a dynamic value.
+// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+func (f Function) DynamicShape(operand compute.Value) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicShape)
+}
+
 // DynamicSlice extracts a slice from the operand at the startIndices position and the given sliceSizes.
 //
 // - operand: tensor from where to take the slice.

@@ -344,6 +344,14 @@ type StandardOps interface {
 		config DotGeneralConfig,
 	) (Value, error)
 
+	// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
+	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+	DynamicDimensionSize(operand Value, axis int) (Value, error)
+
+	// DynamicShape returns the shape of the operand as a dynamic value.
+	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+	DynamicShape(operand Value) (Value, error)
+
 	// DynamicSlice extracts a slice from the operand at the startIndices position and the given sliceSizes.
 	//
 	// - operand: tensor from where to take the slice.

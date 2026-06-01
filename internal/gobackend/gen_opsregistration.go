@@ -217,6 +217,22 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 }
 
+func (f *Function) DynamicDimensionSize(operand compute.Value, axis int) (compute.Value, error) {
+	if RegisterDynamicDimensionSize.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicDimensionSize(operand, axis)
+	}
+	return RegisterDynamicDimensionSize.Fn(f, operand, axis)
+}
+
+func (f *Function) DynamicShape(operand compute.Value) (compute.Value, error) {
+	if RegisterDynamicShape.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicShape(operand)
+	}
+	return RegisterDynamicShape.Fn(f, operand)
+}
+
 func (f *Function) DynamicSlice(operand compute.Value, startIndices []compute.Value, sliceDims []int) (compute.Value, error) {
 	if RegisterDynamicSlice.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -960,6 +976,12 @@ var (
 	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
+	}
+	RegisterDynamicDimensionSize = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int) (compute.Value, error)]{
+		Method: "DynamicDimensionSize",
+	}
+	RegisterDynamicShape = OpHandlerRegistration[func(f *Function, operand compute.Value) (compute.Value, error)]{
+		Method: "DynamicShape",
 	}
 	RegisterDynamicSlice = OpHandlerRegistration[func(f *Function, operand compute.Value, startIndices []compute.Value, sliceDims []int) (compute.Value, error)]{
 		Method: "DynamicSlice",
