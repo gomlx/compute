@@ -12,10 +12,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
-	"strings"
 
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/internal/must"
@@ -177,126 +176,14 @@ func ParseBuilder() ([]Method, error) {
 	return methods, nil
 }
 
-// isTargetModule checks if the go.mod contents declare the target module.
-func isTargetModule(modBytes []byte, target string) bool {
-	for line := range strings.SplitSeq(string(modBytes), "\n") {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "module "); ok {
-			modName := strings.TrimSpace(after)
-			if idx := strings.Index(modName, "//"); idx != -1 {
-				modName = strings.TrimSpace(modName[:idx])
-			}
-			if modName == target {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// checkGoWork parses the go.work file at the given path and checks if any of
-// its use directives point to a directory containing the target module.
-func checkGoWork(gowork, moduleName string) (string, error) {
-	workBytes, err := os.ReadFile(gowork)
-	if err != nil {
-		return "", err
-	}
-	workDir := filepath.Dir(gowork)
-
-	var inUseBlock bool
-	for line := range strings.SplitSeq(string(workBytes), "\n") {
-		if idx := strings.Index(line, "//"); idx != -1 {
-			line = line[:idx]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		var usePath string
-		if inUseBlock {
-			if line == ")" {
-				inUseBlock = false
-				continue
-			}
-			usePath = strings.Trim(line, "\"'`")
-		} else if after, ok := strings.CutPrefix(line, "use "); ok {
-			rest := strings.TrimSpace(after)
-			if rest == "(" {
-				inUseBlock = true
-				continue
-			} else {
-				usePath = strings.Trim(rest, "\"'`")
-			}
-		} else if line == "use(" || line == "use (" {
-			inUseBlock = true
-			continue
-		}
-
-		if usePath != "" {
-			if !filepath.IsAbs(usePath) {
-				usePath = filepath.Join(workDir, usePath)
-			}
-			if modBytes, err := os.ReadFile(filepath.Join(usePath, "go.mod")); err == nil {
-				if isTargetModule(modBytes, moduleName) {
-					return usePath, nil
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("module %s not found in go.work", moduleName)
-}
-
 // findModuleRoot returns the absolute path to the module root directory
-// for github.com/gomlx/compute.
+// for github.com/gomlx/compute, determined relative to this file's location.
 func findModuleRoot() (string, error) {
-	const moduleName = "github.com/gomlx/compute"
-
-	// 1. Check if the current module (as stated in go.mod) is github.com/gomlx/compute
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("could not get caller information to determine module root")
 	}
-	for d := dir; ; {
-		if modBytes, err := os.ReadFile(filepath.Join(d, "go.mod")); err == nil {
-			if isTargetModule(modBytes, moduleName) {
-				return d, nil
-			}
-			break // Found a go.mod, but not our target module, stop going up
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			break
-		}
-		d = parent
-	}
-
-	// 2. Check if any of the paths in go.work refer to github.com/gomlx/compute
-	if outWork, err := exec.Command("go", "env", "GOWORK").Output(); err == nil {
-		gowork := strings.TrimSpace(string(outWork))
-		if gowork != "" {
-			if usePath, err := checkGoWork(gowork, moduleName); err == nil {
-				return usePath, nil
-			}
-		}
-	}
-
-	// 3. Check if Go has the cached code for github.com/gomlx/compute
-	if outCache, err := exec.Command("go", "env", "GOMODCACHE").Output(); err == nil {
-		modCache := strings.TrimSpace(string(outCache))
-		if modCache == "" {
-			if gopath, err := exec.Command("go", "env", "GOPATH").Output(); err == nil {
-				modCache = filepath.Join(strings.TrimSpace(string(gopath)), "pkg", "mod")
-			}
-		}
-		if modCache != "" {
-			matches, err := filepath.Glob(filepath.Join(modCache, filepath.FromSlash(moduleName)+"@*"))
-			if err == nil && len(matches) > 0 {
-				slices.Sort(matches)
-				return matches[len(matches)-1], nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("could not find module root for %s (checked current go.mod, go.work, and GOMODCACHE)", moduleName)
+	// filename is the path to support/backendparser/backendparser.go.
+	// Go up 2 levels (to support/, then to compute root directory).
+	return filepath.Join(filepath.Dir(filename), "../.."), nil
 }

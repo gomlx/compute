@@ -16,13 +16,14 @@ func TestParseBuilder(t *testing.T) {
 	// Check Add method
 	var foundAdd, foundConstant bool
 	for _, method := range methods {
-		if method.Name == "Add" {
+		switch method.Name {
+		case "Add":
 			if len(method.Comments) == 0 || method.Comments[0] == "" {
 				t.Errorf("Add method has no comment: %+v", method)
 			}
 			fmt.Printf("Add: %+v\n", method)
 			foundAdd = true
-		} else if method.Name == "Constant" {
+		case "Constant":
 			if len(method.Comments) == 0 || method.Comments[0] == "" {
 				t.Errorf("Constant method has no comment: %+v", method)
 			}
