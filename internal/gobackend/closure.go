@@ -82,7 +82,7 @@ func (n *Node) AddNodeCapturedInputs(closure *Function) {
 func (f *Function) ValidateClosure(opName, closureName string, closure compute.Function) (*Function, error) {
 	fn, ok := closure.(*Function)
 	if !ok {
-		return nil, errors.Errorf("%s: %s must be a *simplego.Function, got %T", opName, closureName, closure)
+		return nil, errors.Errorf("%s: %s must be a *gobackend.Function, got %T", opName, closureName, closure)
 	}
 	if fn.RawParent != f {
 		return nil, errors.Errorf("%s: %s must be a closure of the current function", opName, closureName)

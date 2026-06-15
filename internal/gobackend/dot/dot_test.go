@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 
 func TestDotGeneral(t *testing.T) {
 	if _, ok := backend.(*gobackend.Backend); !ok {
-		t.Skip("Skipping test because backend is not a SimpleGo Backend")
+		t.Skip("Skipping test because backend is not the Go backend")
 	}
 
 	lhs := [][][]float32{{{1, 2, 3}}, {{4, 5, 6}}}
@@ -63,5 +63,3 @@ func TestDotGeneral(t *testing.T) {
 		t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 	}
 }
-
-

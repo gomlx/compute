@@ -160,7 +160,7 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 		return
 	}
 	if !buffer.InUse {
-		panic(errors.New("double-freeing simplego buffer"))
+		panic(errors.New("double-freeing Go backend buffer"))
 	}
 	if buffer.isUserFed {
 		// User-fed buffers are not returned to the pool to avoid unbounded growth

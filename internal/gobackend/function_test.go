@@ -17,7 +17,7 @@ import (
 func TestFunctionCapabilities(t *testing.T) {
 	caps := backend.Capabilities()
 	if !caps.Functions {
-		t.Errorf("SimpleGo should support Functions capability")
+		t.Errorf("Go backend should support Functions capability")
 	}
 }
 

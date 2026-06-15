@@ -250,7 +250,7 @@ func unpackUint2Bits(packed []byte, dst []int8) {
 
 func init() {
 	// Register sub-byte type conversions (Int4, Uint4).
-	// In simplego, Int4/Uint4 values are stored packed: 2 nibbles per byte.
+	// In the Go backend, Int4/Uint4 values are stored packed: 2 nibbles per byte.
 	// Bitcast from uint8 produces packed buffers (flat = []byte). ConvertDType
 	// unpacks them into one value per element of the target type.
 	// Low nibble (bits 0-3) is the first element, high nibble (bits 4-7) is the second.

@@ -1,6 +1,6 @@
-# SimpleGo Backend
+# Go Backend
 
-SimpleGo implements a simple, and not very fast, but very portable backend for GoMLX.
+The "go" backend implements a simple, and not very fast, but very portable backend for GoMLX.
 
 The priority is to make something that will work everywhere and is "ergonomic" (doesn't require
 installing any associated C/C++/Rust library, or special packages other than Go itself).

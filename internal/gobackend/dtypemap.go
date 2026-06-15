@@ -137,7 +137,7 @@ func (d *DTypePairMap) Register(dtype1, dtype2 dtypes.DType, priority RegisterPr
 
 // Constraints --------------------------------------------------------------------------------------------------------
 
-// SupportedTypesConstraints enumerates the types supported by SimpleGo.
+// SupportedTypesConstraints enumerates the types supported by the Go backend.
 type SupportedTypesConstraints interface {
 	bool | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64 | float32 | float64 |
 		bfloat16.BFloat16 | float16.Float16

@@ -12,7 +12,7 @@ import (
 
 func TestTransposeToLayout(t *testing.T) {
 	if _, ok := backend.(*gobackend.Backend); !ok {
-		t.Skip("Skipping test because backend is not a SimpleGo Backend")
+		t.Skip("Skipping test because backend is not the Go backend")
 	}
 
 	testCases := []struct {

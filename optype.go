@@ -137,7 +137,7 @@ const (
 	// Internal operations (backend-specific, not part of public API)
 
 	// OpTypeBlockForDotGeneral pre-blocks a tensor for efficient DotGeneral execution.
-	// This is an internal optimization used by the simplego backend.
+	// This is an internal optimization used by the go backend.
 	OpTypeBlockForDotGeneral
 
 	// Fused operations: high-level ops that backends may implement natively.

@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Function implements compute.Function for SimpleGo.
+// Function implements compute.Function for the Go backend.
 type Function struct {
 	notimplemented.Function
 

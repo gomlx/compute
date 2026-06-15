@@ -128,7 +128,7 @@ type Backend struct {
 	SchedulingStrategy ScheduleStrategy
 }
 
-// Compile-time check that simplego.Backend implements compute.Backend.
+// Compile-time check that the gobackend.Backend implements compute.Backend.
 var _ compute.Backend = &Backend{}
 
 // Name returns the short name of the backend. E.g.: "xla" for the Xla/PJRT plugin.
@@ -184,7 +184,7 @@ func (b *Backend) Builder(name string) compute.Builder {
 }
 
 func notImplementedError(opType compute.OpType) error {
-	return errors.Wrapf(notimplemented.NotImplementedError, "sorry, op %q not implemented in SimpleGo (the \"go\" backend) yet "+
+	return errors.Wrapf(notimplemented.NotImplementedError, "sorry, op %q not implemented in the \"go\" backend yet "+
 		"-- reach out to github.com/gomlx/gomlx and open an issue if you need this op, this helps us prioritize the work",
 		opType)
 }
