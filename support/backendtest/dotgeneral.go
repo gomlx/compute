@@ -4,6 +4,7 @@ package backendtest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -439,8 +440,10 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 						})
 						if err != nil {
 							// Some combinations might not be supported by all backends.
-							t.Logf("Failed for %s, %s, %s: %+v", inputDType, accumulatorDType, outputDType, err)
-							return
+							if strings.Contains(err.Error(), "no DotGeneral implementation found for layout") {
+								t.Skipf("Skipping as the backend does not support this particular DotGeneral dtype combination")
+								return
+							}
 						}
 
 						gotDType := dtypes.FromAny(result)
@@ -468,7 +471,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 				for h := range 8 {
 					for g := range 2 {
 						for d := range 256 {
-							idx := (((b*32 + q)*8 + h)*2 + g)*256 + d
+							idx := (((b*32+q)*8+h)*2+g)*256 + d
 							lhsFlat[idx] = float32(((b*32+q)*8+h)*2+g) * 0.0001
 						}
 					}
@@ -481,7 +484,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 			for k := range 32 {
 				for h := range 8 {
 					for d := range 256 {
-						idx := ((b*32 + k)*8 + h)*256 + d
+						idx := ((b*32+k)*8+h)*256 + d
 						rhsFlat[idx] = float32(((b*32+k)*8+h)*256+d) * 0.0001
 					}
 				}
@@ -496,12 +499,12 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 					for g := range 2 {
 						for k := range 32 {
 							var sum float64
-							lhsIdxBase := (((b*32 + q)*8 + h)*2 + g)*256
-							rhsIdxBase := ((b*32 + k)*8 + h)*256
+							lhsIdxBase := (((b*32+q)*8+h)*2 + g) * 256
+							rhsIdxBase := ((b*32+k)*8 + h) * 256
 							for d := range 256 {
 								sum += float64(lhsFlat[lhsIdxBase+d]) * float64(rhsFlat[rhsIdxBase+d])
 							}
-							outIdx := (((b*8 + h)*32 + q)*2 + g)*32 + k
+							outIdx := (((b*8+h)*32+q)*2+g)*32 + k
 							wantFlat[outIdx] = float32(sum)
 						}
 					}
