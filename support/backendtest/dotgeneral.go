@@ -535,10 +535,9 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 			t.Fatalf("testutil.Exec1 failed: %v", err)
 		}
 
-		// We use a relatively high delta (3.0) to allow the test to pass with "xla:cpu" and the "xla:cuda,tf32" backend,
-		// which may display precision differences.
-		delta := 3.0
-		if ok, diff := testutil.IsInDelta(wantFlat, gotFlat, delta); !ok {
+		// We use a relative delta (0.03 = 3%) to allow the test to pass across backends and architectures (like CPU/CUDA TF32 and Arm64).
+		relDelta := 0.03
+		if ok, diff := testutil.IsInRelativeDelta(wantFlat, gotFlat, relDelta); !ok {
 			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 		}
 	})
