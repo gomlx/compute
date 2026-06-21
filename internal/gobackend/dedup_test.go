@@ -351,6 +351,38 @@ func TestNoDedup(t *testing.T) {
 		}
 	})
 
+	t.Run("SchedulingBarrier", func(t *testing.T) {
+		be, err := gobackend.New("")
+		if err != nil {
+			t.Fatalf("Failed to create backend: %v", err)
+		}
+		defer be.Finalize()
+		builder := be.Builder("test").(*gobackend.Builder)
+		mainFn := builder.Main().(*gobackend.Function)
+
+		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2, 3), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter x: %v", err)
+		}
+		dep, err := mainFn.Parameter("dep", shapes.Make(dtypes.F32, 2, 3), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter dep: %v", err)
+		}
+
+		out1, err := mainFn.SchedulingBarrier(x, dep)
+		if err != nil {
+			t.Fatalf("Failed to create SchedulingBarrier 1: %v", err)
+		}
+		out2, err := mainFn.SchedulingBarrier(x, dep)
+		if err != nil {
+			t.Fatalf("Failed to create SchedulingBarrier 2: %v", err)
+		}
+
+		if out1 == out2 {
+			t.Error("SchedulingBarriers on the same inputs should NOT be deduplicated")
+		}
+	})
+
 	t.Run("DifferentConstants", func(t *testing.T) {
 		be, err := gobackend.New("")
 		if err != nil {

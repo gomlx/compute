@@ -85,7 +85,7 @@ func (f *Function) GetOrCreateNode(
 			opType, i, node.Function.name, f.name))
 	}
 
-	if opType == compute.OpTypeOptimizationBarrier {
+	if opType == compute.OpTypeOptimizationBarrier || opType == compute.OpTypeSchedulingBarrier {
 		n = f.NewNode(opType, shape, inputs...)
 		n.Data = data
 		return n, false

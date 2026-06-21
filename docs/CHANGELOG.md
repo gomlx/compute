@@ -12,3 +12,6 @@
   - Add `Shape.Resolve(AxisBindings) (Shape, error)` method.
   - Add `Shape.IsDynamic()` method.
   - Add `DynamicDim` type.
+
+- New ops:
+  - `SchedulingBarrier` and `OptimizationBarrier`, both implemented in the Go backend.
