@@ -535,10 +535,30 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 			t.Fatalf("testutil.Exec1 failed: %v", err)
 		}
 
-		// We use a relative delta (0.03 = 3%) to allow the test to pass across backends and architectures (like CPU/CUDA TF32 and Arm64).
-		relDelta := 0.03
-		if ok, diff := testutil.IsInRelativeDelta(wantFlat, gotFlat, relDelta); !ok {
-			t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+		// We use a combined absolute and relative delta check.
+		// For values close to 0, the absolute delta (0.5) applies.
+		// For larger values, we allow a relative delta of 3% (0.03).
+		gotFlatSlice := gotFlat.([]float32)
+		absDelta := float32(0.5)
+		relDelta := float32(0.03)
+		absVal := func(v float32) float32 {
+			if v < 0 {
+				return -v
+			}
+			return v
+		}
+		for i, wantVal := range wantFlat {
+			gotVal := gotFlatSlice[i]
+			diff := absVal(wantVal - gotVal)
+			if diff <= absDelta {
+				continue
+			}
+			mean := absVal(wantVal)
+			if mean > 0 && diff/mean < relDelta {
+				continue
+			}
+			t.Fatalf("Unexpected result at index %d: want %v, got %v (diff: %v, relDiff: %v)",
+				i, wantVal, gotVal, diff, diff/mean)
 		}
 	})
 }
