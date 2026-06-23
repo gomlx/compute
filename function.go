@@ -132,4 +132,28 @@ type Function interface {
 	//
 	// Returns the outputs of the executed branch.
 	If(pred Value, trueBranch, falseBranch Function) ([]Value, error)
+
+	// CustomCall emits a backend-specific custom call to a target named at runtime (e.g. cuDNN
+	// flash attention, "__cudnn$fmhaSoftmax"), bypassing the normal op set. It is multi-output,
+	// returning one Value per spec.OutputShapes entry. spec.Target, spec.BackendConfig and the
+	// layout strings are XLA/StableHLO concepts; backends without custom-call support (e.g.
+	// SimpleGo) return ErrNotImplemented so callers can fall back.
+	CustomCall(spec CustomCallSpec, operands ...Value) ([]Value, error)
+}
+
+// CustomCallSpec describes a StableHLO custom_call for Function.CustomCall.
+type CustomCallSpec struct {
+	// Target is the call_target_name the backend dispatches on, e.g. "__cudnn$fmhaSoftmax".
+	Target string
+	// APIVersion is the XLA custom-call API version (2 = STATUS_RETURNING).
+	APIVersion int
+	// BackendConfig is the opaque per-target config (serialized proto or JSON), passed verbatim.
+	// "" omits it.
+	BackendConfig string
+	// OperandLayouts and ResultLayouts are pre-rendered MLIR array attributes, e.g.
+	// "[dense<[3, 2, 1, 0]> : tensor<4xindex>, ...]". "" omits them.
+	OperandLayouts string
+	ResultLayouts  string
+	// OutputShapes is one shape per result.
+	OutputShapes []shapes.Shape
 }

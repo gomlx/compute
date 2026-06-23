@@ -120,3 +120,6 @@ func (f Function) OptimizationBarrier(operands ...compute.Value) ([]compute.Valu
 	return nil, f.baseErrFn(compute.OpTypeOptimizationBarrier)
 }
 
+func (f Function) CustomCall(spec compute.CustomCallSpec, operands ...compute.Value) ([]compute.Value, error) {
+	return nil, errors.Wrapf(compute.ErrNotImplemented, "CustomCall(%q) not implemented by this backend", spec.Target)
+}
