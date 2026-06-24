@@ -43,9 +43,12 @@ func FusedScaledDotProductAttention(
 	query, key, value, mask compute.Value,
 	numHeads, numKVHeads int, axesLayout compute.AxesLayout,
 	scale float64, causal bool,
-	options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
-	return buildSDPANode(f, compute.OpTypeFusedScaledDotProductAttention, "FusedScaledDotProductAttention",
+	options *compute.ScaledDotProductAttentionConfig) (output, softmaxStats compute.Value, err error) {
+	// The Go backend has no fused flash backward, so it returns nil softmaxStats; its gradient
+	// goes through the decomposed path (FusedScaledDotProductAttentionVJP is ErrNotImplemented).
+	out, err := buildSDPANode(f, compute.OpTypeFusedScaledDotProductAttention, "FusedScaledDotProductAttention",
 		query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options)
+	return out, nil, err
 }
 
 func init() {

@@ -120,6 +120,13 @@ func (f Function) OptimizationBarrier(operands ...compute.Value) ([]compute.Valu
 	return nil, f.baseErrFn(compute.OpTypeOptimizationBarrier)
 }
 
-func (f Function) CustomCall(spec compute.CustomCallSpec, operands ...compute.Value) ([]compute.Value, error) {
-	return nil, errors.Wrapf(compute.ErrNotImplemented, "CustomCall(%q) not implemented by this backend", spec.Target)
+// FusedScaledDotProductAttention and its VJP have multi-value returns the notimplemented
+// generator does not template, so they are stubbed by hand.
+
+func (f Function) FusedScaledDotProductAttention(query, key, value, mask compute.Value, numHeads, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (output, softmaxStats compute.Value, err error) {
+	return nil, nil, f.baseErrFn(compute.OpTypeFusedScaledDotProductAttention)
+}
+
+func (f Function) FusedScaledDotProductAttentionVJP(query, key, value, mask compute.Value, numHeads, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig, output, softmaxStats, dOutput compute.Value) (dQuery, dKey, dValue compute.Value, err error) {
+	return nil, nil, nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttentionVJP not implemented by this backend")
 }

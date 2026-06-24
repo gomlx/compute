@@ -310,14 +310,37 @@ type FusedOps interface {
 	//     this method when both are needed. Backends may assume they won't both be set.
 	//   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
 	//
-	// Output: same shape as query.
+	// Outputs:
+	//   - output: same shape as query.
+	//   - softmaxStats: optional (may be nil). When the backend supports a fused backward
+	//     (FusedScaledDotProductAttentionVJP), it returns the per-row softmax statistics
+	//     (log-sum-exp), shape [batch, numHeads, seqLen] f32, which the VJP needs. Backends
+	//     without a fused backward return nil here and ErrNotImplemented from the VJP, so the
+	//     caller differentiates the decomposed attention instead.
 	FusedScaledDotProductAttention(
 		query, key, value, mask Value,
 		numHeads, numKVHeads int,
 		axesLayout AxesLayout,
 		scale float64,
 		causal bool,
-		options *ScaledDotProductAttentionConfig) (Value, error)
+		options *ScaledDotProductAttentionConfig) (output, softmaxStats Value, err error)
+
+	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
+	// FusedScaledDotProductAttention given the forward output, the softmaxStats it returned, and
+	// the output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
+	// the same values passed to the forward call.
+	//
+	// Backends that return non-nil softmaxStats from the forward and implement a fused backward
+	// (e.g. the cuDNN flash backward) implement this. Others return ErrNotImplemented so the caller
+	// falls back to differentiating the decomposed attention.
+	FusedScaledDotProductAttentionVJP(
+		query, key, value, mask Value,
+		numHeads, numKVHeads int,
+		axesLayout AxesLayout,
+		scale float64,
+		causal bool,
+		options *ScaledDotProductAttentionConfig,
+		output, softmaxStats, dOutput Value) (dQuery, dKey, dValue Value, err error)
 
 	// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
 	// with on-the-fly dequantization.

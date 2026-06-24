@@ -365,37 +365,6 @@ func (f Function) FusedQuantizedDense(x compute.Value, weights compute.Value, bi
 	return nil, f.baseErrFn(compute.OpTypeFusedQuantizedDense)
 }
 
-// FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
-//
-// output = softmax(query @ key^T * scale + mask) @ value, computed per-head with GQA support.
-//
-// Inputs:
-//   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
-//     For AxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
-//     key/value [batch, numKVHeads, kvLen, headDim].
-//     For AxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
-//     key/value [batch, kvLen, numKVHeads, headDim].
-//   - mask: [seqLen, kvLen] (seqLen is the query sequence length): optional (can be nil) mask
-//     that can be either boolean or additive (any dtype other than Bool). See also causal below.
-//     Boolean mask: true = attend, false = ignore.
-//     Float/additive mask: added to scores before softmax.
-//     Must be broadcastable to the score tensor shape.
-//
-// Parameters:
-//   - numHeads: number of query attention heads
-//   - numKVHeads: number of key/value attention heads (for GQA; numHeads must be divisible by numKVHeads)
-//   - axesLayout: determines the axis ordering of query/key/value tensors
-//   - scale: scaling factor applied to query @ key^T (typically 1/sqrt(headDim))
-//   - causal: if true, apply causal (lower-triangular) mask. Callers (e.g. attention.Core)
-//     treat causal and mask as mutually exclusive, folding causal into the mask before calling
-//     this method when both are needed. Backends may assume they won't both be set.
-//   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
-//
-// Output: same shape as query.
-func (f Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
-	return nil, f.baseErrFn(compute.OpTypeFusedScaledDotProductAttention)
-}
-
 // FusedSoftmax computes softmax along the specified axis.
 //
 // Note: unlike the generic softmax in GoMLX's graph package, the fused
