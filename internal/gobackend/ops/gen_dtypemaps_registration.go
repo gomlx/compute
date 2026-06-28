@@ -41,10 +41,6 @@ func init() {
 	argMinMaxCopyIntsDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, buildArgMinMaxCopyIntsFn[uint8])
 
 	// DTypeMap: argMinMaxDTypeMap
-	argMinMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execArgMinMaxGenericHalf[bfloat16.BFloat16])
-	argMinMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execArgMinMaxGenericHalf[float16.Float16])
-
-	// DTypeMap: argMinMaxDTypeMap
 	argMinMaxDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execArgMinMaxGeneric[float32])
 	argMinMaxDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execArgMinMaxGeneric[float64])
 	argMinMaxDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execArgMinMaxGeneric[int16])
@@ -55,6 +51,10 @@ func init() {
 	argMinMaxDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execArgMinMaxGeneric[uint32])
 	argMinMaxDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execArgMinMaxGeneric[uint64])
 	argMinMaxDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execArgMinMaxGeneric[uint8])
+
+	// DTypeMap: argMinMaxDTypeMap
+	argMinMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execArgMinMaxGenericHalf[bfloat16.BFloat16])
+	argMinMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execArgMinMaxGenericHalf[float16.Float16])
 
 	// DTypeMap: broadcastInDimDTypeMap
 	broadcastInDimDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[bfloat16.BFloat16])
@@ -108,10 +108,6 @@ func init() {
 	combineSumDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, combineForScatterSumGeneric[uint8])
 
 	// DTypeMap: convDTypeMap
-	convDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvHalf[bfloat16.BFloat16])
-	convDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvHalf[float16.Float16])
-
-	// DTypeMap: convDTypeMap
 	convDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execConvGeneric[float32])
 	convDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execConvGeneric[float64])
 	convDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execConvGeneric[int16])
@@ -123,9 +119,9 @@ func init() {
 	convDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execConvGeneric[uint64])
 	convDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execConvGeneric[uint8])
 
-	// DTypeMap: convNoDilationDTypeMap
-	convNoDilationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvNoDilationHalf[bfloat16.BFloat16])
-	convNoDilationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvNoDilationHalf[float16.Float16])
+	// DTypeMap: convDTypeMap
+	convDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvHalf[bfloat16.BFloat16])
+	convDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvHalf[float16.Float16])
 
 	// DTypeMap: convNoDilationDTypeMap
 	convNoDilationDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execConvNoDilationGeneric[float32])
@@ -138,6 +134,10 @@ func init() {
 	convNoDilationDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint32])
 	convNoDilationDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint64])
 	convNoDilationDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execConvNoDilationGeneric[uint8])
+
+	// DTypeMap: convNoDilationDTypeMap
+	convNoDilationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvNoDilationHalf[bfloat16.BFloat16])
+	convNoDilationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvNoDilationHalf[float16.Float16])
 
 	// DTypeMap: dereferenceIntsDTypeMap
 	dereferenceIntsDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, dereferenceIntsGeneric[int16])
@@ -250,10 +250,6 @@ func init() {
 	reduceSumDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execReduceSumGeneric[uint8])
 
 	// DTypeMap: reduceWindowMaxDTypeMap
-	reduceWindowMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnHalf[float16.Float16])
-
-	// DTypeMap: reduceWindowMaxDTypeMap
 	reduceWindowMaxDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFn[float32])
 	reduceWindowMaxDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFn[float64])
 	reduceWindowMaxDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFn[int16])
@@ -265,9 +261,9 @@ func init() {
 	reduceWindowMaxDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFn[uint64])
 	reduceWindowMaxDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFn[uint8])
 
-	// DTypeMap: reduceWindowMinDTypeMap
-	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[float16.Float16])
+	// DTypeMap: reduceWindowMaxDTypeMap
+	reduceWindowMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowMinDTypeMap
 	reduceWindowMinDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[float32])
@@ -281,9 +277,9 @@ func init() {
 	reduceWindowMinDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[uint64])
 	reduceWindowMinDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFn[uint8])
 
-	// DTypeMap: reduceWindowProductDTypeMap
-	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowProductDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[float16.Float16])
+	// DTypeMap: reduceWindowMinDTypeMap
+	reduceWindowMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowProductDTypeMap
 	reduceWindowProductDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[float32])
@@ -297,9 +293,9 @@ func init() {
 	reduceWindowProductDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[uint64])
 	reduceWindowProductDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFn[uint8])
 
-	// DTypeMap: reduceWindowSumDTypeMap
-	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[bfloat16.BFloat16])
-	reduceWindowSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[float16.Float16])
+	// DTypeMap: reduceWindowProductDTypeMap
+	reduceWindowProductDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowProductDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowProductBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: reduceWindowSumDTypeMap
 	reduceWindowSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[float32])
@@ -312,6 +308,10 @@ func init() {
 	reduceWindowSumDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[uint32])
 	reduceWindowSumDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[uint64])
 	reduceWindowSumDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFn[uint8])
+
+	// DTypeMap: reduceWindowSumDTypeMap
+	reduceWindowSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[bfloat16.BFloat16])
+	reduceWindowSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, reduceWindowSumBuildUpdateFnHalf[float16.Float16])
 
 	// DTypeMap: scatterDTypeMap
 	scatterDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execScatterGeneric[bfloat16.BFloat16])
@@ -401,6 +401,42 @@ func init() {
 	whereDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execWhereGeneric[uint32])
 	whereDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execWhereGeneric[uint64])
 	whereDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execWhereGeneric[uint8])
+
+	// DTypePairMap: ConvertDTypePairMap (bf16, ints,uints,floats)
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, float32])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, float64])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int16])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int32])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int64])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int8])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint16])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint32])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint64])
+	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint8])
+
+	// DTypePairMap: ConvertDTypePairMap (bool, ints,uints,floats)
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, float32])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, float64])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int16])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int32])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int64])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int8])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint16])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint32])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint64])
+	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint8])
+
+	// DTypePairMap: ConvertDTypePairMap (f16, ints,uints,floats)
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, float32])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, float64])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int16])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int32])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int64])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int8])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint16])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint32])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint64])
+	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint8])
 
 	// DTypePairMap: ConvertDTypePairMap (ints,uints,floats, ints,uints,floats)
 	ConvertDTypePairMap.Register(dtypes.Float32, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeGeneric[float32, float32])
@@ -516,42 +552,6 @@ func init() {
 	ConvertDTypePairMap.Register(dtypes.Uint64, dtypes.BFloat16, gobackend.PriorityGeneric, execConvertDTypeToBFloat16[uint64, bfloat16.BFloat16])
 	ConvertDTypePairMap.Register(dtypes.Uint8, dtypes.BFloat16, gobackend.PriorityGeneric, execConvertDTypeToBFloat16[uint8, bfloat16.BFloat16])
 
-	// DTypePairMap: ConvertDTypePairMap (bf16, ints,uints,floats)
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, float32])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, float64])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int16])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int32])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int64])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, int8])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint16])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint32])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint64])
-	ConvertDTypePairMap.Register(dtypes.BFloat16, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromBFloat16[bfloat16.BFloat16, uint8])
-
-	// DTypePairMap: ConvertDTypePairMap (ints,uints,floats, f16)
-	ConvertDTypePairMap.Register(dtypes.Float32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[float32, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Float64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[float64, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Int16, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int16, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Int32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int32, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Int64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int64, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Int8, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int8, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Uint16, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint16, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Uint32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint32, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Uint64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint64, float16.Float16])
-	ConvertDTypePairMap.Register(dtypes.Uint8, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint8, float16.Float16])
-
-	// DTypePairMap: ConvertDTypePairMap (f16, ints,uints,floats)
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, float32])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, float64])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int16])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int32])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int64])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, int8])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint16])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint32])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint64])
-	ConvertDTypePairMap.Register(dtypes.Float16, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromFloat16[float16.Float16, uint8])
-
 	// DTypePairMap: ConvertDTypePairMap (ints,uints,floats, bool)
 	ConvertDTypePairMap.Register(dtypes.Float32, dtypes.Bool, gobackend.PriorityGeneric, execConvertDTypeToBool[float32, bool])
 	ConvertDTypePairMap.Register(dtypes.Float64, dtypes.Bool, gobackend.PriorityGeneric, execConvertDTypeToBool[float64, bool])
@@ -564,16 +564,16 @@ func init() {
 	ConvertDTypePairMap.Register(dtypes.Uint64, dtypes.Bool, gobackend.PriorityGeneric, execConvertDTypeToBool[uint64, bool])
 	ConvertDTypePairMap.Register(dtypes.Uint8, dtypes.Bool, gobackend.PriorityGeneric, execConvertDTypeToBool[uint8, bool])
 
-	// DTypePairMap: ConvertDTypePairMap (bool, ints,uints,floats)
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Float32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, float32])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Float64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, float64])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int16, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int16])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int32])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int64])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Int8, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, int8])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint16, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint16])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint32, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint32])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint64, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint64])
-	ConvertDTypePairMap.Register(dtypes.Bool, dtypes.Uint8, gobackend.PriorityGeneric, execConvertDTypeFromBool[bool, uint8])
+	// DTypePairMap: ConvertDTypePairMap (ints,uints,floats, f16)
+	ConvertDTypePairMap.Register(dtypes.Float32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[float32, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Float64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[float64, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Int16, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int16, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Int32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int32, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Int64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int64, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Int8, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[int8, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Uint16, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint16, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Uint32, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint32, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Uint64, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint64, float16.Float16])
+	ConvertDTypePairMap.Register(dtypes.Uint8, dtypes.Float16, gobackend.PriorityGeneric, execConvertDTypeToFloat16[uint8, float16.Float16])
 
 }
