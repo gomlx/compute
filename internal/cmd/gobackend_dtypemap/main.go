@@ -174,16 +174,31 @@ func parseFiles(dir string) (Data, error) {
 	}
 
 	var d Data
-	for pkgName, pkg := range pkgs {
+	pkgNames := make([]string, 0, len(pkgs))
+	for pkgName := range pkgs {
+		pkgNames = append(pkgNames, pkgName)
+	}
+	slices.Sort(pkgNames)
+
+	for _, pkgName := range pkgNames {
 		if strings.HasSuffix(pkgName, "_test") {
 			continue
 		}
+		pkg := pkgs[pkgName]
 		d.Package = pkgName
 		if pkgName != "gobackend" {
 			d.ImportGobackend = true
 			d.PriorityPrefix = "gobackend."
 		}
-		for _, file := range pkg.Files {
+
+		fileNames := make([]string, 0, len(pkg.Files))
+		for fileName := range pkg.Files {
+			fileNames = append(fileNames, fileName)
+		}
+		slices.Sort(fileNames)
+
+		for _, fileName := range fileNames {
+			file := pkg.Files[fileName]
 			for _, decl := range file.Decls {
 				genDecl, ok := decl.(*ast.GenDecl)
 				if !ok || genDecl.Tok != token.VAR {
@@ -271,10 +286,16 @@ func main() {
 
 	// Deterministic order for generated code.
 	slices.SortFunc(data.Maps, func(a, b MapInfo) int {
-		return strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName))
+		if cmp := strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName)); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Generic, b.Generic)
 	})
 	slices.SortFunc(data.PairMaps, func(a, b MapPairInfo) int {
-		return strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName))
+		if cmp := strings.Compare(strings.ToUpper(a.MapName), strings.ToUpper(b.MapName)); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Generic, b.Generic)
 	})
 
 	registerTemplate := template.Must(
