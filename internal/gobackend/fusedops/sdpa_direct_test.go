@@ -55,3 +55,51 @@ func TestSDPADirect_ConfigFieldsCompile(t *testing.T) {
 	}
 	_ = math.Exp // keep math imported for later tasks in this file
 }
+
+func TestSDPADirect_WithSeqLens(t *testing.T) {
+	b := newGoBackend(t)
+	// batch=1, 1 head, seqLen=2 queries, kvLen=2 keys. KeyValueSeqLen=1 means
+	// only key 0 is valid; the padding mask must match a materialized mask
+	// that allows only key 0. QuerySeqLen=2 (both queries valid).
+	q := [][][][]float32{{{{1}, {1}}}}   // [1,1,2,1]
+	k := [][][][]float32{{{{1}, {1}}}}   // [1,1,2,1]
+	v := [][][][]float32{{{{10}, {20}}}} // [1,1,2,1]
+	qLen := []int32{2}
+	kvLen := []int32{1}
+	got, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA with seqlens failed: %+v", err)
+	}
+	// Decomposed reference: only key0 valid -> every query attends to key0 only -> output 10.
+	want := [][][][]float32{{{{10}, {10}}}}
+	if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+		t.Errorf("SDPA seqlens padding mask mismatch:\n%s", diff)
+	}
+}
+
+func TestSDPADirect_WithSeqLensCausal(t *testing.T) {
+	b := newGoBackend(t)
+	// causal + KeyValueSeqLen=2 (no key padding) reduces to plain causal.
+	// QuerySeqLen=2. query0 sees key0 only (causal) -> 10; query1 sees key0,key1 -> 15.
+	q := [][][][]float32{{{{1}, {1}}}} // [1,1,2,1]
+	k := [][][][]float32{{{{1}, {1}}}}
+	v := [][][][]float32{{{{10}, {20}}}}
+	qLen := []int32{2}
+	kvLen := []int32{2}
+	got, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA with seqlens+causal failed: %+v", err)
+	}
+	want := [][][][]float32{{{{10}, {15}}}}
+	if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+		t.Errorf("SDPA seqlens+causal mismatch:\n%s", diff)
+	}
+}

@@ -67,6 +67,8 @@ type nodeScaledDotProductAttention struct {
 	axesLayout compute.AxesLayout
 	scale      float64
 	causal     bool
+	hasMask    bool
+	hasSeqLens bool
 	options    *compute.ScaledDotProductAttentionConfig
 }
 
@@ -74,6 +76,7 @@ func (d *nodeScaledDotProductAttention) EqualNodeData(other gobackend.NodeDataCo
 	o := other.(*nodeScaledDotProductAttention)
 	return d.numHeads == o.numHeads && d.numKVHeads == o.numKVHeads &&
 		d.axesLayout == o.axesLayout && d.scale == o.scale && d.causal == o.causal &&
+		d.hasMask == o.hasMask && d.hasSeqLens == o.hasSeqLens &&
 		d.equalOptions(o)
 }
 
@@ -101,6 +104,15 @@ func buildSDPANode(
 	if mask != nil {
 		values = append(values, mask)
 	}
+
+	if options != nil && (options.QuerySeqLen != nil) != (options.KeyValueSeqLen != nil) {
+		return nil, errors.Errorf("%s: QuerySeqLen and KeyValueSeqLen must both be set or both nil", opName)
+	}
+	hasSeqLens := options != nil && options.QuerySeqLen != nil && options.KeyValueSeqLen != nil
+	if hasSeqLens {
+		values = append(values, options.QuerySeqLen, options.KeyValueSeqLen)
+	}
+
 	inputs, err := f.VerifyAndCastValues(opName, values...)
 	if err != nil {
 		return nil, err
@@ -114,7 +126,12 @@ func buildSDPANode(
 		return nil, errors.Errorf("%s: numHeads (%d) must be positive and divisible by numKVHeads (%d)", opName, numHeads, numKVHeads)
 	}
 
-	data := &nodeScaledDotProductAttention{numHeads: numHeads, numKVHeads: numKVHeads, axesLayout: axesLayout, scale: scale, causal: causal, options: options}
+	data := &nodeScaledDotProductAttention{
+		numHeads: numHeads, numKVHeads: numKVHeads, axesLayout: axesLayout,
+		scale: scale, causal: causal,
+		hasMask: mask != nil, hasSeqLens: hasSeqLens,
+		options: options,
+	}
 	node, _ := f.GetOrCreateNode(opType, qNode.Shape.Clone(), inputs, data)
 	return node, nil
 }
@@ -134,10 +151,20 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 	query := inputs[0]
 	key := inputs[1]
 	value := inputs[2]
+	next := 3
 	var mask *gobackend.Buffer
-	if len(inputs) > 3 {
-		mask = inputs[3]
+	if data.hasMask {
+		mask = inputs[next]
+		next++
 	}
+	var querySeqLen, keyValueSeqLen []int32
+	if data.hasSeqLens {
+		querySeqLen = inputs[next].Flat.([]int32)
+		next++
+		keyValueSeqLen = inputs[next].Flat.([]int32)
+		next++
+	}
+	_ = next
 
 	// For rank-4 BSHD masks [batch, seq, heads, kvLen], transpose to BHSD so that
 	// per-head mask data is contiguous [seqLen, kvLen]. The mask is small (no headDim
@@ -163,9 +190,9 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 
 	switch query.RawShape.DType {
 	case dtypes.Float32:
-		sdpaMultiHeadGeneric[float32](query, key, value, mask, output, data, maskBatchStride, maskHeadStride)
+		sdpaMultiHeadGeneric[float32](query, key, value, mask, output, data, maskBatchStride, maskHeadStride, querySeqLen, keyValueSeqLen)
 	case dtypes.Float64:
-		sdpaMultiHeadGeneric[float64](query, key, value, mask, output, data, maskBatchStride, maskHeadStride)
+		sdpaMultiHeadGeneric[float64](query, key, value, mask, output, data, maskBatchStride, maskHeadStride, querySeqLen, keyValueSeqLen)
 	default:
 		return nil, errors.Errorf("FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
 	}
@@ -249,19 +276,33 @@ func sdpaGeneric[T float32 | float64](
 	scores []T,
 	output []T,
 	groupSize, seqLen, kvLen, headDim int, scale T, causal bool,
+	qLimit, kvLimit int,
 ) {
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
 		for qIdx := range seqLen {
+			if qIdx >= qLimit {
+				// Padded query position: emit a zero output row, skip attention.
+				// Local padBase has its own scope, distinct from the outBase the
+				// accumulation loop declares later, so there is no redeclaration.
+				padBase := gQOff + qIdx*qSeqStride
+				for d := range headDim {
+					output[padBase+d] = 0
+				}
+				continue
+			}
 			rowMax := T(math.Inf(-1))
 			qBase := gQOff + qIdx*qSeqStride
 			scoreIdxBase := (gIdx*seqLen + qIdx) * kvLen
 			maskIdxBase := gMaskOff + qIdx*kvLen
 
 			kvLenUnmasked := kvLen
+			if kvLimit < kvLenUnmasked {
+				kvLenUnmasked = kvLimit
+			}
 			if causal {
-				kvLenUnmasked = min(kvLen, qIdx+1)
+				kvLenUnmasked = min(kvLenUnmasked, qIdx+1)
 			}
 
 			// Zero out scores to prevent stale data from previous iterations
@@ -368,7 +409,7 @@ func sdpaGeneric[T float32 | float64](
 	}
 }
 
-func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *gobackend.Buffer, data *nodeScaledDotProductAttention, maskBatchStride, maskHeadStride int) {
+func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *gobackend.Buffer, data *nodeScaledDotProductAttention, maskBatchStride, maskHeadStride int, querySeqLen, keyValueSeqLen []int32) {
 	q := query.Flat.([]T)
 	k := key.Flat.([]T)
 	v := value.Flat.([]T)
@@ -426,6 +467,14 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 	scores := make([]T, groupSize*seqLen*kvLen)
 	maskSliceLen := seqLen * kvLen
 	for batchIdx := range batchSize {
+		qLimit := seqLen
+		kvLimit := kvLen
+		if len(querySeqLen) > 0 {
+			qLimit = int(querySeqLen[batchIdx])
+		}
+		if len(keyValueSeqLen) > 0 {
+			kvLimit = int(keyValueSeqLen[batchIdx])
+		}
 		for kvHeadIdx := range numKVHeads {
 			qOff := batchIdx*qBatchStride + kvHeadIdx*groupSize*qHeadStride
 			kvOff := batchIdx*kvBatchStride + kvHeadIdx*kvHeadStride
@@ -453,6 +502,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 				scores,
 				out,
 				groupSize, seqLen, kvLen, headDim, scale, causal,
+				qLimit, kvLimit,
 			)
 		}
 	}
