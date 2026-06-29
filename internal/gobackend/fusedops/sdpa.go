@@ -84,7 +84,10 @@ func (d *nodeScaledDotProductAttention) equalOptions(o *nodeScaledDotProductAtte
 	if d.options == nil || o.options == nil {
 		return false
 	}
-	return *d.options == *o.options
+	a, b := d.options, o.options
+	return a.QuantizedMatmuls == b.QuantizedMatmuls &&
+		a.QuerySeqLen == b.QuerySeqLen &&
+		a.KeyValueSeqLen == b.KeyValueSeqLen
 }
 
 // buildSDPANode builds the SDPA computation node.
