@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
 
@@ -101,5 +103,29 @@ func TestSDPADirect_WithSeqLensCausal(t *testing.T) {
 	want := [][][][]float32{{{{10}, {15}}}}
 	if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
 		t.Errorf("SDPA seqlens+causal mismatch:\n%s", diff)
+	}
+}
+
+func TestSDPADirect_FP8NotImplemented(t *testing.T) {
+	b := newGoBackend(t)
+	// The go backend rejects F8 parameters at creation, so feed F8 by converting
+	// a float32 param to F8E4M3FN inside the graph (verified path), then assert
+	// SDPA reports NotImplemented for the F8 dtype.
+	builder := b.Builder("fused_fp8_test")
+	mainFn := builder.Main()
+	p, err := mainFn.Parameter("q", shapes.Make(dtypes.Float32, 1, 1, 2, 1), nil)
+	if err != nil {
+		t.Fatalf("Parameter failed: %+v", err)
+	}
+	q8, err := mainFn.ConvertDType(p, dtypes.F8E4M3FN)
+	if err != nil {
+		t.Fatalf("ConvertDType to F8E4M3FN failed: %+v", err)
+	}
+	_, _, err = mainFn.FusedScaledDotProductAttention(q8, q8, q8, nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+	if err == nil {
+		t.Fatalf("SDPA with F8 input must return an error, got nil")
+	}
+	if !compute.IsNotImplemented(err) {
+		t.Errorf("SDPA with F8 input must return ErrNotImplemented, got: %+v", err)
 	}
 }

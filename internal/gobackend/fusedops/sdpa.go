@@ -122,6 +122,11 @@ func buildSDPANode(
 	if qNode.Shape.Rank() != 4 {
 		return nil, errors.Errorf("%s: query must have rank 4, got %d", opName, qNode.Shape.Rank())
 	}
+	switch qNode.Shape.DType {
+	case dtypes.F8E4M3FN, dtypes.F8E5M2:
+		return nil, errors.Wrapf(compute.ErrNotImplemented,
+			"%s: float8 input dtype %s is not implemented in the go backend", opName, qNode.Shape.DType)
+	}
 	if numHeads <= 0 || numKVHeads <= 0 || numHeads%numKVHeads != 0 {
 		return nil, errors.Errorf("%s: numHeads (%d) must be positive and divisible by numKVHeads (%d)", opName, numHeads, numKVHeads)
 	}
