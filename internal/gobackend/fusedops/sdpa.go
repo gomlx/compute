@@ -305,9 +305,9 @@ func sdpaGeneric[T float32 | float64](
 				kvLenUnmasked = min(kvLenUnmasked, qIdx+1)
 			}
 
-			// Zero out scores to prevent stale data from previous iterations
-			// when boolean mask or causal mask skips positions.
-			if causal || len(booleanMask) > 0 {
+			// Zero out scores so a future loop widening past kvLenUnmasked
+			// cannot read stale scores from a prior kvHead iteration.
+			if causal || len(booleanMask) > 0 || kvLimit < kvLen {
 				for i := scoreIdxBase; i < scoreIdxBase+kvLen; i++ {
 					scores[i] = 0
 				}
