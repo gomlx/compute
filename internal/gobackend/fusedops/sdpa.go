@@ -88,9 +88,10 @@ func (d *nodeScaledDotProductAttention) equalOptions(o *nodeScaledDotProductAtte
 		return false
 	}
 	a, b := d.options, o.options
-	return a.QuantizedMatmuls == b.QuantizedMatmuls &&
-		a.QuerySeqLen == b.QuerySeqLen &&
-		a.KeyValueSeqLen == b.KeyValueSeqLen
+	// QuerySeqLen and KeyValueSeqLen are Value (any) and may hold non-comparable types,
+	// so comparing them with == would panic. They are already passed as input operands
+	// in buildSDPANode, so node dedup via input identity covers them; skip here.
+	return a.QuantizedMatmuls == b.QuantizedMatmuls
 }
 
 // buildSDPANode builds the SDPA computation node.
@@ -164,9 +165,19 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 	}
 	var querySeqLen, keyValueSeqLen []int32
 	if data.hasSeqLens {
-		querySeqLen = inputs[next].Flat.([]int32)
+		batchSize := inputs[0].RawShape.Dimensions[0]
+		var ok bool
+		querySeqLen, ok = inputs[next].Flat.([]int32)
+		if !ok || len(querySeqLen) != batchSize {
+			return nil, errors.Errorf("FusedScaledDotProductAttention: QuerySeqLen must be int32 with length batch (%d), got type %T len %d",
+				batchSize, inputs[next].Flat, len(querySeqLen))
+		}
 		next++
-		keyValueSeqLen = inputs[next].Flat.([]int32)
+		keyValueSeqLen, ok = inputs[next].Flat.([]int32)
+		if !ok || len(keyValueSeqLen) != batchSize {
+			return nil, errors.Errorf("FusedScaledDotProductAttention: KeyValueSeqLen must be int32 with length batch (%d), got type %T len %d",
+				batchSize, inputs[next].Flat, len(keyValueSeqLen))
+		}
 		next++
 	}
 	_ = next
@@ -475,10 +486,10 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, output *
 		qLimit := seqLen
 		kvLimit := kvLen
 		if len(querySeqLen) > 0 {
-			qLimit = int(querySeqLen[batchIdx])
+			qLimit = max(0, min(int(querySeqLen[batchIdx]), seqLen))
 		}
 		if len(keyValueSeqLen) > 0 {
-			kvLimit = int(keyValueSeqLen[batchIdx])
+			kvLimit = max(0, min(int(keyValueSeqLen[batchIdx]), kvLen))
 		}
 		for kvHeadIdx := range numKVHeads {
 			qOff := batchIdx*qBatchStride + kvHeadIdx*groupSize*qHeadStride

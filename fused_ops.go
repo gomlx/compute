@@ -206,8 +206,12 @@ type Quantization struct {
 // ScaledDotProductAttentionConfig holds optional optimization hints and fused-attention
 // parameters for FusedScaledDotProductAttention.
 // A nil *ScaledDotProductAttentionConfig means "use defaults" (all optimizations disabled).
-// Backends that cannot honor a set field MUST return ErrNotImplemented so the caller
-// falls back to the decomposed path. nil/zero means "unused".
+// Correctness-affecting fields (Bias, QuerySeqLen, KeyValueSeqLen, dropout, etc.): backends
+// that cannot honor them MUST return ErrNotImplemented so the caller falls back to the
+// decomposed path.
+// Pure optimization hints (e.g. QuantizedMatmuls): backends that do not support them may
+// silently ignore them and compute a numerically equivalent result in float arithmetic.
+// nil/zero means "unused".
 type ScaledDotProductAttentionConfig struct {
 	// QuantizedMatmuls: if true, the backend may use dynamic per-head symmetric
 	// affine quantization (scale-only, no zero point) to convert float32 Q/K/V slices

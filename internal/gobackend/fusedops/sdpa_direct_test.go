@@ -106,6 +106,98 @@ func TestSDPADirect_WithSeqLensCausal(t *testing.T) {
 	}
 }
 
+// TestSDPADirect_OptionEqualityNoValuePanic verifies that equalOptions does not attempt
+// == comparison on Value-typed seqlen fields, which would panic for non-comparable types.
+func TestSDPADirect_OptionEqualityNoValuePanic(t *testing.T) {
+	// []int is not comparable; using it as a Value exercises the panic-free path.
+	nonComparable := []int{1, 2, 3}
+	a := &nodeScaledDotProductAttention{
+		options: &compute.ScaledDotProductAttentionConfig{
+			QuantizedMatmuls: false,
+			QuerySeqLen:      nonComparable,
+			KeyValueSeqLen:   nonComparable,
+		},
+	}
+	b := &nodeScaledDotProductAttention{
+		options: &compute.ScaledDotProductAttentionConfig{
+			QuantizedMatmuls: false,
+			QuerySeqLen:      nonComparable,
+			KeyValueSeqLen:   nonComparable,
+		},
+	}
+	// Must not panic.
+	if !a.EqualNodeData(b) {
+		t.Error("expected equal node data for matching configs")
+	}
+	b.options.QuantizedMatmuls = true
+	if a.EqualNodeData(b) {
+		t.Error("expected unequal node data when QuantizedMatmuls differs")
+	}
+}
+
+// TestSDPADirect_SeqLenWrongDtype verifies that passing a non-int32 seqlen tensor
+// returns an error rather than panicking.
+func TestSDPADirect_SeqLenWrongDtype(t *testing.T) {
+	b := newGoBackend(t)
+	q := [][][][]float32{{{{1}, {1}}}}
+	k := [][][][]float32{{{{1}, {1}}}}
+	v := [][][][]float32{{{{10}, {20}}}}
+	// int64 seqlen: valid value but wrong element type.
+	qLen := []int64{2}
+	kvLen := []int64{2}
+	_, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+		return out, err
+	})
+	if err == nil {
+		t.Fatal("expected error for wrong-dtype seqlen, got nil")
+	}
+}
+
+// TestSDPADirect_SeqLenClamped verifies that out-of-range seqlen values are clamped
+// to [0, dim] rather than producing negative loop counts or accessing out-of-bounds data.
+func TestSDPADirect_SeqLenClamped(t *testing.T) {
+	b := newGoBackend(t)
+	q := [][][][]float32{{{{1}, {1}}}}
+	k := [][][][]float32{{{{1}, {1}}}}
+	v := [][][][]float32{{{{10}, {20}}}}
+
+	// Negative seqlen: should behave as 0 valid positions (all-zero output).
+	qLenNeg := []int32{-5}
+	kvLenPos := []int32{2}
+	got, err := testutil.Exec1(b, []any{q, k, v, qLenNeg, kvLenPos}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA with negative qLen failed: %+v", err)
+	}
+	// qLimit clamped to 0: all positions padded -> all zeros.
+	want := [][][][]float32{{{{0}, {0}}}}
+	if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+		t.Errorf("negative qLen clamp: %s", diff)
+	}
+
+	// Too-large seqlen: should be clamped to actual dim (seqLen=2), no out-of-bounds.
+	qLenLarge := []int32{999}
+	kvLenLarge := []int32{999}
+	got2, err := testutil.Exec1(b, []any{q, k, v, qLenLarge, kvLenLarge}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA with too-large seqLen failed: %+v", err)
+	}
+	// With no causal and both seqlens clamped to 2, scores equal -> avg of values.
+	want2 := [][][][]float32{{{{15}, {15}}}}
+	if ok, diff := testutil.IsInDelta(want2, got2, 1e-5); !ok {
+		t.Errorf("too-large seqLen clamp: %s", diff)
+	}
+}
+
 func TestSDPADirect_FP8NotImplemented(t *testing.T) {
 	b := newGoBackend(t)
 	// The go backend rejects F8 parameters at creation, so feed F8 by converting
