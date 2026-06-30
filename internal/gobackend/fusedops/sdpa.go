@@ -136,6 +136,47 @@ func buildSDPANode(
 	if numHeads <= 0 || numKVHeads <= 0 || numHeads%numKVHeads != 0 {
 		return nil, errors.Errorf("%s: numHeads (%d) must be positive and divisible by numKVHeads (%d)", opName, numHeads, numKVHeads)
 	}
+	if hasBias {
+		// Bias input is the last appended value; resolve its node from inputs.
+		biasIdx := len(inputs) - 1
+		biasNode := inputs[biasIdx]
+		if !biasNode.Shape.DType.IsFloat() {
+			return nil, errors.Errorf("%s: bias must be a float dtype matching the compute dtype, got %s",
+				opName, biasNode.Shape.DType)
+		}
+		biasRank := biasNode.Shape.Rank()
+		if biasRank < 2 || biasRank > 4 {
+			return nil, errors.Errorf("%s: bias must have rank 2, 3, or 4, got rank %d", opName, biasRank)
+		}
+		// Score shape is [B, H, S, Skv]. Bias dims are right-aligned and each must be 1
+		// or equal to the corresponding score dim (standard broadcasting contract).
+		kNode := inputs[1]
+		var batchDim, numHeadsDim, seqDim, kvDim int
+		if axesLayout == compute.AxesLayoutBSHD {
+			batchDim = qNode.Shape.Dimensions[0]
+			numHeadsDim = numHeads
+			seqDim = qNode.Shape.Dimensions[1]
+			kvDim = kNode.Shape.Dimensions[1]
+		} else {
+			// BHSD: [batch, heads, seq, headDim]
+			batchDim = qNode.Shape.Dimensions[0]
+			numHeadsDim = numHeads
+			seqDim = qNode.Shape.Dimensions[2]
+			kvDim = kNode.Shape.Dimensions[2]
+		}
+		scoreDims := [4]int{batchDim, numHeadsDim, seqDim, kvDim}
+		biasDims := biasNode.Shape.Dimensions
+		// Right-align bias dims against score dims.
+		offset := 4 - biasRank
+		for i, bd := range biasDims {
+			sd := scoreDims[offset+i]
+			if bd != 1 && bd != sd {
+				return nil, errors.Errorf(
+					"%s: bias dim %d is %d, not broadcastable to score dim %d (score shape [%d,%d,%d,%d])",
+					opName, i, bd, sd, scoreDims[0], scoreDims[1], scoreDims[2], scoreDims[3])
+			}
+		}
+	}
 
 	data := &nodeScaledDotProductAttention{
 		numHeads: numHeads, numKVHeads: numKVHeads, axesLayout: axesLayout,
@@ -551,6 +592,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, bias, ou
 			var additiveBiasSlice []T
 			biasGroupStride := 0
 			if len(additiveBias) > 0 {
+				// *groupSize: bias is per-Q-head under GQA; first Q-head of this KV group starts at kvHeadIdx*groupSize.
 				biasOffset := batchIdx*biasBatchStride + kvHeadIdx*groupSize*biasHeadStride
 				biasEnd := biasOffset + maskSliceLen
 				if biasHeadStride > 0 && groupSize > 1 {
