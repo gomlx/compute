@@ -198,6 +198,71 @@ func TestSDPADirect_SeqLenClamped(t *testing.T) {
 	}
 }
 
+// TestSDPADirect_WithBias verifies that an additive attention-score bias shifts
+// softmax weights and produces an output that matches a decomposed reference.
+// Bias strongly favors key 1 so the test is sensitive to whether bias is applied.
+func TestSDPADirect_WithBias(t *testing.T) {
+	b := newGoBackend(t)
+	// batch=1, 1 head, seqLen=2 queries, kvLen=2 keys, headDim=1.
+	// Raw scores (scale=1): q@k^T = [[1,1],[1,1]].
+	// Bias [1,1,2,2]: [[[[-10, 10], [-10, 10]]]] strongly favors key 1.
+	// After bias: scores = [[-9, 11], [-9, 11]].
+	// softmax([-9,11]) ≈ [~0, ~1] -> output ≈ v[1] = 20 for both queries.
+	q := [][][][]float32{{{{1}, {1}}}}        // [1,1,2,1]
+	k := [][][][]float32{{{{1}, {1}}}}        // [1,1,2,1]
+	v := [][][][]float32{{{{10}, {20}}}}      // [1,1,2,1]
+	bias := [][][][]float32{{{{-10, 10}, {-10, 10}}}} // [1,1,2,2] batch,head,seqLen,kvLen
+	got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA with bias failed: %+v", err)
+	}
+	// softmax([-9,11]) ≈ [sigma_neg, sigma_pos]; sigma_neg ≈ 1/(1+e^20) ≈ 2e-9.
+	// output ≈ 20 - tiny correction; tolerance 0.01 covers the residual.
+	softmaxPos := float32(1.0 / (1.0 + math.Exp(-20)))
+	softmaxNeg := 1 - softmaxPos
+	wantVal := float32(softmaxNeg*10 + softmaxPos*20)
+	want := [][][][]float32{{{{wantVal}, {wantVal}}}}
+	if ok, diff := testutil.IsInDelta(want, got, 0.01); !ok {
+		t.Errorf("SDPA with bias mismatch:\n%s", diff)
+	}
+}
+
+// TestSDPADirect_BiasWithCausal verifies that additive bias and causal mask combine
+// correctly: causal zeroes future positions, bias shifts scores in valid positions.
+func TestSDPADirect_BiasWithCausal(t *testing.T) {
+	b := newGoBackend(t)
+	// batch=1, 1 head, seqLen=2, kvLen=2, headDim=1, scale=1.
+	// Bias [1,1,2,2]: [[[[ 0, -100], [0, 10]]]] — large negative on (q0,k1) and large positive on (q1,k1).
+	// Causal: q0 sees only k0 (k1 is future); q1 sees k0 and k1.
+	// q0: causal masks k1 -> attends only k0 -> output = v[0] = 10 (bias on k1 irrelevant).
+	// q1: scores = [1+0, 1+10] = [1, 11]; softmax([1,11]) -> large weight on k1 -> output ≈ 20.
+	q := [][][][]float32{{{{1}, {1}}}}    // [1,1,2,1]
+	k := [][][][]float32{{{{1}, {1}}}}    // [1,1,2,1]
+	v := [][][][]float32{{{{10}, {20}}}}  // [1,1,2,1]
+	bias := [][][][]float32{{{{0, -100}, {0, 10}}}} // [1,1,2,2]
+	got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, cfg)
+		return out, err
+	})
+	if err != nil {
+		t.Fatalf("SDPA bias+causal failed: %+v", err)
+	}
+	// q0: causal -> only k0 -> output=10.
+	// q1: softmax([1+0, 1+10]) = softmax([1,11]) -> weight on k1 ≈ 1/(1+e^-10) ≈ ~1.
+	softmaxQ1K1 := float32(1.0 / (1.0 + math.Exp(-10)))
+	softmaxQ1K0 := 1 - softmaxQ1K1
+	wantQ1 := float32(softmaxQ1K0*10 + softmaxQ1K1*20)
+	want := [][][][]float32{{{{10}, {wantQ1}}}}
+	if ok, diff := testutil.IsInDelta(want, got, 0.01); !ok {
+		t.Errorf("SDPA bias+causal mismatch:\n%s", diff)
+	}
+}
+
 func TestSDPADirect_FP8NotImplemented(t *testing.T) {
 	b := newGoBackend(t)
 	// The go backend rejects F8 parameters at creation, so feed F8 by converting

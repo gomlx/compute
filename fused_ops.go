@@ -228,6 +228,10 @@ type ScaledDotProductAttentionConfig struct {
 	// (padding mask) instead of a materialized [S,Skv] mask. Combined with causal=true
 	// this is a padding-causal mask. nil = unused.
 	QuerySeqLen, KeyValueSeqLen Value
+
+	// Bias is an optional additive attention-score bias broadcast to [B,H,S,Skv]
+	// (ALiBi / relative-position). NOT the Q/K/V projection bias. nil = unused.
+	Bias Value
 }
 
 // ActivationType specifies the activation function for fused operations.
