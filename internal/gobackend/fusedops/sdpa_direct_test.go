@@ -263,6 +263,40 @@ func TestSDPADirect_BiasWithCausal(t *testing.T) {
 	}
 }
 
+// TestSDPADirect_BiasValidation verifies that a malformed bias operand returns a clear
+// validation error from buildSDPANode rather than silently panicking in the kernel.
+func TestSDPADirect_BiasValidation(t *testing.T) {
+	b := newGoBackend(t)
+	q := [][][][]float32{{{{1}, {1}}}} // [1,1,2,1] BHSD: batch=1 head=1 seq=2 dim=1
+	k := [][][][]float32{{{{1}, {1}}}} // [1,1,2,1] kv=2
+	v := [][][][]float32{{{{10}, {20}}}}
+
+	cases := []struct {
+		name string
+		bias any
+	}{
+		// rank-1 bias: invalid (must be rank 2-4).
+		{"rank1", []float32{1, 2}},
+		// rank-2 bias [2,3]: second dim (3) != kvLen (2) and != 1, not broadcastable.
+		{"rank2_bad_kvdim", [][]float32{{1, 2, 3}, {1, 2, 3}}},
+		// rank-4 bias [1,1,3,2]: seqLen dim 3 != score seqLen 2 and != 1.
+		{"rank4_bad_seqdim", [][][][]float32{{{{1, 2}, {1, 2}, {1, 2}}}}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := testutil.Exec1(b, []any{q, k, v, tc.bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+				return out, err
+			})
+			if err == nil {
+				t.Fatalf("case %s: expected bias validation error, got nil", tc.name)
+			}
+		})
+	}
+}
+
 func TestSDPADirect_FP8NotImplemented(t *testing.T) {
 	b := newGoBackend(t)
 	// The go backend rejects F8 parameters at creation, so feed F8 by converting
