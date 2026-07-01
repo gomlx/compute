@@ -203,8 +203,15 @@ type Quantization struct {
 	GGMLType GGMLQuantType
 }
 
-// ScaledDotProductAttentionConfig holds optional optimization hints for FusedScaledDotProductAttention.
+// ScaledDotProductAttentionConfig holds optional optimization hints and fused-attention
+// parameters for FusedScaledDotProductAttention.
 // A nil *ScaledDotProductAttentionConfig means "use defaults" (all optimizations disabled).
+// Correctness-affecting fields (Bias, QuerySeqLen, KeyValueSeqLen, dropout, etc.): backends
+// that cannot honor them MUST return ErrNotImplemented so the caller falls back to the
+// decomposed path.
+// Pure optimization hints (e.g. QuantizedMatmuls): backends that do not support them may
+// silently ignore them and compute a numerically equivalent result in float arithmetic.
+// nil/zero means "unused".
 type ScaledDotProductAttentionConfig struct {
 	// QuantizedMatmuls: if true, the backend may use dynamic per-head symmetric
 	// affine quantization (scale-only, no zero point) to convert float32 Q/K/V slices
@@ -215,6 +222,12 @@ type ScaledDotProductAttentionConfig struct {
 	// (e.g. ARM SDOT/UDOT, x86 VNNI). Backends that do not support quantized matmuls
 	// ignore this flag and use float arithmetic.
 	QuantizedMatmuls bool
+
+	// QuerySeqLen, KeyValueSeqLen are optional per-batch actual sequence lengths
+	// (int32 tensors, shape [B]). When set, the backend masks by sequence length
+	// (padding mask) instead of a materialized [S,Skv] mask. Combined with causal=true
+	// this is a padding-causal mask. nil = unused.
+	QuerySeqLen, KeyValueSeqLen Value
 }
 
 // ActivationType specifies the activation function for fused operations.
