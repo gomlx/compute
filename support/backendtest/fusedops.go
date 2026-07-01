@@ -215,7 +215,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}, {1}}}}
 			v := [][][][]float32{{{{10}, {20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				return out, err
 			})
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
@@ -231,7 +232,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}}, {{1}}}}
 			v := [][][][]float32{{{{10}}, {{20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				return out, err
 			})
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
@@ -248,7 +250,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			v := [][][][]float32{{{{10}, {20}}}} // [1,1,2,1]
 			mask := [][]bool{{true, false}}      // [1, 2]
 			got, err := testutil.Exec1(b, []any{q, k, v, mask}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedScaledDotProductAttention(params[0], params[1], params[2], params[3], 1, 1, compute.AxesLayoutBHSD, 1.0, false, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], params[3], 1, 1, compute.AxesLayoutBHSD, 1.0, false, nil)
+				return out, err
 			})
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
@@ -264,7 +267,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}, {1}}}}
 			v := [][][][]float32{{{{10}, {20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, &compute.ScaledDotProductAttentionConfig{QuantizedMatmuls: true})
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, &compute.ScaledDotProductAttentionConfig{QuantizedMatmuls: true})
+				return out, err
 			})
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
