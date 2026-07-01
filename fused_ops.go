@@ -329,27 +329,29 @@ type FusedOps interface {
 	//
 	// Outputs:
 	//   - output: same shape as query.
-	//   - softmaxStats: optional (may be nil). When the backend supports a fused backward
-	//     (FusedScaledDotProductAttentionVJP), it returns the per-row softmax statistics
-	//     (log-sum-exp), shape [batch, numHeads, seqLen] f32, which the VJP needs. Backends
-	//     without a fused backward return nil here and ErrNotImplemented from the VJP, so the
-	//     caller differentiates the decomposed attention instead.
+	//   - statesForVJP: optional (may be nil/empty). When the backend supports a fused backward
+	//     (FusedScaledDotProductAttentionVJP), it returns whatever backward-pass state that
+	//     backend's fused VJP needs (e.g. per-row softmax log-sum-exp stats, and/or a workspace
+	//     tensor for cuDNN FMHA variants that require one). The set and shapes of these values are
+	//     backend-specific; the VJP is only ever called with the exact slice this call returned.
+	//     Backends without a fused backward return nil/empty here and ErrNotImplemented from the
+	//     VJP, so the caller differentiates the decomposed attention instead.
 	FusedScaledDotProductAttention(
 		query, key, value, mask Value,
 		numHeads, numKVHeads int,
 		axesLayout AxesLayout,
 		scale float64,
 		causal bool,
-		options *ScaledDotProductAttentionConfig) (output, softmaxStats Value, err error)
+		options *ScaledDotProductAttentionConfig) (output Value, statesForVJP []Value, err error)
 
 	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
-	// FusedScaledDotProductAttention given the forward output, the softmaxStats it returned, and
+	// FusedScaledDotProductAttention given the forward output, the statesForVJP it returned, and
 	// the output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
 	// the same values passed to the forward call.
 	//
-	// Backends that return non-nil softmaxStats from the forward and implement a fused backward
-	// (e.g. the cuDNN flash backward) implement this. Others return ErrNotImplemented so the caller
-	// falls back to differentiating the decomposed attention.
+	// Backends that return non-nil/non-empty statesForVJP from the forward and implement a fused
+	// backward (e.g. the cuDNN flash backward) implement this. Others return ErrNotImplemented so
+	// the caller falls back to differentiating the decomposed attention.
 	FusedScaledDotProductAttentionVJP(
 		query, key, value, mask Value,
 		numHeads, numKVHeads int,
@@ -357,7 +359,7 @@ type FusedOps interface {
 		scale float64,
 		causal bool,
 		options *ScaledDotProductAttentionConfig,
-		output, softmaxStats, dOutput Value) (dQuery, dKey, dValue Value, err error)
+		output Value, statesForVJP []Value, dOutput Value) (dQuery, dKey, dValue Value, err error)
 
 	// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
 	// with on-the-fly dequantization.
