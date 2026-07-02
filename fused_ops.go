@@ -203,8 +203,15 @@ type Quantization struct {
 	GGMLType GGMLQuantType
 }
 
-// ScaledDotProductAttentionConfig holds optional optimization hints for FusedScaledDotProductAttention.
+// ScaledDotProductAttentionConfig holds optional optimization hints and fused-attention
+// parameters for FusedScaledDotProductAttention.
 // A nil *ScaledDotProductAttentionConfig means "use defaults" (all optimizations disabled).
+// Correctness-affecting fields (Bias, QuerySeqLen, KeyValueSeqLen, dropout, etc.): backends
+// that cannot honor them MUST return ErrNotImplemented so the caller falls back to the
+// decomposed path.
+// Pure optimization hints (e.g. QuantizedMatmuls): backends that do not support them may
+// silently ignore them and compute a numerically equivalent result in float arithmetic.
+// nil/zero means "unused".
 type ScaledDotProductAttentionConfig struct {
 	// QuantizedMatmuls: if true, the backend may use dynamic per-head symmetric
 	// affine quantization (scale-only, no zero point) to convert float32 Q/K/V slices
@@ -215,6 +222,16 @@ type ScaledDotProductAttentionConfig struct {
 	// (e.g. ARM SDOT/UDOT, x86 VNNI). Backends that do not support quantized matmuls
 	// ignore this flag and use float arithmetic.
 	QuantizedMatmuls bool
+
+	// QuerySeqLen, KeyValueSeqLen are optional per-batch actual sequence lengths
+	// (int32 tensors, shape [B]). When set, the backend masks by sequence length
+	// (padding mask) instead of a materialized [S,Skv] mask. Combined with causal=true
+	// this is a padding-causal mask. nil = unused.
+	QuerySeqLen, KeyValueSeqLen Value
+
+	// Bias is an optional additive attention-score bias broadcast to [B,H,S,Skv]
+	// (ALiBi / relative-position). NOT the Q/K/V projection bias. nil = unused.
+	Bias Value
 }
 
 // ActivationType specifies the activation function for fused operations.
@@ -310,14 +327,39 @@ type FusedOps interface {
 	//     this method when both are needed. Backends may assume they won't both be set.
 	//   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
 	//
-	// Output: same shape as query.
+	// Outputs:
+	//   - output: same shape as query.
+	//   - statesForVJP: optional (may be nil/empty). When the backend supports a fused backward
+	//     (FusedScaledDotProductAttentionVJP), it returns whatever backward-pass state that
+	//     backend's fused VJP needs (e.g. per-row softmax log-sum-exp stats, and/or a workspace
+	//     tensor for cuDNN FMHA variants that require one). The set and shapes of these values are
+	//     backend-specific; the VJP is only ever called with the exact slice this call returned.
+	//     Backends without a fused backward return nil/empty here and ErrNotImplemented from the
+	//     VJP, so the caller differentiates the decomposed attention instead.
 	FusedScaledDotProductAttention(
 		query, key, value, mask Value,
 		numHeads, numKVHeads int,
 		axesLayout AxesLayout,
 		scale float64,
 		causal bool,
-		options *ScaledDotProductAttentionConfig) (Value, error)
+		options *ScaledDotProductAttentionConfig) (output Value, statesForVJP []Value, err error)
+
+	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
+	// FusedScaledDotProductAttention given the forward output, the statesForVJP it returned, and
+	// the output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
+	// the same values passed to the forward call.
+	//
+	// Backends that return non-nil/non-empty statesForVJP from the forward and implement a fused
+	// backward (e.g. the cuDNN flash backward) implement this. Others return ErrNotImplemented so
+	// the caller falls back to differentiating the decomposed attention.
+	FusedScaledDotProductAttentionVJP(
+		query, key, value, mask Value,
+		numHeads, numKVHeads int,
+		axesLayout AxesLayout,
+		scale float64,
+		causal bool,
+		options *ScaledDotProductAttentionConfig,
+		output Value, statesForVJP []Value, dOutput Value) (dQuery, dKey, dValue Value, err error)
 
 	// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
 	// with on-the-fly dequantization.

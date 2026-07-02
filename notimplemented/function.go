@@ -120,3 +120,13 @@ func (f Function) OptimizationBarrier(operands ...compute.Value) ([]compute.Valu
 	return nil, f.baseErrFn(compute.OpTypeOptimizationBarrier)
 }
 
+// FusedScaledDotProductAttention and its VJP have multi-value returns the notimplemented
+// generator does not template, so they are stubbed by hand.
+
+func (f Function) FusedScaledDotProductAttention(query, key, value, mask compute.Value, numHeads, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
+	return nil, nil, f.baseErrFn(compute.OpTypeFusedScaledDotProductAttention)
+}
+
+func (f Function) FusedScaledDotProductAttentionVJP(query, key, value, mask compute.Value, numHeads, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery, dKey, dValue compute.Value, err error) {
+	return nil, nil, nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttentionVJP not implemented by this backend")
+}

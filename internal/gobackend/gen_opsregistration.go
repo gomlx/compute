@@ -345,12 +345,20 @@ func (f *Function) FusedQuantizedDense(x compute.Value, weights compute.Value, b
 	return RegisterFusedQuantizedDense.Fn(f, x, weights, bias, weightsQuantization, activation)
 }
 
-func (f *Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
+func (f *Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
 	if RegisterFusedScaledDotProductAttention.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedScaledDotProductAttention(query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options)
 	}
 	return RegisterFusedScaledDotProductAttention.Fn(f, query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options)
+}
+
+func (f *Function) FusedScaledDotProductAttentionVJP(query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error) {
+	if RegisterFusedScaledDotProductAttentionVJP.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedScaledDotProductAttentionVJP(query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options, output, statesForVJP, dOutput)
+	}
+	return RegisterFusedScaledDotProductAttentionVJP.Fn(f, query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options, output, statesForVJP, dOutput)
 }
 
 func (f *Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error) {
@@ -1041,8 +1049,11 @@ var (
 	RegisterFusedQuantizedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error)]{
 		Method: "FusedQuantizedDense",
 	}
-	RegisterFusedScaledDotProductAttention = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (compute.Value, error)]{
+	RegisterFusedScaledDotProductAttention = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error)]{
 		Method: "FusedScaledDotProductAttention",
+	}
+	RegisterFusedScaledDotProductAttentionVJP = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, mask compute.Value, numHeads int, numKVHeads int, axesLayout compute.AxesLayout, scale float64, causal bool, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error)]{
+		Method: "FusedScaledDotProductAttentionVJP",
 	}
 	RegisterFusedSoftmax = OpHandlerRegistration[func(f *Function, x compute.Value, axis int) (compute.Value, error)]{
 		Method: "FusedSoftmax",
