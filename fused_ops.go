@@ -346,7 +346,7 @@ type FusedOps interface {
 
 	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
 	// FusedScaledDotProductAttention given the forward output, the statesForVJP it returned, and
-	// the output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
+	// the adjoint output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
 	// the same values passed to the forward call.
 	//
 	// Backends that return non-nil/non-empty statesForVJP from the forward and implement a fused
