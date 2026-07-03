@@ -218,6 +218,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
 				return out, err
 			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
 			}
@@ -235,6 +238,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
 				return out, err
 			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
 			}
@@ -253,6 +259,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], params[3], 1, 1, compute.AxesLayoutBHSD, 1.0, false, nil)
 				return out, err
 			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
 			}
@@ -270,6 +279,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, &compute.ScaledDotProductAttentionConfig{QuantizedMatmuls: true})
 				return out, err
 			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
 			if err != nil {
 				t.Fatalf("SDPA failed: %+v", err)
 			}
@@ -291,6 +303,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 		gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
 			return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], 2, 1)
 		})
+		if err != nil && compute.IsNotImplemented(err) {
+			t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+		}
 		if err != nil {
 			t.Fatalf("QKV Projection failed: %+v", err)
 		}
