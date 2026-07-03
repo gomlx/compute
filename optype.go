@@ -151,6 +151,7 @@ const (
 	OpTypeFusedGelu
 	OpTypeFusedDense
 	OpTypeFusedScaledDotProductAttention
+	OpTypeFusedScaledDotProductAttentionVJP
 	OpTypeFusedAttentionQKVProjection
 	OpTypeFusedQuantizedDense
 	OpTypeQuantizedEmbeddingLookup
