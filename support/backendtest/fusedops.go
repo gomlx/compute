@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 	"github.com/gomlx/compute/support/xslices"
@@ -232,9 +233,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
-		// For cuDNN hidden dim must be multiple of 8.
 		t.Run("BHSD_Causal_BF16", func(t *testing.T) {
 			bf16 := bfloat16.FromFloat32
+			// For cuDNN hidden dim must be multiple of 8.
 			onesX8 := xslices.SliceWithValue(8, bf16(1))
 			tensX8 := xslices.SliceWithValue(8, bf16(10))
 			twentyX8 := xslices.SliceWithValue(8, bf16(20))
@@ -253,6 +254,31 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 			fifteenX8 := xslices.SliceWithValue(8, bf16(15))
 			want := [][][][]bfloat16.BFloat16{{{tensX8, fifteenX8}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA causal mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BHSD_Causal_F16", func(t *testing.T) {
+			f16 := float16.FromFloat32
+			onesX8 := xslices.SliceWithValue(8, f16(1))
+			tensX8 := xslices.SliceWithValue(8, f16(10))
+			twentyX8 := xslices.SliceWithValue(8, f16(20))
+			q := [][][][]float16.Float16{{{onesX8, onesX8}}} // [1,1,2,8]
+			k := [][][][]float16.Float16{{{onesX8, onesX8}}}
+			v := [][][][]float16.Float16{{{tensX8, twentyX8}}} // [1, 1, 2, 8]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX8 := xslices.SliceWithValue(8, f16(15))
+			want := [][][][]float16.Float16{{{tensX8, fifteenX8}}}
 			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
 				t.Errorf("SDPA causal mismatch:\n%s", diff)
 			}
@@ -278,9 +304,9 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
-		// For cuDNN hidden dim must be multiple of 8.
 		t.Run("BSHD_Causal_BF16", func(t *testing.T) {
 			bf16 := bfloat16.FromFloat32
+			// For cuDNN hidden dim must be multiple of 8.
 			onesX8 := xslices.SliceWithValue(8, bf16(1))
 			tensX8 := xslices.SliceWithValue(8, bf16(10))
 			twentyX8 := xslices.SliceWithValue(8, bf16(20))
@@ -299,6 +325,32 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 			fifteenX8 := xslices.SliceWithValue(8, bf16(15))
 			want := [][][][]bfloat16.BFloat16{{{tensX8}, {fifteenX8}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA causal mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BSHD_Causal_F16", func(t *testing.T) {
+			f16 := float16.FromFloat32
+			// For cuDNN hidden dim must be multiple of 8.
+			onesX8 := xslices.SliceWithValue(8, f16(1))
+			tensX8 := xslices.SliceWithValue(8, f16(10))
+			twentyX8 := xslices.SliceWithValue(8, f16(20))
+			q := [][][][]float16.Float16{{{onesX8}, {onesX8}}} // [1,2,1,8]
+			k := [][][][]float16.Float16{{{onesX8}, {onesX8}}}
+			v := [][][][]float16.Float16{{{tensX8}, {twentyX8}}} // [1, 2, 1, 8]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX8 := xslices.SliceWithValue(8, f16(15))
+			want := [][][][]float16.Float16{{{tensX8}, {fifteenX8}}}
 			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
 				t.Errorf("SDPA causal mismatch:\n%s", diff)
 			}
