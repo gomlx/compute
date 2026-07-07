@@ -396,6 +396,102 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("SDPA quantized matmuls mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("Bias", func(t *testing.T) {
+			// f32 bias contract. Skips on cuDNN backends (XLA lowers f32 attention to the decomposed
+			// path; the fused flash kernels are half-precision only on every NVIDIA arch), so this runs
+			// on a future f32-capable fused backend (CPU SIMD, ONNXRuntime CPU). The bf16 fused path is
+			// exercised by Bias_BF16 below.
+			// Additive attention-score bias shifts softmax weights; bias strongly favors key 1.
+			// Raw scores (scale=1): q@k^T = [[1,1],[1,1]]. Bias [[-10,10],[-10,10]] -> scores [[-9,11],[-9,11]].
+			// softmax([-9,11]) ~ [~0,~1] -> output ~ v[1] = 20 for both queries.
+			q := [][][][]float32{{{{1}, {1}}}}                // [1,1,2,1]
+			k := [][][][]float32{{{{1}, {1}}}}                // [1,1,2,1]
+			v := [][][][]float32{{{{10}, {20}}}}              // [1,1,2,1]
+			bias := [][][][]float32{{{{-10, 10}, {-10, 10}}}} // [1,1,2,2] batch,head,seqLen,kvLen
+			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA with bias failed: %+v", err)
+			}
+			// softmax([-9,11]) ~ [sigma_neg, sigma_pos]; sigma_neg ~ 1/(1+e^20) ~ 2e-9.
+			softmaxPos := float32(1.0 / (1.0 + math.Exp(-20)))
+			softmaxNeg := 1 - softmaxPos
+			wantVal := float32(softmaxNeg*10 + softmaxPos*20)
+			want := [][][][]float32{{{{wantVal}, {wantVal}}}}
+			if ok, diff := testutil.IsInDelta(want, got, 0.01); !ok {
+				t.Errorf("SDPA with bias mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BiasWithCausal", func(t *testing.T) {
+			// Additive bias and causal mask combine: causal zeroes future positions, bias
+			// shifts scores in valid positions. Bias [[0,-100],[0,10]].
+			// q0: causal masks k1 -> attends only k0 -> output = v[0] = 10.
+			// q1: scores = [1+0, 1+10] = [1,11]; softmax([1,11]) -> weight on k1 ~ 1 -> output ~ 20.
+			q := [][][][]float32{{{{1}, {1}}}}              // [1,1,2,1]
+			k := [][][][]float32{{{{1}, {1}}}}              // [1,1,2,1]
+			v := [][][][]float32{{{{10}, {20}}}}            // [1,1,2,1]
+			bias := [][][][]float32{{{{0, -100}, {0, 10}}}} // [1,1,2,2]
+			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, cfg)
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA bias+causal failed: %+v", err)
+			}
+			// q0: causal -> only k0 -> output=10. q1: softmax([1,11]) -> weight on k1 ~ 1/(1+e^-10).
+			softmaxQ1K1 := float32(1.0 / (1.0 + math.Exp(-10)))
+			softmaxQ1K0 := 1 - softmaxQ1K1
+			wantQ1 := float32(softmaxQ1K0*10 + softmaxQ1K1*20)
+			want := [][][][]float32{{{{10}, {wantQ1}}}}
+			if ok, diff := testutil.IsInDelta(want, got, 0.01); !ok {
+				t.Errorf("SDPA bias+causal mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Bias_BF16", func(t *testing.T) {
+			// bf16 additive bias through the fused path. D=8 (cuDNN needs hidden dim multiple of 8).
+			// q=k=ones so raw scores are equal; a strong bias toward key 1 pulls both query outputs to
+			// v[1]=20. This is the half-precision path cuDNN actually fuses; the f32 cases above skip here.
+			bf16 := bfloat16.FromFloat32
+			onesX8 := xslices.SliceWithValue(8, bf16(1))
+			tensX8 := xslices.SliceWithValue(8, bf16(10))
+			twentyX8 := xslices.SliceWithValue(8, bf16(20))
+			q := [][][][]bfloat16.BFloat16{{{onesX8, onesX8}}}   // [1,1,2,8]
+			k := [][][][]bfloat16.BFloat16{{{onesX8, onesX8}}}   // [1,1,2,8]
+			v := [][][][]bfloat16.BFloat16{{{tensX8, twentyX8}}} // [1,1,2,8]
+			// Bias [1,1,2,2]: both queries strongly favor key 1.
+			bias := [][][][]bfloat16.BFloat16{{{
+				{bf16(-100), bf16(100)},
+				{bf16(-100), bf16(100)},
+			}}}
+			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA bf16 bias failed: %+v", err)
+			}
+			want := [][][][]bfloat16.BFloat16{{{twentyX8, twentyX8}}}
+			if ok, diff := testutil.IsInDelta(want, got, 0.05); !ok {
+				t.Errorf("SDPA bf16 bias mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("FusedAttentionQKVProjection", func(t *testing.T) {
