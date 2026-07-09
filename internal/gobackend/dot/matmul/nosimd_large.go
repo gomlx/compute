@@ -4,13 +4,14 @@ import (
 	"sync"
 
 	//alt:half "github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 )
 
 // largeNoSIMDGeneric implements a "packing" version of the non-SIMD matrix, and parallelizes if
 // possible.
-func largeNoSIMDGeneric[I, O NumberNonHalf]( //alt:generic
+func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	//alt:half func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf](
 	backend *gobackend.Backend,
 	layout dot.Layout,
@@ -119,7 +120,7 @@ func largeNoSIMDGeneric[I, O NumberNonHalf]( //alt:generic
 // Here there are no batch dimensions anymore, it only applies to a slice of one matrix (2D).
 //
 // packedLHS and packedRHS must be pre-allocated buffers of appropriate size.
-func largeNoSIMDMatrixSlice[I, O NumberNonHalf]( //alt:generic
+func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 	//alt:half func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf](
 	layout dot.Layout,
 	lhsMatrix, rhsMatrix []I, outputMatrix []O,
@@ -184,7 +185,7 @@ func largeNoSIMDMatrixSlice[I, O NumberNonHalf]( //alt:generic
 // finally it writes the results to output.
 //
 // It assumes lhsL1KernelRows=4 and rhsL1KernelCols=4.
-func largeNoSIMDPanel[I, O NumberNonHalf]( //alt:generic
+func largeNoSIMDPanel[I, O gotype.NumericNotComplex]( //alt:generic
 	//alt:half func largeNoSIMDPanelHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf](
 	packedLHS, packedRHS []I,
 	packedOutput []O,

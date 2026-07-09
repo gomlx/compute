@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/support/envutil"
 )
@@ -88,7 +89,7 @@ func avx2ReduceSumFloat64x4(x4 archsimd.Float64x4) float64 {
 }
 
 // avx2PackRHSNonTransposed packs a slice of the RHS matrix into a panel composed of "strips".
-func avx2PackRHSNonTransposed[T Number](
+func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 	rhs, panel []T,
 	rhsRowStart, rhsColStart, rhsCols,
 	contractingRows, copyCols, kernelCols int) {
@@ -194,7 +195,7 @@ func avx2PackRHSNonTransposed[T Number](
 }
 
 // avx2PackLHSKernelRows4 packs a block of size [copyRows, contractingCols] from the lhs matrix into a panel.
-func avx2PackLHSKernelRows4[T Number](
+func avx2PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	lhs, panel []T,
 	lhsRowStart, lhsColStart, lhsCols,
 	copyRows, contractingCols, kernelRows int) {

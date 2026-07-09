@@ -6,20 +6,19 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/support/testutil"
 )
 
 // PackLHSFn is the signature for LHS packing functions.
-type PackLHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int)
+type PackLHSFn[T gotype.ScalarNotComplex] func(src, dst []T, srcRowStart, srcColStart, srcRowStride, lhsRows, contractingCols, lhsL1KernelRows int)
 
 // PackRHSFn is the signature for RHS packing functions.
-type PackRHSFn[T Number] func(src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
+type PackRHSFn[T gotype.ScalarNotComplex] func(src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int)
 
 // ApplyPackedOutputFn is the signature for functions that apply packed output to the final output.
-type ApplyPackedOutputFn[T Number] func(
+type ApplyPackedOutputFn[T gotype.ScalarNotComplex] func(
 	packedOutput, output []T,
 	isFirstContractingPanel bool,
 	packedOutputRowStride int,
@@ -28,7 +27,7 @@ type ApplyPackedOutputFn[T Number] func(
 	height, width int,
 )
 
-func runPackLHSTests[T NumberNonHalf](t *testing.T, packLHSFn PackLHSFn[T], lhsL1KernelRows int) {
+func runPackLHSTests[T gotype.NumericNotComplex](t *testing.T, packLHSFn PackLHSFn[T], lhsL1KernelRows int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -114,7 +113,7 @@ func runPackLHSTestsHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecis
 	}
 }
 
-func runPackRHSTests[T NumberNonHalf](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
+func runPackRHSTests[T gotype.NumericNotComplex](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -194,7 +193,7 @@ func runPackRHSTestsHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecis
 	}
 }
 
-func runApplyPackedOutputTests[T NumberNonHalf](t *testing.T, applyFn ApplyPackedOutputFn[T]) {
+func runApplyPackedOutputTests[T gotype.NumericNotComplex](t *testing.T, applyFn ApplyPackedOutputFn[T]) {
 	height := 3
 	width := 5
 	packedOutputRowStride := 8
@@ -241,7 +240,7 @@ func TestUnsafe(t *testing.T) {
 	}
 }
 
-func runBenchmarkPackLHS[T Number](b *testing.B, name string, packFn PackLHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelRows int) {
+func runBenchmarkPackLHS[T gotype.ScalarNotComplex](b *testing.B, name string, packFn PackLHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelRows int) {
 	src := make([]T, totalRows*totalCols)
 	for i := range src {
 		src[i] = T(i)

@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/support/envutil"
 )
@@ -102,12 +103,12 @@ func avx512ReduceSumFloat64x8(x8 archsimd.Float64x8) float64 {
 }
 
 // castToArray16 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
-func castToArray16[T Number](ptr *T) *[16]T {
+func castToArray16[T gotype.ScalarNotComplex](ptr *T) *[16]T {
 	return (*[16]T)(unsafe.Pointer(ptr))
 }
 
 // castToArray8 is just a shortcut to help cast a pointer to a pointer to an array used by SIMD loaders.
-func castToArray8[T Number](ptr *T) *[8]T {
+func castToArray8[T gotype.ScalarNotComplex](ptr *T) *[8]T {
 	return (*[8]T)(unsafe.Pointer(ptr))
 }
 
@@ -253,7 +254,7 @@ func avx512ApplyPackedOutputFloat64(
 //   - kernelCols: we are packing in strips shaped [contractingRows, kernelCols] size (optimal for our algorithm).
 //     For the AVX512 implementation kernelCols * sizeOf(T) (bytes) must be multiple of 64 bytes,
 //     it will panic otherwise.
-func avx512PackRHSNonTransposed[T Number](
+func avx512PackRHSNonTransposed[T gotype.ScalarNotComplex](
 	rhs, panel []T,
 	rhsRowStart, rhsColStart, rhsCols,
 	contractingRows, copyCols, kernelCols int) {
@@ -386,7 +387,7 @@ func avx512PackRHSNonTransposed[T Number](
 //   - contractingCols: number of columns to copy to the panel.
 //   - kernelRows: we are packing in strips of kernelRows size.
 //     For this AVX512 implementation kernelRows must be 4, it will panic otherwise.
-func avx512PackLHSKernelRows4[T Number](
+func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	lhs, panel []T,
 	lhsRowStart, lhsColStart, lhsCols,
 	copyRows, contractingCols, kernelRows int) {

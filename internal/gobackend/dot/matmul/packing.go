@@ -2,7 +2,11 @@
 
 package matmul
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"github.com/gomlx/compute/dtypes/gotype"
+)
 
 // packRHS packs a slice of size [contractingRows, rhsCols] block from RHS into
 // the panel reshaped+transposed to [ceil(rhsCols/RHSL1KernelCols), contractingRows, RHSL1KernelCols],
@@ -17,7 +21,7 @@ import "unsafe"
 //   - rhsCols: number of columns to be copied in the panel (excluding padding), will be padded to a RHSL1KernelCols
 //     multiple with zeros.
 //   - RHSL1KernelCols: number of columns in each "L1 kernel"
-func packRHS[T Number](src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+func packRHS[T gotype.ScalarNotComplex](src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
 	dstIdx := 0
 	// Iterate over strips of width nr
 	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
@@ -66,7 +70,7 @@ func packRHS[T Number](src, dst []T, srcRowStart, srcColStart, srcStrideCol, con
 //   - contractingCols: number of columns to copy to the panel.
 //   - kernelRows: we are packing in strips of kernelRows size.
 //     For this AVX512 implementation kernelRows must be a multiple of 4, it will panic otherwise.
-func packLHS[T Number](
+func packLHS[T gotype.ScalarNotComplex](
 	lhs, panel []T,
 	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
 	panelIdx := 0
@@ -115,7 +119,7 @@ func packLHS[T Number](
 
 // unsafePackLHS is identical to packLHS but eliminates boundary checks by using unsafe pointers.
 // This has a 10% improvement gain over packLHS.
-func unsafePackLHS[T Number](
+func unsafePackLHS[T gotype.ScalarNotComplex](
 	lhs, panel []T,
 	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
 	if copyRows == 0 || contractingCols == 0 {

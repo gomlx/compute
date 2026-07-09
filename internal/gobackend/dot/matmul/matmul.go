@@ -4,7 +4,6 @@
 package matmul
 
 import (
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/support/envutil"
 	"k8s.io/klog/v2"
@@ -52,17 +51,6 @@ const (
 	PriorityAVX2   = gobackend.PriorityArch
 	PriorityAVX512 = gobackend.PriorityArch + 1
 )
-
-// NumberNonHalf includes the numbers we support in this package, excluding half-precision floats
-//
-// Notice it doesn't include the complex numbers. They will need to be supported as a separate class.
-type NumberNonHalf = dtypes.NumberNotComplex
-
-// Number includes all the numbers we support in this package: integers, floats, and half-precision floats.
-// But this doesn't define the half-precision methods.
-type Number interface {
-	NumberNonHalf | dtypes.NumberHalfPrecision
-}
 
 func init() {
 	avx512Enabled, err := envutil.ReadBool(envutil.SIMD_AVX512_Env, true)
