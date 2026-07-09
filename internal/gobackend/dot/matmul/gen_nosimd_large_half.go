@@ -7,7 +7,6 @@ package matmul
 import (
 	"sync"
 
-	"github.com/gomlx/compute/dtypes" //alt:half
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
@@ -17,7 +16,7 @@ import (
 // possible.
 //
 //alt:generic func largeNoSIMDGeneric[I, O gotype.NumericNotComplex](
-func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
+func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotComplex]( //alt:half
 	backend *gobackend.Backend,
 	layout dot.Layout,
 	lhs, rhs []I,
@@ -127,7 +126,7 @@ func largeNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt
 // packedLHS and packedRHS must be pre-allocated buffers of appropriate size.
 //
 //alt:generic func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex](
-func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
+func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotComplex]( //alt:half
 	layout dot.Layout,
 	lhsMatrix, rhsMatrix []I, outputMatrix []O,
 	lhsCrossSize, rhsCrossSize, contractingSize int,
@@ -193,7 +192,7 @@ func largeNoSIMDMatrixSliceHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonH
 // It assumes lhsL1KernelRows=4 and rhsL1KernelCols=4.
 //
 //alt:generic func largeNoSIMDPanel[I, O gotype.NumericNotComplex](
-func largeNoSIMDPanelHalfPrecision[I dtypes.HalfPrecision[I], O NumberNonHalf]( //alt:half
+func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotComplex]( //alt:half
 	packedLHS, packedRHS []I,
 	packedOutput []O,
 	lhsPanelRows, rhsPanelCols int,

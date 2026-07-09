@@ -8,12 +8,17 @@ import (
 	"k8s.io/klog/v2"
 )
 
+// Make sure the imports are valid in the alternate branches.
+var _ = dtypes.Bool
+
+type _ = gotype.Numeric
+
 // noSIMDRouter implements a non-SIMD matrix multiplication for the non-transposed layout.
 //
 // It is used when no SIMD-optimized implementation is available, or for non-supported
 // dtype configuration.
 func noSIMDRouter[I, O gotype.NumericNotComplex]( //alt:generic
-	//alt:half func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex](
+	//alt:half func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotComplex](
 	backend *gobackend.Backend,
 	layout dot.Layout,
 	lhs, rhs []I,

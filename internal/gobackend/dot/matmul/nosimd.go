@@ -247,7 +247,7 @@ func feedWorkItems(
 }
 
 // applyPackedOutput applies the computed packedOutput to the final output.
-func noSIMDApplyPackedOutput[T gotype.NumericNotComplex](
+func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
 	packedOutput, output []T,
 	isFirstContractingPanel bool,
 	packedOutputRowStride int,

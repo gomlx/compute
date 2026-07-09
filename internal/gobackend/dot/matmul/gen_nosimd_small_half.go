@@ -11,7 +11,6 @@ package matmul
 import (
 	"unsafe"
 
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 )
@@ -23,7 +22,7 @@ import (
 // Use -tags=no_unsafe to force the safe version (in file nosimd_small_safe.go)
 //
 //alt:generic func smallNoSIMDGenericParallel[I, O gotype.NumericNotComplex](
-func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+func smallNoSIMDHalfPrecisionParallel[I gotype.HalfPrecision[I], O gotype.NumericNotComplex]( //alt:half
 	backend *gobackend.Backend,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
@@ -62,7 +61,7 @@ func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.Number
 // It is used for small inputs, where packing the data is not worth the cost.
 //
 //alt:generic func smallNoSIMDGeneric[I, O gotype.NumericNotComplex](
-func smallNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
+func smallNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.NumericNotComplex]( //alt:half
 	lhs, rhs []I,
 	batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O) {

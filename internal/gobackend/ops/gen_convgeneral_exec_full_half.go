@@ -7,7 +7,7 @@
 package ops
 
 import (
-	"github.com/gomlx/compute/dtypes" //alt:half|full_half
+	"github.com/gomlx/compute/dtypes/gotype" //alt:half|full_half
 	//alt:base|full "github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -30,9 +30,9 @@ import (
 // execConvHalf: supports BFloat16 and Float16, fast but no dilation or grouping handling.
 //
 //alt:base func execConvNoDilationGeneric[T gobackend.PODNumericConstraints](plan convGeneralExecPlan) error {
-//alt:half  func execConvNoDilationHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error {
+//alt:half  func execConvNoDilationHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error {
 //alt:full  func execConvGeneric[T gobackend.PODNumericConstraints](plan convGeneralExecPlan) error {
-func execConvHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error { //alt:full_half
+func execConvHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](plan convGeneralExecPlan) error { //alt:full_half
 
 	// Shortcuts (and maybe move these values to the stack for faster access)
 	//alt:base|full inputFlat := plan.inputFlat.([]T)
