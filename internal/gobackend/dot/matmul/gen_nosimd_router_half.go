@@ -6,6 +6,7 @@ package matmul
 
 import (
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"k8s.io/klog/v2"
@@ -16,7 +17,7 @@ import (
 // It is used when no SIMD-optimized implementation is available, or for non-supported
 // dtype configuration.
 //
-//alt:generic func noSIMDRouter[I, O dtypes.NumberNotComplex](
+//alt:generic func noSIMDRouter[I, O gotype.NumericNotComplex](
 func noSIMDHalfPrecisionRouter[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex]( //alt:half
 	backend *gobackend.Backend,
 	layout dot.Layout,

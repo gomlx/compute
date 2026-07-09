@@ -317,7 +317,7 @@ import (
 
 type _ = bfloat16.BFloat16
 type _ = float16.Float16
-type _ = dtypes.Number
+type _ = dtypes.Bool
 
 func init() {
 {{$prefix := .PriorityPrefix}}
