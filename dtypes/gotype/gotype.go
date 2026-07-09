@@ -14,14 +14,6 @@ type Supported interface {
 	bool | AnyHalfPrecision | Numeric
 }
 
-// Numeric constraints to the native Go numeric types.
-// It includes complex numbers.
-//
-// It doesn't include half-precision types float16.Float16 or bfloat16.BFloat16 because they are not native number types.
-type Numeric interface {
-	float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64 | complex64 | complex128
-}
-
 // Integer constraints to Go native integer types.
 type Integer interface {
 	int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64
@@ -37,16 +29,32 @@ type Unsigned interface {
 	uint8 | uint16 | uint32 | uint64
 }
 
+// Float constraints to continuous native Go numeric types.
+// It doesn't include complex numbers or half-precision types (non-native).
+type Float interface {
+	float32 | float64
+}
+
 // NumericNotComplex constraints to native Go numeric types excluding complex numbers.
 //
 // See also Numeric.
 type NumericNotComplex interface {
-	float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64
+	Float | Signed | Unsigned
 }
 
 // Complex constraints to the Go complex types.
 type Complex interface {
 	complex64 | complex128
+}
+
+// Numeric constraints to the native Go numeric types.
+// It includes complex numbers.
+//
+// See NumericNotComplex to exclude complex numerics, and Scalar to include non-native types (the half-precision floats).
+//
+// It doesn't include half-precision types float16.Float16 or bfloat16.BFloat16 because they are not native number types.
+type Numeric interface {
+	NumericNotComplex | Complex
 }
 
 // AnyHalfPrecision constraints to the compute's representations for half-precision floating point numbers.
@@ -57,10 +65,17 @@ type AnyHalfPrecision interface {
 	float16.Float16 | bfloat16.BFloat16
 }
 
-// Float constraints to continuous native Go numeric types.
-// It doesn't include complex numbers or half-precision types (non-native).
-type Float interface {
-	float32 | float64
+// Scalar constraints to any of the scalar types supported by compute (integers, floats, half-precision floats,
+// and complex numbers).
+//
+// See ScalarNotComplex to exclude the complex types, and Numeric to exclude non-native types (the half-precision floats).
+type Scalar interface {
+	Numeric | AnyHalfPrecision
+}
+
+// ScalarNotComplex constraints to scalar types excluding complex numbers.
+type ScalarNotComplex interface {
+	NumericNotComplex | AnyHalfPrecision
 }
 
 // HalfPrecision is an interface that represents half-precision floating point numbers,
