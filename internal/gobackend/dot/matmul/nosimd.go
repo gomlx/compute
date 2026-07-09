@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/shapes"
@@ -149,7 +150,7 @@ func registerNoSIMD(forTests bool) {
 }
 
 // GetBuffer simplifies the process of getting a buffer from a backend and getting the flat slice.
-func GetBuffer[T dtypes.Supported](backend *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
+func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
 	var err error
 	ref, err = backend.GetBuffer(shapes.Make(dtypes.FromGenericsType[T](), length))
 	if err != nil {

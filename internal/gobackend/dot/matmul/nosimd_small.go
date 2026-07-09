@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -16,7 +17,7 @@ import (
 //
 // This is the "unsafe" version using pointers. It is faster because it bysteps unnecessary bound-checks.
 // Use -tags=no_unsafe to force the safe version (in file nosimd_small_safe.go)
-func smallNoSIMDGenericParallel[I, O dtypes.NumberNotComplex]( //alt:generic
+func smallNoSIMDGenericParallel[I, O gotype.NumericNotComplex]( //alt:generic
 	//alt:half func smallNoSIMDHalfPrecisionParallel[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex](
 	backend *gobackend.Backend,
 	lhs, rhs []I,
@@ -54,7 +55,7 @@ func smallNoSIMDGenericParallel[I, O dtypes.NumberNotComplex]( //alt:generic
 // output: shape [batchSize, lhsCrossSize, rhsCrossSize].
 //
 // It is used for small inputs, where packing the data is not worth the cost.
-func smallNoSIMDGeneric[I, O dtypes.NumberNotComplex]( //alt:generic
+func smallNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	//alt:half func smallNoSIMDHalfPrecision[I dtypes.HalfPrecision[I], O dtypes.NumberNotComplex](
 	lhs, rhs []I,
 	batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize int,

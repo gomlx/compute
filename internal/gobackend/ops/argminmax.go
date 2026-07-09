@@ -3,6 +3,7 @@ package ops
 import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -187,7 +188,7 @@ func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 }
 
 // TODO: handle the error condition
-func execArgMinMaxGenericHalf[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](
+func execArgMinMaxGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	backend *gobackend.Backend, operand *gobackend.Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
 	operandFlat := operand.Flat.([]T)

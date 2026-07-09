@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/pkg/errors"
 )
@@ -124,7 +125,7 @@ func geluApproxChunk[T float32 | float64](input, output []T) {
 	}
 }
 
-func geluChunkHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](input, output []T) {
+func geluChunkHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](input, output []T) {
 	sqrt2Inv := float32(1.0 / math.Sqrt(2.0))
 	for i, x := range input {
 		xf := x.Float32()
@@ -133,7 +134,7 @@ func geluChunkHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr
 	}
 }
 
-func geluApproxChunkHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](input, output []T) {
+func geluApproxChunkHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](input, output []T) {
 	sqrt2ByPi := float32(math.Sqrt(2.0 / math.Pi))
 	for i, x := range input {
 		xf := x.Float32()

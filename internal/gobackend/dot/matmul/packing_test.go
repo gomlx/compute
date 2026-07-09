@@ -8,6 +8,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/support/testutil"
 )
 
@@ -70,7 +71,7 @@ func runPackLHSTests[T NumberNonHalf](t *testing.T, packLHSFn PackLHSFn[T], lhsL
 	}
 }
 
-func runPackLHSTestsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](
+func runPackLHSTestsHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	t *testing.T, packLHSFn PackLHSFn[T], lhsL1KernelRows int) {
 	testCases := []struct {
 		rows, cols         int
@@ -153,7 +154,7 @@ func runPackRHSTests[T NumberNonHalf](t *testing.T, packRHSFn PackRHSFn[T], rhsL
 	}
 }
 
-func runPackRHSTestsHalfPrecision[T dtypes.HalfPrecision[T], P dtypes.HalfPrecisionPtr[T]](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
+func runPackRHSTestsHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](t *testing.T, packRHSFn PackRHSFn[T], rhsL1KernelCols int) {
 	testCases := []struct {
 		rows, cols         int
 		rowStart, colStart int
@@ -239,7 +240,6 @@ func TestUnsafe(t *testing.T) {
 		})
 	}
 }
-
 
 func runBenchmarkPackLHS[T Number](b *testing.B, name string, packFn PackLHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelRows int) {
 	src := make([]T, totalRows*totalCols)

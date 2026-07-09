@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"k8s.io/klog/v2"
 )
@@ -28,7 +29,7 @@ func (key *ImplementationKey) String() string {
 // The output will always be shaped [batchSize, lhsCross, rhsCross], and the required space must have been
 // pre-allocated.
 type DotGeneralExecFn[I, O interface {
-	dtypes.Number | dtypes.NumberHalfPrecision
+	gotype.Numeric | gotype.AnyHalfPrecision
 }] func(
 	backend *gobackend.Backend, layout Layout,
 	lhs, rhs []I,
@@ -57,7 +58,7 @@ var (
 //
 // This should only be called during initialization.
 func RegisterImplementation[I, O interface {
-	dtypes.Number | dtypes.NumberHalfPrecision
+	gotype.Numeric | gotype.AnyHalfPrecision
 }](
 	name string,
 	layout Layout, inputDType, outputDType dtypes.DType,
@@ -152,7 +153,7 @@ var (
 // callImplementationGeneric calls the registered implementation with the given parameters.
 // If casts all the parameter to the corresponding dtype.
 func callImplementationGeneric[I, O interface {
-	dtypes.Number | dtypes.NumberHalfPrecision
+	gotype.Numeric | gotype.AnyHalfPrecision
 }](
 	backend *gobackend.Backend,
 	implFnAny any,
