@@ -4,7 +4,6 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
