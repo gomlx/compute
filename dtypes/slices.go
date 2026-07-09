@@ -5,6 +5,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 )
 
 // UnsafeByteSliceFromAny casts a slice of any of the supported Go types (feed as type any) to a slice of bytes.
@@ -53,7 +54,7 @@ func UnsafeByteSliceFromAny(flatAny any) []byte {
 }
 
 // UnsafeByteSlice casts a slice of any of the supported Go types to a slice of bytes.
-func UnsafeByteSlice[E Supported](flat []E) []byte {
+func UnsafeByteSlice[E gotype.Supported](flat []E) []byte {
 	if len(flat) == 0 {
 		return nil
 	}
@@ -117,7 +118,7 @@ func UnsafeAnySliceFromBytes(bytesPtr unsafe.Pointer, dtype DType, length int) a
 // If length is zero or bytesPtr is nil, it returns nil.
 //
 // Unsafe: bytesPtr must have enough data to hold the []E of the given length.
-func UnsafeSliceFromBytes[E Supported](bytesPtr unsafe.Pointer, length int) []E {
+func UnsafeSliceFromBytes[E gotype.Supported](bytesPtr unsafe.Pointer, length int) []E {
 	if bytesPtr == nil || length == 0 {
 		return nil
 	}

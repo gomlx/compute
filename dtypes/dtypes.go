@@ -57,7 +57,7 @@ func init() {
 }
 
 // FromGenericsType returns the DType enum for the given type that this package knows about.
-func FromGenericsType[T Supported]() DType {
+func FromGenericsType[T gotype.Supported]() DType {
 	var t T
 	switch (any(t)).(type) {
 	case float64:
@@ -595,50 +595,47 @@ func (dtype DType) IsPromotableTo(target DType) bool {
 	return false
 }
 
-// Supported lists the Go types that `gopjrt` knows how to convert -- there are more types that can be manually
-// converted.
-// Used as traits for generics.
+// Supported constraints to the list of compute's supported Go types, including those not native (half-precision).
 //
-// Notice Go's `int` type is not portable, since it may translate to dtypes Int32 or Int64 depending
-// on the platform.
-type Supported interface {
-	bool | float16.Float16 | bfloat16.BFloat16 |
-		float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64 |
-		complex64 | complex128
-}
+// Notice Go's `int` type is supported but not portable, since it may translate to dtypes Int32 or Int64 depending
+// on the platform. You should prefer using Int32 or Int64 instead of int.
+//
+// Deprecated: use [gotype.Supported] instead.
+type Supported = gotype.Supported
 
-// Number represents the Go numeric types corresponding to supported DType's.
-// Used as traits for generics.
-//
+// Number constraints to the native Go numeric types.
 // It includes complex numbers.
-// It doesn't include float16.Float16 or bfloat16.BFloat16 because they are not native number types.
-type Number interface {
-	float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64 | complex64 | complex128
-}
-
-// NumberNotComplex represents the Go numeric types corresponding to supported DType's.
-// Used as a Generics constraint.
 //
-// See also Number.
-type NumberNotComplex interface {
-	float32 | float64 | int | int8 | int16 | int32 | int64 | uint8 | uint16 | uint32 | uint64
-}
+// It doesn't include half-precision types float16.Float16 or bfloat16.BFloat16 because they are not native number types.
+//
+// Deprecated: use [gotype.Numeric] instead.
+type Number = gotype.Numeric
 
-// NumberComplex represents the Go complex types corresponding to supported DType's.
-type NumberComplex interface {
-	complex64 | complex128
-}
+// NumberNotComplex constraints to native Go numeric types excluding complex numbers.
+//
+// See also Numeric.
+//
+// Deprecated: use [gotype.NumericNotComplex] instead.
+type NumberNotComplex = gotype.NumericNotComplex
 
-// NumberHalfPrecision represents the Go half-precision types corresponding to supported DType's.
-type NumberHalfPrecision interface {
-	float16.Float16 | bfloat16.BFloat16
-}
+// NumberComplex constraints to the Go complex types.
+//
+// Deprecated: use [gotype.Complex] instead.
+type NumberComplex = gotype.Complex
+
+// NumberHalfPrecision constraints to the compute's representations for half-precision floating point numbers.
+// They are not natively supported by Go, but rather aliases unit16 with extra methods (Float64, Float32, etc).
+//
+// Consider using HalfPrecision instead.
+//
+// Deprecated: use [gotype.AnyHalfPrecision] instead.
+type NumberHalfPrecision = gotype.AnyHalfPrecision
 
 // GoFloat constraints to continuous native Go numeric types.
 // It doesn't include complex numbers or half-precision types (non-native).
 //
 // Deprecated: use [gotype.Float] instead.
-type GoFloat = gotype.float
+type GoFloat = gotype.Float
 
 // HalfPrecision is an interface that represents half-precision floating point numbers,
 // specifically float16 and bfloat16.
