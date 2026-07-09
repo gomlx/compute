@@ -22,6 +22,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
 )
@@ -633,31 +634,22 @@ type NumberHalfPrecision interface {
 	float16.Float16 | bfloat16.BFloat16
 }
 
-// GoFloat represent a continuous Go numeric type, supported by GoMLX.
-// It doesn't include complex numbers.
-type GoFloat interface {
-	float32 | float64
-}
+// GoFloat constraints to continuous native Go numeric types.
+// It doesn't include complex numbers or half-precision types (non-native).
+//
+// Deprecated: use [gotype.Float] instead.
+type GoFloat = gotype.float
 
 // HalfPrecision is an interface that represents half-precision floating point numbers,
 // specifically float16 and bfloat16.
 //
 // It includes the methods to convert to float64 and float32, so it can be used in generic methods.
 //
-// It's a generic constraint, and usually used like this:
-//
-//	func myGeneric[T HalfPrecision[T]](v T, ...) { ... }
-type HalfPrecision[T any] interface {
-	float16.Float16 | bfloat16.BFloat16
-	Float64() float64
-	Float32() float32
-	Neg() T
-}
+// Deprecated: use [gotype.HalfPrecision] instead.
+type HalfPrecision[T any] = gotype.HalfPrecision[T]
 
 // HalfPrecisionPtr is a pointer to a HalfPrecision wrapper type.
 // It is used when one needs to set the value of a HalfPrecision type from a float32 or float64.
-type HalfPrecisionPtr[T HalfPrecision[T]] interface {
-	*T
-	SetFloat32(float32)
-	SetFloat64(float64)
-}
+//
+// Deprecated: use [gotype.HalfPrecisionPtr] instead.
+type HalfPrecisionPtr[T HalfPrecision[T]] = gotype.HalfPrecisionPtr[T]
