@@ -40,14 +40,13 @@ import (
 // Output: same shape as query.
 func FusedScaledDotProductAttention(
 	f *gobackend.Function,
-	query, key, value, mask compute.Value,
-	numHeads, numKVHeads int, axesLayout compute.AxesLayout,
-	scale float64, causal bool,
+	query, key, value compute.Value,
+	axesLayout compute.AxesLayout,
 	options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
 	// The Go backend has no fused flash backward, so it returns nil statesForVJP; its gradient
 	// goes through the decomposed path (FusedScaledDotProductAttentionVJP is ErrNotImplemented).
 	out, err := buildSDPANode(f, compute.OpTypeFusedScaledDotProductAttention, "FusedScaledDotProductAttention",
-		query, key, value, mask, numHeads, numKVHeads, axesLayout, scale, causal, options)
+		query, key, value, axesLayout, options)
 	return out, nil, err
 }
 
@@ -98,10 +97,13 @@ func (d *nodeScaledDotProductAttention) equalOptions(o *nodeScaledDotProductAtte
 // buildSDPANode builds the SDPA computation node.
 func buildSDPANode(
 	f *gobackend.Function, opType compute.OpType, opName string,
-	query, key, value, mask compute.Value,
-	numHeads, numKVHeads int, axesLayout compute.AxesLayout,
-	scale float64, causal bool,
+	query, key, value compute.Value,
+	axesLayout compute.AxesLayout,
 	options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
+	var mask compute.Value
+	if options != nil {
+		mask = options.Mask
+	}
 	values := []compute.Value{query, key, value}
 	if mask != nil {
 		values = append(values, mask)
@@ -124,18 +126,38 @@ func buildSDPANode(
 		return nil, err
 	}
 	qNode := inputs[0]
+	kNode := inputs[1]
 
 	if qNode.Shape.Rank() != 4 {
 		return nil, errors.Errorf("%s: query must have rank 4, got %d", opName, qNode.Shape.Rank())
+	}
+	if kNode.Shape.Rank() != 4 {
+		return nil, errors.Errorf("%s: key must have rank 4, got %d", opName, kNode.Shape.Rank())
 	}
 	switch qNode.Shape.DType {
 	case dtypes.F8E4M3FN, dtypes.F8E5M2:
 		return nil, errors.Wrapf(compute.ErrNotImplemented,
 			"%s: float8 input dtype %s is not implemented in the go backend", opName, qNode.Shape.DType)
 	}
+
+	numHeads := qNode.Shape.Dimensions[axesLayout.HeadsAxis()]
+	numKVHeads := kNode.Shape.Dimensions[axesLayout.HeadsAxis()]
+
 	if numHeads <= 0 || numKVHeads <= 0 || numHeads%numKVHeads != 0 {
 		return nil, errors.Errorf("%s: numHeads (%d) must be positive and divisible by numKVHeads (%d)", opName, numHeads, numKVHeads)
 	}
+
+	var scale float64
+	var causal bool
+	if options != nil {
+		scale = options.Scale
+		causal = options.Causal
+	}
+	if scale == 0 {
+		headDim := qNode.Shape.Dimensions[3] // headDim is always the last axis!
+		scale = 1.0 / math.Sqrt(float64(headDim))
+	}
+
 	if hasBias {
 		// Bias input is the last appended value; resolve its node from inputs.
 		biasIdx := len(inputs) - 1
@@ -150,7 +172,6 @@ func buildSDPANode(
 		}
 		// Score shape is [B, H, S, Skv]. Bias dims are right-aligned and each must be 1
 		// or equal to the corresponding score dim (standard broadcasting contract).
-		kNode := inputs[1]
 		var batchDim, numHeadsDim, seqDim, kvDim int
 		if axesLayout == compute.AxesLayoutBSHD {
 			batchDim = qNode.Shape.Dimensions[0]

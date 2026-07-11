@@ -218,7 +218,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}, {1}}}}
 			v := [][][][]float32{{{{10}, {20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -243,7 +243,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]bfloat16.BFloat16{{{onesX8, onesX8}}}
 			v := [][][][]bfloat16.BFloat16{{{tensX8, twentyX8}}} // [1, 1, 2, 8]
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -268,7 +268,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float16.Float16{{{onesX8, onesX8}}}
 			v := [][][][]float16.Float16{{{tensX8, twentyX8}}} // [1, 1, 2, 8]
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -289,7 +289,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}}, {{1}}}}
 			v := [][][][]float32{{{{10}}, {{20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBSHD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -314,7 +314,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]bfloat16.BFloat16{{{onesX8}, {onesX8}}}
 			v := [][][][]bfloat16.BFloat16{{{tensX8}, {twentyX8}}} // [1, 2, 1, 8]
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBSHD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -340,7 +340,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float16.Float16{{{onesX8}, {onesX8}}}
 			v := [][][][]float16.Float16{{{tensX8}, {twentyX8}}} // [1, 2, 1, 8]
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBSHD, 1.0, true, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBSHD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -362,7 +362,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			v := [][][][]float32{{{{10}, {20}}}} // [1,1,2,1]
 			mask := [][]bool{{true, false}}      // [1, 2]
 			got, err := testutil.Exec1(b, []any{q, k, v, mask}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], params[3], 1, 1, compute.AxesLayoutBHSD, 1.0, false, nil)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: false, Mask: params[3]})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -382,7 +382,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			k := [][][][]float32{{{{1}, {1}}}}
 			v := [][][][]float32{{{{10}, {20}}}}
 			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, &compute.ScaledDotProductAttentionConfig{QuantizedMatmuls: true})
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true, QuantizedMatmuls: true})
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -410,8 +410,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			v := [][][][]float32{{{{10}, {20}}}}              // [1,1,2,1]
 			bias := [][][][]float32{{{{-10, 10}, {-10, 10}}}} // [1,1,2,2] batch,head,seqLen,kvLen
 			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3], Scale: 1.0, Causal: false}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -440,8 +440,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			v := [][][][]float32{{{{10}, {20}}}}            // [1,1,2,1]
 			bias := [][][][]float32{{{{0, -100}, {0, 10}}}} // [1,1,2,2]
 			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, true, cfg)
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3], Scale: 1.0, Causal: true}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {
@@ -477,8 +477,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				{bf16(-100), bf16(100)},
 			}}}
 			got, err := testutil.Exec1(b, []any{q, k, v, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3]}
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], nil, 1, 1, compute.AxesLayoutBHSD, 1.0, false, cfg)
+				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3], Scale: 1.0, Causal: false}
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
 				return out, err
 			})
 			if err != nil && compute.IsNotImplemented(err) {

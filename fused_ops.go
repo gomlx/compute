@@ -232,6 +232,18 @@ type ScaledDotProductAttentionConfig struct {
 	// Bias is an optional additive attention-score bias broadcast to [B,H,S,Skv]
 	// (ALiBi / relative-position). NOT the Q/K/V projection bias. nil = unused.
 	Bias Value
+
+	// Scale is the scaling factor applied to query @ key^T.
+	// If 0 (the default), it means 1/sqrt(headDim).
+	Scale float64
+
+	// Causal specifies whether to apply causal (lower-triangular) masking.
+	Causal bool
+
+	// Mask is an optional attention mask of shape [seqLen, kvLen] (or broadcastable).
+	// Boolean mask: true = attend, false = ignore.
+	// Float/additive mask: added to scores before softmax.
+	Mask Value
 }
 
 // ActivationType specifies the activation function for fused operations.
@@ -305,59 +317,44 @@ type FusedOps interface {
 	//
 	// output = softmax(query @ key^T * scale + mask) @ value, computed per-head with GQA support.
 	//
+	// Conventions:
+	// - "numHeads" refers to the number of heads for the query, and "numKVHeads" for the key and value.
+	// - "seqLen" refers to the sequence length of the query, and "kvLen" is the sequence length for the key and value.
+	//
 	// Inputs:
 	//   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
 	//     For AxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
 	//                         key/value [batch, numKVHeads, kvLen, headDim].
 	//     For AxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
 	//                         key/value [batch, kvLen, numKVHeads, headDim].
-	//   - mask: [seqLen, kvLen] (seqLen is the query sequence length): optional (can be nil) mask
-	//     that can be either boolean or additive (any dtype other than Bool). See also causal below.
-	//     Boolean mask: true = attend, false = ignore.
-	//     Float/additive mask: added to scores before softmax.
-	//     Must be broadcastable to the score tensor shape.
-	//
-	// Parameters:
-	//   - numHeads: number of query attention heads
-	//   - numKVHeads: number of key/value attention heads (for GQA; numHeads must be divisible by numKVHeads)
 	//   - axesLayout: determines the axis ordering of query/key/value tensors
-	//   - scale: scaling factor applied to query @ key^T (typically 1/sqrt(headDim))
-	//   - causal: if true, apply causal (lower-triangular) mask. Callers (e.g. attention.Core)
-	//     treat causal and mask as mutually exclusive, folding causal into the mask before calling
-	//     this method when both are needed. Backends may assume they won't both be set.
-	//   - options: optional optimization hints (nil uses defaults). See ScaledDotProductAttentionConfig.
+	//   - options: optional parameters (nil uses defaults). See ScaledDotProductAttentionConfig.
 	//
 	// Outputs:
 	//   - output: same shape as query.
 	//   - statesForVJP: optional (may be nil/empty). When the backend supports a fused backward
 	//     (FusedScaledDotProductAttentionVJP), it returns whatever backward-pass state that
-	//     backend's fused VJP needs (e.g. per-row softmax log-sum-exp stats, and/or a workspace
-	//     tensor for cuDNN FMHA variants that require one). The set and shapes of these values are
-	//     backend-specific; the VJP is only ever called with the exact slice this call returned.
+	//     backend's fused VJP needs.
+	//     The number, semantics and shapes of these values are backend-specific; the VJP is only
+	//     ever called with the exact slice this call returned.
 	//     Backends without a fused backward return nil/empty here and ErrNotImplemented from the
 	//     VJP, so the caller differentiates the decomposed attention instead.
 	FusedScaledDotProductAttention(
-		query, key, value, mask Value,
-		numHeads, numKVHeads int,
+		query, key, value Value,
 		axesLayout AxesLayout,
-		scale float64,
-		causal bool,
 		options *ScaledDotProductAttentionConfig) (output Value, statesForVJP []Value, err error)
 
 	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
 	// FusedScaledDotProductAttention given the forward output, the statesForVJP it returned, and
-	// the adjoint output gradient dOutput. The query/key/value/mask and numHeads..options parameters are
+	// the adjoint output gradient dOutput. The query/key/value and options parameters are
 	// the same values passed to the forward call.
 	//
 	// Backends that return non-nil/non-empty statesForVJP from the forward and implement a fused
 	// backward (e.g. the cuDNN flash backward) implement this. Others return ErrNotImplemented so
 	// the caller falls back to differentiating the decomposed attention.
 	FusedScaledDotProductAttentionVJP(
-		query, key, value, mask Value,
-		numHeads, numKVHeads int,
+		query, key, value Value,
 		axesLayout AxesLayout,
-		scale float64,
-		causal bool,
 		options *ScaledDotProductAttentionConfig,
 		output Value, statesForVJP []Value, dOutput Value) (dQuery, dKey, dValue Value, err error)
 
