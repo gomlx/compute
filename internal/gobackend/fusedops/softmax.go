@@ -5,6 +5,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -46,6 +47,7 @@ func FusedSoftmax(f *gobackend.Function, x compute.Value, axis int) (compute.Val
 
 // execFusedSoftmax implements optimized softmax with better cache locality.
 // Three passes over the axis: find max, compute exp(x-max) and sum, then normalize.
+// Float32 uses fastmath.Exp32; float64 uses math.Exp.
 func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedSoftmax)
 	axis := data.axis
@@ -57,9 +59,9 @@ func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs [
 
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		fusedSoftmax(input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape)
+		fusedSoftmax(input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape, fastmath.Exp32)
 	case dtypes.Float64:
-		fusedSoftmax(input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape)
+		fusedSoftmax(input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape, math.Exp)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedSoftmax: dtype %s", input.RawShape.DType)
 	}
@@ -83,7 +85,7 @@ func fusedSoftmaxComputeAxisStrides(shape shapes.Shape, axis int) (outerSize, ax
 	return
 }
 
-func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes.Shape) {
+func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes.Shape, expFn func(T) T) {
 	outerSize, axisSize, innerSize := fusedSoftmaxComputeAxisStrides(shape, axis)
 	for outer := range outerSize {
 		for inner := range innerSize {
@@ -102,7 +104,7 @@ func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes
 			var sum T
 			for i := range axisSize {
 				idx := baseIdx + i*innerSize
-				output[idx] = T(math.Exp(float64(input[idx] - maxVal)))
+				output[idx] = expFn(input[idx] - maxVal)
 				sum += output[idx]
 			}
 
