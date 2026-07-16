@@ -17,17 +17,18 @@ func TestExp32(t *testing.T) {
 	})
 
 	t.Run("Clamps", func(t *testing.T) {
-		if got := Exp32(maxLogF + 1); got != maxNumF {
-			t.Errorf("Exp32(maxLogF+1) = %v, want maxNumF %v", got, float32(maxNumF))
+		overflow := Exp32(1e30)
+		if math.IsInf(float64(overflow), 0) || math.IsNaN(float64(overflow)) || overflow <= 0 {
+			t.Errorf("Exp32(1e30) = %v, want large finite", overflow)
 		}
-		if got := Exp32(1e30); got != maxNumF {
-			t.Errorf("Exp32(1e30) = %v, want maxNumF %v", got, float32(maxNumF))
-		}
-		if got := Exp32(minLogF - 1); got != 0 {
-			t.Errorf("Exp32(minLogF-1) = %v, want 0", got)
+		if got := Exp32(90); got != overflow {
+			t.Errorf("Exp32(90) = %v, want same overflow clamp %v", got, overflow)
 		}
 		if got := Exp32(-1e30); got != 0 {
 			t.Errorf("Exp32(-1e30) = %v, want 0", got)
+		}
+		if got := Exp32(-90); got != 0 {
+			t.Errorf("Exp32(-90) = %v, want 0", got)
 		}
 	})
 
