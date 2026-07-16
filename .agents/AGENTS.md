@@ -40,6 +40,8 @@ auto-differentiation, use GoMLX instead.
   "Shardy". Somewhat experimental for now.
 - `internal/cmd`: mostly "generators" used to automatically generate code for
   different packages. Referred in `//go:generate ...` in the various packages.
+- `internal/fastmath`: float32 math approximations for go-backend kernels
+  where small error is acceptable (e.g. softmax, activations).
 - `internal/gobackend`: the implementation of the "go" backend. It consists of
   buffer and execution logic, and "registration" of ops during build and
   execution. The implementation of each op is (or is being moved to) in its
