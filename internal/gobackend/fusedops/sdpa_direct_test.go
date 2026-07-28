@@ -46,7 +46,7 @@ func TestSDPADirect_ConfigFieldsCompile(t *testing.T) {
 		Causal:           true,
 	}
 	got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err != nil {
@@ -72,7 +72,7 @@ func TestSDPADirect_WithSeqLens(t *testing.T) {
 	kvLen := []int32{1}
 	got, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4], Scale: 1.0, Causal: false}
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err != nil {
@@ -96,7 +96,7 @@ func TestSDPADirect_WithSeqLensCausal(t *testing.T) {
 	kvLen := []int32{2}
 	got, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4], Scale: 1.0, Causal: true}
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err != nil {
@@ -149,7 +149,7 @@ func TestSDPADirect_SeqLenWrongDtype(t *testing.T) {
 	kvLen := []int64{2}
 	_, err := testutil.Exec1(b, []any{q, k, v, qLen, kvLen}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4], Scale: 1.0, Causal: false}
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err == nil {
@@ -170,7 +170,7 @@ func TestSDPADirect_SeqLenClamped(t *testing.T) {
 	kvLenPos := []int32{2}
 	got, err := testutil.Exec1(b, []any{q, k, v, qLenNeg, kvLenPos}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4], Scale: 1.0, Causal: false}
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err != nil {
@@ -187,7 +187,7 @@ func TestSDPADirect_SeqLenClamped(t *testing.T) {
 	kvLenLarge := []int32{999}
 	got2, err := testutil.Exec1(b, []any{q, k, v, qLenLarge, kvLenLarge}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 		cfg := &compute.ScaledDotProductAttentionConfig{QuerySeqLen: params[3], KeyValueSeqLen: params[4], Scale: 1.0, Causal: false}
-		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+		out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 		return out, err
 	})
 	if err != nil {
@@ -224,7 +224,7 @@ func TestSDPADirect_BiasValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := testutil.Exec1(b, []any{q, k, v, tc.bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				cfg := &compute.ScaledDotProductAttentionConfig{Bias: params[3], Scale: 1.0, Causal: false}
-				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AxesLayoutBHSD, cfg)
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
 				return out, err
 			})
 			if err == nil {
@@ -249,7 +249,7 @@ func TestSDPADirect_FP8NotImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertDType to F8E4M3FN failed: %+v", err)
 	}
-	_, _, err = mainFn.FusedScaledDotProductAttention(q8, q8, q8, compute.AxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
+	_, _, err = mainFn.FusedScaledDotProductAttention(q8, q8, q8, compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
 	if err == nil {
 		t.Fatalf("SDPA with F8 input must return an error, got nil")
 	}

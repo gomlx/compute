@@ -92,8 +92,14 @@ func GenerateStandardOpsInterface(methods []backendparser.Method) {
 				pi.Type = "...compute.PadAxis"
 			case "ActivationType":
 				pi.Type = "compute.ActivationType"
+			case "DenseConfig":
+				pi.Type = "compute.DenseConfig"
+			case "DenseLayout":
+				pi.Type = "compute.DenseLayout"
+			case "AttentionAxesLayout":
+				pi.Type = "compute.AttentionAxesLayout"
 			case "AxesLayout":
-				pi.Type = "compute.AxesLayout"
+				pi.Type = "compute.AttentionAxesLayout"
 			case "QuantizationScheme":
 				pi.Type = "compute.QuantizationScheme"
 			case "DotGeneralConfig":

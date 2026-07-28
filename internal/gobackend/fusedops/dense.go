@@ -16,21 +16,22 @@ func init() {
 }
 
 type nodeFusedDense struct {
-	activation compute.ActivationType
+	options compute.DenseConfig
 }
 
 func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	return d.activation == other.(*nodeFusedDense).activation
+	return d.options == other.(*nodeFusedDense).options
 }
 
 // FusedDense performs fused matmul + optional bias + optional activation:
 //
-//	y = activation(x @ W + bias)
+//	y = activation(x @ W + bias) (for DenseLayoutInputOutputs)
+//	y = activation(x @ W^T + bias) (for DenseLayoutOutputsInput)
 //
 // The matmul is delegated to DotGeneral (which selects the optimal execution
 // path at build time). FusedDense then adds bias and applies activation on top
 // of the DotGeneral result.
-func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
+func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options compute.DenseConfig) (compute.Value, error) {
 	values := []compute.Value{x, weight}
 	if bias != nil {
 		values = append(values, bias)
@@ -47,18 +48,38 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, activation
 			xNode.Shape.Rank(), wNode.Shape.Rank())
 	}
 	inFeatures := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
-	if inFeatures != wNode.Shape.Dimensions[0] {
-		return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's first dim (%d)",
-			inFeatures, wNode.Shape.Dimensions[0])
+
+	var weightContractAxis int
+	var outDims []int
+
+	switch options.WeightLayout {
+	case compute.DenseLayoutInputOutputs:
+		if inFeatures != wNode.Shape.Dimensions[0] {
+			return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's first dim (%d) for DenseLayoutInputOutputs",
+				inFeatures, wNode.Shape.Dimensions[0])
+		}
+		weightContractAxis = 0
+		outDims = make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
+		copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
+		copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[1:])
+	case compute.DenseLayoutOutputsInput:
+		weightLastAxis := wNode.Shape.Rank() - 1
+		if inFeatures != wNode.Shape.Dimensions[weightLastAxis] {
+			return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's last dim (%d) for DenseLayoutOutputsInput",
+				inFeatures, wNode.Shape.Dimensions[weightLastAxis])
+		}
+		weightContractAxis = weightLastAxis
+		outDims = make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
+		copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
+		copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[:weightLastAxis])
+	default:
+		return nil, errors.Errorf("FusedDense: unknown WeightLayout %v", options.WeightLayout)
 	}
 
-	outDims := make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
-	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
-	copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[1:])
 	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
-	// Build DotGeneral sub-node for the matmul: contract x's last axis with weight's first.
-	dotResult, err := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
+	// Build DotGeneral sub-node for the matmul: contract x's last axis with weight's specified contract axis.
+	dotResult, err := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{weightContractAxis}, nil, compute.DotGeneralConfig{})
 	if err != nil {
 		return nil, errors.WithMessagef(err, "FusedDense: DotGeneral")
 	}
@@ -73,7 +94,7 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, activation
 		fusedInputs = append(fusedInputs, inputs[2])
 	}
 
-	data := &nodeFusedDense{activation: activation}
+	data := &nodeFusedDense{options: options}
 	node, _ := f.GetOrCreateNode(compute.OpTypeFusedDense, outShape, fusedInputs, data)
 	return node, nil
 }
@@ -93,7 +114,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	data := node.Data.(*nodeFusedDense)
 
 	// If no bias and no activation, just return the matmul result directly.
-	if bias == nil && data.activation == compute.ActivationNone {
+	if bias == nil && data.options.Activation == compute.ActivationNone {
 		if inputsOwned[0] {
 			inputs[0] = nil // Signal to executor that we reused the input.
 			return matmul, nil
@@ -125,12 +146,12 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		if bias != nil {
 			fusedDenseAddBias[float32](output, bias)
 		}
-		fusedDenseApplyActivation[float32](backend, output, data.activation)
+		fusedDenseApplyActivation[float32](backend, output, data.options.Activation)
 	case dtypes.Float64:
 		if bias != nil {
 			fusedDenseAddBias[float64](output, bias)
 		}
-		fusedDenseApplyActivation[float64](backend, output, data.activation)
+		fusedDenseApplyActivation[float64](backend, output, data.options.Activation)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: dtype %s", output.RawShape.DType)
 	}

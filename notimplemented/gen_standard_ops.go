@@ -317,13 +317,16 @@ func (f Function) Floor(x compute.Value) (compute.Value, error) {
 
 // FusedDense performs fused matmul + optional bias + optional activation.
 //
-// It does y = activation(x @ W + bias). Where @ is a standard matmul,
-// it contracts x's last axis with weight's first axis.
+// It does y = activation(x @ W + bias) for DenseLayoutInputOutputs, or
+// y = activation(x @ W^T + bias) for DenseLayoutOutputsInput.
+// Where @ is a standard matmul.
 //
-// - x: [batch..., in_features], weight: [in_features, out_features...],
-// - bias: [out_features...] (nil-able).
-// - activation: applied after the matmul+bias; set to ActivationNone for no activation.
-func (f Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
+//   - x: [batch..., in_features]
+//   - weight: [in_features, out_features...] (if WeightLayout is DenseLayoutInputOutputs)
+//     or [out_features..., in_features] (if WeightLayout is DenseLayoutOutputsInput)
+//   - bias: [out_features...] (nil-able).
+//   - options: DenseConfig options (activation and weight layout).
+func (f Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedDense)
 }
 

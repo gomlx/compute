@@ -17,9 +17,9 @@ import (
 //
 // Inputs:
 //   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
-//     For AxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
+//     For AttentionAxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
 //     key/value [batch, numKVHeads, kvLen, headDim].
-//     For AxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
+//     For AttentionAxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
 //     key/value [batch, kvLen, numKVHeads, headDim].
 //   - mask: [seqLen, kvLen] (seqLen is the query sequence length): optional (can be nil) mask
 //     that can be either boolean or additive (any dtype other than Bool). See also causal below.
@@ -41,7 +41,7 @@ import (
 func FusedScaledDotProductAttention(
 	f *gobackend.Function,
 	query, key, value compute.Value,
-	axesLayout compute.AxesLayout,
+	axesLayout compute.AttentionAxesLayout,
 	options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
 	// The Go backend has no fused flash backward, so it returns nil statesForVJP; its gradient
 	// goes through the decomposed path (FusedScaledDotProductAttentionVJP is ErrNotImplemented).
@@ -63,7 +63,7 @@ func init() {
 type nodeScaledDotProductAttention struct {
 	numHeads   int
 	numKVHeads int
-	axesLayout compute.AxesLayout
+	axesLayout compute.AttentionAxesLayout
 	scale      float64
 	causal     bool
 	hasMask    bool
@@ -98,7 +98,7 @@ func (d *nodeScaledDotProductAttention) equalOptions(o *nodeScaledDotProductAtte
 func buildSDPANode(
 	f *gobackend.Function, opType compute.OpType, opName string,
 	query, key, value compute.Value,
-	axesLayout compute.AxesLayout,
+	axesLayout compute.AttentionAxesLayout,
 	options *compute.ScaledDotProductAttentionConfig) (compute.Value, error) {
 	var mask compute.Value
 	if options != nil {
@@ -173,7 +173,7 @@ func buildSDPANode(
 		// Score shape is [B, H, S, Skv]. Bias dims are right-aligned and each must be 1
 		// or equal to the corresponding score dim (standard broadcasting contract).
 		var batchDim, numHeadsDim, seqDim, kvDim int
-		if axesLayout == compute.AxesLayoutBSHD {
+		if axesLayout == compute.AttentionAxesLayoutBSHD {
 			batchDim = qNode.Shape.Dimensions[0]
 			numHeadsDim = numHeads
 			seqDim = qNode.Shape.Dimensions[1]
@@ -256,7 +256,7 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 
 	// For rank-4 BSHD masks/bias [batch, seq, heads, kvLen], transpose to BHSD so that
 	// per-head data is contiguous [seqLen, kvLen]. Rank ≤ 3 have no head axis and work as-is.
-	if data.axesLayout == compute.AxesLayoutBSHD {
+	if data.axesLayout == compute.AttentionAxesLayoutBSHD {
 		if mask != nil && mask.RawShape.Rank() == 4 {
 			var err error
 			mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
@@ -551,7 +551,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, bias, ou
 	var qBatchStride, kvBatchStride int // element stride between consecutive batches
 	var qHeadStride, kvHeadStride int   // element stride between consecutive heads at seq=0
 
-	if data.axesLayout == compute.AxesLayoutBSHD {
+	if data.axesLayout == compute.AttentionAxesLayoutBSHD {
 		// [batch, seq, heads, dim]
 		seqLen = dims[1]
 		headDim = dims[3]
