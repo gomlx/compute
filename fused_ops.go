@@ -2,25 +2,25 @@
 
 package compute
 
-// AxesLayout specifies the ordering of axes in 4D attention tensors.
-type AxesLayout int
+// AttentionAxesLayout specifies the ordering of axes in 4D attention tensors.
+type AttentionAxesLayout int
 
 const (
-	// AxesLayoutBHSD is the [batch, heads, seq, dim] layout used by PyTorch's F.scaled_dot_product_attention,
+	// AttentionAxesLayoutBHSD is the [batch, heads, seq, dim] layout used by PyTorch's F.scaled_dot_product_attention,
 	// ONNX, and most inference runtimes.
-	AxesLayoutBHSD AxesLayout = iota
+	AttentionAxesLayoutBHSD AttentionAxesLayout = iota
 
-	// AxesLayoutBSHD is the [batch, seq, heads, dim] layout used internally by MultiHeadAttention
+	// AttentionAxesLayoutBSHD is the [batch, seq, heads, dim] layout used internally by MultiHeadAttention
 	// (after Dense projections which produce [batch, seq, heads, dim]).
-	AxesLayoutBSHD
+	AttentionAxesLayoutBSHD
 )
 
 // String returns the name of the layout.
-func (l AxesLayout) String() string {
+func (l AttentionAxesLayout) String() string {
 	switch l {
-	case AxesLayoutBHSD:
+	case AttentionAxesLayoutBHSD:
 		return "BHSD"
-	case AxesLayoutBSHD:
+	case AttentionAxesLayoutBSHD:
 		return "BSHD"
 	default:
 		return "unknown"
@@ -28,23 +28,53 @@ func (l AxesLayout) String() string {
 }
 
 // SeqAxis returns the axis index for the sequence dimension.
-func (l AxesLayout) SeqAxis() int {
+func (l AttentionAxesLayout) SeqAxis() int {
 	switch l {
-	case AxesLayoutBSHD:
+	case AttentionAxesLayoutBSHD:
 		return 1
-	default: // AxesLayoutBHSD
+	default: // AttentionAxesLayoutBHSD
 		return 2
 	}
 }
 
 // HeadsAxis returns the axis index for the heads dimension.
-func (l AxesLayout) HeadsAxis() int {
+func (l AttentionAxesLayout) HeadsAxis() int {
 	switch l {
-	case AxesLayoutBSHD:
+	case AttentionAxesLayoutBSHD:
 		return 2
-	default: // AxesLayoutBHSD
+	default: // AttentionAxesLayoutBHSD
 		return 1
 	}
+}
+
+// DenseLayout specifies the layout (axis ordering) of the weight matrix in Dense operations.
+type DenseLayout int
+
+const (
+	// DenseLayoutInputOutputs specifies that weights have shape [in_features, out_features...] (0, default).
+	DenseLayoutInputOutputs DenseLayout = iota
+	// DenseLayoutOutputsInput specifies that weights have shape [out_features..., in_features].
+	DenseLayoutOutputsInput
+)
+
+// String returns the name of the dense weight layout.
+func (l DenseLayout) String() string {
+	switch l {
+	case DenseLayoutInputOutputs:
+		return "InputOutputs"
+	case DenseLayoutOutputsInput:
+		return "OutputsInput"
+	default:
+		return "unknown"
+	}
+}
+
+// DenseConfig holds configuration parameters for FusedDense operations.
+type DenseConfig struct {
+	// Activation is applied after the matmul+bias; set to ActivationNone for no activation.
+	Activation ActivationType
+	// WeightLayout specifies the layout of the weight matrix (DenseLayoutInputOutputs or DenseLayoutOutputsInput).
+	WeightLayout DenseLayout
 }
 
 // QuantizationScheme specifies how quantized integer values map to floating-point values.
@@ -305,13 +335,16 @@ type FusedOps interface {
 
 	// FusedDense performs fused matmul + optional bias + optional activation.
 	//
-	// It does y = activation(x @ W + bias). Where @ is a standard matmul,
-	// it contracts x's last axis with weight's first axis.
+	// It does y = activation(x @ W + bias) for DenseLayoutInputOutputs, or
+	// y = activation(x @ W^T + bias) for DenseLayoutOutputsInput.
+	// Where @ is a standard matmul.
 	//
-	// - x: [batch..., in_features], weight: [in_features, out_features...],
+	// - x: [batch..., in_features]
+	// - weight: [in_features, out_features...] (if WeightLayout is DenseLayoutInputOutputs)
+	//   or [out_features..., in_features] (if WeightLayout is DenseLayoutOutputsInput)
 	// - bias: [out_features...] (nil-able).
-	// - activation: applied after the matmul+bias; set to ActivationNone for no activation.
-	FusedDense(x, weight, bias Value, activation ActivationType) (Value, error)
+	// - options: DenseConfig options (activation and weight layout).
+	FusedDense(x, weight, bias Value, options DenseConfig) (Value, error)
 
 	// FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
 	//
@@ -323,9 +356,9 @@ type FusedOps interface {
 	//
 	// Inputs:
 	//   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
-	//     For AxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
+	//     For AttentionAxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
 	//                         key/value [batch, numKVHeads, kvLen, headDim].
-	//     For AxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
+	//     For AttentionAxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
 	//                         key/value [batch, kvLen, numKVHeads, headDim].
 	//   - axesLayout: determines the axis ordering of query/key/value tensors
 	//   - options: optional parameters (nil uses defaults). See ScaledDotProductAttentionConfig.
@@ -341,7 +374,7 @@ type FusedOps interface {
 	//     VJP, so the caller differentiates the decomposed attention instead.
 	FusedScaledDotProductAttention(
 		query, key, value Value,
-		axesLayout AxesLayout,
+		axesLayout AttentionAxesLayout,
 		options *ScaledDotProductAttentionConfig) (output Value, statesForVJP []Value, err error)
 
 	// FusedScaledDotProductAttentionVJP computes the gradients (dQuery, dKey, dValue) of
@@ -354,7 +387,7 @@ type FusedOps interface {
 	// the caller falls back to differentiating the decomposed attention.
 	FusedScaledDotProductAttentionVJP(
 		query, key, value Value,
-		axesLayout AxesLayout,
+		axesLayout AttentionAxesLayout,
 		options *ScaledDotProductAttentionConfig,
 		output Value, statesForVJP []Value, dOutput Value) (dQuery, dKey, dValue Value, err error)
 

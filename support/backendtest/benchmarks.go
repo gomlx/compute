@@ -380,7 +380,7 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 
 		fused, err := newBenchExec(backend, allShapes, allDatas,
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.ActivationNone)
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
 			})
 		if err != nil {
 			b.Fatalf("Failed to create fused benchmark: %+v", err)
@@ -552,7 +552,7 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 			[]shapes.Shape{xShape, f32WeightsShape, biasShape},
 			[]any{xData, f32WeightsData, biasData},
 			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.ActivationNone)
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
 			})
 		if err != nil {
 			b.Fatalf("Failed to create Float32Dense benchmark: %+v", err)

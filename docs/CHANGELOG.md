@@ -1,3 +1,7 @@
+- 2026-07-28:
+  - Updated FusedDense to take a `DenseConfig` options parameter, which now includes layout information of the weights.
+  - Renamed `AxesLayout` -> `AttentionAxesLayout` (since it's for attention only).
+
 # Initial release
 
 - Moved GoMLX's `backends/simplego` to `gobackend`.

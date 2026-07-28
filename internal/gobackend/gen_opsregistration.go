@@ -313,12 +313,12 @@ func (f *Function) FusedAttentionQKVProjection(x compute.Value, wQKV compute.Val
 	return RegisterFusedAttentionQKVProjection.Fn(f, x, wQKV, biasQ, biasK, biasV, queryDim, keyValueDim)
 }
 
-func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error) {
+func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error) {
 	if RegisterFusedDense.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.FusedDense(x, weight, bias, activation)
+		return f.Function.FusedDense(x, weight, bias, options)
 	}
-	return RegisterFusedDense.Fn(f, x, weight, bias, activation)
+	return RegisterFusedDense.Fn(f, x, weight, bias, options)
 }
 
 func (f *Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error) {
@@ -345,7 +345,7 @@ func (f *Function) FusedQuantizedDense(x compute.Value, weights compute.Value, b
 	return RegisterFusedQuantizedDense.Fn(f, x, weights, bias, weightsQuantization, activation)
 }
 
-func (f *Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AxesLayout, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
+func (f *Function) FusedScaledDotProductAttention(query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AttentionAxesLayout, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error) {
 	if RegisterFusedScaledDotProductAttention.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedScaledDotProductAttention(query, key, value, axesLayout, options)
@@ -353,7 +353,7 @@ func (f *Function) FusedScaledDotProductAttention(query compute.Value, key compu
 	return RegisterFusedScaledDotProductAttention.Fn(f, query, key, value, axesLayout, options)
 }
 
-func (f *Function) FusedScaledDotProductAttentionVJP(query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AxesLayout, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error) {
+func (f *Function) FusedScaledDotProductAttentionVJP(query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AttentionAxesLayout, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error) {
 	if RegisterFusedScaledDotProductAttentionVJP.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedScaledDotProductAttentionVJP(query, key, value, axesLayout, options, output, statesForVJP, dOutput)
@@ -1037,7 +1037,7 @@ var (
 	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{
 		Method: "FusedAttentionQKVProjection",
 	}
-	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, activation compute.ActivationType) (compute.Value, error)]{
+	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error)]{
 		Method: "FusedDense",
 	}
 	RegisterFusedGelu = OpHandlerRegistration[func(f *Function, x compute.Value, exact bool) (compute.Value, error)]{
@@ -1049,10 +1049,10 @@ var (
 	RegisterFusedQuantizedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error)]{
 		Method: "FusedQuantizedDense",
 	}
-	RegisterFusedScaledDotProductAttention = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AxesLayout, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error)]{
+	RegisterFusedScaledDotProductAttention = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AttentionAxesLayout, options *compute.ScaledDotProductAttentionConfig) (output compute.Value, statesForVJP []compute.Value, err error)]{
 		Method: "FusedScaledDotProductAttention",
 	}
-	RegisterFusedScaledDotProductAttentionVJP = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AxesLayout, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error)]{
+	RegisterFusedScaledDotProductAttentionVJP = OpHandlerRegistration[func(f *Function, query compute.Value, key compute.Value, value compute.Value, axesLayout compute.AttentionAxesLayout, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery compute.Value, dKey compute.Value, dValue compute.Value, err error)]{
 		Method: "FusedScaledDotProductAttentionVJP",
 	}
 	RegisterFusedSoftmax = OpHandlerRegistration[func(f *Function, x compute.Value, axis int) (compute.Value, error)]{
