@@ -239,6 +239,18 @@ func (f Function) DynamicDimensionSize(operand compute.Value, axis int) (compute
 	return nil, f.baseErrFn(compute.OpTypeDynamicDimensionSize)
 }
 
+// DynamicReshape reshapes x to target dimensions specified by dimensions.
+//
+// Each dimension can be:
+// - Static;
+// - Dynamic: a Name and (dynamic) Value are provided.
+// - Auto-inferred: only a Name is provided, at most one axis can be auto-inferred.
+//
+// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+func (f Function) DynamicReshape(operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicReshape)
+}
+
 // DynamicShape returns the shape of the operand as a dynamic value.
 // This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
 func (f Function) DynamicShape(operand compute.Value) (compute.Value, error) {

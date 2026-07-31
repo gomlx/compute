@@ -71,9 +71,13 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 		if orig == nil {
 			continue
 		}
-		resolvedShape, err := orig.Shape.Resolve(bindings)
-		if err != nil {
-			return nil, errors.WithMessage(err, "createSpecialization: Shape.Resolve")
+		resolvedShape := orig.Shape
+		if orig.Shape.IsDynamic() {
+			var err error
+			resolvedShape, err = orig.Shape.ResolvePartial(bindings)
+			if err != nil {
+				return nil, errors.WithMessage(err, "createSpecialization: Shape.ResolvePartial")
+			}
 		}
 		n := &Node{
 			Index:              orig.Index,

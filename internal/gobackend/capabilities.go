@@ -115,6 +115,7 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeReduceSum:            true,
 		compute.OpTypeReduceWindow:         true,
 		compute.OpTypeReshape:              true,
+		compute.OpTypeDynamicReshape:       true,
 		compute.OpTypeReverse:              true,
 		compute.OpTypeRNGBitGenerator:      true,
 		compute.OpTypeScatterMax:           true,

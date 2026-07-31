@@ -97,6 +97,7 @@ const (
 	OpTypeReduceSum
 	OpTypeRem
 	OpTypeReshape
+	OpTypeDynamicReshape
 	OpTypeReverse
 	OpTypeRound
 	OpTypeRsqrt

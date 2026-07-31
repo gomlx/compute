@@ -138,6 +138,10 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.ConvolveAxesConfig"
 			case "...PadAxis":
 				param.Type = "...compute.PadAxis"
+			case "...DynamicDimensionSpec":
+				param.Type = "...compute.DynamicDimensionSpec"
+			case "DynamicDimensionSpec":
+				param.Type = "compute.DynamicDimensionSpec"
 			case "ActivationType":
 				param.Type = "compute.ActivationType"
 			case "DenseConfig":

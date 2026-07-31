@@ -60,6 +60,33 @@ func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 	return resolved, nil
 }
 
+// ResolvePartial resolves all dynamic dimensions for which a binding exists, leaving other dynamic dimensions untouched.
+func (s Shape) ResolvePartial(bindings AxisBindings) (Shape, error) {
+	if !s.IsDynamic() || len(bindings) == 0 {
+		return s, nil
+	}
+	resolved := s.Clone()
+	for i, dim := range resolved.Dimensions {
+		if dim != DynamicDim {
+			continue
+		}
+		name := resolved.AxisName(i)
+		if name == "" {
+			continue
+		}
+		val, ok := bindings[name]
+		if !ok {
+			continue
+		}
+		if val <= 0 {
+			return Shape{}, errors.Errorf("Shape.ResolvePartial: binding for axis %q must be positive, got %d", name, val)
+		}
+		resolved.Dimensions[i] = val
+	}
+	return resolved, nil
+}
+
+
 // Extract axis bindings by comparing a template shape (with named dynamic axes)
 // against a concrete shape with all dimensions known (presumably given during execution, when the concrete inputs
 // are given).
