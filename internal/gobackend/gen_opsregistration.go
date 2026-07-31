@@ -225,6 +225,14 @@ func (f *Function) DynamicDimensionSize(operand compute.Value, axis int) (comput
 	return RegisterDynamicDimensionSize.Fn(f, operand, axis)
 }
 
+func (f *Function) DynamicReshape(operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	if RegisterDynamicReshape.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicReshape(operand, dimensions...)
+	}
+	return RegisterDynamicReshape.Fn(f, operand, dimensions...)
+}
+
 func (f *Function) DynamicShape(operand compute.Value) (compute.Value, error) {
 	if RegisterDynamicShape.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1003,6 +1011,9 @@ var (
 	}
 	RegisterDynamicDimensionSize = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int) (compute.Value, error)]{
 		Method: "DynamicDimensionSize",
+	}
+	RegisterDynamicReshape = OpHandlerRegistration[func(f *Function, operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
+		Method: "DynamicReshape",
 	}
 	RegisterDynamicShape = OpHandlerRegistration[func(f *Function, operand compute.Value) (compute.Value, error)]{
 		Method: "DynamicShape",

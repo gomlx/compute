@@ -91,6 +91,152 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 	})
 
+	t.Run("DynamicReshape", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicReshape)
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
+
+		t.Run("ExplicitDynamicValues", func(t *testing.T) {
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, shapes.DynamicDim}, []string{"batch", "seq_len"})
+
+			buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				batchSize, err := f.DynamicDimensionSize(params[0], 0)
+				if err != nil {
+					return nil, err
+				}
+				seqLen, err := f.DynamicDimensionSize(params[0], 1)
+				if err != nil {
+					return nil, err
+				}
+				numTokens, err := f.Mul(batchSize, seqLen)
+				if err != nil {
+					return nil, err
+				}
+				return f.DynamicReshape(params[0], compute.DynamicDimensionSpec{
+					Name:  "num_tokens",
+					Value: numTokens,
+				})
+			}
+
+			builder := b.Builder("test_dynamic_reshape")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+			out, err := buildFn(mainFn, []compute.Value{param})
+			if err != nil {
+				t.Fatalf("Build failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			testCases := []struct {
+				input [][]int32
+				want  []int32
+			}{
+				{
+					input: [][]int32{{1, 2, 3}, {4, 5, 6}}, // 2x3 -> 6
+					want:  []int32{1, 2, 3, 4, 5, 6},
+				},
+				{
+					input: [][]int32{{10, 20}, {30, 40}, {50, 60}, {70, 80}}, // 4x2 -> 8
+					want:  []int32{10, 20, 30, 40, 50, 60, 70, 80},
+				},
+			}
+
+			for _, tc := range testCases {
+				inBuf, err := testutil.ToBuffer(b, tc.input)
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %v", err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicReshape explicit dynamic values mismatch:\n%s", diff)
+				}
+			}
+		})
+
+		t.Run("MixedDynamicAndInferred", func(t *testing.T) {
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, shapes.DynamicDim, 4}, []string{"batch", "seq_len", ""})
+
+			buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				seqLen, err := f.DynamicDimensionSize(params[0], 1)
+				if err != nil {
+					return nil, err
+				}
+				return f.DynamicReshape(params[0],
+					compute.DynamicDimensionSpec{Name: "seq_len", Value: seqLen},
+					compute.DynamicDimensionSpec{Name: "inferred_flat"},
+				)
+			}
+
+			builder := b.Builder("test_dynamic_reshape_inferred")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+			out, err := buildFn(mainFn, []compute.Value{param})
+			if err != nil {
+				t.Fatalf("Build failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			// 2 x 3 x 4 tensor = 24 elements -> reshaped to [3, 8]
+			input := [][][]int32{
+				{
+					{1, 2, 3, 4},
+					{5, 6, 7, 8},
+					{9, 10, 11, 12},
+				},
+				{
+					{13, 14, 15, 16},
+					{17, 18, 19, 20},
+					{21, 22, 23, 24},
+				},
+			}
+			want := [][]int32{
+				{1, 2, 3, 4, 5, 6, 7, 8},
+				{9, 10, 11, 12, 13, 14, 15, 16},
+				{17, 18, 19, 20, 21, 22, 23, 24},
+			}
+
+			inBuf, err := testutil.ToBuffer(b, input)
+			if err != nil {
+				t.Fatalf("ToBuffer failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("DynamicReshape mixed dynamic and inferred mismatch:\n%s", diff)
+			}
+		})
+	})
+
 	t.Run("Reverse", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReverse)
 		y0, err := testutil.Exec1(b, []any{[][]float32{{1, 2}, {3, 4}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
