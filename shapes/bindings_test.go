@@ -261,7 +261,16 @@ func TestBindings(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Expected error, got nil")
 		}
+
+		// AnonymousAxis conflict.
+		s9 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{AnonymousAxis, ""})
+		s10 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{AnonymousAxis, ""})
+		_, err = UnifyAxisNames(s9, s10)
+		if err == nil {
+			t.Fatalf("Expected error for AnonymousAxis, got nil")
+		}
 	})
+
 
 	t.Run("RoundTrip_ExtractAndResolve", func(t *testing.T) {
 		// Extract bindings from concrete shape, then resolve template with those bindings.

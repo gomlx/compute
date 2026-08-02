@@ -1404,7 +1404,17 @@ func TestDotGeneral_DynamicAndNames(t *testing.T) {
 			t.Fatalf("Expected %v to contain %v", err.Error(), "axis name conflict")
 		}
 	})
+
+	t.Run("AnonymousAxisConflict", func(t *testing.T) {
+		lhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
+		rhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
+		_, err := DotGeneral(lhs, []int{1}, []int{0}, rhs, []int{1}, []int{0}, DotGeneralConfig{})
+		if err == nil {
+			t.Fatalf("Expected error, got nil")
+		}
+	})
 }
+
 
 func TestConcatenateOp_Dynamic(t *testing.T) {
 	t.Run("ConcatOnDynamicAxis", func(t *testing.T) {

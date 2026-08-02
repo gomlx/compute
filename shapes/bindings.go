@@ -132,11 +132,15 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 //
 // Rules:
 //   - "" + "" = "" (both unnamed → unnamed)
-//   - "name" + "" = "name" (one named → keep the name)
-//   - "" + "name" = "name" (one named → keep the name)
-//   - "name" + "name" = "name" (same name → keep it)
+//   - "name" + "" = "name" (one named → keep the name, provided name != AnonymousAxis)
+//   - "" + "name" = "name" (one named → keep the name, provided name != AnonymousAxis)
+//   - "name" + "name" = "name" (same name → keep it, provided name != AnonymousAxis)
+//   - AnonymousAxis + any = error (AnonymousAxis never unifies/matches with anything)
 //   - "a" + "b" = error (different names → conflict)
 func UnifyAxisName(name1, name2 string) (string, error) {
+	if name1 == AnonymousAxis || name2 == AnonymousAxis {
+		return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
+	}
 	if name1 == "" {
 		return name2, nil
 	}
@@ -148,6 +152,7 @@ func UnifyAxisName(name1, name2 string) (string, error) {
 	}
 	return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
 }
+
 
 // UnifyAxisNames unifies axis names from two shapes of the same rank.
 // Returns the unified axis names, or error on name conflicts.

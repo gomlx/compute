@@ -284,8 +284,8 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 			} else if rhsDim == 1 {
 				output.Dimensions[axis] = lhsDim // broadcast: use lhs (possibly dynamic)
 			} else if lhsDim == rhsDim {
-				// Both dynamic: they must have mathing symbolic value.
-				if lhsShape.AxisNames[axis] != rhsShape.AxisNames[axis] {
+				// Both dynamic: they must have matching symbolic value.
+				if !shapes.AxisNameEqual(lhsShape.AxisName(axis), rhsShape.AxisName(axis)) {
 					err = errors.Errorf(
 						"axis #%d is dynamic for both operands, but have different axis names for BinaryOp (%s), "+
 							"they cannot be implicitly broadcast; got shapes %s and %s",
@@ -293,6 +293,7 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 					return shapes.Invalid(), err
 				}
 				output.Dimensions[axis] = shapes.DynamicDim // both dynamic or one dynamic non-broadcast
+
 			} else {
 				// One side is dynamic and the other is not 1.
 				err = errors.Errorf(

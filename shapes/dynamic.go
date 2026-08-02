@@ -24,8 +24,10 @@ const DynamicDim = -1
 //
 // axisNames must have the same length as dimensions. Use "" for unnamed axes.
 //
-// Axis names starting with "=" or "#" are reserved for internal (backend implementation) use and shouldn't e
-// used by end users.
+// Axis name reserved characters/strings:
+// - Names starting with "=" or "#" are reserved for internal (backend implementation) use.
+// - "?" (AnonymousAxis) represents a dynamic axis that should never match anything, including itself.
+// - "*" is reserved for future wildcard matching.
 //
 // Example:
 //
@@ -87,6 +89,11 @@ func (s Shape) AxisName(axis int) string {
 
 // WithAxisNames returns a copy of the shape with the given axis names set.
 // The number of names must equal the rank.
+//
+// Axis name reserved characters/strings:
+// - Names starting with "=" or "#" are reserved for internal (backend implementation) use.
+// - "?" (AnonymousAxis) represents a dynamic axis that should never match anything, including itself.
+// - "*" is reserved for future wildcard matching.
 func (s Shape) WithAxisNames(names ...string) Shape {
 	if len(names) != s.Rank() {
 		panic(errors.Errorf("Shape.WithAxisNames: len(names)=%d must equal rank=%d", len(names), s.Rank()))
@@ -100,15 +107,14 @@ func (s Shape) WithAxisNames(names ...string) Shape {
 // including itself, in axis comparison helper functions.
 const AnonymousAxis = "?"
 
-// axisNameEqual checks whether two individual axis names are equal.
-// If either axis name is AnonymousAxis, it returns false (it never matches anything).
-func axisNameEqual(a, b string) bool {
+// AxisNameEqual checks whether two individual axis names are equal.
+// If either axis name is AnonymousAxis, it returns false (it never matches anything, including itself).
+func AxisNameEqual(a, b string) bool {
 	if a == AnonymousAxis || b == AnonymousAxis {
 		return false
 	}
 	return a == b
 }
-
 
 // axisNamesEqual compares two axis name slices for equality.
 // nil is considered equal to a slice of all empty strings.
@@ -136,10 +142,9 @@ func axisNamesEqual(a, b []string) bool {
 		if b != nil {
 			bName = b[i]
 		}
-		if !axisNameEqual(aName, bName) {
+		if !AxisNameEqual(aName, bName) {
 			return false
 		}
 	}
 	return true
 }
-
