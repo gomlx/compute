@@ -105,19 +105,20 @@ func readScalarInt(buf *gobackend.Buffer) (int, error) {
 	}
 }
 
-// execDynamicReshape implements DynamicReshape.
+// execDynamicReshape implements DynamicReshape: it materializes the dynamic values to static ones, and reuse `reshapeToShape`.
 func execDynamicReshape(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
 	specs := node.Data.([]compute.DynamicDimensionSpec)
 	concreteDims := make([]int, len(specs))
-	axisNames := make([]string, len(specs))
 	valIdx := 1
 	knownProduct := 1
 	inferredIdx := -1
 
 	for i, spec := range specs {
-		axisNames[i] = spec.Name
-		if spec.Name != "" {
+		if spec.Name == "" {
+			concreteDims[i] = spec.Static
+			knownProduct *= spec.Static
+		} else {
 			if spec.Value != nil {
 				if valIdx >= len(inputs) {
 					return nil, errors.Errorf("execDynamicReshape: missing input buffer for dynamic dimension value at spec index %d", i)
@@ -135,9 +136,6 @@ func execDynamicReshape(backend *gobackend.Backend, node *gobackend.Node, inputs
 			} else {
 				inferredIdx = i
 			}
-		} else {
-			concreteDims[i] = spec.Static
-			knownProduct *= spec.Static
 		}
 	}
 
@@ -152,6 +150,6 @@ func execDynamicReshape(backend *gobackend.Backend, node *gobackend.Node, inputs
 		concreteDims[inferredIdx] = operandSize / knownProduct
 	}
 
-	targetShape := shapes.Make(operand.RawShape.DType, concreteDims...).WithAxisNames(axisNames...)
+	targetShape := shapes.Make(operand.RawShape.DType, concreteDims...)
 	return reshapeToShape(backend, targetShape, inputs, inputsOwned)
 }

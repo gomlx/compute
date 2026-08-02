@@ -5,6 +5,7 @@ package shapes
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gomlx/compute/support/xslices"
@@ -48,7 +49,7 @@ func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 		if name == "" {
 			return Shape{}, errors.Errorf("Shape.Resolve: dynamic axis %d has no name and cannot be resolved: %s", i, s)
 		}
-		val, ok := bindings[name]
+		val, ok := resolveAxisName(name, bindings)
 		if !ok {
 			return Shape{}, errors.Errorf("Shape.Resolve: no binding for axis %q in shape %s", name, s)
 		}
@@ -74,7 +75,7 @@ func (s Shape) ResolvePartial(bindings AxisBindings) (Shape, error) {
 		if name == "" {
 			continue
 		}
-		val, ok := bindings[name]
+		val, ok := resolveAxisName(name, bindings)
 		if !ok {
 			continue
 		}
@@ -84,6 +85,34 @@ func (s Shape) ResolvePartial(bindings AxisBindings) (Shape, error) {
 		resolved.Dimensions[i] = val
 	}
 	return resolved, nil
+}
+
+// resolveAxisName attempts to resolve an axis name against bindings.
+// It supports symbolic sum expressions starting with SymbolicAxisPrefix (e.g., "=10+a").
+func resolveAxisName(name string, bindings AxisBindings) (int, bool) {
+	if val, ok := bindings[name]; ok {
+		return val, true
+	}
+	if strings.HasPrefix(name, SymbolicAxisPrefix) {
+		expr := strings.TrimPrefix(name, SymbolicAxisPrefix)
+		parts := strings.Split(expr, "+")
+		total := 0
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				return 0, false
+			}
+			if num, err := strconv.Atoi(part); err == nil {
+				total += num
+			} else if boundVal, ok := bindings[part]; ok {
+				total += boundVal
+			} else {
+				return 0, false
+			}
+		}
+		return total, true
+	}
+	return 0, false
 }
 
 
@@ -132,11 +161,15 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 //
 // Rules:
 //   - "" + "" = "" (both unnamed → unnamed)
-//   - "name" + "" = "name" (one named → keep the name)
-//   - "" + "name" = "name" (one named → keep the name)
-//   - "name" + "name" = "name" (same name → keep it)
+//   - "name" + "" = "name" (one named → keep the name, provided name != AnonymousAxis)
+//   - "" + "name" = "name" (one named → keep the name, provided name != AnonymousAxis)
+//   - "name" + "name" = "name" (same name → keep it, provided name != AnonymousAxis)
+//   - AnonymousAxis + any = error (AnonymousAxis never unifies/matches with anything)
 //   - "a" + "b" = error (different names → conflict)
 func UnifyAxisName(name1, name2 string) (string, error) {
+	if name1 == AnonymousAxis || name2 == AnonymousAxis {
+		return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
+	}
 	if name1 == "" {
 		return name2, nil
 	}
@@ -148,6 +181,7 @@ func UnifyAxisName(name1, name2 string) (string, error) {
 	}
 	return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
 }
+
 
 // UnifyAxisNames unifies axis names from two shapes of the same rank.
 // Returns the unified axis names, or error on name conflicts.

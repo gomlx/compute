@@ -43,6 +43,10 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	xNode := inputs[0]
 	wNode := inputs[1]
 
+	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() {
+		return nil, compute.ErrNotImplemented
+	}
+
 	if xNode.Shape.Rank() < 1 || wNode.Shape.Rank() < 2 {
 		return nil, errors.Errorf("FusedDense: x must have rank >= 1 (got %d), weight must have rank >= 2 (got %d)",
 			xNode.Shape.Rank(), wNode.Shape.Rank())

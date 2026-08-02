@@ -1,3 +1,8 @@
+- 2026-08-02:
+  - Fix dynamic output shape materialization in `gobackend` for `binaryOps`, `Concatenate`, and `Reduce` operations so `Buffer.RawShape` is always materialized/concrete.
+  - Implement symbolic dynamic axis naming for `Concatenate` (`=term1+term2`) with support for parsing/resolving composite symbolic names in `shapes.Resolve`.
+  - Add backend compliance tests for `binaryOps`, `Concatenate`, and `Reduce` with dynamic shapes under `support/backendtest`.
+
 - 2026-07-28:
   - Updated FusedDense to take a `DenseConfig` options parameter, which now includes layout information of the weights.
   - Renamed `AxesLayout` -> `AttentionAxesLayout` (since it's for attention only).
