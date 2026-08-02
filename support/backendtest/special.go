@@ -323,6 +323,62 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 				t.Errorf("Full reduction mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("DynamicShapeReduction", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
+			builder := b.Builder("test_dynamic_reduce")
+			mainFn := builder.Main()
+			// Shape (batch, seq, 4) dynamic
+			sInput := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, shapes.DynamicDim, 4}, []string{"batch", "seq", ""})
+			pInput, err := mainFn.Parameter("input", sInput, nil)
+			if err != nil {
+				t.Fatalf("Failed creating parameter: %+v", err)
+			}
+			// Reduce along axis 1 ("seq") -> output shape should be (batch, 4) dynamic
+			outVal, err := mainFn.ReduceSum(pInput, 1)
+			if err != nil {
+				t.Fatalf("Failed creating ReduceSum node: %+v", err)
+			}
+			if err := mainFn.Return([]compute.Value{outVal}, nil); err != nil {
+				t.Fatalf("Failed returning output: %+v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Failed compiling graph: %+v", err)
+			}
+
+			// Concrete input shape: (2, 3, 4)
+			bufInput, err := b.BufferFromFlatData(0, []float32{
+				1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3,
+				4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6,
+			}, shapes.Make(dtypes.Float32, 2, 3, 4))
+			if err != nil {
+				t.Fatalf("Failed creating input buffer: %+v", err)
+			}
+
+			results, err := exec.Execute([]compute.Buffer{bufInput}, []bool{false}, 0)
+			if err != nil {
+				t.Fatalf("Failed executing graph: %+v", err)
+			}
+			resShape, err := results[0].Shape()
+			if err != nil {
+				t.Fatalf("Failed getting result shape: %+v", err)
+			}
+			if resShape.IsDynamic() {
+				t.Errorf("Expected concrete output shape, got dynamic shape: %s", resShape)
+			}
+			if !resShape.EqualDimensions(shapes.Make(dtypes.Float32, 2, 4)) {
+				t.Errorf("Expected shape (2, 4), got %s", resShape)
+			}
+			gotData, err := testutil.FromBuffer(b, results[0])
+			if err != nil {
+				t.Fatalf("Failed converting output buffer: %+v", err)
+			}
+			wantData := [][]float32{{6, 6, 6, 6}, {15, 15, 15, 15}}
+			if ok, diff := testutil.IsEqual(wantData, gotData); !ok {
+				t.Errorf("Dynamic reduce result mismatch (-want +got):\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("ReduceBitwise", func(t *testing.T) {

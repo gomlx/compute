@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
 )
 
@@ -128,7 +129,20 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		gobackend.CopyFlat(output.Flat, operand.Flat)
 		return output, nil
 	}
-	output, err := backend.GetBuffer(node.Shape)
+	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		concreteShape := outputShape.Clone()
+		axesSet := sets.MakeWith(reduceAxes...)
+		outIdx := 0
+		for axis, dim := range operand.RawShape.Dimensions {
+			if !axesSet.Has(axis) {
+				concreteShape.Dimensions[outIdx] = dim
+				outIdx++
+			}
+		}
+		outputShape = concreteShape
+	}
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}
