@@ -387,4 +387,12 @@ func TestAxisNamesEqual(t *testing.T) {
 	if axisNamesEqual([]string{"a"}, []string{"a", "b"}) {
 		t.Fatalf("Condition expected to be false")
 	}
+	if axisNamesEqual([]string{AnonymousAxis}, []string{AnonymousAxis}) {
+		t.Fatalf("Condition expected to be false for AnonymousAxis")
+	}
+	if axisNamesEqual([]string{"a"}, []string{AnonymousAxis}) {
+		t.Fatalf("Condition expected to be false for AnonymousAxis")
+	}
 }
+
+

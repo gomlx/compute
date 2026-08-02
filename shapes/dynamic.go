@@ -96,6 +96,20 @@ func (s Shape) WithAxisNames(names ...string) Shape {
 	return s2
 }
 
+// AnonymousAxis is a special-cased axis name for dynamic dimensions that should never match anything,
+// including itself, in axis comparison helper functions.
+const AnonymousAxis = "?"
+
+// axisNameEqual checks whether two individual axis names are equal.
+// If either axis name is AnonymousAxis, it returns false (it never matches anything).
+func axisNameEqual(a, b string) bool {
+	if a == AnonymousAxis || b == AnonymousAxis {
+		return false
+	}
+	return a == b
+}
+
+
 // axisNamesEqual compares two axis name slices for equality.
 // nil is considered equal to a slice of all empty strings.
 func axisNamesEqual(a, b []string) bool {
@@ -122,9 +136,10 @@ func axisNamesEqual(a, b []string) bool {
 		if b != nil {
 			bName = b[i]
 		}
-		if aName != bName {
+		if !axisNameEqual(aName, bName) {
 			return false
 		}
 	}
 	return true
 }
+
