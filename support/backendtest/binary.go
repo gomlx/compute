@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
 
@@ -60,6 +62,127 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual([][]int32{{9, 99}, {12, 102}, {15, 105}}, y4); !ok {
 			t.Errorf("y4 value mismatch (-want +got):\n%s", diff)
 		}
+
+		// Test with dynamic shapes (broadcasting from scalar and dimension of 1).
+		t.Run("DynamicShapesBroadcasting", func(t *testing.T) {
+			t.Run("Dim1Broadcast", func(t *testing.T) {
+				builder := b.Builder("test_dynamic_add_dim1")
+				mainFn := builder.Main()
+				// LHS: shape (batch, 1) dynamic; RHS: shape (batch, 4) dynamic
+				sLHS := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 1}, []string{"batch", ""})
+				sRHS := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{"batch", ""})
+				pLHS, err := mainFn.Parameter("lhs", sLHS, nil)
+				if err != nil {
+					t.Fatalf("Failed creating parameter LHS: %+v", err)
+				}
+				pRHS, err := mainFn.Parameter("rhs", sRHS, nil)
+				if err != nil {
+					t.Fatalf("Failed creating parameter RHS: %+v", err)
+				}
+				outVal, err := mainFn.Add(pLHS, pRHS)
+				if err != nil {
+					t.Fatalf("Failed creating Add node: %+v", err)
+				}
+				if err := mainFn.Return([]compute.Value{outVal}, nil); err != nil {
+					t.Fatalf("Failed returning output: %+v", err)
+				}
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Failed compiling graph: %+v", err)
+				}
+
+				bufLHS, err := b.BufferFromFlatData(0, []float32{10, 20}, shapes.Make(dtypes.Float32, 2, 1))
+				if err != nil {
+					t.Fatalf("Failed creating bufLHS: %+v", err)
+				}
+				bufRHS, err := b.BufferFromFlatData(0, []float32{1, 2, 3, 4, 5, 6, 7, 8}, shapes.Make(dtypes.Float32, 2, 4))
+				if err != nil {
+					t.Fatalf("Failed creating bufRHS: %+v", err)
+				}
+
+				results, err := exec.Execute([]compute.Buffer{bufLHS, bufRHS}, []bool{false, false}, 0)
+				if err != nil {
+					t.Fatalf("Failed executing graph with dynamic shapes: %+v", err)
+				}
+				resShape, err := results[0].Shape()
+				if err != nil {
+					t.Fatalf("Failed getting result shape: %+v", err)
+				}
+				if resShape.IsDynamic() {
+					t.Errorf("Expected concrete output shape, but got dynamic shape: %s", resShape)
+				}
+				if !resShape.EqualDimensions(shapes.Make(dtypes.Float32, 2, 4)) {
+					t.Errorf("Expected shape (2, 4), got %s", resShape)
+				}
+				gotData, err := testutil.FromBuffer(b, results[0])
+				if err != nil {
+					t.Fatalf("Failed converting output buffer: %+v", err)
+				}
+				wantData := [][]float32{{11, 12, 13, 14}, {25, 26, 27, 28}}
+				if ok, diff := testutil.IsEqual(wantData, gotData); !ok {
+					t.Errorf("Dynamic add result mismatch (-want +got):\n%s", diff)
+				}
+			})
+
+			t.Run("ScalarBroadcast", func(t *testing.T) {
+				builder := b.Builder("test_dynamic_add_scalar")
+				mainFn := builder.Main()
+				// LHS: scalar Float32; RHS: shape (batch, 3) dynamic
+				sLHS := shapes.Make(dtypes.Float32)
+				sRHS := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+				pLHS, err := mainFn.Parameter("lhs", sLHS, nil)
+				if err != nil {
+					t.Fatalf("Failed creating parameter LHS: %+v", err)
+				}
+				pRHS, err := mainFn.Parameter("rhs", sRHS, nil)
+				if err != nil {
+					t.Fatalf("Failed creating parameter RHS: %+v", err)
+				}
+				outVal, err := mainFn.Add(pLHS, pRHS)
+				if err != nil {
+					t.Fatalf("Failed creating Add node: %+v", err)
+				}
+				if err := mainFn.Return([]compute.Value{outVal}, nil); err != nil {
+					t.Fatalf("Failed returning output: %+v", err)
+				}
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Failed compiling graph: %+v", err)
+				}
+
+				bufLHS, err := b.BufferFromFlatData(0, []float32{10}, shapes.Make(dtypes.Float32))
+				if err != nil {
+					t.Fatalf("Failed creating bufLHS: %+v", err)
+				}
+				bufRHS, err := b.BufferFromFlatData(0, []float32{1, 2, 3, 4, 5, 6}, shapes.Make(dtypes.Float32, 2, 3))
+				if err != nil {
+					t.Fatalf("Failed creating bufRHS: %+v", err)
+				}
+
+				results, err := exec.Execute([]compute.Buffer{bufLHS, bufRHS}, []bool{false, false}, 0)
+				if err != nil {
+					t.Fatalf("Failed executing graph with dynamic shapes: %+v", err)
+				}
+				resShape, err := results[0].Shape()
+				if err != nil {
+					t.Fatalf("Failed getting result shape: %+v", err)
+				}
+				if resShape.IsDynamic() {
+					t.Errorf("Expected concrete output shape, but got dynamic shape: %s", resShape)
+				}
+				if !resShape.EqualDimensions(shapes.Make(dtypes.Float32, 2, 3)) {
+					t.Errorf("Expected shape (2, 3), got %s", resShape)
+				}
+				gotData, err := testutil.FromBuffer(b, results[0])
+				if err != nil {
+					t.Fatalf("Failed converting output buffer: %+v", err)
+				}
+				wantData := [][]float32{{11, 12, 13}, {14, 15, 16}}
+				if ok, diff := testutil.IsEqual(wantData, gotData); !ok {
+					t.Errorf("Dynamic scalar add result mismatch (-want +got):\n%s", diff)
+				}
+			})
+		})
 	})
 
 	t.Run("Mul", func(t *testing.T) {

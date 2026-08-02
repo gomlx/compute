@@ -281,8 +281,20 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 			// At least one side is dynamic.
 			if lhsDim == 1 {
 				output.Dimensions[axis] = rhsDim // broadcast: use rhs (possibly dynamic)
+				if rhsShape.AxisNames != nil {
+					if output.AxisNames == nil {
+						output.AxisNames = make([]string, output.Rank())
+					}
+					output.AxisNames[axis] = rhsShape.AxisName(axis)
+				}
 			} else if rhsDim == 1 {
 				output.Dimensions[axis] = lhsDim // broadcast: use lhs (possibly dynamic)
+				if lhsShape.AxisNames != nil {
+					if output.AxisNames == nil {
+						output.AxisNames = make([]string, output.Rank())
+					}
+					output.AxisNames[axis] = lhsShape.AxisName(axis)
+				}
 			} else if lhsDim == rhsDim {
 				// Both dynamic: they must have matching symbolic value.
 				if !shapes.AxisNameEqual(lhsShape.AxisName(axis), rhsShape.AxisName(axis)) {

@@ -59,7 +59,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {return nil, err}
 {{- else }}
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 {{- end }}
 
 {{- if .IsCommutative}}// Add is commutative, so if any of the two is scalar, make the rhs the scalar one.

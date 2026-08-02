@@ -40,7 +40,7 @@ func init() {
 
 // execAdd executes the binary op Add.
 func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -179,7 +179,7 @@ func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execMul executes the binary op Mul.
 func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -318,7 +318,7 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execSub executes the binary op Sub.
 func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -476,7 +476,7 @@ func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execDiv executes the binary op Div.
 func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -634,7 +634,7 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execRem executes the binary op Rem.
 func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -825,7 +825,7 @@ func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execPow executes the binary op Pow.
 func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1016,7 +1016,7 @@ func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execAtan2 executes the binary op Atan2.
 func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1150,7 +1150,7 @@ func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execMax executes the binary op Max.
 func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -1289,7 +1289,7 @@ func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execMin executes the binary op Min.
 func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape) // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
@@ -1428,7 +1428,7 @@ func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 
 // execBitwiseAnd executes the binary op BitwiseAnd.
 func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1498,7 +1498,7 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 
 // execBitwiseOr executes the binary op BitwiseOr.
 func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1568,7 +1568,7 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 
 // execBitwiseXor executes the binary op BitwiseXor.
 func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1638,7 +1638,7 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 
 // execLogicalAnd executes the binary op LogicalAnd.
 func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1688,7 +1688,7 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 
 // execLogicalOr executes the binary op LogicalOr.
 func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1738,7 +1738,7 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 
 // execLogicalXor executes the binary op LogicalXor.
 func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutput(backend, inputs, inputsOwned, node.Shape)
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
 	switch lhs.RawShape.DType { //nolint:exhaustive

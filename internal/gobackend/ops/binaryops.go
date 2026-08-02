@@ -174,11 +174,30 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 	return node, nil
 }
 
-// binaryOperandsAndOutput is a convenience function to get the inputs and output -- which may be the reuse of the input.
-func binaryOperandsAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buffer, inputsOwned []bool, outputShape shapes.Shape) (
+// binaryOperandsAndOutputForExecution is a convenience function to get the inputs and output -- which may be the reuse of the input.
+//
+// - inputs[i] is set to nil if inputs[i] is reused.
+// - output is the buffer where the result is stored, and its shape is made static.
+func binaryOperandsAndOutputForExecution(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool, outputShape shapes.Shape) (
 	lhs, rhs, output *gobackend.Buffer, lhsIsScalarOr1, rhsIsScalarOr1 bool) {
 	lhs, rhs = inputs[0], inputs[1]
-	lhsIsScalarOr1, rhsIsScalarOr1 = lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
+	lhsIsScalarOr1 = lhs.RawShape.Size() == 1
+	rhsIsScalarOr1 = rhs.RawShape.Size() == 1
+	if outputShape.IsDynamic() {
+		concreteOutputShape := outputShape.Clone()
+		for axis, dim := range concreteOutputShape.Dimensions {
+			if dim == shapes.DynamicDim {
+				if axis < lhs.RawShape.Rank() {
+					dim = lhs.RawShape.Dimensions[axis]
+				}
+				if axis < rhs.RawShape.Rank() && (dim == 1 || dim == shapes.DynamicDim) {
+					dim = rhs.RawShape.Dimensions[axis]
+				}
+				concreteOutputShape.Dimensions[axis] = dim
+			}
+		}
+		outputShape = concreteOutputShape
+	}
 	switch {
 	case inputsOwned[1] && rhs.RawShape.Equal(outputShape):
 		output = rhs
