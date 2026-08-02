@@ -514,6 +514,65 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual(want3, y3); !ok {
 			t.Fatalf("Concatenate y3 mismatch:\n%s", diff)
 		}
+
+		// Test Case 4: Concatenating with dynamic shapes on non-concat axis
+		t.Run("DynamicNonConcatAxis", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_concat_non_concat_axis")
+			mainFn := builder.Main()
+			s1 := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 2}, []string{"batch", ""})
+			s2 := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+			p1, err := mainFn.Parameter("p1", s1, nil)
+			if err != nil {
+				t.Fatalf("Failed creating p1: %+v", err)
+			}
+			p2, err := mainFn.Parameter("p2", s2, nil)
+			if err != nil {
+				t.Fatalf("Failed creating p2: %+v", err)
+			}
+			outVal, err := mainFn.Concatenate(1, p1, p2)
+			if err != nil {
+				t.Fatalf("Failed creating Concatenate node: %+v", err)
+			}
+			if err := mainFn.Return([]compute.Value{outVal}, nil); err != nil {
+				t.Fatalf("Failed returning output: %+v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Failed compiling graph: %+v", err)
+			}
+
+			buf1, err := b.BufferFromFlatData(0, []float32{1, 2, 3, 4}, shapes.Make(dtypes.Float32, 2, 2))
+			if err != nil {
+				t.Fatalf("Failed creating buf1: %+v", err)
+			}
+			buf2, err := b.BufferFromFlatData(0, []float32{10, 20, 30, 40, 50, 60}, shapes.Make(dtypes.Float32, 2, 3))
+			if err != nil {
+				t.Fatalf("Failed creating buf2: %+v", err)
+			}
+
+			results, err := exec.Execute([]compute.Buffer{buf1, buf2}, []bool{false, false}, 0)
+			if err != nil {
+				t.Fatalf("Failed executing Concatenate with dynamic non-concat axis: %+v", err)
+			}
+			resShape, err := results[0].Shape()
+			if err != nil {
+				t.Fatalf("Failed getting result shape: %+v", err)
+			}
+			if resShape.IsDynamic() {
+				t.Errorf("Expected concrete output shape, but got dynamic shape: %s", resShape)
+			}
+			if !resShape.EqualDimensions(shapes.Make(dtypes.Float32, 2, 5)) {
+				t.Errorf("Expected shape (2, 5), got %s", resShape)
+			}
+			gotData, err := testutil.FromBuffer(b, results[0])
+			if err != nil {
+				t.Fatalf("Failed converting output buffer: %+v", err)
+			}
+			wantData := [][]float32{{1, 2, 10, 20, 30}, {3, 4, 40, 50, 60}}
+			if ok, diff := testutil.IsEqual(wantData, gotData); !ok {
+				t.Errorf("Dynamic Concatenate result mismatch (-want +got):\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Scatter", func(t *testing.T) {

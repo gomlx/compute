@@ -36,6 +36,9 @@ package shapeinference
 
 import (
 	"slices"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -843,6 +846,7 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 	}
 
 	// Validate further inputs and accumulate the concatenation axis size.
+	isConcatAxisDynamic := false
 	for i := 1; i < len(inputs); i++ {
 		currentShape := inputs[i]
 		if currentShape.DType == dtypes.InvalidDType {
@@ -859,22 +863,17 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 
 		for d := range rank {
 			if d == axis {
-				// For concat axis: if either is dynamic, result is dynamic.
 				if output.Dimensions[d] == shapes.DynamicDim || currentShape.Dimensions[d] == shapes.DynamicDim {
-					// Concatenating on a dynamic axis is not supported yet, because we
-					// don't have axis expressions to represent the new size.
-					return shapes.Invalid(), errors.Errorf("ConcatenateOp: concatenation on a dynamic axis (%d, names %q and %q) is not supported yet (requires axis expressions)",
-						d, output.AxisName(d), currentShape.AxisName(d))
-				} else {
+					isConcatAxisDynamic = true
+					output.Dimensions[d] = shapes.DynamicDim
+				} else if !isConcatAxisDynamic {
 					output.Dimensions[d] += currentShape.Dimensions[d]
 				}
 			} else {
 				// For non-concat axes: allow dynamic dims on either side.
 				if output.Dimensions[d] == shapes.DynamicDim || currentShape.Dimensions[d] == shapes.DynamicDim {
 					// Dynamic dims are assumed compatible; keep dynamic.
-					if output.Dimensions[d] != shapes.DynamicDim {
-						output.Dimensions[d] = currentShape.Dimensions[d]
-					}
+					output.Dimensions[d] = shapes.DynamicDim
 				} else if currentShape.Dimensions[d] != output.Dimensions[d] {
 					return shapes.Invalid(), errors.Errorf("mismatched dimensions for ConcatenateOp at axis %d (non-concatenation axis): input #0 has %d, input #%d has %d",
 						d, output.Dimensions[d], i, currentShape.Dimensions[d])
@@ -882,9 +881,12 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 			}
 		}
 
-		// Unify axis names from current input.
+		// Unify axis names from current input for non-concat axes.
 		if output.AxisNames != nil || currentShape.AxisNames != nil {
 			for d := range rank {
+				if d == axis {
+					continue
+				}
 				outputName := ""
 				if output.AxisNames != nil {
 					outputName = output.AxisNames[d]
@@ -895,11 +897,7 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 				}
 				unified, nameErr := shapes.UnifyAxisName(outputName, inputName)
 				if nameErr != nil {
-					if d != axis {
-						return shapes.Invalid(), errors.Wrapf(nameErr, "axis name conflict at axis %d in ConcatenateOp", d)
-					}
-					// Concat axis with different names: drop the name.
-					unified = ""
+					return shapes.Invalid(), errors.Wrapf(nameErr, "axis name conflict at axis %d in ConcatenateOp", d)
 				}
 				if output.AxisNames == nil {
 					output.AxisNames = make([]string, rank)
@@ -908,6 +906,61 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 			}
 		}
 	}
+
+	// Calculate axis name for the concatenation axis if dynamic or named.
+	hasAnonymous := false
+	var parts []string
+	for _, inp := range inputs {
+		dim := inp.Dimensions[axis]
+		name := inp.AxisName(axis)
+		if name == shapes.AnonymousAxis {
+			hasAnonymous = true
+			break
+		}
+		if dim != shapes.DynamicDim {
+			parts = append(parts, strconv.Itoa(dim))
+		} else if name != "" {
+			if strings.HasPrefix(name, shapes.SymbolicAxisPrefix) {
+				subExpr := strings.TrimPrefix(name, shapes.SymbolicAxisPrefix)
+				subParts := strings.Split(subExpr, "+")
+				for _, p := range subParts {
+					p = strings.TrimSpace(p)
+					if p == shapes.AnonymousAxis {
+						hasAnonymous = true
+						break
+					}
+					if p != "" {
+						parts = append(parts, p)
+					}
+				}
+				if hasAnonymous {
+					break
+				}
+			} else {
+				parts = append(parts, name)
+			}
+		} else {
+			// Dynamic axis without a name behaves as anonymous
+			hasAnonymous = true
+			break
+		}
+	}
+
+	var concatAxisName string
+	if hasAnonymous {
+		concatAxisName = shapes.AnonymousAxis
+	} else if len(parts) > 0 {
+		sort.Strings(parts)
+		concatAxisName = shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
+	}
+
+	if concatAxisName != "" {
+		if output.AxisNames == nil {
+			output.AxisNames = make([]string, rank)
+		}
+		output.AxisNames[axis] = concatAxisName
+	}
+
 	return output, nil
 }
 

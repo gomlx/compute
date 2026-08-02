@@ -1213,21 +1213,20 @@ func TestConcatenateOp_AxisNames(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
-		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
+		if ok, diff := testutil.IsEqual([]string{"batch", "=256+512"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "=256+512"}, output.AxisNames)
 		}
 	})
 
-	t.Run("ConcatAxisNameConflictDrops", func(t *testing.T) {
-		// Different names on the concat axis → name is dropped for that axis.
+	t.Run("ConcatAxisNameSymbolicDynamic", func(t *testing.T) {
 		s1 := SD(F32, []int{-1, 10}, []string{"batch", "a"})
-		s2 := SD(F32, []int{-1, 10}, []string{"batch", "b"})
-		_, err := Concatenate([]shapes.Shape{s1, s2}, 0) // concat on axis 0 (dynamic)
-		if err == nil {
-			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
+		s2 := SD(F32, []int{-1, 10}, []string{"batch", "a"})
+		output, err := Concatenate([]shapes.Shape{s1, s2}, 0) // concat on axis 0 (dynamic)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
 		}
-		if !strings.Contains(err.Error(), "concatenation on a dynamic axis") {
-			t.Errorf("Expected error message to mention concatenation on dynamic axis, got: %v", err)
+		if ok, diff := testutil.IsEqual([]string{"=batch+batch", "a"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"=batch+batch", "a"}, output.AxisNames)
 		}
 	})
 
@@ -1243,12 +1242,15 @@ func TestConcatenateOp_AxisNames(t *testing.T) {
 		}
 	})
 
-	t.Run("DynamicConcatAxis", func(t *testing.T) {
+	t.Run("DynamicConcatAxisSymbolic", func(t *testing.T) {
 		s1 := SD(F32, []int{-1, -1}, []string{"batch", "seq"})
 		s2 := SD(F32, []int{-1, 128}, []string{"batch", ""})
-		_, err := Concatenate([]shapes.Shape{s1, s2}, 1) // Concatenating on dynamic axis 1
-		if err == nil {
-			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
+		output, err := Concatenate([]shapes.Shape{s1, s2}, 1) // Concatenating on dynamic axis 1
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]string{"batch", "=128+seq"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "=128+seq"}, output.AxisNames)
 		}
 	})
 }
@@ -1418,16 +1420,14 @@ func TestDotGeneral_DynamicAndNames(t *testing.T) {
 
 func TestConcatenateOp_Dynamic(t *testing.T) {
 	t.Run("ConcatOnDynamicAxis", func(t *testing.T) {
-		// Concatenating on a dynamic axis should currently be an error because we can't
-		// represent the resulting size (e.g. batchSize + batchSize) symbolically.
 		s1 := SD(F32, []int{-1, 512}, []string{"batch", ""})
 		s2 := SD(F32, []int{-1, 512}, []string{"batch", ""})
-		_, err := Concatenate([]shapes.Shape{s1, s2}, 0)
-		if err == nil {
-			t.Fatalf("Expected error when concatenating on dynamic axis, but got nil")
+		output, err := Concatenate([]shapes.Shape{s1, s2}, 0)
+		if err != nil {
+			t.Fatalf("Expected no error when concatenating on dynamic axis, got %v", err)
 		}
-		if !strings.Contains(err.Error(), "concatenation on a dynamic axis") {
-			t.Errorf("Expected error message to mention concatenation on dynamic axis, got: %v", err)
+		if ok, diff := testutil.IsEqual([]string{"=batch+batch", ""}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"=batch+batch", ""}, output.AxisNames)
 		}
 	})
 
@@ -1441,8 +1441,8 @@ func TestConcatenateOp_Dynamic(t *testing.T) {
 		if ok, diff := testutil.IsEqual([]int{-1, 30}, output.Dimensions); !ok {
 			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, 30}, output.Dimensions)
 		}
-		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
+		if ok, diff := testutil.IsEqual([]string{"batch", "=10+20"}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "=10+20"}, output.AxisNames)
 		}
 	})
 }

@@ -43,6 +43,28 @@ func Concatenate(f *gobackend.Function, axis int, operandOps ...compute.Value) (
 func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	axis := node.Data.(int) // Renamed from dimension
 	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		concreteShape := outputShape.Clone()
+		for d := range concreteShape.Rank() {
+			if concreteShape.Dimensions[d] == shapes.DynamicDim {
+				if d == axis {
+					concatSize := 0
+					for _, inputBuf := range inputs {
+						concatSize += inputBuf.RawShape.Dimensions[d]
+					}
+					concreteShape.Dimensions[d] = concatSize
+				} else {
+					for _, inputBuf := range inputs {
+						if inputBuf.RawShape.Dimensions[d] != shapes.DynamicDim {
+							concreteShape.Dimensions[d] = inputBuf.RawShape.Dimensions[d]
+							break
+						}
+					}
+				}
+			}
+		}
+		outputShape = concreteShape
+	}
 	dtype := outputShape.DType
 	elemSize := dtype.Size()
 	rank := outputShape.Rank()

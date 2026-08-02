@@ -61,6 +61,18 @@ func TestBindings(t *testing.T) {
 		}
 	})
 
+	t.Run("Resolve_SymbolicAxis", func(t *testing.T) {
+		s := MakeDynamic(dtypes.Float32, []int{-1, 10}, []string{"=10+batch", ""})
+		bindings := AxisBindings{"batch": 32}
+		resolved, err := s.Resolve(bindings)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !reflect.DeepEqual([]int{42, 10}, resolved.Dimensions) {
+			t.Fatalf("Expected %v, got %v", []int{42, 10}, resolved.Dimensions)
+		}
+	})
+
 	t.Run("Resolve_StaticShape", func(t *testing.T) {
 		s := Make(dtypes.Float32, 32, 512)
 		// Resolve on static shape returns same shape (no-op).

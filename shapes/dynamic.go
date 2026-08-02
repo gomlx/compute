@@ -107,6 +107,9 @@ func (s Shape) WithAxisNames(names ...string) Shape {
 // including itself, in axis comparison helper functions.
 const AnonymousAxis = "?"
 
+// SymbolicAxisPrefix is the prefix used for dynamic composite axis names (e.g., "=10+a").
+const SymbolicAxisPrefix = "="
+
 // AxisNameEqual checks whether two individual axis names are equal.
 // If either axis name is AnonymousAxis, it returns false (it never matches anything, including itself).
 func AxisNameEqual(a, b string) bool {
