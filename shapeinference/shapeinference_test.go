@@ -1213,8 +1213,8 @@ func TestConcatenateOp_AxisNames(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
-		if ok, diff := testutil.IsEqual([]string{"batch", "=256+512"}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "=256+512"}, output.AxisNames)
+		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
 		}
 	})
 
@@ -1441,8 +1441,8 @@ func TestConcatenateOp_Dynamic(t *testing.T) {
 		if ok, diff := testutil.IsEqual([]int{-1, 30}, output.Dimensions); !ok {
 			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []int{-1, 30}, output.Dimensions)
 		}
-		if ok, diff := testutil.IsEqual([]string{"batch", "=10+20"}, output.AxisNames); !ok {
-			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", "=10+20"}, output.AxisNames)
+		if ok, diff := testutil.IsEqual([]string{"batch", ""}, output.AxisNames); !ok {
+			t.Fatalf("Expected %v, got %v"+"\nDiff:\n"+diff, []string{"batch", ""}, output.AxisNames)
 		}
 	})
 }

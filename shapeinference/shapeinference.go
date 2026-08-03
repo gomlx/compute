@@ -908,57 +908,101 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 	}
 
 	// Calculate axis name for the concatenation axis if dynamic or named.
-	hasAnonymous := false
-	var parts []string
-	for _, inp := range inputs {
-		dim := inp.Dimensions[axis]
-		name := inp.AxisName(axis)
-		if name == shapes.AnonymousAxis {
-			hasAnonymous = true
-			break
-		}
-		if dim != shapes.DynamicDim {
-			parts = append(parts, strconv.Itoa(dim))
-		} else if name != "" {
-			if strings.HasPrefix(name, shapes.SymbolicAxisPrefix) {
-				subExpr := strings.TrimPrefix(name, shapes.SymbolicAxisPrefix)
-				subParts := strings.Split(subExpr, "+")
-				for _, p := range subParts {
-					p = strings.TrimSpace(p)
-					if p == shapes.AnonymousAxis {
-						hasAnonymous = true
+	if output.Dimensions[axis] == shapes.DynamicDim {
+		hasAnonymous := false
+		var parts []string
+		for _, inp := range inputs {
+			dim := inp.Dimensions[axis]
+			name := inp.AxisName(axis)
+			if name == shapes.AnonymousAxis {
+				hasAnonymous = true
+				break
+			}
+			if dim != shapes.DynamicDim {
+				parts = append(parts, strconv.Itoa(dim))
+			} else if name != "" {
+				if strings.HasPrefix(name, shapes.SymbolicAxisPrefix) {
+					subExpr := strings.TrimPrefix(name, shapes.SymbolicAxisPrefix)
+					subParts := strings.Split(subExpr, "+")
+					for _, p := range subParts {
+						p = strings.TrimSpace(p)
+						if p == shapes.AnonymousAxis {
+							hasAnonymous = true
+							break
+						}
+						if p != "" {
+							parts = append(parts, p)
+						}
+					}
+					if hasAnonymous {
 						break
 					}
-					if p != "" {
-						parts = append(parts, p)
-					}
-				}
-				if hasAnonymous {
-					break
+				} else {
+					parts = append(parts, name)
 				}
 			} else {
-				parts = append(parts, name)
+				// Dynamic axis without a name behaves as anonymous
+				hasAnonymous = true
+				break
 			}
+		}
+
+		var concatAxisName string
+		if hasAnonymous {
+			concatAxisName = shapes.AnonymousAxis
+		} else if len(parts) > 0 {
+			sort.Strings(parts)
+			concatAxisName = shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
+		}
+
+		if concatAxisName != "" {
+			if output.AxisNames == nil {
+				output.AxisNames = make([]string, rank)
+			}
+			output.AxisNames[axis] = concatAxisName
+		}
+	} else {
+		// Static concatenation axis: only set an axis name if at least one input had a non-empty name.
+		hasNamedInput := false
+		for _, inp := range inputs {
+			if inp.AxisName(axis) != "" {
+				hasNamedInput = true
+				break
+			}
+		}
+		if hasNamedInput {
+			var parts []string
+			for _, inp := range inputs {
+				dim := inp.Dimensions[axis]
+				name := inp.AxisName(axis)
+				if name != "" {
+					if strings.HasPrefix(name, shapes.SymbolicAxisPrefix) {
+						subExpr := strings.TrimPrefix(name, shapes.SymbolicAxisPrefix)
+						subParts := strings.Split(subExpr, "+")
+						for _, p := range subParts {
+							p = strings.TrimSpace(p)
+							if p != "" {
+								parts = append(parts, p)
+							}
+						}
+					} else {
+						parts = append(parts, name)
+					}
+				} else {
+					parts = append(parts, strconv.Itoa(dim))
+				}
+			}
+			sort.Strings(parts)
+			concatAxisName := shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
+			if output.AxisNames == nil {
+				output.AxisNames = make([]string, rank)
+			}
+			output.AxisNames[axis] = concatAxisName
 		} else {
-			// Dynamic axis without a name behaves as anonymous
-			hasAnonymous = true
-			break
+			if output.AxisNames != nil {
+				output.AxisNames[axis] = ""
+			}
 		}
-	}
-
-	var concatAxisName string
-	if hasAnonymous {
-		concatAxisName = shapes.AnonymousAxis
-	} else if len(parts) > 0 {
-		sort.Strings(parts)
-		concatAxisName = shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
-	}
-
-	if concatAxisName != "" {
-		if output.AxisNames == nil {
-			output.AxisNames = make([]string, rank)
-		}
-		output.AxisNames[axis] = concatAxisName
 	}
 
 	return output, nil
