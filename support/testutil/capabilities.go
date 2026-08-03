@@ -29,3 +29,11 @@ func SkipIfMissingFunctions(t *testing.T, b compute.Backend) {
 		t.Skipf("Backend %q does not support functions (closures)", b.Name())
 	}
 }
+
+// SkipIfMissingDynamicAxes skips the current test if the backend doesn't support dynamic axes.
+func SkipIfMissingDynamicAxes(t *testing.T, b compute.Backend) {
+	if !b.Capabilities().DynamicAxes {
+		t.Skipf("Backend %q does not support dynamic axes", b.Name())
+	}
+}
+
