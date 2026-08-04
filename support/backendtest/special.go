@@ -750,6 +750,60 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 				t.Fatalf("Slice y mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("DynamicShapeFullAxis", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeSlice)
+			testutil.SkipIfMissingDynamicAxes(t, b)
+			builder := b.Builder("test_dynamic_slice")
+			mainFn := builder.Main()
+			sInput := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+			pInput, err := mainFn.Parameter("input", sInput, nil)
+			if err != nil {
+				t.Fatalf("Failed creating parameter: %+v", err)
+			}
+			outVal, err := mainFn.Slice(pInput, []int{0, 0}, []int{shapes.DynamicDim, 2}, []int{1, 1})
+			if err != nil {
+				t.Fatalf("Failed creating Slice node: %+v", err)
+			}
+			if err := mainFn.Return([]compute.Value{outVal}, nil); err != nil {
+				t.Fatalf("Failed returning output: %+v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Failed compiling graph: %+v", err)
+			}
+
+			bufInput, err := b.BufferFromFlatData(0, []float32{
+				1, 2, 3,
+				4, 5, 6,
+			}, shapes.Make(dtypes.Float32, 2, 3))
+			if err != nil {
+				t.Fatalf("Failed creating input buffer: %+v", err)
+			}
+
+			results, err := exec.Execute([]compute.Buffer{bufInput}, []bool{false}, 0)
+			if err != nil {
+				t.Fatalf("Failed executing graph: %+v", err)
+			}
+			resShape, err := results[0].Shape()
+			if err != nil {
+				t.Fatalf("Failed getting result shape: %+v", err)
+			}
+			if resShape.IsDynamic() {
+				t.Errorf("Expected concrete output shape, got dynamic shape: %s", resShape)
+			}
+			if !resShape.EqualDimensions(shapes.Make(dtypes.Float32, 2, 2)) {
+				t.Errorf("Expected shape (2, 2), got %s", resShape)
+			}
+			gotData, err := testutil.FromBuffer(b, results[0])
+			if err != nil {
+				t.Fatalf("Failed converting output buffer: %+v", err)
+			}
+			wantData := [][]float32{{1, 2}, {4, 5}}
+			if ok, diff := testutil.IsEqual(wantData, gotData); !ok {
+				t.Errorf("Dynamic slice result mismatch (-want +got):\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("RNGBitsGenerator", func(t *testing.T) {
