@@ -3,8 +3,9 @@
 package ops
 
 import (
+	"sync"
 	//alt:half|full_half "github.com/gomlx/compute/dtypes/gotype"
-	"github.com/gomlx/compute/internal/gobackend" //alt:base|full
+	"github.com/gomlx/compute/internal/gobackend"
 )
 
 // This file serves the "base" version of the `execConv*` functions, as well as a template.
@@ -66,72 +67,193 @@ func execConvNoDilationGeneric[T gobackend.PODNumericConstraints](plan convGener
 	kernelSpatialAxes := axes.KernelSpatial
 	kernelNumInputChannels := kernelShape.Dimensions[kernelInputChannelsAxis]
 
-	// Indices we'll be iterating over.
-	var outputFlatIdx int
-
-	// Indices and strides: note we don't use an inputIndices because we only keep an inputFlatIndex.
-	outputIndices := make([]int, rank)
-	kernelIndices := make([]int, rank)
-
 	inputStrides := inputShape.Strides()
 	kernelStrides := kernelShape.Strides()
+	outputStrides := outputShape.Strides()
+	outputDimensions := outputShape.Dimensions
 
-	// Loop sequentially over all output positions:
-	for outputFlatIdx, outputIndices = range outputShape.IterOn(outputIndices) {
-		batchIdx := outputIndices[outputBatchAxis]
-		outputChannel := outputIndices[outputChannelsAxis]
-		//alt:full|full_half if batchGroupCount > 1 {
-		//alt:full|full_half subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
-		//alt:full|full_half batchIdx = subBatchIdx*outputBatchSize + batchIdx
-		//alt:full|full_half }
-		baseInputFlatIdx := batchIdx * inputStrides[inputBatchAxis]
+	spatialRank := len(axes.KernelSpatial)
 
-		// Loop over the kernel spatial axes, with the outputChannel given by the output loop.
-		kernelIndices[kernelOutputChannelsAxis] = outputChannel
-		var outputValue T //alt:base|full
-		//alt:half|full_half var outputValue float32
-		var kernelFlatIdx int
-	kernelLoop:
-		for kernelFlatIdx, kernelIndices = range kernelShape.IterOnAxes(kernelSpatialAxes, kernelStrides, kernelIndices) {
-			// Calculate the corresponding position in the input.
-			inputFlatIdx := baseInputFlatIdx
-			for spatialIdx, kernelSpatialAxis := range axes.KernelSpatial {
-				kernelIdx := kernelIndices[kernelSpatialAxis]
-				//alt:full|full_half kernelDilation := kernelDilations[spatialIdx]
-				//alt:full|full_half kernelIdx *= kernelDilation
-				outputSpatialAxis := outputSpatialAxes[spatialIdx]
-				outputIdx := outputIndices[outputSpatialAxis]
-				inputIdx := outputIdx*convStrides[spatialIdx] + kernelIdx - paddings[spatialIdx][0]
-				//alt:full|full_half inputDilation := inputDilations[spatialIdx]
-				if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] { //alt:base|half
-					//alt:full|full_half if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] || (inputDilation > 1 && inputIdx%inputDilation != 0) {
-					// Index is in the padded area, we can move to the next kernel position.
-					continue kernelLoop
-				}
-				//alt:full|full_half inputIdx /= inputDilation // Make the dilated index back to the original input.
-				inputFlatIdx += inputIdx * inputSpatialStrides[spatialIdx]
-			}
+	runChunk := func(startFlatIdx, endFlatIdx int) {
+		outputIndices := make([]int, rank)
+		kernelIndices := make([]int, rank)
 
-			// Accumulate over all the kernel/input channels.
-			inputChannelStride := inputStrides[inputChannelsAxis]
-			kernelChannelStride := kernelStrides[kernelInputChannelsAxis]
-			//alt:full|full_half if channelGroupCount > 1 {
-			//alt:full|full_half featureGroup := outputChannel / numOutputChannelsPerGroup
-			//alt:full|full_half inputFlatIdx += inputChannelStride * (featureGroup*kernelNumInputChannels)
-			//alt:full|full_half }
-			for range kernelNumInputChannels {
-				inputValue := inputFlat[inputFlatIdx]
-				kernelValue := kernelFlat[kernelFlatIdx]
-				outputValue += inputValue * kernelValue //alt:base|full
-				//alt:half|full_half outputValue += inputValue.Float32() * kernelValue.Float32()
-				inputFlatIdx += inputChannelStride
-				kernelFlatIdx += kernelChannelStride
-			}
+		remainder := startFlatIdx
+		for i := 0; i < rank; i++ {
+			outputIndices[i] = remainder / outputStrides[i]
+			remainder %= outputStrides[i]
 		}
 
-		// Update output with accumulated value from the convolution of the kernel at this position.
-		outputFlat[outputFlatIdx] = outputValue //alt:base|full
-		//alt:half|full_half P(&outputFlat[outputFlatIdx]).SetFloat32(outputValue)
+		if spatialRank == 2 {
+			kH := kernelShape.Dimensions[kernelSpatialAxes[0]]
+			kW := kernelShape.Dimensions[kernelSpatialAxes[1]]
+			kHStride := kernelStrides[kernelSpatialAxes[0]]
+			kWStride := kernelStrides[kernelSpatialAxes[1]]
+			inSpatialStride0 := inputSpatialStrides[0]
+			inSpatialStride1 := inputSpatialStrides[1]
+			pad0 := paddings[0][0]
+			pad1 := paddings[1][0]
+			stride0 := convStrides[0]
+			stride1 := convStrides[1]
+			inDim0 := inputSpatialDims[0]
+			inDim1 := inputSpatialDims[1]
+			outSpatialAxis0 := outputSpatialAxes[0]
+			outSpatialAxis1 := outputSpatialAxes[1]
+			kOutChanStride := kernelStrides[kernelOutputChannelsAxis]
+			inChanStride := inputStrides[inputChannelsAxis]
+			kInChanStride := kernelStrides[kernelInputChannelsAxis]
+
+			for outputFlatIdx := startFlatIdx; outputFlatIdx < endFlatIdx; outputFlatIdx++ {
+				batchIdx := outputIndices[outputBatchAxis]
+				outputChannel := outputIndices[outputChannelsAxis]
+				//alt:full|full_half if batchGroupCount > 1 {
+				//alt:full|full_half subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
+				//alt:full|full_half batchIdx = subBatchIdx*outputBatchSize + batchIdx
+				//alt:full|full_half }
+				baseInputFlatIdx := batchIdx * inputStrides[inputBatchAxis]
+				baseKernelFlatIdx := outputChannel * kOutChanStride
+
+				var outputValue T //alt:base|full
+				//alt:half|full_half var outputValue float32
+
+				outIdx0 := outputIndices[outSpatialAxis0]
+				outIdx1 := outputIndices[outSpatialAxis1]
+
+				for ky := 0; ky < kH; ky++ {
+					kyEffective := ky
+					//alt:full|full_half kyEffective *= kernelDilations[0]
+					inputIdx0 := outIdx0*stride0 + kyEffective - pad0
+					if inputIdx0 < 0 || inputIdx0 >= inDim0 { //alt:base|half
+						//alt:full|full_half if inputIdx0 < 0 || inputIdx0 >= inDim0 || (inputDilations[0] > 1 && inputIdx0%inputDilations[0] != 0) {
+						continue
+					}
+					//alt:full|full_half inputIdx0 /= inputDilations[0]
+
+					offset0 := baseInputFlatIdx + inputIdx0*inSpatialStride0
+					kOffset0 := baseKernelFlatIdx + ky*kHStride
+
+					for kx := 0; kx < kW; kx++ {
+						kxEffective := kx
+						//alt:full|full_half kxEffective *= kernelDilations[1]
+						inputIdx1 := outIdx1*stride1 + kxEffective - pad1
+						if inputIdx1 < 0 || inputIdx1 >= inDim1 { //alt:base|half
+							//alt:full|full_half if inputIdx1 < 0 || inputIdx1 >= inDim1 || (inputDilations[1] > 1 && inputIdx1%inputDilations[1] != 0) {
+							continue
+						}
+						//alt:full|full_half inputIdx1 /= inputDilations[1]
+
+						inFlatIdx := offset0 + inputIdx1*inSpatialStride1
+						kFlatIdx := kOffset0 + kx*kWStride
+
+						//alt:full|full_half if channelGroupCount > 1 {
+						//alt:full|full_half featureGroup := outputChannel / numOutputChannelsPerGroup
+						//alt:full|full_half inFlatIdx += inChanStride * (featureGroup*kernelNumInputChannels)
+						//alt:full|full_half }
+
+						for c := 0; c < kernelNumInputChannels; c++ {
+							inputValue := inputFlat[inFlatIdx+c*inChanStride]
+							kernelValue := kernelFlat[kFlatIdx+c*kInChanStride]
+							outputValue += inputValue * kernelValue //alt:base|full
+							//alt:half|full_half outputValue += inputValue.Float32() * kernelValue.Float32()
+						}
+					}
+				}
+
+				outputFlat[outputFlatIdx] = outputValue //alt:base|full
+				//alt:half|full_half P(&outputFlat[outputFlatIdx]).SetFloat32(outputValue)
+
+				for i := rank - 1; i >= 0; i-- {
+					outputIndices[i]++
+					if outputIndices[i] < outputDimensions[i] {
+						break
+					}
+					outputIndices[i] = 0
+				}
+			}
+			return
+		}
+
+		for outputFlatIdx := startFlatIdx; outputFlatIdx < endFlatIdx; outputFlatIdx++ {
+			batchIdx := outputIndices[outputBatchAxis]
+			outputChannel := outputIndices[outputChannelsAxis]
+			//alt:full|full_half if batchGroupCount > 1 {
+			//alt:full|full_half subBatchIdx := outputChannel / numOutputChannelsPerBatchGroup
+			//alt:full|full_half batchIdx = subBatchIdx*outputBatchSize + batchIdx
+			//alt:full|full_half }
+			baseInputFlatIdx := batchIdx * inputStrides[inputBatchAxis]
+
+			kernelIndices[kernelOutputChannelsAxis] = outputChannel
+			var outputValue T //alt:base|full
+			//alt:half|full_half var outputValue float32
+			var kernelFlatIdx int
+		kernelLoop:
+			for kernelFlatIdx, kernelIndices = range kernelShape.IterOnAxes(kernelSpatialAxes, kernelStrides, kernelIndices) {
+				inputFlatIdx := baseInputFlatIdx
+				for spatialIdx, kernelSpatialAxis := range axes.KernelSpatial {
+					kernelIdx := kernelIndices[kernelSpatialAxis]
+					//alt:full|full_half kernelDilation := kernelDilations[spatialIdx]
+					//alt:full|full_half kernelIdx *= kernelDilation
+					outputSpatialAxis := outputSpatialAxes[spatialIdx]
+					outputIdx := outputIndices[outputSpatialAxis]
+					inputIdx := outputIdx*convStrides[spatialIdx] + kernelIdx - paddings[spatialIdx][0]
+					//alt:full|full_half inputDilation := inputDilations[spatialIdx]
+					if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] { //alt:base|half
+						//alt:full|full_half if inputIdx < 0 || inputIdx >= inputSpatialDims[spatialIdx] || (inputDilation > 1 && inputIdx%inputDilation != 0) {
+						continue kernelLoop
+					}
+					//alt:full|full_half inputIdx /= inputDilation
+					inputFlatIdx += inputIdx * inputSpatialStrides[spatialIdx]
+				}
+
+				inputChannelStride := inputStrides[inputChannelsAxis]
+				kernelChannelStride := kernelStrides[kernelInputChannelsAxis]
+				//alt:full|full_half if channelGroupCount > 1 {
+				//alt:full|full_half featureGroup := outputChannel / numOutputChannelsPerGroup
+				//alt:full|full_half inputFlatIdx += inputChannelStride * (featureGroup*kernelNumInputChannels)
+				//alt:full|full_half }
+				for range kernelNumInputChannels {
+					inputValue := inputFlat[inputFlatIdx]
+					kernelValue := kernelFlat[kernelFlatIdx]
+					outputValue += inputValue * kernelValue //alt:base|full
+					//alt:half|full_half outputValue += inputValue.Float32() * kernelValue.Float32()
+					inputFlatIdx += inputChannelStride
+					kernelFlatIdx += kernelChannelStride
+				}
+			}
+
+			outputFlat[outputFlatIdx] = outputValue //alt:base|full
+			//alt:half|full_half P(&outputFlat[outputFlatIdx]).SetFloat32(outputValue)
+
+			for i := rank - 1; i >= 0; i-- {
+				outputIndices[i]++
+				if outputIndices[i] < outputDimensions[i] {
+					break
+				}
+				outputIndices[i] = 0
+			}
+		}
 	}
+
+	lenOutputs := len(outputFlat)
+	goBackend, _ := plan.backend.(*gobackend.Backend)
+	if goBackend != nil && goBackend.Workers != nil && goBackend.Workers.IsEnabled() && lenOutputs >= 512 {
+		maxWorkers := goBackend.Workers.AdjustedMaxParallelism()
+		if maxWorkers > 1 {
+			chunkSize := max(256, (lenOutputs+maxWorkers-1)/maxWorkers)
+			var wg sync.WaitGroup
+			for startIdx := 0; startIdx < lenOutputs; startIdx += chunkSize {
+				endIdx := min(startIdx+chunkSize, lenOutputs)
+				wg.Add(1)
+				goBackend.Workers.WaitToStart(func() {
+					defer wg.Done()
+					runChunk(startIdx, endIdx)
+				})
+			}
+			wg.Wait()
+			return nil
+		}
+	}
+
+	runChunk(0, lenOutputs)
 	return nil
 }

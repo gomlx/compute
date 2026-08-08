@@ -151,8 +151,8 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeQuantizedEmbeddingLookup:       true,
 
 		// TODO: not implemented yet:
-		// compute.OpTypeSelectAndScatterMax: true,
-		// compute.OpTypeSelectAndScatterMin: true,
+		compute.OpTypeSelectAndScatterMax: true,
+		compute.OpTypeSelectAndScatterMin: true,
 		// compute.OpTypeSelectAndScatterSum: true,
 		// compute.OpTypeDynamicSlice: true,
 		// compute.OpTypeDynamicUpdateSlice: true,

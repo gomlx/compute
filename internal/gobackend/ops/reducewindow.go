@@ -2,6 +2,7 @@ package ops
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes/gotype"
@@ -187,40 +188,77 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	//   More specifically we would split windowShape into "nonCachedWindowShape" and "cachedWindowShape", and
 	//   iterate over the nonCachedWindowShape first.
 	// - Can we refactor the check of baseDilation to outside of the loop ?
-	windowIndices := make([]int, rank)
-	operandIndices := make([]int, rank)
-	for outputFlatIdx, outputIndices := range outputShape.Iter() {
-		// fmt.Printf("Output %v:\n", outputIndices)
-	iterWindowIndices:
-		for _, windowIndices = range windowShape.IterOn(windowIndices) {
-			// fmt.Printf("\t- window %v\n", windowIndices)
-			for axis := range rank {
-				operandIdx := outputIndices[axis]*effStrides[axis] + operandShifts[axis]
-				operandIdx += windowIndices[axis] * effWindowDilations[axis]
-				if operandIdx < 0 {
-					// This index is out of the operand values (padding), nothing to update.
-					continue iterWindowIndices
-				}
-				if effBaseDilations[axis] > 1 {
-					if operandIdx%effBaseDilations[axis] != 0 {
-						// This index is not aligned with the baseDilation, nothing to update.
+	outputStrides := outputShape.Strides()
+	outputDimensions := outputShape.Dimensions
+
+	runChunk := func(startFlatIdx, endFlatIdx int) {
+		windowIndices := make([]int, rank)
+		operandIndices := make([]int, rank)
+		outputIndices := make([]int, rank)
+
+		remainder := startFlatIdx
+		for i := 0; i < rank; i++ {
+			outputIndices[i] = remainder / outputStrides[i]
+			remainder %= outputStrides[i]
+		}
+
+		for outputFlatIdx := startFlatIdx; outputFlatIdx < endFlatIdx; outputFlatIdx++ {
+		iterWindowIndices:
+			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+				for axis := range rank {
+					operandIdx := outputIndices[axis]*effStrides[axis] + operandShifts[axis]
+					operandIdx += windowIndices[axis] * effWindowDilations[axis]
+					if operandIdx < 0 {
 						continue iterWindowIndices
 					}
-					operandIdx /= effBaseDilations[axis]
+					if effBaseDilations[axis] > 1 {
+						if operandIdx%effBaseDilations[axis] != 0 {
+							continue iterWindowIndices
+						}
+						operandIdx /= effBaseDilations[axis]
+					}
+					if operandIdx >= operandShape.Dimensions[axis] {
+						continue iterWindowIndices
+					}
+					operandIndices[axis] = operandIdx
 				}
-				if operandIdx >= operandShape.Dimensions[axis] {
-					// This index is out of the operand values (padding), nothing to update.
-					continue iterWindowIndices
+				operandFlatIdx := 0
+				for axis, operandIdx := range operandIndices {
+					operandFlatIdx += operandIdx * operandStrides[axis]
 				}
-				operandIndices[axis] = operandIdx
+				updateFn(operandFlatIdx, outputFlatIdx)
 			}
-			operandFlatIdx := 0
-			for axis, operandIdx := range operandIndices {
-				operandFlatIdx += operandIdx * operandStrides[axis]
+
+			for i := rank - 1; i >= 0; i-- {
+				outputIndices[i]++
+				if outputIndices[i] < outputDimensions[i] {
+					break
+				}
+				outputIndices[i] = 0
 			}
-			updateFn(operandFlatIdx, outputFlatIdx)
 		}
 	}
+
+	lenOutputs := outputShape.Size()
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenOutputs >= 512 {
+		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+		if maxWorkers > 1 {
+			chunkSize := max(256, (lenOutputs+maxWorkers-1)/maxWorkers)
+			var wg sync.WaitGroup
+			for startIdx := 0; startIdx < lenOutputs; startIdx += chunkSize {
+				endIdx := min(startIdx+chunkSize, lenOutputs)
+				wg.Add(1)
+				backend.Workers.WaitToStart(func() {
+					defer wg.Done()
+					runChunk(startIdx, endIdx)
+				})
+			}
+			wg.Wait()
+			return output, nil
+		}
+	}
+
+	runChunk(0, lenOutputs)
 	return output, nil
 }
 

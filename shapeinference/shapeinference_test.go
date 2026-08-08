@@ -824,6 +824,35 @@ func TestReduceWindowOp(t *testing.T) {
 	}
 }
 
+func TestSelectAndScatterOp(t *testing.T) {
+	operand := shapes.Make(dtypes.Float32, 10, 20)
+	source := shapes.Make(dtypes.Float32, 5, 10)
+	windowDimensions := []int{2, 2}
+	strides := []int{2, 2}
+
+	outputShape, err := SelectAndScatter(operand, source, windowDimensions, strides, nil)
+	if err != nil {
+		t.Fatalf("Unexpected error in SelectAndScatter: %v", err)
+	}
+	if !outputShape.Equal(operand) {
+		t.Errorf("SelectAndScatter output shape %s, expected %s", outputShape, operand)
+	}
+
+	// Mismatched source shape
+	badSource := shapes.Make(dtypes.Float32, 5, 5)
+	_, err = SelectAndScatter(operand, badSource, windowDimensions, strides, nil)
+	if err == nil {
+		t.Errorf("Expected error for mismatched source shape")
+	}
+
+	// Mismatched DType
+	badDTypeSource := shapes.Make(dtypes.Int32, 5, 10)
+	_, err = SelectAndScatter(operand, badDTypeSource, windowDimensions, strides, nil)
+	if err == nil {
+		t.Errorf("Expected error for mismatched DType")
+	}
+}
+
 func TestGather(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		// operand: F32[3, 4], startIndices: I32[2, 1]

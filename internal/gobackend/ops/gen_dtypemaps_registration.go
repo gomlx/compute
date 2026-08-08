@@ -328,6 +328,22 @@ func init() {
 	scatterDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execScatterGeneric[uint64])
 	scatterDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execScatterGeneric[uint8])
 
+	// DTypeMap: selectAndScatterDTypeMap
+	selectAndScatterDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execSelectAndScatterGeneric[float32])
+	selectAndScatterDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execSelectAndScatterGeneric[float64])
+	selectAndScatterDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execSelectAndScatterGeneric[int16])
+	selectAndScatterDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execSelectAndScatterGeneric[int32])
+	selectAndScatterDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execSelectAndScatterGeneric[int64])
+	selectAndScatterDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execSelectAndScatterGeneric[int8])
+	selectAndScatterDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execSelectAndScatterGeneric[uint16])
+	selectAndScatterDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execSelectAndScatterGeneric[uint32])
+	selectAndScatterDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execSelectAndScatterGeneric[uint64])
+	selectAndScatterDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execSelectAndScatterGeneric[uint8])
+
+	// DTypeMap: selectAndScatterDTypeMap
+	selectAndScatterDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execSelectAndScatterGenericHalf[bfloat16.BFloat16])
+	selectAndScatterDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execSelectAndScatterGenericHalf[float16.Float16])
+
 	// DTypeMap: shiftLeftDTypeMap
 	shiftLeftDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, shiftLeftGeneric[int16])
 	shiftLeftDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, shiftLeftGeneric[int32])

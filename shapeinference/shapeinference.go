@@ -1369,6 +1369,29 @@ func ReduceWindow(operand shapes.Shape, windowDimensions, strides, baseDilations
 	return result, nil
 }
 
+// SelectAndScatter returns the expected output shape for SelectAndScatter operations (SelectAndScatterMax and SelectAndScatterMin).
+// The output shape is equal to the operand shape.
+func SelectAndScatter(operand, source shapes.Shape, windowDimensions, windowStrides []int, paddings [][2]int) (shapes.Shape, error) {
+	if !operand.Ok() {
+		return shapes.Invalid(), errors.Errorf("SelectAndScatterOp: invalid operand shape %s", operand)
+	}
+	if !source.Ok() {
+		return shapes.Invalid(), errors.Errorf("SelectAndScatterOp: invalid source shape %s", source)
+	}
+	if operand.DType != source.DType {
+		return shapes.Invalid(), errors.Errorf("SelectAndScatterOp: operand DType %s does not match source DType %s", operand.DType, source.DType)
+	}
+	expectedSourceShape, err := ReduceWindow(operand, windowDimensions, windowStrides, nil, nil, paddings)
+	if err != nil {
+		return shapes.Invalid(), errors.Wrapf(err, "SelectAndScatterOp: invalid window parameters for operand shape %s", operand)
+	}
+	if !source.EqualDimensions(expectedSourceShape) {
+		return shapes.Invalid(), errors.Errorf("SelectAndScatterOp: source shape %s dimensions do not match expected source shape %s for operand shape %s", source, expectedSourceShape, operand)
+	}
+	return operand.Clone(), nil
+}
+
+
 // ConvGeneral returns the expected output shape for the ConvGeneral operation.
 func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	strides []int, paddings [][2]int,
