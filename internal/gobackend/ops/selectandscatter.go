@@ -4,6 +4,7 @@ package ops
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes/gotype"
@@ -155,42 +156,122 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 		stride *= operandShape.Dimensions[axis]
 	}
 
-	windowIndices := make([]int, rank)
-	for sourceFlatIdx, sourceIndices := range sourceShape.Iter() {
-		bestOperandFlatIdx := -1
-		var bestOperandVal T
-	iterWindowIndices:
-		for _, windowIndices = range windowShape.IterOn(windowIndices) {
-			operandFlatIdx := 0
-			for axis := range rank {
-				operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
-				if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
-					continue iterWindowIndices
-				}
-				operandFlatIdx += operandIdx * operandStrides[axis]
-			}
-			val := operandFlat[operandFlatIdx]
-			if bestOperandFlatIdx == -1 {
-				bestOperandFlatIdx = operandFlatIdx
-				bestOperandVal = val
-			} else if isMin {
-				valIsNaN := val != val
-				if val < bestOperandVal || valIsNaN {
-					bestOperandVal = val
-					bestOperandFlatIdx = operandFlatIdx
-				}
-			} else {
-				valIsNaN := val != val
-				if val > bestOperandVal || valIsNaN {
-					bestOperandVal = val
-					bestOperandFlatIdx = operandFlatIdx
-				}
-			}
+	sourceStrides := sourceShape.Strides()
+	sourceDimensions := sourceShape.Dimensions
+
+	runChunk := func(startFlatIdx, endFlatIdx int, targetOutput []T) {
+		sourceIndices := make([]int, rank)
+		windowIndices := make([]int, rank)
+
+		remainder := startFlatIdx
+		for i := 0; i < rank; i++ {
+			sourceIndices[i] = remainder / sourceStrides[i]
+			remainder %= sourceStrides[i]
 		}
-		if bestOperandFlatIdx != -1 {
-			outputFlat[bestOperandFlatIdx] += sourceFlat[sourceFlatIdx]
+
+		for sourceFlatIdx := startFlatIdx; sourceFlatIdx < endFlatIdx; sourceFlatIdx++ {
+			bestOperandFlatIdx := -1
+			var bestOperandVal T
+		iterWindowIndices:
+			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+				operandFlatIdx := 0
+				for axis := range rank {
+					operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
+					if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
+						continue iterWindowIndices
+					}
+					operandFlatIdx += operandIdx * operandStrides[axis]
+				}
+				val := operandFlat[operandFlatIdx]
+				if bestOperandFlatIdx == -1 {
+					bestOperandFlatIdx = operandFlatIdx
+					bestOperandVal = val
+				} else if isMin {
+					valIsNaN := val != val
+					if val < bestOperandVal || valIsNaN {
+						bestOperandVal = val
+						bestOperandFlatIdx = operandFlatIdx
+					}
+				} else {
+					valIsNaN := val != val
+					if val > bestOperandVal || valIsNaN {
+						bestOperandVal = val
+						bestOperandFlatIdx = operandFlatIdx
+					}
+				}
+			}
+			if bestOperandFlatIdx != -1 {
+				targetOutput[bestOperandFlatIdx] += sourceFlat[sourceFlatIdx]
+			}
+
+			for i := rank - 1; i >= 0; i-- {
+				sourceIndices[i]++
+				if sourceIndices[i] < sourceDimensions[i] {
+					break
+				}
+				sourceIndices[i] = 0
+			}
 		}
 	}
+
+	lenSource := len(sourceFlat)
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+		if maxWorkers > 1 {
+			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
+				batchCount := sourceDimensions[0]
+				elementsPerBatch := lenSource / batchCount
+				chunkBatches := max(1, (batchCount+maxWorkers-1)/maxWorkers)
+				var wg sync.WaitGroup
+				for startBatch := 0; startBatch < batchCount; startBatch += chunkBatches {
+					endBatch := min(startBatch+chunkBatches, batchCount)
+					startIdx := startBatch * elementsPerBatch
+					endIdx := endBatch * elementsPerBatch
+					wg.Add(1)
+					backend.Workers.WaitToStart(func() {
+						defer wg.Done()
+						runChunk(startIdx, endIdx, outputFlat)
+					})
+				}
+				wg.Wait()
+				return
+			} else {
+				numChunks := min(maxWorkers, (lenSource+255)/256)
+				chunkSize := (lenSource + numChunks - 1) / numChunks
+				var wg sync.WaitGroup
+				var mu sync.Mutex
+				for c := 0; c < numChunks; c++ {
+					startIdx := c * chunkSize
+					if startIdx >= lenSource {
+						break
+					}
+					endIdx := min(startIdx+chunkSize, lenSource)
+					isMain := (c == 0)
+					wg.Add(1)
+					backend.Workers.WaitToStart(func() {
+						defer wg.Done()
+						if isMain {
+							runChunk(startIdx, endIdx, outputFlat)
+						} else {
+							localOutput := make([]T, len(outputFlat))
+							runChunk(startIdx, endIdx, localOutput)
+							mu.Lock()
+							for i, v := range localOutput {
+								if v != 0 {
+									outputFlat[i] += v
+								}
+							}
+							mu.Unlock()
+						}
+					})
+				}
+				wg.Wait()
+				return
+			}
+		}
+	}
+
+	runChunk(0, lenSource, outputFlat)
 }
 
 func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
@@ -218,41 +299,123 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 		stride *= operandShape.Dimensions[axis]
 	}
 
-	windowIndices := make([]int, rank)
-	for sourceFlatIdx, sourceIndices := range sourceShape.Iter() {
-		bestOperandFlatIdx := -1
-		var bestOperandVal float32
-	iterWindowIndices:
-		for _, windowIndices = range windowShape.IterOn(windowIndices) {
-			operandFlatIdx := 0
-			for axis := range rank {
-				operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
-				if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
-					continue iterWindowIndices
-				}
-				operandFlatIdx += operandIdx * operandStrides[axis]
-			}
-			val := operandFlat[operandFlatIdx].Float32()
-			if bestOperandFlatIdx == -1 {
-				bestOperandFlatIdx = operandFlatIdx
-				bestOperandVal = val
-			} else if isMin {
-				valIsNaN := val != val
-				if val < bestOperandVal || valIsNaN {
-					bestOperandVal = val
-					bestOperandFlatIdx = operandFlatIdx
-				}
-			} else {
-				valIsNaN := val != val
-				if val > bestOperandVal || valIsNaN {
-					bestOperandVal = val
-					bestOperandFlatIdx = operandFlatIdx
-				}
-			}
+	sourceStrides := sourceShape.Strides()
+	sourceDimensions := sourceShape.Dimensions
+
+	runChunk := func(startFlatIdx, endFlatIdx int, targetOutput []T) {
+		sourceIndices := make([]int, rank)
+		windowIndices := make([]int, rank)
+
+		remainder := startFlatIdx
+		for i := 0; i < rank; i++ {
+			sourceIndices[i] = remainder / sourceStrides[i]
+			remainder %= sourceStrides[i]
 		}
-		if bestOperandFlatIdx != -1 {
-			sum := outputFlat[bestOperandFlatIdx].Float32() + sourceFlat[sourceFlatIdx].Float32()
-			P(&outputFlat[bestOperandFlatIdx]).SetFloat32(sum)
+
+		for sourceFlatIdx := startFlatIdx; sourceFlatIdx < endFlatIdx; sourceFlatIdx++ {
+			bestOperandFlatIdx := -1
+			var bestOperandVal float32
+		iterWindowIndices:
+			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+				operandFlatIdx := 0
+				for axis := range rank {
+					operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
+					if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
+						continue iterWindowIndices
+					}
+					operandFlatIdx += operandIdx * operandStrides[axis]
+				}
+				val := operandFlat[operandFlatIdx].Float32()
+				if bestOperandFlatIdx == -1 {
+					bestOperandFlatIdx = operandFlatIdx
+					bestOperandVal = val
+				} else if isMin {
+					valIsNaN := val != val
+					if val < bestOperandVal || valIsNaN {
+						bestOperandVal = val
+						bestOperandFlatIdx = operandFlatIdx
+					}
+				} else {
+					valIsNaN := val != val
+					if val > bestOperandVal || valIsNaN {
+						bestOperandVal = val
+						bestOperandFlatIdx = operandFlatIdx
+					}
+				}
+			}
+			if bestOperandFlatIdx != -1 {
+				sum := targetOutput[bestOperandFlatIdx].Float32() + sourceFlat[sourceFlatIdx].Float32()
+				P(&targetOutput[bestOperandFlatIdx]).SetFloat32(sum)
+			}
+
+			for i := rank - 1; i >= 0; i-- {
+				sourceIndices[i]++
+				if sourceIndices[i] < sourceDimensions[i] {
+					break
+				}
+				sourceIndices[i] = 0
+			}
 		}
 	}
+
+	lenSource := len(sourceFlat)
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+		if maxWorkers > 1 {
+			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
+				batchCount := sourceDimensions[0]
+				elementsPerBatch := lenSource / batchCount
+				chunkBatches := max(1, (batchCount+maxWorkers-1)/maxWorkers)
+				var wg sync.WaitGroup
+				for startBatch := 0; startBatch < batchCount; startBatch += chunkBatches {
+					endBatch := min(startBatch+chunkBatches, batchCount)
+					startIdx := startBatch * elementsPerBatch
+					endIdx := endBatch * elementsPerBatch
+					wg.Add(1)
+					backend.Workers.WaitToStart(func() {
+						defer wg.Done()
+						runChunk(startIdx, endIdx, outputFlat)
+					})
+				}
+				wg.Wait()
+				return
+			} else {
+				numChunks := min(maxWorkers, (lenSource+255)/256)
+				chunkSize := (lenSource + numChunks - 1) / numChunks
+				var wg sync.WaitGroup
+				var mu sync.Mutex
+				for c := 0; c < numChunks; c++ {
+					startIdx := c * chunkSize
+					if startIdx >= lenSource {
+						break
+					}
+					endIdx := min(startIdx+chunkSize, lenSource)
+					isMain := (c == 0)
+					wg.Add(1)
+					backend.Workers.WaitToStart(func() {
+						defer wg.Done()
+						if isMain {
+							runChunk(startIdx, endIdx, outputFlat)
+						} else {
+							localOutput := make([]T, len(outputFlat))
+							runChunk(startIdx, endIdx, localOutput)
+							mu.Lock()
+							for i, v := range localOutput {
+								if v.Float32() != 0 {
+									sum := outputFlat[i].Float32() + v.Float32()
+									P(&outputFlat[i]).SetFloat32(sum)
+								}
+							}
+							mu.Unlock()
+						}
+					})
+				}
+				wg.Wait()
+				return
+			}
+		}
+	}
+
+	runChunk(0, lenSource, outputFlat)
 }
+
