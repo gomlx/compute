@@ -961,4 +961,104 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			})
 		}
 	})
+
+	t.Run("SelectAndScatter", func(t *testing.T) {
+		t.Run("Max", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeSelectAndScatterMax)
+			type testCase struct {
+				name             string
+				operandData      any
+				sourceData       any
+				windowDimensions []int
+				strides          []int
+				paddings         [][2]int
+				expectedOutput   any
+			}
+
+			for _, tc := range []testCase{
+				{
+					name:             "F32_1D_Max_Win3_Stride2",
+					operandData:      []float32{1, 5, 2, 8, 3},
+					sourceData:       []float32{10, 20},
+					windowDimensions: []int{3},
+					strides:          []int{2},
+					expectedOutput:   []float32{0, 10, 0, 20, 0},
+				},
+				{
+					name:             "F32_1D_Max_TieBreaker_FirstIndex",
+					operandData:      []float32{5, 5, 1, 2},
+					sourceData:       []float32{10, 20, 30},
+					windowDimensions: []int{2},
+					strides:          []int{1},
+					expectedOutput:   []float32{10, 20, 0, 30},
+				},
+				{
+					name:             "F32_1D_Max_Overlapping_Accumulation",
+					operandData:      []float32{1, 10, 2},
+					sourceData:       []float32{5, 7},
+					windowDimensions: []int{2},
+					strides:          []int{1},
+					expectedOutput:   []float32{0, 12, 0},
+				},
+				{
+					name:             "F32_2D_Max_Win2x2_Stride1x1",
+					operandData:      [][]float32{{1, 3}, {2, 4}},
+					sourceData:       [][]float32{{10}},
+					windowDimensions: []int{2, 2},
+					strides:          []int{1, 1},
+					expectedOutput:   [][]float32{{0, 0}, {0, 10}},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					y, err := testutil.Exec1(b, []any{tc.operandData, tc.sourceData},
+						func(f compute.Function, p []compute.Value) (compute.Value, error) {
+							return f.SelectAndScatterMax(p[0], p[1], tc.windowDimensions, tc.strides, tc.paddings)
+						})
+					if err != nil {
+						t.Fatalf("SelectAndScatterMax failed: %v", err)
+					}
+					if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
+						t.Errorf("SelectAndScatterMax: test %q mismatch:\n%s", tc.name, diff)
+					}
+				})
+			}
+		})
+
+		t.Run("Min", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeSelectAndScatterMin)
+			type testCase struct {
+				name             string
+				operandData      any
+				sourceData       any
+				windowDimensions []int
+				strides          []int
+				paddings         [][2]int
+				expectedOutput   any
+			}
+
+			for _, tc := range []testCase{
+				{
+					name:             "F32_1D_Min_Win3_Stride2",
+					operandData:      []float32{5, 1, 8, 2, 9},
+					sourceData:       []float32{10, 20},
+					windowDimensions: []int{3},
+					strides:          []int{2},
+					expectedOutput:   []float32{0, 10, 0, 20, 0},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					y, err := testutil.Exec1(b, []any{tc.operandData, tc.sourceData},
+						func(f compute.Function, p []compute.Value) (compute.Value, error) {
+							return f.SelectAndScatterMin(p[0], p[1], tc.windowDimensions, tc.strides, tc.paddings)
+						})
+					if err != nil {
+						t.Fatalf("SelectAndScatterMin failed: %v", err)
+					}
+					if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
+						t.Errorf("SelectAndScatterMin: test %q mismatch:\n%s", tc.name, diff)
+					}
+				})
+			}
+		})
+	})
 }
