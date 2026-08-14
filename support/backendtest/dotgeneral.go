@@ -440,10 +440,12 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 						})
 						if err != nil {
 							// Some combinations might not be supported by all backends.
-							if strings.Contains(err.Error(), "no DotGeneral implementation found for layout") {
-								t.Skipf("Skipping as the backend does not support this particular DotGeneral dtype combination")
+							if strings.Contains(err.Error(), "no DotGeneral implementation found for layout") || compute.IsNotImplemented(err) {
+								t.Skipf("Skipping as the backend does not support this particular DotGeneral dtype combination: %v", err)
 								return
 							}
+							t.Fatalf("DotGeneral execution failed: %+v", err)
+							return
 						}
 
 						gotDType := dtypes.FromAny(result)
