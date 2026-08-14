@@ -309,6 +309,10 @@ func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguratio
 
 					outputValue, err := testutil.Exec1(b, nil, buildFn)
 					if err != nil {
+						if compute.IsNotImplemented(err) {
+							t.Skipf("Skipping ConvGeneral for dtype %s: %v", dtype, err)
+							return
+						}
 						t.Fatalf("Failed to execute ConvGeneral for dtype %s: %+v", dtype, err)
 					}
 

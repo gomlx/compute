@@ -953,6 +953,10 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 							tc.paddings)
 					})
 				if err != nil {
+					if compute.IsNotImplemented(err) {
+						t.Skipf("Skipping ReduceWindow test %q: %v", tc.name, err)
+						return
+					}
 					t.Fatalf("ReduceWindow failed: %v", err)
 				}
 				if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
@@ -1015,6 +1019,10 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 							return f.SelectAndScatterMax(p[0], p[1], tc.windowDimensions, tc.strides, tc.paddings)
 						})
 					if err != nil {
+						if compute.IsNotImplemented(err) {
+							t.Skipf("Skipping SelectAndScatterMax test %q: %v", tc.name, err)
+							return
+						}
 						t.Fatalf("SelectAndScatterMax failed: %v", err)
 					}
 					if ok, diff := testutil.IsEqual(tc.expectedOutput, y); !ok {
