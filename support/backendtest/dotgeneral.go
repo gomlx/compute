@@ -237,6 +237,34 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 				t.Fatalf("Unexpected result (-want +got):\n%s", diff)
 			}
 		})
+		t.Run("VectorMatrix_Rank1_x_Rank2", func(t *testing.T) {
+			vec := []float32{1, 2}
+			mat := [][]float32{{10, 11, 12}, {20, 21, 22}}
+			got, err := testutil.Exec1(backend, []any{vec, mat}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], []int{0}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
+			want := []float32{1*10 + 2*20, 1*11 + 2*21, 1*12 + 2*22}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+			}
+		})
+		t.Run("MatrixVector_Rank2_x_Rank1", func(t *testing.T) {
+			mat := [][]float32{{10, 20}, {11, 21}, {12, 22}}
+			vec := []float32{1, 2}
+			got, err := testutil.Exec1(backend, []any{mat, vec}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(params[0], []int{1}, []int{}, params[1], []int{0}, []int{}, compute.DotGeneralConfig{})
+			})
+			if err != nil {
+				t.Fatalf("testutil.Exec1 failed: %v", err)
+			}
+			want := []float32{10*1 + 20*2, 11*1 + 21*2, 12*1 + 22*2}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Fatalf("Unexpected result (-want +got):\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("bfloat16/small-matmul", func(t *testing.T) {
