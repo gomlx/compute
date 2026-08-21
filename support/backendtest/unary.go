@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/support/testutil"
@@ -46,7 +47,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 			t.Errorf("Neg int32 mismatch:\n%s", diff)
 		}
 
-		{
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
 			y, err := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-7), bf16(13), bf16(0)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return buildFnNeg(f, params[0])
 			})
@@ -62,7 +63,7 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 			}
 		}
 
-		{
+		if b.Capabilities().DTypes[dtypes.Float16] {
 			y, err := testutil.Exec1(b, []any{[]float16.Float16{f16(-7), f16(13), f16(0)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return buildFnNeg(f, params[0])
 			})

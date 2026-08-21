@@ -159,6 +159,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("bfloat16/DotProduct-with-f32-acc", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.BFloat16)
 		// The default accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
 		got, err := testutil.Exec1(backend, []any{
 			[][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}},
@@ -175,6 +176,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("float16/DotProduct-with-f32-acc", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float16)
 		// The default accumulator dtype for half-precision (BFloat16 and Float16) is Float32.
 		got, err := testutil.Exec1(backend, []any{
 			[][]float16.Float16{{f16(1), f16(2), f16(3)}},
@@ -191,6 +193,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("float16/DotProduct", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float16)
 		got, err := testutil.Exec1(backend, []any{
 			[][]float16.Float16{{f16(1), f16(2), f16(3)}},
 			[][]float16.Float16{{f16(10)}, {f16(11)}, {f16(12)}},
@@ -268,6 +271,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("bfloat16/small-matmul", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.BFloat16)
 		a := [][]bfloat16.BFloat16{{bf16(1), bf16(2)}, {bf16(3), bf16(4)}}
 		b := [][]bfloat16.BFloat16{{bf16(10), bf16(11)}, {bf16(12), bf16(13)}}
 
@@ -302,6 +306,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("float16/small-matmul", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float16)
 		a := [][]float16.Float16{{f16(1), f16(2)}, {f16(3), f16(4)}}
 		b := [][]float16.Float16{{f16(10), f16(11)}, {f16(12), f16(13)}}
 
@@ -370,6 +375,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("ConfigDTypes", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float16)
 		// Define common input shapes and values
 		lhsData := float16.FromFloat32s(1, 2, 3, 4, 5, 6)
 		rhsData := float16.FromFloat32s(7, 8, 9, 10, 11, 12)

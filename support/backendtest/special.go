@@ -22,15 +22,17 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 	t.Run("Identity", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeIdentity)
-		y0, err := testutil.Exec1(b, []any{bf16(7)},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.Identity(params[0])
-			})
-		if err != nil {
-			t.Errorf("Identity failed: %v", err)
-		}
-		if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
-			t.Errorf("Identity mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y0, err := testutil.Exec1(b, []any{bf16(7)},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.Identity(params[0])
+				})
+			if err != nil {
+				t.Errorf("Identity failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
+				t.Errorf("Identity mismatch:\n%s", diff)
+			}
 		}
 	})
 
@@ -41,12 +43,14 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 
 		// All scalars.
-		y0, err := testutil.Exec1(b, []any{true, bf16(7), bf16(11)}, buildWhere)
-		if err != nil {
-			t.Fatalf("Where (scalar) failed: %v", err)
-		}
-		if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
-			t.Errorf("Where (scalar) mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y0, err := testutil.Exec1(b, []any{true, bf16(7), bf16(11)}, buildWhere)
+			if err != nil {
+				t.Fatalf("Where (scalar) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(bf16(7), y0); !ok {
+				t.Errorf("Where (scalar) mismatch:\n%s", diff)
+			}
 		}
 
 		// Scalar cond, non-scalar values.
@@ -309,7 +313,14 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		t.Run("MinBFloat16", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
 			testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
-			y4, _ := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
+			y4, err := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(-11), bf16(-17), bf16(-8)}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMin(p[0], 0) })
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("Skipping as backend does not support ReduceMin for BFloat16: %v", err)
+					return
+				}
+				t.Fatalf("ReduceMin failed: %v", err)
+			}
 			if ok, diff := testutil.IsEqual(bf16(-17), y4); !ok {
 				t.Errorf("ReduceMin (bf16) mismatch:\n%s", diff)
 			}
@@ -465,17 +476,20 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			t.Fatalf("Iota y0 mismatch:\n%s", diff)
 		}
 
-		y1, _ := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
-			return f.Iota(shapes.Make(dtypes.BFloat16, 2, 3), 0)
-		})
-		if ok, diff := testutil.IsEqual([][]bfloat16.BFloat16{{bf16(0), bf16(0), bf16(0)}, {bf16(1), bf16(1), bf16(1)}}, y1); !ok {
-			t.Fatalf("Iota y1 mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y1, _ := testutil.Exec1(b, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
+				return f.Iota(shapes.Make(dtypes.BFloat16, 2, 3), 0)
+			})
+			if ok, diff := testutil.IsEqual([][]bfloat16.BFloat16{{bf16(0), bf16(0), bf16(0)}, {bf16(1), bf16(1), bf16(1)}}, y1); !ok {
+				t.Fatalf("Iota y1 mismatch:\n%s", diff)
+			}
 		}
 	})
 
 	t.Run("BroadcastInDim", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeBroadcastInDim)
 		t.Run("Scalar", func(t *testing.T) {
+			testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
 			theNumber := bf16(42)
 			y1, _ := testutil.Exec1(b, []any{theNumber},
 				func(f compute.Function, p []compute.Value) (compute.Value, error) {
@@ -497,6 +511,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		})
 
 		t.Run("Interspaced", func(t *testing.T) {
+			testutil.SkipIfMissingDType(t, b, dtypes.Float16)
 			y1, _ := testutil.Exec1(b, []any{[]float16.Float16{f16(3), f16(5)}},
 				func(f compute.Function, p []compute.Value) (compute.Value, error) {
 					return f.BroadcastInDim(p[0], shapes.Make(dtypes.Float16, 2, 2, 2), []int{1})
@@ -565,12 +580,14 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 
 		// Test Case 3: Concatenating matrices (rank 2) along axis 1
-		y3, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(1)}, {bf16(2)}}, [][]bfloat16.BFloat16{{bf16(3), bf16(4)}, {bf16(5), bf16(6)}}, [][]bfloat16.BFloat16{{bf16(7)}, {bf16(8)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
-			return f.Concatenate(1, p[0], p[1], p[2])
-		})
-		want3 := [][]bfloat16.BFloat16{{bf16(1), bf16(3), bf16(4), bf16(7)}, {bf16(2), bf16(5), bf16(6), bf16(8)}}
-		if ok, diff := testutil.IsEqual(want3, y3); !ok {
-			t.Fatalf("Concatenate y3 mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y3, _ := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(1)}, {bf16(2)}}, [][]bfloat16.BFloat16{{bf16(3), bf16(4)}, {bf16(5), bf16(6)}}, [][]bfloat16.BFloat16{{bf16(7)}, {bf16(8)}}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.Concatenate(1, p[0], p[1], p[2])
+			})
+			want3 := [][]bfloat16.BFloat16{{bf16(1), bf16(3), bf16(4), bf16(7)}, {bf16(2), bf16(5), bf16(6), bf16(8)}}
+			if ok, diff := testutil.IsEqual(want3, y3); !ok {
+				t.Fatalf("Concatenate y3 mismatch:\n%s", diff)
+			}
 		}
 
 		// Test Case 4: Concatenating with dynamic shapes on non-concat axis

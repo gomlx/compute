@@ -21,12 +21,14 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 		}
 
 		// Test with scalar (or of size 1) values.
-		y0, err := testutil.Exec1(b, []any{bfloat16.FromFloat32(7), bfloat16.FromFloat32(11)}, buildFnAdd)
-		if err != nil {
-			t.Fatalf("Failed to execute Add: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(18), y0); !ok {
-			t.Errorf("y0 mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y0, err := testutil.Exec1(b, []any{bfloat16.FromFloat32(7), bfloat16.FromFloat32(11)}, buildFnAdd)
+			if err != nil {
+				t.Fatalf("Failed to execute Add: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(18), y0); !ok {
+				t.Errorf("y0 mismatch:\n%s", diff)
+			}
 		}
 
 		y1, err := testutil.Exec1(b, []any{[]int32{-1, 2}, []int32{1}}, buildFnAdd)
@@ -241,12 +243,14 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 		buildFnSub := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.Sub(params[0], params[1])
 		}
-		y0, err := testutil.Exec1(b, []any{bfloat16.FromFloat32(7), bfloat16.FromFloat32(11)}, buildFnSub)
-		if err != nil {
-			t.Fatalf("Failed to execute Sub: %+v", err)
-		}
-		if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(-4), y0); !ok {
-			t.Errorf("y0 mismatch:\n%s", diff)
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			y0, err := testutil.Exec1(b, []any{bfloat16.FromFloat32(7), bfloat16.FromFloat32(11)}, buildFnSub)
+			if err != nil {
+				t.Fatalf("Failed to execute Sub: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(bfloat16.FromFloat32(-4), y0); !ok {
+				t.Errorf("y0 mismatch:\n%s", diff)
+			}
 		}
 	})
 
