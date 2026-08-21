@@ -90,3 +90,13 @@ some of the example models to benchmark your backend against some of the others.
   - `GOMLX_NO_AUTO_INSTALL`: if set to `1`, GoMLX will not automatically install PJRTs when running on a system without them.
   - `XLA_FLAGS`: optional controls for XLA backend. It should be set to a semicolon (";") separated list of options. If you set to `--help` 
     the backend will print out some help for all options. There is also a description on the page [XLA Flags Guidance](https://openxla.org/xla/flags_guidance).
+
+## WebAssembly (WASM) Support
+
+The "go" backend is well supported in WASM environment.
+
+It passes all compliance tests:
+
+```go
+GOOS=js GOARCH=wasm go test  -exec wasmbrowsertest ./... -count=1 -v
+```
