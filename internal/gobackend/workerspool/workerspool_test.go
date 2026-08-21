@@ -60,7 +60,7 @@ func TestPool_Saturate(t *testing.T) {
 		runtime.Gosched()
 		count.Add(1)
 	})
-	if started.Load() <= 1 {
+	if runtime.GOMAXPROCS(0) > 1 && started.Load() <= 1 {
 		t.Errorf("Expected more than 1 started task for unlimited parallelism, got %d", started.Load())
 	}
 	if count.Load() != started.Load() {
