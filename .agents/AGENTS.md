@@ -80,6 +80,7 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 
 ### Modern Go Style
 
+- Use the new `for range` format where applicable.
 - Use generics where possible.
 - Use `slices` and `maps` package for slice operations.
 - Look also into `support/xslices` package for more slice and map helper methods.
@@ -116,7 +117,7 @@ Auto-generated files don't need a copyright, but should include a comment with t
 
 ## How to use SIMD in Go with archsimd
 
-Go 1.25 introduced experimental SIMD support through the `simd/archsimd` package. This allows for writing architecture-independent SIMD code while still leveraging specialized hardware instructions (like AVX-512 on x86).
+Go 1.26 introduced experimental SIMD support through the `simd/archsimd` package. This allows for writing architecture-independent SIMD code while still leveraging specialized hardware instructions (like AVX-512 on x86).
 
 ### Enabling archsimd
 
