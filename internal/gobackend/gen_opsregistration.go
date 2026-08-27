@@ -201,6 +201,14 @@ func (f *Function) Cos(x compute.Value) (compute.Value, error) {
 	return RegisterCos.Fn(f, x)
 }
 
+func (f *Function) CumSum(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
+	if RegisterCumSum.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.CumSum(operand, axis, options)
+	}
+	return RegisterCumSum.Fn(f, operand, axis, options)
+}
+
 func (f *Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterDiv.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1002,6 +1010,9 @@ var (
 	}
 	RegisterCos = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Cos",
+	}
+	RegisterCumSum = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error)]{
+		Method: "CumSum",
 	}
 	RegisterDiv = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Div",
