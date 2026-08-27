@@ -32,6 +32,7 @@ const (
 	OpTypeBitwiseOr
 	OpTypeBitwiseXor
 	OpTypeBroadcastInDim
+	OpTypeDynamicBroadcastInDim
 	OpTypeCall
 	OpTypeClamp
 	OpTypeCeil

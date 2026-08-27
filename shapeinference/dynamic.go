@@ -7,6 +7,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
 )
 
@@ -102,3 +103,115 @@ func DynamicReshape(operand shapes.Shape, specs []compute.DynamicDimensionSpec) 
 	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
 	return output, nil
 }
+
+// DynamicBroadcastInDim calculates the output shape resulting from a DynamicBroadcastInDim operation.
+//
+// DynamicDimensionSpec must be one of:
+//   - Static: `Static >= 0`, `Name == ""`, `Value == nil`.
+//   - Dynamic with Value: `Name != ""`, `Value != nil`, `Static == 0`.
+//   - Dynamic known axis: `Name != ""`, `Value == nil`, `Static == 0` (must match an operand dynamic axis name or known dynamic axis name).
+func DynamicBroadcastInDim(operand shapes.Shape, broadcastAxes []int, specs []compute.DynamicDimensionSpec, knownDynamicAxisNames sets.Set[string]) (output shapes.Shape, err error) {
+	if len(broadcastAxes) != operand.Rank() {
+		return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: there must be exactly one broadcastAxes (%v) per axis in the operand (%s)",
+			broadcastAxes, operand)
+	}
+	outputRank := len(specs)
+	if outputRank < operand.Rank() {
+		return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: output rank (%d) cannot be less than operand rank (%d)",
+			outputRank, operand.Rank())
+	}
+
+	dims := make([]int, outputRank)
+	axisNames := make([]string, outputRank)
+
+	for i, spec := range specs {
+		if spec.Name != "" {
+			if spec.Static != 0 {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim() spec at index %d has Name %q but Static is %d (must be 0 when Name is set)", i, spec.Name, spec.Static)
+			}
+			axisNames[i] = spec.Name
+			dims[i] = shapes.DynamicDim
+		} else {
+			if spec.Value != nil {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim() spec at index %d has a non-nil Value but Name is empty", i)
+			}
+			if spec.Static < 0 {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim() static dimension at index %d cannot be negative (%d)", i, spec.Static)
+			}
+			dims[i] = spec.Static
+		}
+	}
+
+	// Verify broadcastAxes and check compatibility.
+	lastAxis := -1
+	preservedSet := sets.Make[int](len(broadcastAxes))
+	for axisInOperand, axisInOutput := range broadcastAxes {
+		if axisInOutput < 0 || axisInOutput >= outputRank {
+			return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: broadcastAxes (%v) defines out-of-range index (%d-th value -> %d), must be between 0 and %d",
+				broadcastAxes, axisInOperand, axisInOutput, outputRank-1)
+		}
+		if axisInOutput <= lastAxis {
+			return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: broadcastAxes (%v) must be strictly increasing, but broadcastAxes[%d]=%d <= %d",
+				broadcastAxes, axisInOperand, axisInOutput, lastAxis)
+		}
+		lastAxis = axisInOutput
+		preservedSet.Insert(axisInOutput)
+
+		inDim := operand.Dimensions[axisInOperand]
+		outDim := dims[axisInOutput]
+		spec := specs[axisInOutput]
+
+		if inDim == shapes.DynamicDim {
+			if outDim != shapes.DynamicDim {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must be preserved as dynamic in output",
+					axisInOperand, operand, axisInOperand, axisInOutput)
+			}
+			nameOperand := operand.AxisName(axisInOperand)
+			nameOutput := axisNames[axisInOutput]
+			if nameOperand != nameOutput {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve its axis name %q, got %q",
+					axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, nameOutput)
+			}
+		} else if inDim != 1 {
+			if outDim == shapes.DynamicDim {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot broadcast static dimension %d (> 1) at operand axis %d to dynamic output dimension",
+					inDim, axisInOperand)
+			}
+			if inDim != outDim {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: broadcast dimension mismatch: operand axis %d has size %d, but output axis %d has size %d",
+					axisInOperand, inDim, axisInOutput, outDim)
+			}
+		}
+
+		if outDim == shapes.DynamicDim && inDim != shapes.DynamicDim {
+			// Newly introduced dynamic axis by broadcasting dimension 1.
+			if spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(spec.Name)) {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", spec.Name)
+			}
+		}
+	}
+
+	// Verify newly introduced dimensions (not in broadcastAxes).
+	for axisInOutput, outDim := range dims {
+		if !preservedSet.Has(axisInOutput) && outDim == shapes.DynamicDim {
+			spec := specs[axisInOutput]
+			if spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(spec.Name)) {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", spec.Name)
+			}
+		}
+	}
+
+	// If operand is static and all specs are static with no dynamic names or values:
+	hasDynamic := operand.IsDynamic() || slices.Contains(dims, shapes.DynamicDim)
+	if !hasDynamic {
+		output = shapes.Make(operand.DType, dims...)
+		if slices.ContainsFunc(axisNames, func(name string) bool { return name != "" }) {
+			output = output.WithAxisNames(axisNames...)
+		}
+		return output, nil
+	}
+
+	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
+	return output, nil
+}
+

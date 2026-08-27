@@ -161,7 +161,7 @@ func AddSlices(a, b, res []float32) {
 
 The `compute` backend defines operations across four interfaces in `./ops*.go`:
 
-#### 1. Standard Operations (`StandardOps` in [ops.go](file:///home/janpf/Projects/gomlx/compute/ops.go))
+#### 1. Standard Operations (`StandardOps` in [ops.go](./ops.go))
 
 | Category | Operations |
 | :--- | :--- |
@@ -178,13 +178,13 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 | **Spectral / Signal** | `FFT` |
 | **Random & Barriers** | `RNGBitGenerator`, `OptimizationBarrier`, `SchedulingBarrier` |
 
-#### 2. Dynamic Operations (`DynamicOps` in [ops_dynamic.go](file:///home/janpf/Projects/gomlx/compute/ops_dynamic.go))
+#### 2. Dynamic Operations (`DynamicOps` in [ops_dynamic.go](./ops_dynamic.go))
 
 | Category | Operations |
 | :--- | :--- |
-| **Dynamic Shapes** | `DynamicDimensionSize`, `DynamicReshape` |
+| **Dynamic Shapes** | `DynamicBroadcastInDim`, `DynamicDimensionSize`, `DynamicReshape` |
 
-#### 3. Fused Operations (`FusedOps` in [ops_fused.go](file:///home/janpf/Projects/gomlx/compute/ops_fused.go))
+#### 3. Fused Operations (`FusedOps` in [ops_fused.go](./ops_fused.go))
 
 | Category | Operations |
 | :--- | :--- |
@@ -193,7 +193,7 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 | **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
 | **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense` |
 
-#### 4. Collective Operations (`CollectiveOps` in [ops_collective.go](file:///home/janpf/Projects/gomlx/compute/ops_collective.go))
+#### 4. Collective Operations (`CollectiveOps` in [ops_collective.go](./ops_collective.go))
 
 | Category | Operations |
 | :--- | :--- |

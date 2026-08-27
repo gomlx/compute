@@ -90,14 +90,14 @@ func (f Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Valu
 	return nil, f.baseErrFn(compute.OpTypeBitwiseXor)
 }
 
-// BroadcastInDim broadcasts x to an output with the given shape.
-// broadcastAxes has an output axes value for each x axes (len(broadcastAxes) == x.Shape.Rank()).
-// The i-th axis of x is mapped to the broadcastAxes[i]-th dimension of the output.
+// BroadcastInDim broadcasts the operand to an output with the given shape.
+// broadcastAxes has an output axes value for each operand axes (len(broadcastAxes) == operand.Shape.Rank()).
+// The i-th axis of the operand is mapped to the broadcastAxes[i]-th dimension of the output.
 // broadcastAxes must be also increasing: this operation cannot be used to transpose axes, it will only
 // broadcast and introduce new axes in-between.
 // This also requires that the i-th input axis is either 1 or is the same as the
 // output dimension it's broadcasting into.
-// For example, say operand `x = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
+// For example, say operand `operand = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
 //   - Specifying []int{1} as broadcastAxes will generate output
 //     {{1, 2},
 //     {1, 2}}
@@ -112,7 +112,7 @@ func (f Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Valu
 // But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
 // or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
 // by any input parameter will result in an error.
-func (f Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
+func (f Function) BroadcastInDim(operand compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeBroadcastInDim)
 }
 
@@ -248,6 +248,25 @@ func (f Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 // Dynamic shapes: Aligned or contracted dynamic axes must have the same name for both lhs and rhs.
 func (f Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeDotGeneral)
+}
+
+// DynamicBroadcastInDim broadcasts the operand to target dimensions specified by dimensions.
+//
+// broadcastAxes has an output axis value for each operand axis (len(broadcastAxes) == operand.Shape().Rank()).
+// The i-th axis of the operand is mapped to the broadcastAxes[i]-th dimension of the output.
+// broadcastAxes must also be strictly increasing: this operation cannot be used to transpose axes.
+//
+// Each target dimension can be:
+// - Static: specified with Static >= 0.
+// - Dynamic: specified with Name and dynamic scalar Value, or Name only if the dynamic axis is already known from context.
+//
+// Dynamic shapes: When broadcasting, an operand axis with a dynamic length cannot be broadcast to a different size
+// and must be preserved as dynamic in the output with matching axis names. An operand axis with size 1 may be broadcast
+// to a dynamic dimension.
+//
+// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+func (f Function) DynamicBroadcastInDim(operand compute.Value, broadcastAxes []int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicBroadcastInDim)
 }
 
 // DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.

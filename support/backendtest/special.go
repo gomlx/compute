@@ -242,6 +242,142 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		})
 	})
 
+	t.Run("DynamicBroadcastInDim", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicBroadcastInDim)
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
+		testutil.SkipIfMissingDynamicAxes(t, b)
+
+		t.Run("BroadcastStaticToDynamic", func(t *testing.T) {
+			// Param has dynamic shape [batch, 1]
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, 1}, []string{"batch", ""})
+
+			builder := b.Builder("test_dynamic_broadcast_static_to_dynamic")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+			batchSize, err := mainFn.DynamicDimensionSize(param, 0)
+			if err != nil {
+				t.Fatalf("DynamicDimensionSize failed: %v", err)
+			}
+
+			// Constant [1, 3]{{10, 20, 30}}
+			c, err := mainFn.Constant([]int32{10, 20, 30}, 1, 3)
+			if err != nil {
+				t.Fatalf("Constant failed: %v", err)
+			}
+
+			// Broadcast c to [batch, 3]
+			out, err := mainFn.DynamicBroadcastInDim(c, []int{0, 1},
+				compute.DynamicDimensionSpec{Name: "batch", Value: batchSize},
+				compute.DynamicDimensionSpec{Static: 3},
+			)
+			if err != nil {
+				t.Fatalf("DynamicBroadcastInDim failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			testCases := []struct {
+				input [][]int32
+				want  [][]int32
+			}{
+				{
+					input: [][]int32{{1}, {2}},
+					want:  [][]int32{{10, 20, 30}, {10, 20, 30}},
+				},
+				{
+					input: [][]int32{{1}, {2}, {3}},
+					want:  [][]int32{{10, 20, 30}, {10, 20, 30}, {10, 20, 30}},
+				},
+			}
+
+			for _, tc := range testCases {
+				inBuf, err := testutil.ToBuffer(b, tc.input)
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %v", err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicBroadcastInDim mismatch:\n%s", diff)
+				}
+			}
+		})
+
+		t.Run("BroadcastDynamicOperandPreservingAxis", func(t *testing.T) {
+			// Param has dynamic shape [batch]
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim}, []string{"batch"})
+
+			builder := b.Builder("test_dynamic_broadcast_preserving_axis")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+
+			// Broadcast param [batch] to [batch, 2]
+			out, err := mainFn.DynamicBroadcastInDim(param, []int{0},
+				compute.DynamicDimensionSpec{Name: "batch"},
+				compute.DynamicDimensionSpec{Static: 2},
+			)
+			if err != nil {
+				t.Fatalf("DynamicBroadcastInDim failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			testCases := []struct {
+				input []int32
+				want  [][]int32
+			}{
+				{
+					input: []int32{5, 6},
+					want:  [][]int32{{5, 5}, {6, 6}},
+				},
+				{
+					input: []int32{1, 2, 3},
+					want:  [][]int32{{1, 1}, {2, 2}, {3, 3}},
+				},
+			}
+
+			for _, tc := range testCases {
+				inBuf, err := testutil.ToBuffer(b, tc.input)
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %v", err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicBroadcastInDim mismatch:\n%s", diff)
+				}
+			}
+		})
+	})
+
 	t.Run("Reverse", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReverse)
 		y0, err := testutil.Exec1(b, []any{[][]float32{{1, 2}, {3, 4}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
