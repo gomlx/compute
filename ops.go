@@ -106,8 +106,16 @@ type DotGeneralConfig struct {
 	// Some backends may not support this option and this will cause it to simply convert the input to the output
 	// type upfront, which is less efficient.
 	OutputDType dtypes.DType
+}
 
-	// FutureWork: add quantization configuration.
+// CumSumOptions are options for the CumSum operation.
+type CumSumOptions struct {
+	// Exclusive if not to include the current element in the sum:
+	// CumSum([1, 2, 3], 0, CumSumOptions{Exclusive:true}) -> [0, 1, 3].
+	Exclusive bool
+
+	// Reverse to sum on the reverse direction.
+	Reverse bool
 }
 
 // StandardOps lists the bulk of the operations that a backends.Builder must support.
@@ -314,6 +322,21 @@ type StandardOps interface {
 
 	// Cos returns the Op that represents the output of the corresponding operation.
 	Cos(x Value) (Value, error)
+
+	// CumSum returns the cumulative sum of the elements along the given axis.
+	//
+	// Parameters:
+	//   - operand: input value to sum.
+	//   - axis: axis along which to compute the cumulative sum. It must be in the range 0 <= axis < rank.
+	//   - options: CumSumOptions with Exclusive and Reverse flags.
+	//
+	// Examples:
+	//
+	//	CumSum([1, 2, 3], 0, CumSumOptions{}) -> [1, 3, 6]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true}) -> [0, 1, 3]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Reverse: true}) -> [6, 5, 3]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true, Reverse: true}) -> [5, 3, 0]
+	CumSum(operand Value, axis int, options CumSumOptions) (Value, error)
 
 	// Div returns the element-wise division of the two values.
 	// Standard broadcasting rules apply (see documentation).

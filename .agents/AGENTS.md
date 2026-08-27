@@ -171,7 +171,7 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 | **Logical & Bitwise** | `LogicalAnd`, `LogicalOr`, `LogicalXor`, `LogicalNot`, `BitwiseAnd`, `BitwiseOr`, `BitwiseXor`, `BitwiseNot`, `BitCount`, `ShiftLeft`, `ShiftRightArithmetic`, `ShiftRightLogical` |
 | **Complex Numbers** | `Complex`, `Real`, `Imag`, `Conj` |
 | **Shape & Tensor Manipulation** | `Bitcast`, `BroadcastInDim`, `Concatenate`, `ConvertDType`, `DynamicShape`, `DynamicSlice`, `DynamicUpdateSlice`, `Identity`, `Iota`, `Pad`, `Reshape`, `Reverse`, `Slice`, `Transpose`, `Where` |
-| **Reductions & Windowing** | `ArgMinMax`, `ReduceBitwiseAnd`, `ReduceBitwiseOr`, `ReduceBitwiseXor`, `ReduceLogicalAnd`, `ReduceLogicalOr`, `ReduceLogicalXor`, `ReduceMax`, `ReduceMin`, `ReduceProduct`, `ReduceSum`, `ReduceWindow` |
+| **Reductions & Windowing** | `ArgMinMax`, `CumSum`, `ReduceBitwiseAnd`, `ReduceBitwiseOr`, `ReduceBitwiseXor`, `ReduceLogicalAnd`, `ReduceLogicalOr`, `ReduceLogicalXor`, `ReduceMax`, `ReduceMin`, `ReduceProduct`, `ReduceSum`, `ReduceWindow` |
 | **Linear Algebra & Convolutions** | `DotGeneral`, `ConvGeneral` |
 | **Gather / Scatter** | `Gather`, `ScatterMax`, `ScatterMin`, `ScatterSum`, `SelectAndScatterMax`, `SelectAndScatterMin` |
 | **Neural Network Normalization** | `BatchNormForInference`, `BatchNormForTraining`, `BatchNormGradient` |

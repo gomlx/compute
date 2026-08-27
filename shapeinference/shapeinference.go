@@ -683,6 +683,21 @@ func Reduce(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
 	return
 }
 
+// CumSum returns the output shape for a CumSum operation.
+func CumSum(operand shapes.Shape, axis int) (output shapes.Shape, err error) {
+	if !operand.DType.IsFloat() && !operand.DType.IsInt() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires float or int dtype, got %s", operand.DType)
+	}
+	if operand.IsScalar() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires tensor with rank >= 1, got scalar shape %s", operand)
+	}
+	if axis < 0 || axis >= operand.Rank() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires 0 <= axis < rank (%d), but got invalid axis %d for shape %s", operand.Rank(), axis, operand)
+	}
+	return operand.Clone(), nil
+}
+
+
 // Gather returns the output shape of a Gather operation.
 func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutputAxes, collapsedSliceAxes,
 	startIndexMap, sliceSizes []int, indicesAreSorted bool) (output shapes.Shape, err error) {

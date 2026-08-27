@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _OpTypeName = "InvalidParameterConstantIdentityReduceWindowRNGBitGeneratorBatchNormForInferenceBatchNormForTrainingBatchNormGradientBitCountAbsAddArgMinMaxAtan2BitcastBitwiseAndBitwiseNotBitwiseOrBitwiseXorBroadcastInDimCallClampCeilClzComplexConcatenateConjConvGeneralConvertDTypeCosDivDotDotGeneralDynamicSliceDynamicUpdateSliceDynamicDimensionSizeDynamicShapeEqualEqualTotalOrderErfExpExpm1FFTFloorGatherGreaterOrEqualGreaterOrEqualTotalOrderGreaterThanGreaterThanTotalOrderImagIotaIsFiniteIsNaNLessOrEqualLessOrEqualTotalOrderLessThanLessThanTotalOrderLogLog1pLogicalAndLogicalNotLogicalOrLogicalXorLogisticMaxMinMulNegNotEqualNotEqualTotalOrderPadPowRealReduceBitwiseAndReduceBitwiseOrReduceBitwiseXorReduceLogicalAndReduceLogicalOrReduceLogicalXorReduceMaxReduceMinReduceProductReduceSumRemReshapeDynamicReshapeReverseRoundRsqrtScatterMaxScatterMinScatterSumSelectAndScatterMaxSelectAndScatterMinSelectAndScatterSumShiftLeftShiftRightArithmeticShiftRightLogicalSignSinSliceSqrtSubTanhTransposeWhereOptimizationBarrierSchedulingBarrierSortWhileIfCapturedValueAllReduceCollectiveBroadcastAllGatherBlockForDotGeneralFusedSoftmaxFusedLayerNormFusedGeluFusedDenseFusedScaledDotProductAttentionFusedScaledDotProductAttentionVJPFusedAttentionQKVProjectionFusedQuantizedDenseQuantizedEmbeddingLookupLast"
+const _OpTypeName = "InvalidParameterConstantIdentityReduceWindowRNGBitGeneratorBatchNormForInferenceBatchNormForTrainingBatchNormGradientBitCountAbsAddArgMinMaxAtan2BitcastBitwiseAndBitwiseNotBitwiseOrBitwiseXorBroadcastInDimCallClampCeilClzComplexConcatenateConjConvGeneralConvertDTypeCosCumSumDivDotDotGeneralDynamicSliceDynamicUpdateSliceDynamicDimensionSizeDynamicShapeEqualEqualTotalOrderErfExpExpm1FFTFloorGatherGreaterOrEqualGreaterOrEqualTotalOrderGreaterThanGreaterThanTotalOrderImagIotaIsFiniteIsNaNLessOrEqualLessOrEqualTotalOrderLessThanLessThanTotalOrderLogLog1pLogicalAndLogicalNotLogicalOrLogicalXorLogisticMaxMinMulNegNotEqualNotEqualTotalOrderPadPowRealReduceBitwiseAndReduceBitwiseOrReduceBitwiseXorReduceLogicalAndReduceLogicalOrReduceLogicalXorReduceMaxReduceMinReduceProductReduceSumRemReshapeDynamicReshapeReverseRoundRsqrtScatterMaxScatterMinScatterSumSelectAndScatterMaxSelectAndScatterMinSelectAndScatterSumShiftLeftShiftRightArithmeticShiftRightLogicalSignSinSliceSqrtSubTanhTransposeWhereOptimizationBarrierSchedulingBarrierSortWhileIfCapturedValueAllReduceCollectiveBroadcastAllGatherBlockForDotGeneralFusedSoftmaxFusedLayerNormFusedGeluFusedDenseFusedScaledDotProductAttentionFusedScaledDotProductAttentionVJPFusedAttentionQKVProjectionFusedQuantizedDenseQuantizedEmbeddingLookupLast"
 
-var _OpTypeIndex = [...]uint16{0, 7, 16, 24, 32, 44, 59, 80, 100, 117, 125, 128, 131, 140, 145, 152, 162, 172, 181, 191, 205, 209, 214, 218, 221, 228, 239, 243, 254, 266, 269, 272, 275, 285, 297, 315, 335, 347, 352, 367, 370, 373, 378, 381, 386, 392, 406, 430, 441, 462, 466, 470, 478, 483, 494, 515, 523, 541, 544, 549, 559, 569, 578, 588, 596, 599, 602, 605, 608, 616, 634, 637, 640, 644, 660, 675, 691, 707, 722, 738, 747, 756, 769, 778, 781, 788, 802, 809, 814, 819, 829, 839, 849, 868, 887, 906, 915, 935, 952, 956, 959, 964, 968, 971, 975, 984, 989, 1008, 1025, 1029, 1034, 1036, 1049, 1058, 1077, 1086, 1104, 1116, 1130, 1139, 1149, 1179, 1212, 1239, 1258, 1282, 1286}
+var _OpTypeIndex = [...]uint16{0, 7, 16, 24, 32, 44, 59, 80, 100, 117, 125, 128, 131, 140, 145, 152, 162, 172, 181, 191, 205, 209, 214, 218, 221, 228, 239, 243, 254, 266, 269, 275, 278, 281, 291, 303, 321, 341, 353, 358, 373, 376, 379, 384, 387, 392, 398, 412, 436, 447, 468, 472, 476, 484, 489, 500, 521, 529, 547, 550, 555, 565, 575, 584, 594, 602, 605, 608, 611, 614, 622, 640, 643, 646, 650, 666, 681, 697, 713, 728, 744, 753, 762, 775, 784, 787, 794, 808, 815, 820, 825, 835, 845, 855, 874, 893, 912, 921, 941, 958, 962, 965, 970, 974, 977, 981, 990, 995, 1014, 1031, 1035, 1040, 1042, 1055, 1064, 1083, 1092, 1110, 1122, 1136, 1145, 1155, 1185, 1218, 1245, 1264, 1288, 1292}
 
-const _OpTypeLowerName = "invalidparameterconstantidentityreducewindowrngbitgeneratorbatchnormforinferencebatchnormfortrainingbatchnormgradientbitcountabsaddargminmaxatan2bitcastbitwiseandbitwisenotbitwiseorbitwisexorbroadcastindimcallclampceilclzcomplexconcatenateconjconvgeneralconvertdtypecosdivdotdotgeneraldynamicslicedynamicupdateslicedynamicdimensionsizedynamicshapeequalequaltotalordererfexpexpm1fftfloorgathergreaterorequalgreaterorequaltotalordergreaterthangreaterthantotalorderimagiotaisfiniteisnanlessorequallessorequaltotalorderlessthanlessthantotalorderloglog1plogicalandlogicalnotlogicalorlogicalxorlogisticmaxminmulnegnotequalnotequaltotalorderpadpowrealreducebitwiseandreducebitwiseorreducebitwisexorreducelogicalandreducelogicalorreducelogicalxorreducemaxreduceminreduceproductreducesumremreshapedynamicreshapereverseroundrsqrtscattermaxscatterminscattersumselectandscattermaxselectandscatterminselectandscattersumshiftleftshiftrightarithmeticshiftrightlogicalsignsinslicesqrtsubtanhtransposewhereoptimizationbarrierschedulingbarriersortwhileifcapturedvalueallreducecollectivebroadcastallgatherblockfordotgeneralfusedsoftmaxfusedlayernormfusedgelufuseddensefusedscaleddotproductattentionfusedscaleddotproductattentionvjpfusedattentionqkvprojectionfusedquantizeddensequantizedembeddinglookuplast"
+const _OpTypeLowerName = "invalidparameterconstantidentityreducewindowrngbitgeneratorbatchnormforinferencebatchnormfortrainingbatchnormgradientbitcountabsaddargminmaxatan2bitcastbitwiseandbitwisenotbitwiseorbitwisexorbroadcastindimcallclampceilclzcomplexconcatenateconjconvgeneralconvertdtypecoscumsumdivdotdotgeneraldynamicslicedynamicupdateslicedynamicdimensionsizedynamicshapeequalequaltotalordererfexpexpm1fftfloorgathergreaterorequalgreaterorequaltotalordergreaterthangreaterthantotalorderimagiotaisfiniteisnanlessorequallessorequaltotalorderlessthanlessthantotalorderloglog1plogicalandlogicalnotlogicalorlogicalxorlogisticmaxminmulnegnotequalnotequaltotalorderpadpowrealreducebitwiseandreducebitwiseorreducebitwisexorreducelogicalandreducelogicalorreducelogicalxorreducemaxreduceminreduceproductreducesumremreshapedynamicreshapereverseroundrsqrtscattermaxscatterminscattersumselectandscattermaxselectandscatterminselectandscattersumshiftleftshiftrightarithmeticshiftrightlogicalsignsinslicesqrtsubtanhtransposewhereoptimizationbarrierschedulingbarriersortwhileifcapturedvalueallreducecollectivebroadcastallgatherblockfordotgeneralfusedsoftmaxfusedlayernormfusedgelufuseddensefusedscaleddotproductattentionfusedscaleddotproductattentionvjpfusedattentionqkvprojectionfusedquantizeddensequantizedembeddinglookuplast"
 
 func (i OpType) String() string {
 	if i < 0 || i >= OpType(len(_OpTypeIndex)-1) {
@@ -54,105 +54,106 @@ func _OpTypeNoOp() {
 	_ = x[OpTypeConvGeneral-(27)]
 	_ = x[OpTypeConvertDType-(28)]
 	_ = x[OpTypeCos-(29)]
-	_ = x[OpTypeDiv-(30)]
-	_ = x[OpTypeDot-(31)]
-	_ = x[OpTypeDotGeneral-(32)]
-	_ = x[OpTypeDynamicSlice-(33)]
-	_ = x[OpTypeDynamicUpdateSlice-(34)]
-	_ = x[OpTypeDynamicDimensionSize-(35)]
-	_ = x[OpTypeDynamicShape-(36)]
-	_ = x[OpTypeEqual-(37)]
-	_ = x[OpTypeEqualTotalOrder-(38)]
-	_ = x[OpTypeErf-(39)]
-	_ = x[OpTypeExp-(40)]
-	_ = x[OpTypeExpm1-(41)]
-	_ = x[OpTypeFFT-(42)]
-	_ = x[OpTypeFloor-(43)]
-	_ = x[OpTypeGather-(44)]
-	_ = x[OpTypeGreaterOrEqual-(45)]
-	_ = x[OpTypeGreaterOrEqualTotalOrder-(46)]
-	_ = x[OpTypeGreaterThan-(47)]
-	_ = x[OpTypeGreaterThanTotalOrder-(48)]
-	_ = x[OpTypeImag-(49)]
-	_ = x[OpTypeIota-(50)]
-	_ = x[OpTypeIsFinite-(51)]
-	_ = x[OpTypeIsNaN-(52)]
-	_ = x[OpTypeLessOrEqual-(53)]
-	_ = x[OpTypeLessOrEqualTotalOrder-(54)]
-	_ = x[OpTypeLessThan-(55)]
-	_ = x[OpTypeLessThanTotalOrder-(56)]
-	_ = x[OpTypeLog-(57)]
-	_ = x[OpTypeLog1p-(58)]
-	_ = x[OpTypeLogicalAnd-(59)]
-	_ = x[OpTypeLogicalNot-(60)]
-	_ = x[OpTypeLogicalOr-(61)]
-	_ = x[OpTypeLogicalXor-(62)]
-	_ = x[OpTypeLogistic-(63)]
-	_ = x[OpTypeMax-(64)]
-	_ = x[OpTypeMin-(65)]
-	_ = x[OpTypeMul-(66)]
-	_ = x[OpTypeNeg-(67)]
-	_ = x[OpTypeNotEqual-(68)]
-	_ = x[OpTypeNotEqualTotalOrder-(69)]
-	_ = x[OpTypePad-(70)]
-	_ = x[OpTypePow-(71)]
-	_ = x[OpTypeReal-(72)]
-	_ = x[OpTypeReduceBitwiseAnd-(73)]
-	_ = x[OpTypeReduceBitwiseOr-(74)]
-	_ = x[OpTypeReduceBitwiseXor-(75)]
-	_ = x[OpTypeReduceLogicalAnd-(76)]
-	_ = x[OpTypeReduceLogicalOr-(77)]
-	_ = x[OpTypeReduceLogicalXor-(78)]
-	_ = x[OpTypeReduceMax-(79)]
-	_ = x[OpTypeReduceMin-(80)]
-	_ = x[OpTypeReduceProduct-(81)]
-	_ = x[OpTypeReduceSum-(82)]
-	_ = x[OpTypeRem-(83)]
-	_ = x[OpTypeReshape-(84)]
-	_ = x[OpTypeDynamicReshape-(85)]
-	_ = x[OpTypeReverse-(86)]
-	_ = x[OpTypeRound-(87)]
-	_ = x[OpTypeRsqrt-(88)]
-	_ = x[OpTypeScatterMax-(89)]
-	_ = x[OpTypeScatterMin-(90)]
-	_ = x[OpTypeScatterSum-(91)]
-	_ = x[OpTypeSelectAndScatterMax-(92)]
-	_ = x[OpTypeSelectAndScatterMin-(93)]
-	_ = x[OpTypeSelectAndScatterSum-(94)]
-	_ = x[OpTypeShiftLeft-(95)]
-	_ = x[OpTypeShiftRightArithmetic-(96)]
-	_ = x[OpTypeShiftRightLogical-(97)]
-	_ = x[OpTypeSign-(98)]
-	_ = x[OpTypeSin-(99)]
-	_ = x[OpTypeSlice-(100)]
-	_ = x[OpTypeSqrt-(101)]
-	_ = x[OpTypeSub-(102)]
-	_ = x[OpTypeTanh-(103)]
-	_ = x[OpTypeTranspose-(104)]
-	_ = x[OpTypeWhere-(105)]
-	_ = x[OpTypeOptimizationBarrier-(106)]
-	_ = x[OpTypeSchedulingBarrier-(107)]
-	_ = x[OpTypeSort-(108)]
-	_ = x[OpTypeWhile-(109)]
-	_ = x[OpTypeIf-(110)]
-	_ = x[OpTypeCapturedValue-(111)]
-	_ = x[OpTypeAllReduce-(112)]
-	_ = x[OpTypeCollectiveBroadcast-(113)]
-	_ = x[OpTypeAllGather-(114)]
-	_ = x[OpTypeBlockForDotGeneral-(115)]
-	_ = x[OpTypeFusedSoftmax-(116)]
-	_ = x[OpTypeFusedLayerNorm-(117)]
-	_ = x[OpTypeFusedGelu-(118)]
-	_ = x[OpTypeFusedDense-(119)]
-	_ = x[OpTypeFusedScaledDotProductAttention-(120)]
-	_ = x[OpTypeFusedScaledDotProductAttentionVJP-(121)]
-	_ = x[OpTypeFusedAttentionQKVProjection-(122)]
-	_ = x[OpTypeFusedQuantizedDense-(123)]
-	_ = x[OpTypeQuantizedEmbeddingLookup-(124)]
-	_ = x[OpTypeLast-(125)]
+	_ = x[OpTypeCumSum-(30)]
+	_ = x[OpTypeDiv-(31)]
+	_ = x[OpTypeDot-(32)]
+	_ = x[OpTypeDotGeneral-(33)]
+	_ = x[OpTypeDynamicSlice-(34)]
+	_ = x[OpTypeDynamicUpdateSlice-(35)]
+	_ = x[OpTypeDynamicDimensionSize-(36)]
+	_ = x[OpTypeDynamicShape-(37)]
+	_ = x[OpTypeEqual-(38)]
+	_ = x[OpTypeEqualTotalOrder-(39)]
+	_ = x[OpTypeErf-(40)]
+	_ = x[OpTypeExp-(41)]
+	_ = x[OpTypeExpm1-(42)]
+	_ = x[OpTypeFFT-(43)]
+	_ = x[OpTypeFloor-(44)]
+	_ = x[OpTypeGather-(45)]
+	_ = x[OpTypeGreaterOrEqual-(46)]
+	_ = x[OpTypeGreaterOrEqualTotalOrder-(47)]
+	_ = x[OpTypeGreaterThan-(48)]
+	_ = x[OpTypeGreaterThanTotalOrder-(49)]
+	_ = x[OpTypeImag-(50)]
+	_ = x[OpTypeIota-(51)]
+	_ = x[OpTypeIsFinite-(52)]
+	_ = x[OpTypeIsNaN-(53)]
+	_ = x[OpTypeLessOrEqual-(54)]
+	_ = x[OpTypeLessOrEqualTotalOrder-(55)]
+	_ = x[OpTypeLessThan-(56)]
+	_ = x[OpTypeLessThanTotalOrder-(57)]
+	_ = x[OpTypeLog-(58)]
+	_ = x[OpTypeLog1p-(59)]
+	_ = x[OpTypeLogicalAnd-(60)]
+	_ = x[OpTypeLogicalNot-(61)]
+	_ = x[OpTypeLogicalOr-(62)]
+	_ = x[OpTypeLogicalXor-(63)]
+	_ = x[OpTypeLogistic-(64)]
+	_ = x[OpTypeMax-(65)]
+	_ = x[OpTypeMin-(66)]
+	_ = x[OpTypeMul-(67)]
+	_ = x[OpTypeNeg-(68)]
+	_ = x[OpTypeNotEqual-(69)]
+	_ = x[OpTypeNotEqualTotalOrder-(70)]
+	_ = x[OpTypePad-(71)]
+	_ = x[OpTypePow-(72)]
+	_ = x[OpTypeReal-(73)]
+	_ = x[OpTypeReduceBitwiseAnd-(74)]
+	_ = x[OpTypeReduceBitwiseOr-(75)]
+	_ = x[OpTypeReduceBitwiseXor-(76)]
+	_ = x[OpTypeReduceLogicalAnd-(77)]
+	_ = x[OpTypeReduceLogicalOr-(78)]
+	_ = x[OpTypeReduceLogicalXor-(79)]
+	_ = x[OpTypeReduceMax-(80)]
+	_ = x[OpTypeReduceMin-(81)]
+	_ = x[OpTypeReduceProduct-(82)]
+	_ = x[OpTypeReduceSum-(83)]
+	_ = x[OpTypeRem-(84)]
+	_ = x[OpTypeReshape-(85)]
+	_ = x[OpTypeDynamicReshape-(86)]
+	_ = x[OpTypeReverse-(87)]
+	_ = x[OpTypeRound-(88)]
+	_ = x[OpTypeRsqrt-(89)]
+	_ = x[OpTypeScatterMax-(90)]
+	_ = x[OpTypeScatterMin-(91)]
+	_ = x[OpTypeScatterSum-(92)]
+	_ = x[OpTypeSelectAndScatterMax-(93)]
+	_ = x[OpTypeSelectAndScatterMin-(94)]
+	_ = x[OpTypeSelectAndScatterSum-(95)]
+	_ = x[OpTypeShiftLeft-(96)]
+	_ = x[OpTypeShiftRightArithmetic-(97)]
+	_ = x[OpTypeShiftRightLogical-(98)]
+	_ = x[OpTypeSign-(99)]
+	_ = x[OpTypeSin-(100)]
+	_ = x[OpTypeSlice-(101)]
+	_ = x[OpTypeSqrt-(102)]
+	_ = x[OpTypeSub-(103)]
+	_ = x[OpTypeTanh-(104)]
+	_ = x[OpTypeTranspose-(105)]
+	_ = x[OpTypeWhere-(106)]
+	_ = x[OpTypeOptimizationBarrier-(107)]
+	_ = x[OpTypeSchedulingBarrier-(108)]
+	_ = x[OpTypeSort-(109)]
+	_ = x[OpTypeWhile-(110)]
+	_ = x[OpTypeIf-(111)]
+	_ = x[OpTypeCapturedValue-(112)]
+	_ = x[OpTypeAllReduce-(113)]
+	_ = x[OpTypeCollectiveBroadcast-(114)]
+	_ = x[OpTypeAllGather-(115)]
+	_ = x[OpTypeBlockForDotGeneral-(116)]
+	_ = x[OpTypeFusedSoftmax-(117)]
+	_ = x[OpTypeFusedLayerNorm-(118)]
+	_ = x[OpTypeFusedGelu-(119)]
+	_ = x[OpTypeFusedDense-(120)]
+	_ = x[OpTypeFusedScaledDotProductAttention-(121)]
+	_ = x[OpTypeFusedScaledDotProductAttentionVJP-(122)]
+	_ = x[OpTypeFusedAttentionQKVProjection-(123)]
+	_ = x[OpTypeFusedQuantizedDense-(124)]
+	_ = x[OpTypeQuantizedEmbeddingLookup-(125)]
+	_ = x[OpTypeLast-(126)]
 }
 
-var _OpTypeValues = []OpType{OpTypeInvalid, OpTypeParameter, OpTypeConstant, OpTypeIdentity, OpTypeReduceWindow, OpTypeRNGBitGenerator, OpTypeBatchNormForInference, OpTypeBatchNormForTraining, OpTypeBatchNormGradient, OpTypeBitCount, OpTypeAbs, OpTypeAdd, OpTypeArgMinMax, OpTypeAtan2, OpTypeBitcast, OpTypeBitwiseAnd, OpTypeBitwiseNot, OpTypeBitwiseOr, OpTypeBitwiseXor, OpTypeBroadcastInDim, OpTypeCall, OpTypeClamp, OpTypeCeil, OpTypeClz, OpTypeComplex, OpTypeConcatenate, OpTypeConj, OpTypeConvGeneral, OpTypeConvertDType, OpTypeCos, OpTypeDiv, OpTypeDot, OpTypeDotGeneral, OpTypeDynamicSlice, OpTypeDynamicUpdateSlice, OpTypeDynamicDimensionSize, OpTypeDynamicShape, OpTypeEqual, OpTypeEqualTotalOrder, OpTypeErf, OpTypeExp, OpTypeExpm1, OpTypeFFT, OpTypeFloor, OpTypeGather, OpTypeGreaterOrEqual, OpTypeGreaterOrEqualTotalOrder, OpTypeGreaterThan, OpTypeGreaterThanTotalOrder, OpTypeImag, OpTypeIota, OpTypeIsFinite, OpTypeIsNaN, OpTypeLessOrEqual, OpTypeLessOrEqualTotalOrder, OpTypeLessThan, OpTypeLessThanTotalOrder, OpTypeLog, OpTypeLog1p, OpTypeLogicalAnd, OpTypeLogicalNot, OpTypeLogicalOr, OpTypeLogicalXor, OpTypeLogistic, OpTypeMax, OpTypeMin, OpTypeMul, OpTypeNeg, OpTypeNotEqual, OpTypeNotEqualTotalOrder, OpTypePad, OpTypePow, OpTypeReal, OpTypeReduceBitwiseAnd, OpTypeReduceBitwiseOr, OpTypeReduceBitwiseXor, OpTypeReduceLogicalAnd, OpTypeReduceLogicalOr, OpTypeReduceLogicalXor, OpTypeReduceMax, OpTypeReduceMin, OpTypeReduceProduct, OpTypeReduceSum, OpTypeRem, OpTypeReshape, OpTypeDynamicReshape, OpTypeReverse, OpTypeRound, OpTypeRsqrt, OpTypeScatterMax, OpTypeScatterMin, OpTypeScatterSum, OpTypeSelectAndScatterMax, OpTypeSelectAndScatterMin, OpTypeSelectAndScatterSum, OpTypeShiftLeft, OpTypeShiftRightArithmetic, OpTypeShiftRightLogical, OpTypeSign, OpTypeSin, OpTypeSlice, OpTypeSqrt, OpTypeSub, OpTypeTanh, OpTypeTranspose, OpTypeWhere, OpTypeOptimizationBarrier, OpTypeSchedulingBarrier, OpTypeSort, OpTypeWhile, OpTypeIf, OpTypeCapturedValue, OpTypeAllReduce, OpTypeCollectiveBroadcast, OpTypeAllGather, OpTypeBlockForDotGeneral, OpTypeFusedSoftmax, OpTypeFusedLayerNorm, OpTypeFusedGelu, OpTypeFusedDense, OpTypeFusedScaledDotProductAttention, OpTypeFusedScaledDotProductAttentionVJP, OpTypeFusedAttentionQKVProjection, OpTypeFusedQuantizedDense, OpTypeQuantizedEmbeddingLookup, OpTypeLast}
+var _OpTypeValues = []OpType{OpTypeInvalid, OpTypeParameter, OpTypeConstant, OpTypeIdentity, OpTypeReduceWindow, OpTypeRNGBitGenerator, OpTypeBatchNormForInference, OpTypeBatchNormForTraining, OpTypeBatchNormGradient, OpTypeBitCount, OpTypeAbs, OpTypeAdd, OpTypeArgMinMax, OpTypeAtan2, OpTypeBitcast, OpTypeBitwiseAnd, OpTypeBitwiseNot, OpTypeBitwiseOr, OpTypeBitwiseXor, OpTypeBroadcastInDim, OpTypeCall, OpTypeClamp, OpTypeCeil, OpTypeClz, OpTypeComplex, OpTypeConcatenate, OpTypeConj, OpTypeConvGeneral, OpTypeConvertDType, OpTypeCos, OpTypeCumSum, OpTypeDiv, OpTypeDot, OpTypeDotGeneral, OpTypeDynamicSlice, OpTypeDynamicUpdateSlice, OpTypeDynamicDimensionSize, OpTypeDynamicShape, OpTypeEqual, OpTypeEqualTotalOrder, OpTypeErf, OpTypeExp, OpTypeExpm1, OpTypeFFT, OpTypeFloor, OpTypeGather, OpTypeGreaterOrEqual, OpTypeGreaterOrEqualTotalOrder, OpTypeGreaterThan, OpTypeGreaterThanTotalOrder, OpTypeImag, OpTypeIota, OpTypeIsFinite, OpTypeIsNaN, OpTypeLessOrEqual, OpTypeLessOrEqualTotalOrder, OpTypeLessThan, OpTypeLessThanTotalOrder, OpTypeLog, OpTypeLog1p, OpTypeLogicalAnd, OpTypeLogicalNot, OpTypeLogicalOr, OpTypeLogicalXor, OpTypeLogistic, OpTypeMax, OpTypeMin, OpTypeMul, OpTypeNeg, OpTypeNotEqual, OpTypeNotEqualTotalOrder, OpTypePad, OpTypePow, OpTypeReal, OpTypeReduceBitwiseAnd, OpTypeReduceBitwiseOr, OpTypeReduceBitwiseXor, OpTypeReduceLogicalAnd, OpTypeReduceLogicalOr, OpTypeReduceLogicalXor, OpTypeReduceMax, OpTypeReduceMin, OpTypeReduceProduct, OpTypeReduceSum, OpTypeRem, OpTypeReshape, OpTypeDynamicReshape, OpTypeReverse, OpTypeRound, OpTypeRsqrt, OpTypeScatterMax, OpTypeScatterMin, OpTypeScatterSum, OpTypeSelectAndScatterMax, OpTypeSelectAndScatterMin, OpTypeSelectAndScatterSum, OpTypeShiftLeft, OpTypeShiftRightArithmetic, OpTypeShiftRightLogical, OpTypeSign, OpTypeSin, OpTypeSlice, OpTypeSqrt, OpTypeSub, OpTypeTanh, OpTypeTranspose, OpTypeWhere, OpTypeOptimizationBarrier, OpTypeSchedulingBarrier, OpTypeSort, OpTypeWhile, OpTypeIf, OpTypeCapturedValue, OpTypeAllReduce, OpTypeCollectiveBroadcast, OpTypeAllGather, OpTypeBlockForDotGeneral, OpTypeFusedSoftmax, OpTypeFusedLayerNorm, OpTypeFusedGelu, OpTypeFusedDense, OpTypeFusedScaledDotProductAttention, OpTypeFusedScaledDotProductAttentionVJP, OpTypeFusedAttentionQKVProjection, OpTypeFusedQuantizedDense, OpTypeQuantizedEmbeddingLookup, OpTypeLast}
 
 var _OpTypeNameToValueMap = map[string]OpType{
 	_OpTypeName[0:7]:            OpTypeInvalid,
@@ -215,198 +216,200 @@ var _OpTypeNameToValueMap = map[string]OpType{
 	_OpTypeLowerName[254:266]:   OpTypeConvertDType,
 	_OpTypeName[266:269]:        OpTypeCos,
 	_OpTypeLowerName[266:269]:   OpTypeCos,
-	_OpTypeName[269:272]:        OpTypeDiv,
-	_OpTypeLowerName[269:272]:   OpTypeDiv,
-	_OpTypeName[272:275]:        OpTypeDot,
-	_OpTypeLowerName[272:275]:   OpTypeDot,
-	_OpTypeName[275:285]:        OpTypeDotGeneral,
-	_OpTypeLowerName[275:285]:   OpTypeDotGeneral,
-	_OpTypeName[285:297]:        OpTypeDynamicSlice,
-	_OpTypeLowerName[285:297]:   OpTypeDynamicSlice,
-	_OpTypeName[297:315]:        OpTypeDynamicUpdateSlice,
-	_OpTypeLowerName[297:315]:   OpTypeDynamicUpdateSlice,
-	_OpTypeName[315:335]:        OpTypeDynamicDimensionSize,
-	_OpTypeLowerName[315:335]:   OpTypeDynamicDimensionSize,
-	_OpTypeName[335:347]:        OpTypeDynamicShape,
-	_OpTypeLowerName[335:347]:   OpTypeDynamicShape,
-	_OpTypeName[347:352]:        OpTypeEqual,
-	_OpTypeLowerName[347:352]:   OpTypeEqual,
-	_OpTypeName[352:367]:        OpTypeEqualTotalOrder,
-	_OpTypeLowerName[352:367]:   OpTypeEqualTotalOrder,
-	_OpTypeName[367:370]:        OpTypeErf,
-	_OpTypeLowerName[367:370]:   OpTypeErf,
-	_OpTypeName[370:373]:        OpTypeExp,
-	_OpTypeLowerName[370:373]:   OpTypeExp,
-	_OpTypeName[373:378]:        OpTypeExpm1,
-	_OpTypeLowerName[373:378]:   OpTypeExpm1,
-	_OpTypeName[378:381]:        OpTypeFFT,
-	_OpTypeLowerName[378:381]:   OpTypeFFT,
-	_OpTypeName[381:386]:        OpTypeFloor,
-	_OpTypeLowerName[381:386]:   OpTypeFloor,
-	_OpTypeName[386:392]:        OpTypeGather,
-	_OpTypeLowerName[386:392]:   OpTypeGather,
-	_OpTypeName[392:406]:        OpTypeGreaterOrEqual,
-	_OpTypeLowerName[392:406]:   OpTypeGreaterOrEqual,
-	_OpTypeName[406:430]:        OpTypeGreaterOrEqualTotalOrder,
-	_OpTypeLowerName[406:430]:   OpTypeGreaterOrEqualTotalOrder,
-	_OpTypeName[430:441]:        OpTypeGreaterThan,
-	_OpTypeLowerName[430:441]:   OpTypeGreaterThan,
-	_OpTypeName[441:462]:        OpTypeGreaterThanTotalOrder,
-	_OpTypeLowerName[441:462]:   OpTypeGreaterThanTotalOrder,
-	_OpTypeName[462:466]:        OpTypeImag,
-	_OpTypeLowerName[462:466]:   OpTypeImag,
-	_OpTypeName[466:470]:        OpTypeIota,
-	_OpTypeLowerName[466:470]:   OpTypeIota,
-	_OpTypeName[470:478]:        OpTypeIsFinite,
-	_OpTypeLowerName[470:478]:   OpTypeIsFinite,
-	_OpTypeName[478:483]:        OpTypeIsNaN,
-	_OpTypeLowerName[478:483]:   OpTypeIsNaN,
-	_OpTypeName[483:494]:        OpTypeLessOrEqual,
-	_OpTypeLowerName[483:494]:   OpTypeLessOrEqual,
-	_OpTypeName[494:515]:        OpTypeLessOrEqualTotalOrder,
-	_OpTypeLowerName[494:515]:   OpTypeLessOrEqualTotalOrder,
-	_OpTypeName[515:523]:        OpTypeLessThan,
-	_OpTypeLowerName[515:523]:   OpTypeLessThan,
-	_OpTypeName[523:541]:        OpTypeLessThanTotalOrder,
-	_OpTypeLowerName[523:541]:   OpTypeLessThanTotalOrder,
-	_OpTypeName[541:544]:        OpTypeLog,
-	_OpTypeLowerName[541:544]:   OpTypeLog,
-	_OpTypeName[544:549]:        OpTypeLog1p,
-	_OpTypeLowerName[544:549]:   OpTypeLog1p,
-	_OpTypeName[549:559]:        OpTypeLogicalAnd,
-	_OpTypeLowerName[549:559]:   OpTypeLogicalAnd,
-	_OpTypeName[559:569]:        OpTypeLogicalNot,
-	_OpTypeLowerName[559:569]:   OpTypeLogicalNot,
-	_OpTypeName[569:578]:        OpTypeLogicalOr,
-	_OpTypeLowerName[569:578]:   OpTypeLogicalOr,
-	_OpTypeName[578:588]:        OpTypeLogicalXor,
-	_OpTypeLowerName[578:588]:   OpTypeLogicalXor,
-	_OpTypeName[588:596]:        OpTypeLogistic,
-	_OpTypeLowerName[588:596]:   OpTypeLogistic,
-	_OpTypeName[596:599]:        OpTypeMax,
-	_OpTypeLowerName[596:599]:   OpTypeMax,
-	_OpTypeName[599:602]:        OpTypeMin,
-	_OpTypeLowerName[599:602]:   OpTypeMin,
-	_OpTypeName[602:605]:        OpTypeMul,
-	_OpTypeLowerName[602:605]:   OpTypeMul,
-	_OpTypeName[605:608]:        OpTypeNeg,
-	_OpTypeLowerName[605:608]:   OpTypeNeg,
-	_OpTypeName[608:616]:        OpTypeNotEqual,
-	_OpTypeLowerName[608:616]:   OpTypeNotEqual,
-	_OpTypeName[616:634]:        OpTypeNotEqualTotalOrder,
-	_OpTypeLowerName[616:634]:   OpTypeNotEqualTotalOrder,
-	_OpTypeName[634:637]:        OpTypePad,
-	_OpTypeLowerName[634:637]:   OpTypePad,
-	_OpTypeName[637:640]:        OpTypePow,
-	_OpTypeLowerName[637:640]:   OpTypePow,
-	_OpTypeName[640:644]:        OpTypeReal,
-	_OpTypeLowerName[640:644]:   OpTypeReal,
-	_OpTypeName[644:660]:        OpTypeReduceBitwiseAnd,
-	_OpTypeLowerName[644:660]:   OpTypeReduceBitwiseAnd,
-	_OpTypeName[660:675]:        OpTypeReduceBitwiseOr,
-	_OpTypeLowerName[660:675]:   OpTypeReduceBitwiseOr,
-	_OpTypeName[675:691]:        OpTypeReduceBitwiseXor,
-	_OpTypeLowerName[675:691]:   OpTypeReduceBitwiseXor,
-	_OpTypeName[691:707]:        OpTypeReduceLogicalAnd,
-	_OpTypeLowerName[691:707]:   OpTypeReduceLogicalAnd,
-	_OpTypeName[707:722]:        OpTypeReduceLogicalOr,
-	_OpTypeLowerName[707:722]:   OpTypeReduceLogicalOr,
-	_OpTypeName[722:738]:        OpTypeReduceLogicalXor,
-	_OpTypeLowerName[722:738]:   OpTypeReduceLogicalXor,
-	_OpTypeName[738:747]:        OpTypeReduceMax,
-	_OpTypeLowerName[738:747]:   OpTypeReduceMax,
-	_OpTypeName[747:756]:        OpTypeReduceMin,
-	_OpTypeLowerName[747:756]:   OpTypeReduceMin,
-	_OpTypeName[756:769]:        OpTypeReduceProduct,
-	_OpTypeLowerName[756:769]:   OpTypeReduceProduct,
-	_OpTypeName[769:778]:        OpTypeReduceSum,
-	_OpTypeLowerName[769:778]:   OpTypeReduceSum,
-	_OpTypeName[778:781]:        OpTypeRem,
-	_OpTypeLowerName[778:781]:   OpTypeRem,
-	_OpTypeName[781:788]:        OpTypeReshape,
-	_OpTypeLowerName[781:788]:   OpTypeReshape,
-	_OpTypeName[788:802]:        OpTypeDynamicReshape,
-	_OpTypeLowerName[788:802]:   OpTypeDynamicReshape,
-	_OpTypeName[802:809]:        OpTypeReverse,
-	_OpTypeLowerName[802:809]:   OpTypeReverse,
-	_OpTypeName[809:814]:        OpTypeRound,
-	_OpTypeLowerName[809:814]:   OpTypeRound,
-	_OpTypeName[814:819]:        OpTypeRsqrt,
-	_OpTypeLowerName[814:819]:   OpTypeRsqrt,
-	_OpTypeName[819:829]:        OpTypeScatterMax,
-	_OpTypeLowerName[819:829]:   OpTypeScatterMax,
-	_OpTypeName[829:839]:        OpTypeScatterMin,
-	_OpTypeLowerName[829:839]:   OpTypeScatterMin,
-	_OpTypeName[839:849]:        OpTypeScatterSum,
-	_OpTypeLowerName[839:849]:   OpTypeScatterSum,
-	_OpTypeName[849:868]:        OpTypeSelectAndScatterMax,
-	_OpTypeLowerName[849:868]:   OpTypeSelectAndScatterMax,
-	_OpTypeName[868:887]:        OpTypeSelectAndScatterMin,
-	_OpTypeLowerName[868:887]:   OpTypeSelectAndScatterMin,
-	_OpTypeName[887:906]:        OpTypeSelectAndScatterSum,
-	_OpTypeLowerName[887:906]:   OpTypeSelectAndScatterSum,
-	_OpTypeName[906:915]:        OpTypeShiftLeft,
-	_OpTypeLowerName[906:915]:   OpTypeShiftLeft,
-	_OpTypeName[915:935]:        OpTypeShiftRightArithmetic,
-	_OpTypeLowerName[915:935]:   OpTypeShiftRightArithmetic,
-	_OpTypeName[935:952]:        OpTypeShiftRightLogical,
-	_OpTypeLowerName[935:952]:   OpTypeShiftRightLogical,
-	_OpTypeName[952:956]:        OpTypeSign,
-	_OpTypeLowerName[952:956]:   OpTypeSign,
-	_OpTypeName[956:959]:        OpTypeSin,
-	_OpTypeLowerName[956:959]:   OpTypeSin,
-	_OpTypeName[959:964]:        OpTypeSlice,
-	_OpTypeLowerName[959:964]:   OpTypeSlice,
-	_OpTypeName[964:968]:        OpTypeSqrt,
-	_OpTypeLowerName[964:968]:   OpTypeSqrt,
-	_OpTypeName[968:971]:        OpTypeSub,
-	_OpTypeLowerName[968:971]:   OpTypeSub,
-	_OpTypeName[971:975]:        OpTypeTanh,
-	_OpTypeLowerName[971:975]:   OpTypeTanh,
-	_OpTypeName[975:984]:        OpTypeTranspose,
-	_OpTypeLowerName[975:984]:   OpTypeTranspose,
-	_OpTypeName[984:989]:        OpTypeWhere,
-	_OpTypeLowerName[984:989]:   OpTypeWhere,
-	_OpTypeName[989:1008]:       OpTypeOptimizationBarrier,
-	_OpTypeLowerName[989:1008]:  OpTypeOptimizationBarrier,
-	_OpTypeName[1008:1025]:      OpTypeSchedulingBarrier,
-	_OpTypeLowerName[1008:1025]: OpTypeSchedulingBarrier,
-	_OpTypeName[1025:1029]:      OpTypeSort,
-	_OpTypeLowerName[1025:1029]: OpTypeSort,
-	_OpTypeName[1029:1034]:      OpTypeWhile,
-	_OpTypeLowerName[1029:1034]: OpTypeWhile,
-	_OpTypeName[1034:1036]:      OpTypeIf,
-	_OpTypeLowerName[1034:1036]: OpTypeIf,
-	_OpTypeName[1036:1049]:      OpTypeCapturedValue,
-	_OpTypeLowerName[1036:1049]: OpTypeCapturedValue,
-	_OpTypeName[1049:1058]:      OpTypeAllReduce,
-	_OpTypeLowerName[1049:1058]: OpTypeAllReduce,
-	_OpTypeName[1058:1077]:      OpTypeCollectiveBroadcast,
-	_OpTypeLowerName[1058:1077]: OpTypeCollectiveBroadcast,
-	_OpTypeName[1077:1086]:      OpTypeAllGather,
-	_OpTypeLowerName[1077:1086]: OpTypeAllGather,
-	_OpTypeName[1086:1104]:      OpTypeBlockForDotGeneral,
-	_OpTypeLowerName[1086:1104]: OpTypeBlockForDotGeneral,
-	_OpTypeName[1104:1116]:      OpTypeFusedSoftmax,
-	_OpTypeLowerName[1104:1116]: OpTypeFusedSoftmax,
-	_OpTypeName[1116:1130]:      OpTypeFusedLayerNorm,
-	_OpTypeLowerName[1116:1130]: OpTypeFusedLayerNorm,
-	_OpTypeName[1130:1139]:      OpTypeFusedGelu,
-	_OpTypeLowerName[1130:1139]: OpTypeFusedGelu,
-	_OpTypeName[1139:1149]:      OpTypeFusedDense,
-	_OpTypeLowerName[1139:1149]: OpTypeFusedDense,
-	_OpTypeName[1149:1179]:      OpTypeFusedScaledDotProductAttention,
-	_OpTypeLowerName[1149:1179]: OpTypeFusedScaledDotProductAttention,
-	_OpTypeName[1179:1212]:      OpTypeFusedScaledDotProductAttentionVJP,
-	_OpTypeLowerName[1179:1212]: OpTypeFusedScaledDotProductAttentionVJP,
-	_OpTypeName[1212:1239]:      OpTypeFusedAttentionQKVProjection,
-	_OpTypeLowerName[1212:1239]: OpTypeFusedAttentionQKVProjection,
-	_OpTypeName[1239:1258]:      OpTypeFusedQuantizedDense,
-	_OpTypeLowerName[1239:1258]: OpTypeFusedQuantizedDense,
-	_OpTypeName[1258:1282]:      OpTypeQuantizedEmbeddingLookup,
-	_OpTypeLowerName[1258:1282]: OpTypeQuantizedEmbeddingLookup,
-	_OpTypeName[1282:1286]:      OpTypeLast,
-	_OpTypeLowerName[1282:1286]: OpTypeLast,
+	_OpTypeName[269:275]:        OpTypeCumSum,
+	_OpTypeLowerName[269:275]:   OpTypeCumSum,
+	_OpTypeName[275:278]:        OpTypeDiv,
+	_OpTypeLowerName[275:278]:   OpTypeDiv,
+	_OpTypeName[278:281]:        OpTypeDot,
+	_OpTypeLowerName[278:281]:   OpTypeDot,
+	_OpTypeName[281:291]:        OpTypeDotGeneral,
+	_OpTypeLowerName[281:291]:   OpTypeDotGeneral,
+	_OpTypeName[291:303]:        OpTypeDynamicSlice,
+	_OpTypeLowerName[291:303]:   OpTypeDynamicSlice,
+	_OpTypeName[303:321]:        OpTypeDynamicUpdateSlice,
+	_OpTypeLowerName[303:321]:   OpTypeDynamicUpdateSlice,
+	_OpTypeName[321:341]:        OpTypeDynamicDimensionSize,
+	_OpTypeLowerName[321:341]:   OpTypeDynamicDimensionSize,
+	_OpTypeName[341:353]:        OpTypeDynamicShape,
+	_OpTypeLowerName[341:353]:   OpTypeDynamicShape,
+	_OpTypeName[353:358]:        OpTypeEqual,
+	_OpTypeLowerName[353:358]:   OpTypeEqual,
+	_OpTypeName[358:373]:        OpTypeEqualTotalOrder,
+	_OpTypeLowerName[358:373]:   OpTypeEqualTotalOrder,
+	_OpTypeName[373:376]:        OpTypeErf,
+	_OpTypeLowerName[373:376]:   OpTypeErf,
+	_OpTypeName[376:379]:        OpTypeExp,
+	_OpTypeLowerName[376:379]:   OpTypeExp,
+	_OpTypeName[379:384]:        OpTypeExpm1,
+	_OpTypeLowerName[379:384]:   OpTypeExpm1,
+	_OpTypeName[384:387]:        OpTypeFFT,
+	_OpTypeLowerName[384:387]:   OpTypeFFT,
+	_OpTypeName[387:392]:        OpTypeFloor,
+	_OpTypeLowerName[387:392]:   OpTypeFloor,
+	_OpTypeName[392:398]:        OpTypeGather,
+	_OpTypeLowerName[392:398]:   OpTypeGather,
+	_OpTypeName[398:412]:        OpTypeGreaterOrEqual,
+	_OpTypeLowerName[398:412]:   OpTypeGreaterOrEqual,
+	_OpTypeName[412:436]:        OpTypeGreaterOrEqualTotalOrder,
+	_OpTypeLowerName[412:436]:   OpTypeGreaterOrEqualTotalOrder,
+	_OpTypeName[436:447]:        OpTypeGreaterThan,
+	_OpTypeLowerName[436:447]:   OpTypeGreaterThan,
+	_OpTypeName[447:468]:        OpTypeGreaterThanTotalOrder,
+	_OpTypeLowerName[447:468]:   OpTypeGreaterThanTotalOrder,
+	_OpTypeName[468:472]:        OpTypeImag,
+	_OpTypeLowerName[468:472]:   OpTypeImag,
+	_OpTypeName[472:476]:        OpTypeIota,
+	_OpTypeLowerName[472:476]:   OpTypeIota,
+	_OpTypeName[476:484]:        OpTypeIsFinite,
+	_OpTypeLowerName[476:484]:   OpTypeIsFinite,
+	_OpTypeName[484:489]:        OpTypeIsNaN,
+	_OpTypeLowerName[484:489]:   OpTypeIsNaN,
+	_OpTypeName[489:500]:        OpTypeLessOrEqual,
+	_OpTypeLowerName[489:500]:   OpTypeLessOrEqual,
+	_OpTypeName[500:521]:        OpTypeLessOrEqualTotalOrder,
+	_OpTypeLowerName[500:521]:   OpTypeLessOrEqualTotalOrder,
+	_OpTypeName[521:529]:        OpTypeLessThan,
+	_OpTypeLowerName[521:529]:   OpTypeLessThan,
+	_OpTypeName[529:547]:        OpTypeLessThanTotalOrder,
+	_OpTypeLowerName[529:547]:   OpTypeLessThanTotalOrder,
+	_OpTypeName[547:550]:        OpTypeLog,
+	_OpTypeLowerName[547:550]:   OpTypeLog,
+	_OpTypeName[550:555]:        OpTypeLog1p,
+	_OpTypeLowerName[550:555]:   OpTypeLog1p,
+	_OpTypeName[555:565]:        OpTypeLogicalAnd,
+	_OpTypeLowerName[555:565]:   OpTypeLogicalAnd,
+	_OpTypeName[565:575]:        OpTypeLogicalNot,
+	_OpTypeLowerName[565:575]:   OpTypeLogicalNot,
+	_OpTypeName[575:584]:        OpTypeLogicalOr,
+	_OpTypeLowerName[575:584]:   OpTypeLogicalOr,
+	_OpTypeName[584:594]:        OpTypeLogicalXor,
+	_OpTypeLowerName[584:594]:   OpTypeLogicalXor,
+	_OpTypeName[594:602]:        OpTypeLogistic,
+	_OpTypeLowerName[594:602]:   OpTypeLogistic,
+	_OpTypeName[602:605]:        OpTypeMax,
+	_OpTypeLowerName[602:605]:   OpTypeMax,
+	_OpTypeName[605:608]:        OpTypeMin,
+	_OpTypeLowerName[605:608]:   OpTypeMin,
+	_OpTypeName[608:611]:        OpTypeMul,
+	_OpTypeLowerName[608:611]:   OpTypeMul,
+	_OpTypeName[611:614]:        OpTypeNeg,
+	_OpTypeLowerName[611:614]:   OpTypeNeg,
+	_OpTypeName[614:622]:        OpTypeNotEqual,
+	_OpTypeLowerName[614:622]:   OpTypeNotEqual,
+	_OpTypeName[622:640]:        OpTypeNotEqualTotalOrder,
+	_OpTypeLowerName[622:640]:   OpTypeNotEqualTotalOrder,
+	_OpTypeName[640:643]:        OpTypePad,
+	_OpTypeLowerName[640:643]:   OpTypePad,
+	_OpTypeName[643:646]:        OpTypePow,
+	_OpTypeLowerName[643:646]:   OpTypePow,
+	_OpTypeName[646:650]:        OpTypeReal,
+	_OpTypeLowerName[646:650]:   OpTypeReal,
+	_OpTypeName[650:666]:        OpTypeReduceBitwiseAnd,
+	_OpTypeLowerName[650:666]:   OpTypeReduceBitwiseAnd,
+	_OpTypeName[666:681]:        OpTypeReduceBitwiseOr,
+	_OpTypeLowerName[666:681]:   OpTypeReduceBitwiseOr,
+	_OpTypeName[681:697]:        OpTypeReduceBitwiseXor,
+	_OpTypeLowerName[681:697]:   OpTypeReduceBitwiseXor,
+	_OpTypeName[697:713]:        OpTypeReduceLogicalAnd,
+	_OpTypeLowerName[697:713]:   OpTypeReduceLogicalAnd,
+	_OpTypeName[713:728]:        OpTypeReduceLogicalOr,
+	_OpTypeLowerName[713:728]:   OpTypeReduceLogicalOr,
+	_OpTypeName[728:744]:        OpTypeReduceLogicalXor,
+	_OpTypeLowerName[728:744]:   OpTypeReduceLogicalXor,
+	_OpTypeName[744:753]:        OpTypeReduceMax,
+	_OpTypeLowerName[744:753]:   OpTypeReduceMax,
+	_OpTypeName[753:762]:        OpTypeReduceMin,
+	_OpTypeLowerName[753:762]:   OpTypeReduceMin,
+	_OpTypeName[762:775]:        OpTypeReduceProduct,
+	_OpTypeLowerName[762:775]:   OpTypeReduceProduct,
+	_OpTypeName[775:784]:        OpTypeReduceSum,
+	_OpTypeLowerName[775:784]:   OpTypeReduceSum,
+	_OpTypeName[784:787]:        OpTypeRem,
+	_OpTypeLowerName[784:787]:   OpTypeRem,
+	_OpTypeName[787:794]:        OpTypeReshape,
+	_OpTypeLowerName[787:794]:   OpTypeReshape,
+	_OpTypeName[794:808]:        OpTypeDynamicReshape,
+	_OpTypeLowerName[794:808]:   OpTypeDynamicReshape,
+	_OpTypeName[808:815]:        OpTypeReverse,
+	_OpTypeLowerName[808:815]:   OpTypeReverse,
+	_OpTypeName[815:820]:        OpTypeRound,
+	_OpTypeLowerName[815:820]:   OpTypeRound,
+	_OpTypeName[820:825]:        OpTypeRsqrt,
+	_OpTypeLowerName[820:825]:   OpTypeRsqrt,
+	_OpTypeName[825:835]:        OpTypeScatterMax,
+	_OpTypeLowerName[825:835]:   OpTypeScatterMax,
+	_OpTypeName[835:845]:        OpTypeScatterMin,
+	_OpTypeLowerName[835:845]:   OpTypeScatterMin,
+	_OpTypeName[845:855]:        OpTypeScatterSum,
+	_OpTypeLowerName[845:855]:   OpTypeScatterSum,
+	_OpTypeName[855:874]:        OpTypeSelectAndScatterMax,
+	_OpTypeLowerName[855:874]:   OpTypeSelectAndScatterMax,
+	_OpTypeName[874:893]:        OpTypeSelectAndScatterMin,
+	_OpTypeLowerName[874:893]:   OpTypeSelectAndScatterMin,
+	_OpTypeName[893:912]:        OpTypeSelectAndScatterSum,
+	_OpTypeLowerName[893:912]:   OpTypeSelectAndScatterSum,
+	_OpTypeName[912:921]:        OpTypeShiftLeft,
+	_OpTypeLowerName[912:921]:   OpTypeShiftLeft,
+	_OpTypeName[921:941]:        OpTypeShiftRightArithmetic,
+	_OpTypeLowerName[921:941]:   OpTypeShiftRightArithmetic,
+	_OpTypeName[941:958]:        OpTypeShiftRightLogical,
+	_OpTypeLowerName[941:958]:   OpTypeShiftRightLogical,
+	_OpTypeName[958:962]:        OpTypeSign,
+	_OpTypeLowerName[958:962]:   OpTypeSign,
+	_OpTypeName[962:965]:        OpTypeSin,
+	_OpTypeLowerName[962:965]:   OpTypeSin,
+	_OpTypeName[965:970]:        OpTypeSlice,
+	_OpTypeLowerName[965:970]:   OpTypeSlice,
+	_OpTypeName[970:974]:        OpTypeSqrt,
+	_OpTypeLowerName[970:974]:   OpTypeSqrt,
+	_OpTypeName[974:977]:        OpTypeSub,
+	_OpTypeLowerName[974:977]:   OpTypeSub,
+	_OpTypeName[977:981]:        OpTypeTanh,
+	_OpTypeLowerName[977:981]:   OpTypeTanh,
+	_OpTypeName[981:990]:        OpTypeTranspose,
+	_OpTypeLowerName[981:990]:   OpTypeTranspose,
+	_OpTypeName[990:995]:        OpTypeWhere,
+	_OpTypeLowerName[990:995]:   OpTypeWhere,
+	_OpTypeName[995:1014]:       OpTypeOptimizationBarrier,
+	_OpTypeLowerName[995:1014]:  OpTypeOptimizationBarrier,
+	_OpTypeName[1014:1031]:      OpTypeSchedulingBarrier,
+	_OpTypeLowerName[1014:1031]: OpTypeSchedulingBarrier,
+	_OpTypeName[1031:1035]:      OpTypeSort,
+	_OpTypeLowerName[1031:1035]: OpTypeSort,
+	_OpTypeName[1035:1040]:      OpTypeWhile,
+	_OpTypeLowerName[1035:1040]: OpTypeWhile,
+	_OpTypeName[1040:1042]:      OpTypeIf,
+	_OpTypeLowerName[1040:1042]: OpTypeIf,
+	_OpTypeName[1042:1055]:      OpTypeCapturedValue,
+	_OpTypeLowerName[1042:1055]: OpTypeCapturedValue,
+	_OpTypeName[1055:1064]:      OpTypeAllReduce,
+	_OpTypeLowerName[1055:1064]: OpTypeAllReduce,
+	_OpTypeName[1064:1083]:      OpTypeCollectiveBroadcast,
+	_OpTypeLowerName[1064:1083]: OpTypeCollectiveBroadcast,
+	_OpTypeName[1083:1092]:      OpTypeAllGather,
+	_OpTypeLowerName[1083:1092]: OpTypeAllGather,
+	_OpTypeName[1092:1110]:      OpTypeBlockForDotGeneral,
+	_OpTypeLowerName[1092:1110]: OpTypeBlockForDotGeneral,
+	_OpTypeName[1110:1122]:      OpTypeFusedSoftmax,
+	_OpTypeLowerName[1110:1122]: OpTypeFusedSoftmax,
+	_OpTypeName[1122:1136]:      OpTypeFusedLayerNorm,
+	_OpTypeLowerName[1122:1136]: OpTypeFusedLayerNorm,
+	_OpTypeName[1136:1145]:      OpTypeFusedGelu,
+	_OpTypeLowerName[1136:1145]: OpTypeFusedGelu,
+	_OpTypeName[1145:1155]:      OpTypeFusedDense,
+	_OpTypeLowerName[1145:1155]: OpTypeFusedDense,
+	_OpTypeName[1155:1185]:      OpTypeFusedScaledDotProductAttention,
+	_OpTypeLowerName[1155:1185]: OpTypeFusedScaledDotProductAttention,
+	_OpTypeName[1185:1218]:      OpTypeFusedScaledDotProductAttentionVJP,
+	_OpTypeLowerName[1185:1218]: OpTypeFusedScaledDotProductAttentionVJP,
+	_OpTypeName[1218:1245]:      OpTypeFusedAttentionQKVProjection,
+	_OpTypeLowerName[1218:1245]: OpTypeFusedAttentionQKVProjection,
+	_OpTypeName[1245:1264]:      OpTypeFusedQuantizedDense,
+	_OpTypeLowerName[1245:1264]: OpTypeFusedQuantizedDense,
+	_OpTypeName[1264:1288]:      OpTypeQuantizedEmbeddingLookup,
+	_OpTypeLowerName[1264:1288]: OpTypeQuantizedEmbeddingLookup,
+	_OpTypeName[1288:1292]:      OpTypeLast,
+	_OpTypeLowerName[1288:1292]: OpTypeLast,
 }
 
 var _OpTypeNames = []string{
@@ -440,102 +443,103 @@ var _OpTypeNames = []string{
 	_OpTypeName[243:254],
 	_OpTypeName[254:266],
 	_OpTypeName[266:269],
-	_OpTypeName[269:272],
-	_OpTypeName[272:275],
-	_OpTypeName[275:285],
-	_OpTypeName[285:297],
-	_OpTypeName[297:315],
-	_OpTypeName[315:335],
-	_OpTypeName[335:347],
-	_OpTypeName[347:352],
-	_OpTypeName[352:367],
-	_OpTypeName[367:370],
-	_OpTypeName[370:373],
-	_OpTypeName[373:378],
-	_OpTypeName[378:381],
-	_OpTypeName[381:386],
-	_OpTypeName[386:392],
-	_OpTypeName[392:406],
-	_OpTypeName[406:430],
-	_OpTypeName[430:441],
-	_OpTypeName[441:462],
-	_OpTypeName[462:466],
-	_OpTypeName[466:470],
-	_OpTypeName[470:478],
-	_OpTypeName[478:483],
-	_OpTypeName[483:494],
-	_OpTypeName[494:515],
-	_OpTypeName[515:523],
-	_OpTypeName[523:541],
-	_OpTypeName[541:544],
-	_OpTypeName[544:549],
-	_OpTypeName[549:559],
-	_OpTypeName[559:569],
-	_OpTypeName[569:578],
-	_OpTypeName[578:588],
-	_OpTypeName[588:596],
-	_OpTypeName[596:599],
-	_OpTypeName[599:602],
+	_OpTypeName[269:275],
+	_OpTypeName[275:278],
+	_OpTypeName[278:281],
+	_OpTypeName[281:291],
+	_OpTypeName[291:303],
+	_OpTypeName[303:321],
+	_OpTypeName[321:341],
+	_OpTypeName[341:353],
+	_OpTypeName[353:358],
+	_OpTypeName[358:373],
+	_OpTypeName[373:376],
+	_OpTypeName[376:379],
+	_OpTypeName[379:384],
+	_OpTypeName[384:387],
+	_OpTypeName[387:392],
+	_OpTypeName[392:398],
+	_OpTypeName[398:412],
+	_OpTypeName[412:436],
+	_OpTypeName[436:447],
+	_OpTypeName[447:468],
+	_OpTypeName[468:472],
+	_OpTypeName[472:476],
+	_OpTypeName[476:484],
+	_OpTypeName[484:489],
+	_OpTypeName[489:500],
+	_OpTypeName[500:521],
+	_OpTypeName[521:529],
+	_OpTypeName[529:547],
+	_OpTypeName[547:550],
+	_OpTypeName[550:555],
+	_OpTypeName[555:565],
+	_OpTypeName[565:575],
+	_OpTypeName[575:584],
+	_OpTypeName[584:594],
+	_OpTypeName[594:602],
 	_OpTypeName[602:605],
 	_OpTypeName[605:608],
-	_OpTypeName[608:616],
-	_OpTypeName[616:634],
-	_OpTypeName[634:637],
-	_OpTypeName[637:640],
-	_OpTypeName[640:644],
-	_OpTypeName[644:660],
-	_OpTypeName[660:675],
-	_OpTypeName[675:691],
-	_OpTypeName[691:707],
-	_OpTypeName[707:722],
-	_OpTypeName[722:738],
-	_OpTypeName[738:747],
-	_OpTypeName[747:756],
-	_OpTypeName[756:769],
-	_OpTypeName[769:778],
-	_OpTypeName[778:781],
-	_OpTypeName[781:788],
-	_OpTypeName[788:802],
-	_OpTypeName[802:809],
-	_OpTypeName[809:814],
-	_OpTypeName[814:819],
-	_OpTypeName[819:829],
-	_OpTypeName[829:839],
-	_OpTypeName[839:849],
-	_OpTypeName[849:868],
-	_OpTypeName[868:887],
-	_OpTypeName[887:906],
-	_OpTypeName[906:915],
-	_OpTypeName[915:935],
-	_OpTypeName[935:952],
-	_OpTypeName[952:956],
-	_OpTypeName[956:959],
-	_OpTypeName[959:964],
-	_OpTypeName[964:968],
-	_OpTypeName[968:971],
-	_OpTypeName[971:975],
-	_OpTypeName[975:984],
-	_OpTypeName[984:989],
-	_OpTypeName[989:1008],
-	_OpTypeName[1008:1025],
-	_OpTypeName[1025:1029],
-	_OpTypeName[1029:1034],
-	_OpTypeName[1034:1036],
-	_OpTypeName[1036:1049],
-	_OpTypeName[1049:1058],
-	_OpTypeName[1058:1077],
-	_OpTypeName[1077:1086],
-	_OpTypeName[1086:1104],
-	_OpTypeName[1104:1116],
-	_OpTypeName[1116:1130],
-	_OpTypeName[1130:1139],
-	_OpTypeName[1139:1149],
-	_OpTypeName[1149:1179],
-	_OpTypeName[1179:1212],
-	_OpTypeName[1212:1239],
-	_OpTypeName[1239:1258],
-	_OpTypeName[1258:1282],
-	_OpTypeName[1282:1286],
+	_OpTypeName[608:611],
+	_OpTypeName[611:614],
+	_OpTypeName[614:622],
+	_OpTypeName[622:640],
+	_OpTypeName[640:643],
+	_OpTypeName[643:646],
+	_OpTypeName[646:650],
+	_OpTypeName[650:666],
+	_OpTypeName[666:681],
+	_OpTypeName[681:697],
+	_OpTypeName[697:713],
+	_OpTypeName[713:728],
+	_OpTypeName[728:744],
+	_OpTypeName[744:753],
+	_OpTypeName[753:762],
+	_OpTypeName[762:775],
+	_OpTypeName[775:784],
+	_OpTypeName[784:787],
+	_OpTypeName[787:794],
+	_OpTypeName[794:808],
+	_OpTypeName[808:815],
+	_OpTypeName[815:820],
+	_OpTypeName[820:825],
+	_OpTypeName[825:835],
+	_OpTypeName[835:845],
+	_OpTypeName[845:855],
+	_OpTypeName[855:874],
+	_OpTypeName[874:893],
+	_OpTypeName[893:912],
+	_OpTypeName[912:921],
+	_OpTypeName[921:941],
+	_OpTypeName[941:958],
+	_OpTypeName[958:962],
+	_OpTypeName[962:965],
+	_OpTypeName[965:970],
+	_OpTypeName[970:974],
+	_OpTypeName[974:977],
+	_OpTypeName[977:981],
+	_OpTypeName[981:990],
+	_OpTypeName[990:995],
+	_OpTypeName[995:1014],
+	_OpTypeName[1014:1031],
+	_OpTypeName[1031:1035],
+	_OpTypeName[1035:1040],
+	_OpTypeName[1040:1042],
+	_OpTypeName[1042:1055],
+	_OpTypeName[1055:1064],
+	_OpTypeName[1064:1083],
+	_OpTypeName[1083:1092],
+	_OpTypeName[1092:1110],
+	_OpTypeName[1110:1122],
+	_OpTypeName[1122:1136],
+	_OpTypeName[1136:1145],
+	_OpTypeName[1145:1155],
+	_OpTypeName[1155:1185],
+	_OpTypeName[1185:1218],
+	_OpTypeName[1218:1245],
+	_OpTypeName[1245:1264],
+	_OpTypeName[1264:1288],
+	_OpTypeName[1288:1292],
 }
 
 // OpTypeString retrieves an enum value from the enum constants string name.

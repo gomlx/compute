@@ -106,6 +106,8 @@ func GenerateStandardOpsInterface(methods []backendparser.Method) {
 				pi.Type = "compute.QuantizationScheme"
 			case "DotGeneralConfig":
 				pi.Type = "compute.DotGeneralConfig"
+			case "CumSumOptions":
+				pi.Type = "compute.CumSumOptions"
 			case "*Quantization":
 				pi.Type = "*compute.Quantization"
 			case "*ScaledDotProductAttentionConfig":

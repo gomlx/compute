@@ -206,6 +206,23 @@ func (f Function) Cos(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeCos)
 }
 
+// CumSum returns the cumulative sum of the elements along the given axis.
+//
+// Parameters:
+//   - operand: input value to sum.
+//   - axis: axis along which to compute the cumulative sum. It must be in the range 0 <= axis < rank.
+//   - options: CumSumOptions with Exclusive and Reverse flags.
+//
+// Examples:
+//
+//	CumSum([1, 2, 3], 0, CumSumOptions{}) -> [1, 3, 6]
+//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true}) -> [0, 1, 3]
+//	CumSum([1, 2, 3], 0, CumSumOptions{Reverse: true}) -> [6, 5, 3]
+//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true, Reverse: true}) -> [5, 3, 0]
+func (f Function) CumSum(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeCumSum)
+}
+
 // Div returns the element-wise division of the two values.
 // Standard broadcasting rules apply (see documentation).
 func (f Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {

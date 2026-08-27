@@ -255,6 +255,203 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 	})
 
+	t.Run("CumSum", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeCumSum)
+
+		t.Run("1D_Int32", func(t *testing.T) {
+			input := []int32{1, 2, 3, 4}
+
+			// Standard (inclusive, forward)
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{1, 3, 6, 10}, got); !ok {
+				t.Errorf("CumSum 1D standard mismatch:\n%s", diff)
+			}
+
+			// Exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{0, 1, 3, 6}, got); !ok {
+				t.Errorf("CumSum 1D exclusive mismatch:\n%s", diff)
+			}
+
+			// Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{10, 9, 7, 4}, got); !ok {
+				t.Errorf("CumSum 1D reverse mismatch:\n%s", diff)
+			}
+
+			// Exclusive + Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{9, 7, 4, 0}, got); !ok {
+				t.Errorf("CumSum 1D exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_Float32", func(t *testing.T) {
+			input := [][]float32{{1, 2, 3}, {4, 5, 6}}
+
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1, 3, 6}, {4, 9, 15}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 0, standard
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1, 2, 3}, {5, 7, 9}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{0, 1, 3}, {0, 4, 9}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{0, 0, 0}, {1, 2, 3}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 1, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{6, 5, 3}, {15, 11, 6}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 7, 9}, {4, 5, 6}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 3, 0}, {11, 6, 0}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 exclusive+reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{4, 5, 6}, {0, 0, 0}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("3D_Int64", func(t *testing.T) {
+			input := [][][]int64{
+				{{1, 2}, {3, 4}},
+				{{5, 6}, {7, 8}},
+			}
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 3D axis 1 failed: %v", err)
+			}
+			want := [][][]int64{
+				{{1, 2}, {4, 6}},
+				{{5, 6}, {12, 14}},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("CumSum 3D axis 1 mismatch:\n%s", diff)
+			}
+		})
+
+		if b.Capabilities().DTypes[dtypes.Float16] {
+			t.Run("1D_Float16", func(t *testing.T) {
+				input := []float16.Float16{f16(1), f16(2), f16(3)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumSum(params[0], 0, compute.CumSumOptions{})
+				})
+				if err != nil {
+					t.Fatalf("CumSum Float16 failed: %v", err)
+				}
+				want := []float16.Float16{f16(1), f16(3), f16(6)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumSum Float16 mismatch:\n%s", diff)
+				}
+			})
+		}
+
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			t.Run("1D_BFloat16", func(t *testing.T) {
+				input := []bfloat16.BFloat16{bf16(1), bf16(2), bf16(3)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+				})
+				if err != nil {
+					t.Fatalf("CumSum BFloat16 failed: %v", err)
+				}
+				want := []bfloat16.BFloat16{bf16(0), bf16(1), bf16(3)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumSum BFloat16 mismatch:\n%s", diff)
+				}
+			})
+		}
+	})
+
 	t.Run("Reduce", func(t *testing.T) {
 		t.Run("Min", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMin)
