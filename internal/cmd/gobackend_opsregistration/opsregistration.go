@@ -31,7 +31,7 @@ var (
 		"DistributedSPMD", "DistributedAutoSharding", "DeviceAssignment")
 
 	// All methods in these interfaces will be included, except if in methodsExcluded.
-	includeInterfaces = sets.MakeWith("StandardOps", "FusedOps")
+	includeInterfaces = sets.MakeWith("StandardOps", "DynamicOps", "FusedOps")
 
 	// methodsIncluded that are not yet included in includeInterfaces.
 	methodsIncluded = sets.MakeWith("Call", "Sort", "While", "If")
