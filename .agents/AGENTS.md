@@ -182,7 +182,7 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 
 | Category | Operations |
 | :--- | :--- |
-| **Dynamic Shapes** | `DynamicBroadcastInDim`, `DynamicDimensionSize`, `DynamicReshape` |
+| **Dynamic Shapes** | `DynamicBroadcastInDim`, `DynamicDimensionSize`, `DynamicIota`, `DynamicPad`, `DynamicReshape` |
 
 #### 3. Fused Operations (`FusedOps` in [ops_fused.go](./ops_fused.go))
 

@@ -378,6 +378,144 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		})
 	})
 
+	t.Run("DynamicIota", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicIota)
+
+		builder := b.Builder("test_dynamic_iota")
+		mainFn := builder.Main()
+		batchSizeParam, err := mainFn.Parameter("batch_size", shapes.Make(dtypes.Int32), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter: %v", err)
+		}
+
+		out, err := mainFn.DynamicIota(dtypes.Int32, 1,
+			compute.DynamicDimensionSpec{Name: "batch", Value: batchSizeParam},
+			compute.DynamicDimensionSpec{Static: 3},
+		)
+		if err != nil {
+			t.Fatalf("DynamicIota failed: %v", err)
+		}
+		if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+
+		testCases := []struct {
+			batchSize int32
+			want      [][]int32
+		}{
+			{
+				batchSize: 2,
+				want:      [][]int32{{0, 1, 2}, {0, 1, 2}},
+			},
+			{
+				batchSize: 4,
+				want:      [][]int32{{0, 1, 2}, {0, 1, 2}, {0, 1, 2}, {0, 1, 2}},
+			},
+		}
+
+		for _, tc := range testCases {
+			inBuf, err := testutil.ToBuffer(b, tc.batchSize)
+			if err != nil {
+				t.Fatalf("ToBuffer failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+				t.Errorf("DynamicIota mismatch:\n%s", diff)
+			}
+		}
+	})
+
+	t.Run("DynamicPad", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicPad)
+
+		builder := b.Builder("test_dynamic_pad")
+		mainFn := builder.Main()
+		xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 2, 2), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter x: %v", err)
+		}
+		padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter pad_start: %v", err)
+		}
+		fillVal, err := mainFn.Constant([]float32{0})
+		if err != nil {
+			t.Fatalf("Failed to create constant fillVal: %v", err)
+		}
+
+		out, err := mainFn.DynamicPad(xParam, fillVal,
+			compute.DynamicPadAxis{StartValue: padStartParam, End: 1},
+			compute.DynamicPadAxis{Start: 1, End: 0},
+		)
+		if err != nil {
+			t.Fatalf("DynamicPad failed: %v", err)
+		}
+		if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+
+		inputX := [][]float32{{1, 2}, {3, 4}}
+		testCases := []struct {
+			padStart int32
+			want     [][]float32
+		}{
+			{
+				padStart: 0,
+				want: [][]float32{
+					{0, 1, 2},
+					{0, 3, 4},
+					{0, 0, 0},
+				},
+			},
+			{
+				padStart: 1,
+				want: [][]float32{
+					{0, 0, 0},
+					{0, 1, 2},
+					{0, 3, 4},
+					{0, 0, 0},
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			inXBuf, err := testutil.ToBuffer(b, inputX)
+			if err != nil {
+				t.Fatalf("ToBuffer x failed: %v", err)
+			}
+			inPadBuf, err := testutil.ToBuffer(b, tc.padStart)
+			if err != nil {
+				t.Fatalf("ToBuffer pad failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inPadBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+				t.Errorf("DynamicPad mismatch:\n%s", diff)
+			}
+		}
+	})
+
 	t.Run("Reverse", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReverse)
 		y0, err := testutil.Exec1(b, []any{[][]float32{{1, 2}, {3, 4}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {

@@ -1,5 +1,7 @@
 package compute
 
+import "github.com/gomlx/compute/dtypes"
+
 // DynamicDimensionSpec specifies a target dimension for dynamic shape operations (e.g., DynamicReshape, DynamicBroadcastInDim).
 // It can be one of three:
 //   - Static: known at graph building time, e.g.: `DynamicDimensionSpec{Static: 16}`.
@@ -15,6 +17,21 @@ type DynamicDimensionSpec struct {
 
 	// Scalar integer value for runtime dimension size (nil if static or auto-inferred).
 	Value Value
+}
+
+// DynamicPadAxis defines the amount of padding preceding one axis (Start), at the end of axis (End),
+// or in between the inputs (Interior).
+// Each field can be static (when Value is nil) or dynamic (when Value is set).
+type DynamicPadAxis struct {
+	// Static padding amounts (used when corresponding Value is nil).
+	Start, End, Interior int
+
+	// Dynamic scalar integer values for runtime padding (nil if static).
+	StartValue, EndValue, InteriorValue Value
+
+	// TargetAxisName is the optional name for the resulting dynamic axis if padding a dynamic dimension
+	// or dynamically expanding a dimension into a named dynamic axis.
+	TargetAxisName string
 }
 
 // DynamicOps defines the operations that expect or operate on dynamic shapes.
@@ -49,5 +66,23 @@ type DynamicOps interface {
 	//
 	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
 	DynamicBroadcastInDim(operand Value, broadcastAxes []int, dimensions ...DynamicDimensionSpec) (Value, error)
+
+	// DynamicIota creates a tensor with the given dynamic dimensions and dtype, filled with
+	// increasing numbers (starting from 0) along the specified iotaAxis.
+	//
+	// Each dimension can be:
+	// - Static: specified with Static >= 0.
+	// - Dynamic: specified with Name and dynamic scalar Value, or Name only if the dynamic axis is already known from context.
+	//
+	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+	DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...DynamicDimensionSpec) (Value, error)
+
+	// DynamicPad injects padding on the start, end, or interior of the given operand using static
+	// and/or dynamic scalar padding amounts.
+	//
+	// There must be at most operand.Rank() axesConfig values. Missing axes are assumed to have no padding.
+	//
+	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+	DynamicPad(x, fillValue Value, axesConfig ...DynamicPadAxis) (Value, error)
 }
 

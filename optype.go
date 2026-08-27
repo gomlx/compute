@@ -65,6 +65,7 @@ const (
 	OpTypeGreaterThanTotalOrder
 	OpTypeImag
 	OpTypeIota
+	OpTypeDynamicIota
 	OpTypeIsFinite
 	OpTypeIsNaN
 	OpTypeLessOrEqual
@@ -85,6 +86,7 @@ const (
 	OpTypeNotEqual
 	OpTypeNotEqualTotalOrder
 	OpTypePad
+	OpTypeDynamicPad
 	OpTypePow
 	OpTypeReal
 	OpTypeReduceBitwiseAnd

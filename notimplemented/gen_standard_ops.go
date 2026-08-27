@@ -275,6 +275,28 @@ func (f Function) DynamicDimensionSize(operand compute.Value, axis int) (compute
 	return nil, f.baseErrFn(compute.OpTypeDynamicDimensionSize)
 }
 
+// DynamicIota creates a tensor with the given dynamic dimensions and dtype, filled with
+// increasing numbers (starting from 0) along the specified iotaAxis.
+//
+// Each dimension can be:
+// - Static: specified with Static >= 0.
+// - Dynamic: specified with Name and dynamic scalar Value, or Name only if the dynamic axis is already known from context.
+//
+// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+func (f Function) DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicIota)
+}
+
+// DynamicPad injects padding on the start, end, or interior of the given operand using static
+// and/or dynamic scalar padding amounts.
+//
+// There must be at most operand.Rank() axesConfig values. Missing axes are assumed to have no padding.
+//
+// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
+func (f Function) DynamicPad(x compute.Value, fillValue compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeDynamicPad)
+}
+
 // DynamicReshape reshapes x to target dimensions specified by dimensions.
 //
 // Each dimension can be:

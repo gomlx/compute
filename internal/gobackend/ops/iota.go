@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -13,6 +14,9 @@ import (
 func init() {
 	gobackend.RegisterIota.Register(Iota, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeIota, gobackend.PriorityGeneric, execIota)
+
+	gobackend.RegisterDynamicIota.Register(DynamicIota, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeDynamicIota, gobackend.PriorityGeneric, execDynamicIota)
 
 	// Manual registration for bfloat16 and float16.
 	iotaDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execIotaBFloat16)
@@ -31,6 +35,97 @@ func Iota(f *gobackend.Function, shape shapes.Shape, iotaAxis int) (compute.Valu
 	}
 	node, _ := f.GetOrCreateNode(compute.OpTypeIota, shape, nil, iotaAxis)
 	return node, nil
+}
+
+type dynamicIotaData struct {
+	iotaAxis int
+	specs    []compute.DynamicDimensionSpec
+}
+
+// DynamicIota creates a tensor with the given dynamic dimensions and dtype, filled with
+// increasing numbers (starting from 0) along the specified iotaAxis.
+func DynamicIota(f *gobackend.Function, dtype dtypes.DType, iotaAxis int, specs ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	var dynValues []compute.Value
+	for _, spec := range specs {
+		if spec.Value != nil {
+			dynValues = append(dynValues, spec.Value)
+		}
+	}
+	inputs, err := f.VerifyAndCastValues("DynamicIota", dynValues...)
+	if err != nil {
+		return nil, err
+	}
+
+	outputShape, err := shapeinference.DynamicIota(dtype, iotaAxis, specs, f.KnownDynamicAxisNames())
+	if err != nil {
+		return nil, err
+	}
+
+	data := dynamicIotaData{
+		iotaAxis: iotaAxis,
+		specs:    specs,
+	}
+
+	node, _ := f.GetOrCreateNode(compute.OpTypeDynamicIota, outputShape, inputs, data)
+	return node, nil
+}
+
+func execDynamicIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	_ = inputsOwned
+	data := node.Data.(dynamicIotaData)
+	iotaAxis := data.iotaAxis
+	specs := data.specs
+
+	concreteDims := make([]int, len(specs))
+	valIdx := 0
+
+	for i, spec := range specs {
+		if spec.Name == "" {
+			concreteDims[i] = spec.Static
+		} else {
+			if spec.Value != nil {
+				if valIdx >= len(inputs) {
+					return nil, errors.Errorf("execDynamicIota: missing input buffer for dynamic dimension value at spec index %d", i)
+				}
+				valSize, err := readScalarInt(inputs[valIdx])
+				if err != nil {
+					return nil, errors.Wrapf(err, "execDynamicIota reading dynamic dimension spec %d (%q)", i, spec.Name)
+				}
+				valIdx++
+				if valSize <= 0 {
+					return nil, errors.Errorf("execDynamicIota: dynamic dimension size for axis %q must be positive, got %d", spec.Name, valSize)
+				}
+				concreteDims[i] = valSize
+			} else {
+				return nil, errors.Errorf("execDynamicIota: dynamic dimension size for axis %d (%q) could not be resolved from input or dynamic value", i, spec.Name)
+			}
+		}
+	}
+
+	targetShape := shapes.Make(node.Shape.DType, concreteDims...)
+	output, err := backend.GetBuffer(targetShape)
+	if err != nil {
+		return nil, err
+	}
+
+	iotaSize := targetShape.Dimensions[iotaAxis]
+	batchSize := 1
+	repeatsSize := 1
+	for axis, dim := range targetShape.Dimensions {
+		if axis > iotaAxis {
+			repeatsSize *= dim
+		} else if axis < iotaAxis {
+			batchSize *= dim
+		}
+	}
+
+	fnAny, err := iotaDTypeMap.Get(targetShape.DType)
+	if err != nil {
+		return nil, err
+	}
+	fn := fnAny.(func(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int))
+	fn(output, batchSize, iotaSize, repeatsSize)
+	return output, nil
 }
 
 func execIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {

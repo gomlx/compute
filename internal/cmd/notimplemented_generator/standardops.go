@@ -90,6 +90,8 @@ func GenerateStandardOpsInterface(methods []backendparser.Method) {
 				pi.Type = "compute.ConvolveAxesConfig"
 			case "...PadAxis":
 				pi.Type = "...compute.PadAxis"
+			case "...DynamicPadAxis":
+				pi.Type = "...compute.DynamicPadAxis"
 			case "...DynamicDimensionSpec":
 				pi.Type = "...compute.DynamicDimensionSpec"
 			case "ActivationType":

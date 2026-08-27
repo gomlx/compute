@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/sets"
 	"github.com/pkg/errors"
@@ -212,6 +213,112 @@ func DynamicBroadcastInDim(operand shapes.Shape, broadcastAxes []int, specs []co
 	}
 
 	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
+	return output, nil
+}
+
+// DynamicIota calculates the output shape resulting from a DynamicIota operation.
+//
+// DynamicDimensionSpec must be one of:
+//   - Static: `Static >= 0`, `Name == ""`, `Value == nil`.
+//   - Dynamic: `Name != ""`, `Value != nil`, `Static == 0`.
+//   - Dynamic known axis: `Name != ""`, `Value == nil`, `Static == 0` (known dynamic axis name).
+func DynamicIota(dtype dtypes.DType, iotaAxis int, specs []compute.DynamicDimensionSpec, knownDynamicAxisNames sets.Set[string]) (output shapes.Shape, err error) {
+	if len(specs) == 0 {
+		return shapes.Invalid(), errors.Errorf("DynamicIota: shape must have at least one dimension")
+	}
+	if iotaAxis < 0 || iotaAxis >= len(specs) {
+		return shapes.Invalid(), errors.Errorf("DynamicIota: iotaAxis (%d) must be in the range [0,%d)", iotaAxis, len(specs)-1)
+	}
+
+	dims := make([]int, len(specs))
+	axisNames := make([]string, len(specs))
+
+	for i, spec := range specs {
+		if spec.Name != "" {
+			if spec.Static != 0 {
+				return shapes.Invalid(), errors.Errorf("DynamicIota() spec at index %d has Name %q but Static is %d (must be 0 when Name is set)", i, spec.Name, spec.Static)
+			}
+			axisNames[i] = spec.Name
+			dims[i] = shapes.DynamicDim
+			if spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(spec.Name)) {
+				return shapes.Invalid(), errors.Errorf("DynamicIota: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", spec.Name)
+			}
+		} else {
+			if spec.Value != nil {
+				return shapes.Invalid(), errors.Errorf("DynamicIota() spec at index %d has a non-nil Value but Name is empty", i)
+			}
+			if spec.Static < 0 {
+				return shapes.Invalid(), errors.Errorf("DynamicIota() static dimension at index %d cannot be negative (%d)", i, spec.Static)
+			}
+			dims[i] = spec.Static
+		}
+	}
+
+	hasDynamic := slices.Contains(dims, shapes.DynamicDim)
+	if !hasDynamic {
+		output = shapes.Make(dtype, dims...)
+		if slices.ContainsFunc(axisNames, func(name string) bool { return name != "" }) {
+			output = output.WithAxisNames(axisNames...)
+		}
+		return output, nil
+	}
+
+	output = shapes.MakeDynamic(dtype, dims, axisNames)
+	return output, nil
+}
+
+// DynamicPad calculates the output shape resulting from a DynamicPad operation.
+func DynamicPad(operand shapes.Shape, axesConfig ...compute.DynamicPadAxis) (output shapes.Shape, err error) {
+	if !operand.Ok() {
+		return shapes.Invalid(), errors.Errorf("DynamicPad: invalid operand shape %s", operand)
+	}
+	rank := operand.Rank()
+	if len(axesConfig) > rank {
+		return shapes.Invalid(), errors.Errorf("DynamicPad: too many DynamicPadAxis given (%d) for operand rank %d", len(axesConfig), rank)
+	}
+
+	output = operand.Clone()
+	if output.AxisNames == nil && rank > 0 {
+		output.AxisNames = make([]string, rank)
+	}
+
+	for axis, config := range axesConfig {
+		isDynamicPad := config.StartValue != nil || config.EndValue != nil || config.InteriorValue != nil
+		targetAxisName := config.TargetAxisName
+
+		if config.InteriorValue == nil && config.Interior < 0 {
+			return shapes.Invalid(), errors.Errorf("DynamicPad: interior padding must be non-negative, got %d for axis %d", config.Interior, axis)
+		}
+
+		dim := operand.Dimensions[axis]
+		if isDynamicPad || dim == shapes.DynamicDim {
+			output.Dimensions[axis] = shapes.DynamicDim
+			if targetAxisName != "" {
+				output.AxisNames[axis] = targetAxisName
+			} else if dim != shapes.DynamicDim {
+				// Static dimension became dynamic without targetAxisName -> anonymous.
+				output.AxisNames[axis] = shapes.AnonymousAxis
+			}
+			continue
+		}
+
+		interiorPadding := 0
+		if dim > 0 {
+			interiorPadding = (dim - 1) * config.Interior
+		}
+		outDim := dim + config.Start + config.End + interiorPadding
+		if outDim < 0 {
+			return shapes.Invalid(), errors.Errorf("DynamicPad: resulting dimension for axis %d is negative (%d)", axis, outDim)
+		}
+		output.Dimensions[axis] = outDim
+		if targetAxisName != "" {
+			output.AxisNames[axis] = targetAxisName
+		}
+	}
+
+	if !output.IsDynamic() && output.AxisNames != nil && !slices.ContainsFunc(output.AxisNames, func(name string) bool { return name != "" }) {
+		output.AxisNames = nil
+	}
 	return output, nil
 }
 

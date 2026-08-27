@@ -12,6 +12,9 @@ import (
 func init() {
 	gobackend.RegisterPad.Register(Pad, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypePad, gobackend.PriorityGeneric, execPad)
+
+	gobackend.RegisterDynamicPad.Register(DynamicPad, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeDynamicPad, gobackend.PriorityGeneric, execDynamicPad)
 }
 
 // Pad implements the compute.Builder interface.
@@ -43,22 +46,144 @@ func (p *padNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return slices.Equal(p.axesConfig, o.axesConfig)
 }
 
-func execPad(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
-	operand := inputs[0]
-	fillValue := inputs[1]
+type dynamicPadNode struct {
+	axesConfig []compute.DynamicPadAxis
+}
 
-	if node.Shape.DType.Size() < 1 {
-		return nil, errors.Errorf("Pad operation does not support sub-byte types like %s", node.Shape.DType)
+// EqualNodeData implements nodeDataComparable for dynamicPadNode.
+func (p *dynamicPadNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	o := other.(*dynamicPadNode)
+	if len(p.axesConfig) != len(o.axesConfig) {
+		return false
 	}
-	elementSize := node.Shape.DType.Size()
+	for i := range p.axesConfig {
+		pCfg, oCfg := p.axesConfig[i], o.axesConfig[i]
+		if pCfg.Start != oCfg.Start || pCfg.End != oCfg.End || pCfg.Interior != oCfg.Interior ||
+			pCfg.TargetAxisName != oCfg.TargetAxisName ||
+			(pCfg.StartValue == nil) != (oCfg.StartValue == nil) ||
+			(pCfg.EndValue == nil) != (oCfg.EndValue == nil) ||
+			(pCfg.InteriorValue == nil) != (oCfg.InteriorValue == nil) {
+			return false
+		}
+	}
+	return true
+}
 
-	output, err := backend.GetBuffer(node.Shape)
+// DynamicPad implements the compute.DynamicOps interface.
+func DynamicPad(f *gobackend.Function, operandOp, fillValueOp compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error) {
+	allValues := []compute.Value{operandOp, fillValueOp}
+	for _, cfg := range axesConfig {
+		if cfg.StartValue != nil {
+			allValues = append(allValues, cfg.StartValue)
+		}
+		if cfg.EndValue != nil {
+			allValues = append(allValues, cfg.EndValue)
+		}
+		if cfg.InteriorValue != nil {
+			allValues = append(allValues, cfg.InteriorValue)
+		}
+	}
+	inputs, err := f.VerifyAndCastValues("DynamicPad", allValues...)
+	if err != nil {
+		return nil, err
+	}
+	operand := inputs[0]
+
+	outputShape, err := shapeinference.DynamicPad(operand.Shape, axesConfig...)
 	if err != nil {
 		return nil, err
 	}
 
+	data := &dynamicPadNode{axesConfig: slices.Clone(axesConfig)}
+	node, _ := f.GetOrCreateNode(compute.OpTypeDynamicPad, outputShape, inputs, data)
+	return node, nil
+}
+
+func execDynamicPad(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	operand := inputs[0]
+	fillValue := inputs[1]
+	params := node.Data.(*dynamicPadNode)
+	dynAxesConfig := params.axesConfig
+
+	concreteAxesConfig := make([]compute.PadAxis, len(dynAxesConfig))
+	valIdx := 2
+
+	for i, cfg := range dynAxesConfig {
+		start := cfg.Start
+		if cfg.StartValue != nil {
+			if valIdx >= len(inputs) {
+				return nil, errors.Errorf("execDynamicPad: missing input buffer for StartValue at axis %d", i)
+			}
+			val, err := readScalarInt(inputs[valIdx])
+			if err != nil {
+				return nil, errors.Wrapf(err, "execDynamicPad: reading StartValue for axis %d", i)
+			}
+			valIdx++
+			start = val
+		}
+
+		end := cfg.End
+		if cfg.EndValue != nil {
+			if valIdx >= len(inputs) {
+				return nil, errors.Errorf("execDynamicPad: missing input buffer for EndValue at axis %d", i)
+			}
+			val, err := readScalarInt(inputs[valIdx])
+			if err != nil {
+				return nil, errors.Wrapf(err, "execDynamicPad: reading EndValue for axis %d", i)
+			}
+			valIdx++
+			end = val
+		}
+
+		interior := cfg.Interior
+		if cfg.InteriorValue != nil {
+			if valIdx >= len(inputs) {
+				return nil, errors.Errorf("execDynamicPad: missing input buffer for InteriorValue at axis %d", i)
+			}
+			val, err := readScalarInt(inputs[valIdx])
+			if err != nil {
+				return nil, errors.Wrapf(err, "execDynamicPad: reading InteriorValue for axis %d", i)
+			}
+			valIdx++
+			interior = val
+		}
+
+		if interior < 0 {
+			return nil, errors.Errorf("execDynamicPad: interior padding must be non-negative, got %d for axis %d", interior, i)
+		}
+
+		concreteAxesConfig[i] = compute.PadAxis{
+			Start:    start,
+			End:      end,
+			Interior: interior,
+		}
+	}
+
+	return padWithConcreteConfig(backend, operand, fillValue, concreteAxesConfig)
+}
+
+func execPad(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+	operand := inputs[0]
+	fillValue := inputs[1]
 	params := node.Data.(*padNode)
-	axesConfig := params.axesConfig
+	return padWithConcreteConfig(backend, operand, fillValue, params.axesConfig)
+}
+
+func padWithConcreteConfig(backend *gobackend.Backend, operand, fillValue *gobackend.Buffer, axesConfig []compute.PadAxis) (*gobackend.Buffer, error) {
+	if operand.RawShape.DType.Size() < 1 {
+		return nil, errors.Errorf("Pad operation does not support sub-byte types like %s", operand.RawShape.DType)
+	}
+	elementSize := operand.RawShape.DType.Size()
+
+	outShape, err := shapeinference.Pad(operand.RawShape, axesConfig...)
+	if err != nil {
+		return nil, err
+	}
+
+	output, err := backend.GetBuffer(outShape)
+	if err != nil {
+		return nil, err
+	}
 
 	operandBytes, err := operand.MutableBytes()
 	if err != nil {

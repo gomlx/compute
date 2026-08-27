@@ -241,6 +241,22 @@ func (f *Function) DynamicDimensionSize(operand compute.Value, axis int) (comput
 	return RegisterDynamicDimensionSize.Fn(f, operand, axis)
 }
 
+func (f *Function) DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	if RegisterDynamicIota.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicIota(dtype, iotaAxis, dimensions...)
+	}
+	return RegisterDynamicIota.Fn(f, dtype, iotaAxis, dimensions...)
+}
+
+func (f *Function) DynamicPad(x compute.Value, fillValue compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error) {
+	if RegisterDynamicPad.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicPad(x, fillValue, axesConfig...)
+	}
+	return RegisterDynamicPad.Fn(f, x, fillValue, axesConfig...)
+}
+
 func (f *Function) DynamicReshape(operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
 	if RegisterDynamicReshape.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1033,6 +1049,12 @@ var (
 	}
 	RegisterDynamicDimensionSize = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int) (compute.Value, error)]{
 		Method: "DynamicDimensionSize",
+	}
+	RegisterDynamicIota = OpHandlerRegistration[func(f *Function, dtype dtypes.DType, iotaAxis int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
+		Method: "DynamicIota",
+	}
+	RegisterDynamicPad = OpHandlerRegistration[func(f *Function, x compute.Value, fillValue compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error)]{
+		Method: "DynamicPad",
 	}
 	RegisterDynamicReshape = OpHandlerRegistration[func(f *Function, operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
 		Method: "DynamicReshape",
