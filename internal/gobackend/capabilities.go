@@ -92,7 +92,8 @@ var Capabilities = compute.Capabilities{
 		// Other operations:
 		compute.OpTypeArgMinMax:            true,
 		compute.OpTypeBitcast:              true,
-		compute.OpTypeBroadcastInDim:       true,
+		compute.OpTypeBroadcastInDim:        true,
+		compute.OpTypeDynamicBroadcastInDim: true,
 		compute.OpTypeConcatenate:          true,
 		compute.OpTypeConvertDType:         true,
 		compute.OpTypeCumSum:               true,
