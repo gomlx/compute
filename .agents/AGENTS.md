@@ -157,17 +157,47 @@ func AddSlices(a, b, res []float32) {
 }
 ```
 
-### Summary of Found Operations
+### Backend Operations (actually part of the `compute.Function` interface)
+
+The `compute` backend defines operations across four interfaces in `./ops*.go`:
+
+#### 1. Standard Operations (`StandardOps` in [ops.go](file:///home/janpf/Projects/gomlx/compute/ops.go))
 
 | Category | Operations |
 | :--- | :--- |
-| **Arithmetic** | `Add`, `Sub`, `Mul`, `Div`, `Sqrt`, `Abs`, `Min`, `Max` |
-| **Logical** | `And`, `Or`, `Xor`, `AndNot` |
-| **Shift** | `ShiftAllLeft(bits uint64)`, `ShiftAllRight`, `ShiftLeft(v Vector)` (variable per-element) |
-| **Conversion** | `ExtendToUint32`, `AsUint32x16` (bit-cast), `ConvertToFloat32` (value cast) |
-| **Comparison** | `Equal`, `NotEqual`, `Greater`, `Less`, `GreaterEqual`, `IsZero` |
-| **Special** | `LeadingZeros`, `BroadcastUint32x16(val)`, `GetHi()`, `GetLo()` |
-| **Masking** | `Merge(other, mask)`, `Masked(mask)`, `mask.ToInt32x16()` |
+| **Unary Math & Element-wise** | `Abs`, `Ceil`, `Clz`, `Cos`, `Erf`, `Exp`, `Expm1`, `Floor`, `Log`, `Log1p`, `Logistic`, `Neg`, `Round`, `Rsqrt`, `Sign`, `Sin`, `Sqrt`, `Tanh` |
+| **Binary Arithmetic** | `Add`, `Sub`, `Mul`, `Div`, `Pow`, `Rem`, `Atan2`, `Min`, `Max`, `Clamp` |
+| **Comparison & Predicates** | `Equal`, `NotEqual`, `GreaterThan`, `GreaterOrEqual`, `LessThan`, `LessOrEqual`, `EqualTotalOrder`, `NotEqualTotalOrder`, `GreaterThanTotalOrder`, `GreaterOrEqualTotalOrder`, `LessThanTotalOrder`, `LessOrEqualTotalOrder`, `IsFinite`, `IsNaN` |
+| **Logical & Bitwise** | `LogicalAnd`, `LogicalOr`, `LogicalXor`, `LogicalNot`, `BitwiseAnd`, `BitwiseOr`, `BitwiseXor`, `BitwiseNot`, `BitCount`, `ShiftLeft`, `ShiftRightArithmetic`, `ShiftRightLogical` |
+| **Complex Numbers** | `Complex`, `Real`, `Imag`, `Conj` |
+| **Shape & Tensor Manipulation** | `Bitcast`, `BroadcastInDim`, `Concatenate`, `ConvertDType`, `DynamicShape`, `DynamicSlice`, `DynamicUpdateSlice`, `Identity`, `Iota`, `Pad`, `Reshape`, `Reverse`, `Slice`, `Transpose`, `Where` |
+| **Reductions & Windowing** | `ArgMinMax`, `ReduceBitwiseAnd`, `ReduceBitwiseOr`, `ReduceBitwiseXor`, `ReduceLogicalAnd`, `ReduceLogicalOr`, `ReduceLogicalXor`, `ReduceMax`, `ReduceMin`, `ReduceProduct`, `ReduceSum`, `ReduceWindow` |
+| **Linear Algebra & Convolutions** | `DotGeneral`, `ConvGeneral` |
+| **Gather / Scatter** | `Gather`, `ScatterMax`, `ScatterMin`, `ScatterSum`, `SelectAndScatterMax`, `SelectAndScatterMin` |
+| **Neural Network Normalization** | `BatchNormForInference`, `BatchNormForTraining`, `BatchNormGradient` |
+| **Spectral / Signal** | `FFT` |
+| **Random & Barriers** | `RNGBitGenerator`, `OptimizationBarrier`, `SchedulingBarrier` |
+
+#### 2. Dynamic Operations (`DynamicOps` in [ops_dynamic.go](file:///home/janpf/Projects/gomlx/compute/ops_dynamic.go))
+
+| Category | Operations |
+| :--- | :--- |
+| **Dynamic Shapes** | `DynamicDimensionSize`, `DynamicReshape` |
+
+#### 3. Fused Operations (`FusedOps` in [ops_fused.go](file:///home/janpf/Projects/gomlx/compute/ops_fused.go))
+
+| Category | Operations |
+| :--- | :--- |
+| **Activations & Normalization** | `FusedSoftmax`, `FusedGelu`, `FusedLayerNorm` |
+| **Dense & Projections** | `FusedDense`, `FusedAttentionQKVProjection` |
+| **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
+| **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense` |
+
+#### 4. Collective Operations (`CollectiveOps` in [ops_collective.go](file:///home/janpf/Projects/gomlx/compute/ops_collective.go))
+
+| Category | Operations |
+| :--- | :--- |
+| **Distributed / Cross-Device** | `AllReduce` |
 
 ### Working with Masks and Bit Manipulation
 
