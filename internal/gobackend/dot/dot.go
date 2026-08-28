@@ -275,11 +275,44 @@ func DotGeneral(f *gobackend.Function,
 	}
 	if !result.Shape.Equal(outputShape) {
 		// Reshape to axes that may have been merged during layout normalization.
-		resultValue, err := f.Reshape(result, outputShape.Dimensions...)
-		if err != nil {
-			return nil, err
+		if outputShape.IsDynamic() || result.Shape.IsDynamic() {
+			specs := make([]compute.DynamicDimensionSpec, outputShape.Rank())
+			for i, dim := range outputShape.Dimensions {
+				name := outputShape.AxisName(i)
+				if dim == shapes.DynamicDim {
+					var val compute.Value
+					for j, rDim := range result.Shape.Dimensions {
+						if rDim == shapes.DynamicDim && result.Shape.AxisName(j) == name && name != "" {
+							val, err = f.DynamicDimensionSize(result, j)
+							if err != nil {
+								return nil, err
+							}
+							break
+						}
+					}
+					specs[i] = compute.DynamicDimensionSpec{
+						Name:  name,
+						Value: val,
+					}
+				} else {
+					specs[i] = compute.DynamicDimensionSpec{
+						Static: dim,
+						Name:   name,
+					}
+				}
+			}
+			resultValue, err := f.DynamicReshape(result, specs...)
+			if err != nil {
+				return nil, err
+			}
+			result = resultValue.(*gobackend.Node)
+		} else {
+			resultValue, err := f.Reshape(result, outputShape.Dimensions...)
+			if err != nil {
+				return nil, err
+			}
+			result = resultValue.(*gobackend.Node)
 		}
-		result = resultValue.(*gobackend.Node)
 	}
 	return result, nil
 }

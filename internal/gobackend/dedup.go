@@ -159,11 +159,15 @@ func DataEqual(a, b any) bool {
 	if t != nil {
 		switch {
 		case t.Kind() == reflect.Struct:
-			// Use standard struct comparison
-			return a == b
+			if t.Comparable() {
+				return a == b
+			}
+			return reflect.DeepEqual(a, b)
 		case t.Kind() == reflect.Ptr && t.Elem().Kind() == reflect.Struct:
-			// Dereference and use standard struct comparison
-			return reflect.ValueOf(a).Elem().Interface() == reflect.ValueOf(b).Elem().Interface()
+			if t.Elem().Comparable() {
+				return reflect.ValueOf(a).Elem().Interface() == reflect.ValueOf(b).Elem().Interface()
+			}
+			return reflect.DeepEqual(a, b)
 		}
 	}
 
