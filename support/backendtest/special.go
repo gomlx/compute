@@ -98,7 +98,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	t.Run("DynamicReshape", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicReshape)
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
-		testutil.SkipIfMissingDynamicAxes(t, b)
+		testutil.SkipIfMissingDynamicShapes(t, b)
 
 		t.Run("ExplicitDynamicValues", func(t *testing.T) {
 			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, shapes.DynamicDim}, []string{"batch", "seq_len"})
@@ -245,7 +245,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	t.Run("DynamicBroadcastInDim", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicBroadcastInDim)
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
-		testutil.SkipIfMissingDynamicAxes(t, b)
+		testutil.SkipIfMissingDynamicShapes(t, b)
 
 		t.Run("BroadcastStaticToDynamic", func(t *testing.T) {
 			// Param has dynamic shape [batch, 1]
@@ -809,7 +809,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("DynamicShapeReduction", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_reduce")
 			mainFn := builder.Main()
 			// Shape (batch, seq, 4) dynamic
@@ -1063,7 +1063,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		// Test Case 4: Concatenating with dynamic shapes on non-concat axis
 		t.Run("DynamicNonConcatAxis", func(t *testing.T) {
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_concat_non_concat_axis")
 			mainFn := builder.Main()
 			s1 := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 2}, []string{"batch", ""})
@@ -1241,7 +1241,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("DynamicShapeFullAxis", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeSlice)
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_slice")
 			mainFn := builder.Main()
 			sInput := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})

@@ -27,7 +27,24 @@ type Capabilities struct {
 	// and shape specialization. When true, graph parameters can have symbolic
 	// dimensions (shapes.DynamicDim) with named axes, and the backend will
 	// lazily specialize execution for each concrete axis binding.
+	//
+	// Deprecated: DynamicShapesSupport provides more fine-grained control
+	// over dynamic shapes and is the recommended way to specify backend
+	// capabilities regarding dynamic shapes. It is set to true if
+	// DynamicShapes is not DynamicShapesNone.
 	DynamicAxes bool
+
+	// DynamicShapes indicates whether the backend supports dynamic shapes
+	// during graph building. If supported the same computation graph can be
+	// used for different shapes of inputs -- currently only input-shape depended
+	// dynamism is supported (not data-dependent dynamic shapes).
+	//
+	// A backend may not support dynamic shapes at all -- in which case GoMLX
+	// recreates and recompiles the whole graph at runtime for each different
+	// input shape. Or it can support dynamic shapes by JIT-recompiling behind
+	// the scenes. In either these two cases, the user need to know and properly
+	// bucket/pad inputs to avoid excessive recompilations (if inputs vary in size).
+	DynamicShapes DynamicShapesSupport
 
 	// PreferConstantsForVariables indicates that the backend prefers context variables
 	// (model weights) to be embedded as constants in the computation graph rather than
@@ -48,3 +65,26 @@ func (c Capabilities) Clone() Capabilities {
 	maps.Copy(c2.DTypes, c.DTypes)
 	return c2
 }
+
+// HasDynamicShapes returns true if the backend supports dynamic shapes in any mode.
+func (c Capabilities) HasDynamicShapes() bool {
+	return c.DynamicShapes != DynamicShapesNone
+}
+
+// DynamicShapesSupport enumeration values indicating whether and how a backend supports dynamic shapes.
+type DynamicShapesSupport int
+
+//go:generate go tool enumer -type DynamicShapesSupport -output=gen_dynamic_shapes_enumer.go capabilities.go
+
+const (
+	// DynamicShapesNone: Backend only supports static shapes (e.g., XLA PJRT).
+	DynamicShapesNone DynamicShapesSupport = iota
+
+	// DynamicShapesNative: Backend compiles once for dynamic graphs; zero
+	// recompilation overhead across variable input dimensions (e.g., Go backend, ONNX Runtime).
+	DynamicShapesNative
+
+	// DynamicShapesRecompiling: Backend accepts dynamic input shapes and shares
+	// weights/constants, but JIT-specializes/recompiles kernels per concrete shape.
+	DynamicShapesRecompiling
+)

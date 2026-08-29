@@ -67,7 +67,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 
 		// Test with dynamic shapes (broadcasting from scalar and dimension of 1).
 		t.Run("DynamicShapesBroadcasting", func(t *testing.T) {
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			t.Run("Dim1Broadcast", func(t *testing.T) {
 				builder := b.Builder("test_dynamic_add_dim1")
 				mainFn := builder.Main()
