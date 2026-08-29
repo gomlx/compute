@@ -31,7 +31,7 @@ var (
 		"DistributedSPMD", "DistributedAutoSharding", "DeviceAssignment")
 
 	// All methods in these interfaces will be included, except if in methodsExcluded.
-	includeInterfaces = sets.MakeWith("StandardOps", "FusedOps")
+	includeInterfaces = sets.MakeWith("StandardOps", "DynamicOps", "FusedOps")
 
 	// methodsIncluded that are not yet included in includeInterfaces.
 	methodsIncluded = sets.MakeWith("Call", "Sort", "While", "If")
@@ -138,6 +138,10 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.ConvolveAxesConfig"
 			case "...PadAxis":
 				param.Type = "...compute.PadAxis"
+			case "...DynamicPadAxis":
+				param.Type = "...compute.DynamicPadAxis"
+			case "DynamicPadAxis":
+				param.Type = "compute.DynamicPadAxis"
 			case "...DynamicDimensionSpec":
 				param.Type = "...compute.DynamicDimensionSpec"
 			case "DynamicDimensionSpec":
@@ -156,6 +160,8 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.QuantizationScheme"
 			case "DotGeneralConfig":
 				param.Type = "compute.DotGeneralConfig"
+			case "CumSumOptions":
+				param.Type = "compute.CumSumOptions"
 			case "*Quantization":
 				param.Type = "*compute.Quantization"
 			case "*ScaledDotProductAttentionConfig":

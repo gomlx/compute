@@ -456,77 +456,20 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 // Reshape to the given dimensions: trivial output shape, but this function also checks
 // that the sizes are the same.
 //
-// This version of reshape doesn't support reshaping dynamic dimensions (axes with [shapes.DynamicDim]).
-// Any dynamic dimensions in the input must be matched by dynamic dimensions in the output, and their
-// axis names are preserved. If new axes are created, the dynamic axis in the input x and dimensions are
-// matched in order.
+// This operation only supports concrete (static) shapes. For dynamic shapes, use DynamicReshape.
 func Reshape(operand shapes.Shape, dims []int) (output shapes.Shape, err error) {
-	outputIsDynamic := slices.Contains(dims, shapes.DynamicDim)
-	if !operand.IsDynamic() {
-		if outputIsDynamic {
-			err = errors.Errorf(
-				"Reshape() cannot reshape a concrete shape (%s) to a dynamic dimension (target dims=%v)",
-				operand, dims)
-			return shapes.Invalid(), err
-		}
-
-		output = shapes.Make(operand.DType, dims...)
-		if operand.Size() != output.Size() {
-			err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
-				operand, dims)
-			return shapes.Invalid(), err
-		}
-		return
+	if operand.IsDynamic() || slices.Contains(dims, shapes.DynamicDim) {
+		err = errors.Errorf("Reshape() does not support dynamic shapes (got input=%s, target dims=%v); use DynamicReshape instead", operand, dims)
+		return shapes.Invalid(), err
 	}
 
-	// Dynamic path: skip size validation (deferred to specialization time).
-	if !outputIsDynamic {
-		err = errors.Errorf(
-			"Reshape() cannot reshape a dynamic shape to a concrete shape; got input=%s target dims=%v",
+	output = shapes.Make(operand.DType, dims...)
+	if operand.Size() != output.Size() {
+		err = errors.Errorf("Reshape() cannot reshape %s to dimensions %v, their size don't match",
 			operand, dims)
 		return shapes.Invalid(), err
 	}
-
-	// Extract dynamic axis names from operand in order.
-	var dynamicNames []string
-	for i, d := range operand.Dimensions {
-		if d == shapes.DynamicDim {
-			// We can assume operand.AxisNames has the same length as operand.Dimensions
-			// when the shape is dynamic.
-			dynamicNames = append(dynamicNames, operand.AxisNames[i])
-		}
-	}
-
-	// Count dynamic axes in the target dims.
-	numTargetDynamic := 0
-	for _, d := range dims {
-		if d == shapes.DynamicDim {
-			numTargetDynamic++
-		}
-	}
-
-	if len(dynamicNames) != numTargetDynamic {
-		err = errors.Errorf(
-			"Reshape() requires the number of dynamic dimensions in the input (%d) to match the target dims (%d); got input=%s target dims=%v",
-			len(dynamicNames), numTargetDynamic, operand, dims)
-		return shapes.Invalid(), err
-	}
-
-	// Build output axis names, mapping dynamic axes in order.
-	// This also preserves the invariant that len(axisNames) == len(dims) for dynamic shapes.
-	axisNames := make([]string, len(dims))
-	dynIdx := 0
-	for i, d := range dims {
-		if d == shapes.DynamicDim {
-			axisNames[i] = dynamicNames[dynIdx]
-			dynIdx++
-		}
-	}
-
-	// DynamicDim values in target dims are allowed — they propagate through
-	// reshape operations and are resolved during shape specialization.
-	output = shapes.MakeDynamic(operand.DType, dims, axisNames)
-	return output, nil
+	return
 }
 
 // Transpose all axes of the operand.
@@ -682,6 +625,21 @@ func Reduce(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
 	}
 	return
 }
+
+// CumSum returns the output shape for a CumSum operation.
+func CumSum(operand shapes.Shape, axis int) (output shapes.Shape, err error) {
+	if !operand.DType.IsFloat() && !operand.DType.IsInt() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires float or int dtype, got %s", operand.DType)
+	}
+	if operand.IsScalar() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires tensor with rank >= 1, got scalar shape %s", operand)
+	}
+	if axis < 0 || axis >= operand.Rank() {
+		return shapes.Invalid(), errors.Errorf("CumSum requires 0 <= axis < rank (%d), but got invalid axis %d for shape %s", operand.Rank(), axis, operand)
+	}
+	return operand.Clone(), nil
+}
+
 
 // Gather returns the output shape of a Gather operation.
 func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutputAxes, collapsedSliceAxes,

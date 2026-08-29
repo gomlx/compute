@@ -30,10 +30,9 @@ func SkipIfMissingFunctions(t *testing.T, b compute.Backend) {
 	}
 }
 
-// SkipIfMissingDynamicAxes skips the current test if the backend doesn't support dynamic axes.
-func SkipIfMissingDynamicAxes(t *testing.T, b compute.Backend) {
-	if !b.Capabilities().DynamicAxes {
-		t.Skipf("Backend %q does not support dynamic axes", b.Name())
+// SkipIfMissingDynamicShapes skips the current test if the backend doesn't support dynamic shapes.
+func SkipIfMissingDynamicShapes(t *testing.T, b compute.Backend) {
+	if b.Capabilities().DynamicShapes == compute.DynamicShapesNone {
+		t.Skipf("Backend %q does not support dynamic shapes", b.Name())
 	}
 }
-

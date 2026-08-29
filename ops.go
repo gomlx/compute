@@ -45,7 +45,7 @@ type PadAxis struct {
 // FFTType select among the basic types of Fast Fourier Transform (FFT) supported.
 type FFTType int
 
-//go:generate go tool enumer -type FFTType -trimprefix=FFT -output=gen_ffttype_enumer.go standard_ops.go
+//go:generate go tool enumer -type FFTType -trimprefix=FFT -output=gen_ffttype_enumer.go ops.go
 
 const (
 	// FFTForward - complex in, complex out.
@@ -64,7 +64,7 @@ const (
 // ReduceOpType select among the basic types of reduction supported.
 type ReduceOpType int
 
-//go:generate go tool enumer -type ReduceOpType -trimprefix=ReduceOp -output=gen_reduceoptype_enumer.go standard_ops.go
+//go:generate go tool enumer -type ReduceOpType -trimprefix=ReduceOp -output=gen_reduceoptype_enumer.go ops.go
 
 const (
 	// ReduceOpUndefined is an undefined value.
@@ -106,25 +106,16 @@ type DotGeneralConfig struct {
 	// Some backends may not support this option and this will cause it to simply convert the input to the output
 	// type upfront, which is less efficient.
 	OutputDType dtypes.DType
-
-	// FutureWork: add quantization configuration.
 }
 
-// DynamicDimensionSpec specifies a target dimension for DynamicReshape.
-// It can be one of three:
-//   - Static: known at graph building time, e.g.: `DynamicDimensionSpec{Static: 16}`.
-//   - Dynamic: named dynamic dimension given with a graph.Value: e.g.: `DynmicDimensionSpec{Name: "batch", Value: batchSize}`.
-//   - Inferred: named dynamic dimension given with a inferred dimension: e.g.: `DynmicDimensionSpec{Name: "seq_len"}`.
-type DynamicDimensionSpec struct {
-	// Static dimension size (>= 0). It is ignored if a Name is set.
-	Static int
+// CumSumOptions are options for the CumSum operation.
+type CumSumOptions struct {
+	// Exclusive if not to include the current element in the sum:
+	// CumSum([1, 2, 3], 0, CumSumOptions{Exclusive:true}) -> [0, 1, 3].
+	Exclusive bool
 
-	// Name of a dynamic axis dimension or for an inferred dimension (at most one inferred
-	// dimension). Empty string for static dimensions.
-	Name string
-
-	// Scalar integer value for runtime dimension size (nil if static or auto-inferred).
-	Value Value
+	// Reverse to sum on the reverse direction.
+	Reverse bool
 }
 
 // StandardOps lists the bulk of the operations that a backends.Builder must support.
@@ -229,14 +220,14 @@ type StandardOps interface {
 	// BitwiseXor returns the element-wise bitwise XOR operator.
 	BitwiseXor(lhs, rhs Value) (Value, error)
 
-	// BroadcastInDim broadcasts x to an output with the given shape.
-	// broadcastAxes has an output axes value for each x axes (len(broadcastAxes) == x.Shape.Rank()).
-	// The i-th axis of x is mapped to the broadcastAxes[i]-th dimension of the output.
+	// BroadcastInDim broadcasts the operand to an output with the given shape.
+	// broadcastAxes has an output axes value for each operand axes (len(broadcastAxes) == operand.Shape.Rank()).
+	// The i-th axis of the operand is mapped to the broadcastAxes[i]-th dimension of the output.
 	// broadcastAxes must be also increasing: this operation cannot be used to transpose axes, it will only
 	// broadcast and introduce new axes in-between.
 	// This also requires that the i-th input axis is either 1 or is the same as the
 	// output dimension it's broadcasting into.
-	// For example, say operand `x = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
+	// For example, say operand `operand = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
 	//   - Specifying []int{1} as broadcastAxes will generate output
 	//     {{1, 2},
 	//     {1, 2}}
@@ -251,7 +242,7 @@ type StandardOps interface {
 	// But new dynamic dimensions can be introduced in the output -- either mapping from an axis with dimension 1,
 	// or from a newly introduced axis. Notice that introducing new dynamic axis names that are not resolved
 	// by any input parameter will result in an error.
-	BroadcastInDim(x Value, outputShape shapes.Shape, broadcastAxes []int) (Value, error)
+	BroadcastInDim(operand Value, outputShape shapes.Shape, broadcastAxes []int) (Value, error)
 
 	// Ceil returns the Op that represents the output of the corresponding operation.
 	Ceil(x Value) (Value, error)
@@ -332,6 +323,21 @@ type StandardOps interface {
 	// Cos returns the Op that represents the output of the corresponding operation.
 	Cos(x Value) (Value, error)
 
+	// CumSum returns the cumulative sum of the elements along the given axis.
+	//
+	// Parameters:
+	//   - operand: input value to sum.
+	//   - axis: axis along which to compute the cumulative sum. It must be in the range 0 <= axis < rank.
+	//   - options: CumSumOptions with Exclusive and Reverse flags.
+	//
+	// Examples:
+	//
+	//	CumSum([1, 2, 3], 0, CumSumOptions{}) -> [1, 3, 6]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true}) -> [0, 1, 3]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Reverse: true}) -> [6, 5, 3]
+	//	CumSum([1, 2, 3], 0, CumSumOptions{Exclusive: true, Reverse: true}) -> [5, 3, 0]
+	CumSum(operand Value, axis int, options CumSumOptions) (Value, error)
+
 	// Div returns the element-wise division of the two values.
 	// Standard broadcasting rules apply (see documentation).
 	Div(lhs, rhs Value) (Value, error)
@@ -360,20 +366,6 @@ type StandardOps interface {
 		rhsContractingAxes, rhsBatchAxes []int,
 		config DotGeneralConfig,
 	) (Value, error)
-
-	// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
-	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
-	DynamicDimensionSize(operand Value, axis int) (Value, error)
-
-	// DynamicReshape reshapes x to target dimensions specified by dimensions.
-	//
-	// Each dimension can be:
-	// - Static;
-	// - Dynamic: a Name and (dynamic) Value are provided.
-	// - Auto-inferred: only a Name is provided, at most one axis can be auto-inferred.
-	//
-	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
-	DynamicReshape(operand Value, dimensions ...DynamicDimensionSpec) (Value, error)
 
 	// DynamicShape returns the shape of the operand as a dynamic value.
 	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).

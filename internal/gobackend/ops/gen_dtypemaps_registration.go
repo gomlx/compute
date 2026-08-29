@@ -140,6 +140,22 @@ func init() {
 	convNoDilationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvNoDilationHalf[bfloat16.BFloat16])
 	convNoDilationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvNoDilationHalf[float16.Float16])
 
+	// DTypeMap: cumSumDTypeMap
+	cumSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execCumSumGeneric[float32])
+	cumSumDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execCumSumGeneric[float64])
+	cumSumDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execCumSumGeneric[int16])
+	cumSumDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execCumSumGeneric[int32])
+	cumSumDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execCumSumGeneric[int64])
+	cumSumDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execCumSumGeneric[int8])
+	cumSumDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execCumSumGeneric[uint16])
+	cumSumDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execCumSumGeneric[uint32])
+	cumSumDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execCumSumGeneric[uint64])
+	cumSumDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execCumSumGeneric[uint8])
+
+	// DTypeMap: cumSumDTypeMap
+	cumSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execCumSumHalfPrecision[bfloat16.BFloat16])
+	cumSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execCumSumHalfPrecision[float16.Float16])
+
 	// DTypeMap: dereferenceIntsDTypeMap
 	dereferenceIntsDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, dereferenceIntsGeneric[int16])
 	dereferenceIntsDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, dereferenceIntsGeneric[int32])

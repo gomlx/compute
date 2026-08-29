@@ -17,7 +17,8 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute/internal/exceptions"
-	"github.com/gomlx/compute/internal/must"
+	"github.com/pkg/errors"
+	"k8s.io/klog/v2"
 )
 
 // Method represents a single method from the backends.Builder or backends.Function interface
@@ -52,74 +53,52 @@ func ParseBuilder() ([]Method, error) {
 	}
 
 	// Parse all relevant files
-	builderFile, err := parser.ParseFile(fileSet, filepath.Join(root, "builder.go"),
-		nil, parser.ParseComments)
-	if err != nil {
-		return nil, err
-	}
-	functionFile, err := parser.ParseFile(fileSet, filepath.Join(root, "function.go"),
-		nil, parser.ParseComments)
-	if err != nil {
-		return nil, err
-	}
-	standardOpsFile, err := parser.ParseFile(fileSet, filepath.Join(root, "standard_ops.go"),
-		nil, parser.ParseComments)
-	if err != nil {
-		return nil, err
-	}
-	collectiveOpsFile, err := parser.ParseFile(fileSet, filepath.Join(root, "collectiveops.go"),
-		nil, parser.ParseComments)
-	if err != nil {
-		return nil, err
-	}
-	fusedOpsFile, err := parser.ParseFile(fileSet, filepath.Join(root, "fused_ops.go"),
-		nil, parser.ParseComments)
-	if err != nil {
-		return nil, err
-	}
-
-	// File contents cache
+	fileNames := []string{"builder.go", "function.go", "ops.go", "ops_dynamic.go", "ops_fused.go", "ops_collective.go"}
+	parsedFiles := make(map[string]*ast.File)
 	fileCache := make(map[string][]byte)
-	getFileContent := func(fileName string) []byte {
-		fileContent, ok := fileCache[fileName]
-		if !ok {
-			// File not in cache, read it
-			fileContent = must.M1(os.ReadFile(fileName))
-			fileCache[fileName] = fileContent
+	for _, fileName := range fileNames {
+		filePath := filepath.Join(root, fileName)
+		var err error
+		fileCache[fileName], err = os.ReadFile(filePath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to read %s", fileName)
 		}
-		return fileContent
+		klog.V(1).Infof("Read file %s: %d bytes", fileName, len(fileCache[fileName]))
+		parsedFiles[fileName], err = parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse %s", fileName)
+		}
 	}
 
 	// Extract the text from a node
 	getText := func(node ast.Node) string {
 		pos := fileSet.Position(node.Pos())
-		fileName := pos.Filename
-		fileContent := getFileContent(fileName)
-
-		// Extract text from the cached file content
+		fileName := filepath.Base(pos.Filename)
+		fileContent := fileCache[fileName]
 		endOffset := fileSet.Position(node.End()).Offset
 		if endOffset > len(fileContent) {
-			exceptions.Panicf("end offset out of bounds for file %s", fileName)
+			exceptions.Panicf("end offset out of bounds for file %s (len(fileContent)=%d, endOffset=%d)",
+				fileName, len(fileContent), endOffset)
 		}
 		return string(fileContent[pos.Offset:endOffset])
 	}
 
 	// Helper to extract methods from interface declarations
-	includeInterfaces := []string{"Builder", "Function", "StandardOps", "CollectiveOps", "FusedOps"}
-	extractMethods := func(file *ast.File) {
-		ast.Inspect(file, func(n ast.Node) bool {
+	includeInterfaces := []string{"Builder", "Function", "StandardOps", "DynamicOps", "CollectiveOps", "FusedOps"}
+	for _, fileName := range fileNames {
+		ast.Inspect(parsedFiles[fileName], func(n ast.Node) bool {
 			if typeSpec, ok := n.(*ast.TypeSpec); ok {
 				if interfaceType, ok := typeSpec.Type.(*ast.InterfaceType); ok {
-					if slices.Index(includeInterfaces, typeSpec.Name.Name) == -1 {
+					if !slices.Contains(includeInterfaces, typeSpec.Name.Name) {
 						return true
 					}
+					klog.V(1).Infof("- Processing %s, interface %q", fileName, typeSpec.Name.Name)
 					for _, method := range interfaceType.Methods.List {
 						// Extract method information
 						funcType, ok := method.Type.(*ast.FuncType)
 						if !ok {
 							continue
 						}
-
 						m := Method{
 							Name:      method.Names[0].Name,
 							Interface: typeSpec.Name.Name,
@@ -159,6 +138,7 @@ func ParseBuilder() ([]Method, error) {
 							}
 						}
 
+						klog.V(1).Infof("   - Method %q", method.Names[0].Name)
 						methods = append(methods, m)
 					}
 				}
@@ -166,13 +146,6 @@ func ParseBuilder() ([]Method, error) {
 			return true
 		})
 	}
-
-	extractMethods(builderFile)
-	extractMethods(functionFile)
-	extractMethods(standardOpsFile)
-	extractMethods(collectiveOpsFile)
-	extractMethods(fusedOpsFile)
-
 	return methods, nil
 }
 

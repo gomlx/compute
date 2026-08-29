@@ -98,7 +98,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	t.Run("DynamicReshape", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicReshape)
 		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
-		testutil.SkipIfMissingDynamicAxes(t, b)
+		testutil.SkipIfMissingDynamicShapes(t, b)
 
 		t.Run("ExplicitDynamicValues", func(t *testing.T) {
 			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, shapes.DynamicDim}, []string{"batch", "seq_len"})
@@ -242,6 +242,280 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		})
 	})
 
+	t.Run("DynamicBroadcastInDim", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicBroadcastInDim)
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicDimensionSize)
+		testutil.SkipIfMissingDynamicShapes(t, b)
+
+		t.Run("BroadcastStaticToDynamic", func(t *testing.T) {
+			// Param has dynamic shape [batch, 1]
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, 1}, []string{"batch", ""})
+
+			builder := b.Builder("test_dynamic_broadcast_static_to_dynamic")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+			batchSize, err := mainFn.DynamicDimensionSize(param, 0)
+			if err != nil {
+				t.Fatalf("DynamicDimensionSize failed: %v", err)
+			}
+
+			// Constant [1, 3]{{10, 20, 30}}
+			c, err := mainFn.Constant([]int32{10, 20, 30}, 1, 3)
+			if err != nil {
+				t.Fatalf("Constant failed: %v", err)
+			}
+
+			// Broadcast c to [batch, 3]
+			out, err := mainFn.DynamicBroadcastInDim(c, []int{0, 1},
+				compute.DynamicDimensionSpec{Name: "batch", Value: batchSize},
+				compute.DynamicDimensionSpec{Static: 3},
+			)
+			if err != nil {
+				t.Fatalf("DynamicBroadcastInDim failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			testCases := []struct {
+				input [][]int32
+				want  [][]int32
+			}{
+				{
+					input: [][]int32{{1}, {2}},
+					want:  [][]int32{{10, 20, 30}, {10, 20, 30}},
+				},
+				{
+					input: [][]int32{{1}, {2}, {3}},
+					want:  [][]int32{{10, 20, 30}, {10, 20, 30}, {10, 20, 30}},
+				},
+			}
+
+			for _, tc := range testCases {
+				inBuf, err := testutil.ToBuffer(b, tc.input)
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %v", err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicBroadcastInDim mismatch:\n%s", diff)
+				}
+			}
+		})
+
+		t.Run("BroadcastDynamicOperandPreservingAxis", func(t *testing.T) {
+			// Param has dynamic shape [batch]
+			paramShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim}, []string{"batch"})
+
+			builder := b.Builder("test_dynamic_broadcast_preserving_axis")
+			mainFn := builder.Main()
+			param, err := mainFn.Parameter("x", paramShape, nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter: %v", err)
+			}
+
+			// Broadcast param [batch] to [batch, 2]
+			out, err := mainFn.DynamicBroadcastInDim(param, []int{0},
+				compute.DynamicDimensionSpec{Name: "batch"},
+				compute.DynamicDimensionSpec{Static: 2},
+			)
+			if err != nil {
+				t.Fatalf("DynamicBroadcastInDim failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			testCases := []struct {
+				input []int32
+				want  [][]int32
+			}{
+				{
+					input: []int32{5, 6},
+					want:  [][]int32{{5, 5}, {6, 6}},
+				},
+				{
+					input: []int32{1, 2, 3},
+					want:  [][]int32{{1, 1}, {2, 2}, {3, 3}},
+				},
+			}
+
+			for _, tc := range testCases {
+				inBuf, err := testutil.ToBuffer(b, tc.input)
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %v", err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicBroadcastInDim mismatch:\n%s", diff)
+				}
+			}
+		})
+	})
+
+	t.Run("DynamicIota", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicIota)
+
+		builder := b.Builder("test_dynamic_iota")
+		mainFn := builder.Main()
+		batchSizeParam, err := mainFn.Parameter("batch_size", shapes.Make(dtypes.Int32), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter: %v", err)
+		}
+
+		out, err := mainFn.DynamicIota(dtypes.Int32, 1,
+			compute.DynamicDimensionSpec{Name: "batch", Value: batchSizeParam},
+			compute.DynamicDimensionSpec{Static: 3},
+		)
+		if err != nil {
+			t.Fatalf("DynamicIota failed: %v", err)
+		}
+		if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+
+		testCases := []struct {
+			batchSize int32
+			want      [][]int32
+		}{
+			{
+				batchSize: 2,
+				want:      [][]int32{{0, 1, 2}, {0, 1, 2}},
+			},
+			{
+				batchSize: 4,
+				want:      [][]int32{{0, 1, 2}, {0, 1, 2}, {0, 1, 2}, {0, 1, 2}},
+			},
+		}
+
+		for _, tc := range testCases {
+			inBuf, err := testutil.ToBuffer(b, tc.batchSize)
+			if err != nil {
+				t.Fatalf("ToBuffer failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+				t.Errorf("DynamicIota mismatch:\n%s", diff)
+			}
+		}
+	})
+
+	t.Run("DynamicPad", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicPad)
+
+		builder := b.Builder("test_dynamic_pad")
+		mainFn := builder.Main()
+		xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 2, 2), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter x: %v", err)
+		}
+		padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+		if err != nil {
+			t.Fatalf("Failed to create parameter pad_start: %v", err)
+		}
+		fillVal, err := mainFn.Constant([]float32{0})
+		if err != nil {
+			t.Fatalf("Failed to create constant fillVal: %v", err)
+		}
+
+		out, err := mainFn.DynamicPad(xParam, fillVal,
+			compute.DynamicPadAxis{StartValue: padStartParam, End: 1},
+			compute.DynamicPadAxis{Start: 1, End: 0},
+		)
+		if err != nil {
+			t.Fatalf("DynamicPad failed: %v", err)
+		}
+		if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+
+		inputX := [][]float32{{1, 2}, {3, 4}}
+		testCases := []struct {
+			padStart int32
+			want     [][]float32
+		}{
+			{
+				padStart: 0,
+				want: [][]float32{
+					{0, 1, 2},
+					{0, 3, 4},
+					{0, 0, 0},
+				},
+			},
+			{
+				padStart: 1,
+				want: [][]float32{
+					{0, 0, 0},
+					{0, 1, 2},
+					{0, 3, 4},
+					{0, 0, 0},
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			inXBuf, err := testutil.ToBuffer(b, inputX)
+			if err != nil {
+				t.Fatalf("ToBuffer x failed: %v", err)
+			}
+			inPadBuf, err := testutil.ToBuffer(b, tc.padStart)
+			if err != nil {
+				t.Fatalf("ToBuffer pad failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inPadBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+				t.Errorf("DynamicPad mismatch:\n%s", diff)
+			}
+		}
+	})
+
 	t.Run("Reverse", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReverse)
 		y0, err := testutil.Exec1(b, []any{[][]float32{{1, 2}, {3, 4}}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
@@ -252,6 +526,203 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 		if ok, diff := testutil.IsEqual([][]float32{{4, 3}, {2, 1}}, y0); !ok {
 			t.Errorf("Reverse mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("CumSum", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeCumSum)
+
+		t.Run("1D_Int32", func(t *testing.T) {
+			input := []int32{1, 2, 3, 4}
+
+			// Standard (inclusive, forward)
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{1, 3, 6, 10}, got); !ok {
+				t.Errorf("CumSum 1D standard mismatch:\n%s", diff)
+			}
+
+			// Exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{0, 1, 3, 6}, got); !ok {
+				t.Errorf("CumSum 1D exclusive mismatch:\n%s", diff)
+			}
+
+			// Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{10, 9, 7, 4}, got); !ok {
+				t.Errorf("CumSum 1D reverse mismatch:\n%s", diff)
+			}
+
+			// Exclusive + Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 1D exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{9, 7, 4, 0}, got); !ok {
+				t.Errorf("CumSum 1D exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_Float32", func(t *testing.T) {
+			input := [][]float32{{1, 2, 3}, {4, 5, 6}}
+
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1, 3, 6}, {4, 9, 15}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 0, standard
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1, 2, 3}, {5, 7, 9}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{0, 1, 3}, {0, 4, 9}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{0, 0, 0}, {1, 2, 3}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 1, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{6, 5, 3}, {15, 11, 6}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 7, 9}, {4, 5, 6}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 1 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 3, 0}, {11, 6, 0}}, got); !ok {
+				t.Errorf("CumSum 2D axis 1 exclusive+reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 2D axis 0 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{4, 5, 6}, {0, 0, 0}}, got); !ok {
+				t.Errorf("CumSum 2D axis 0 exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("3D_Int64", func(t *testing.T) {
+			input := [][][]int64{
+				{{1, 2}, {3, 4}},
+				{{5, 6}, {7, 8}},
+			}
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumSum(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumSum 3D axis 1 failed: %v", err)
+			}
+			want := [][][]int64{
+				{{1, 2}, {4, 6}},
+				{{5, 6}, {12, 14}},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("CumSum 3D axis 1 mismatch:\n%s", diff)
+			}
+		})
+
+		if b.Capabilities().DTypes[dtypes.Float16] {
+			t.Run("1D_Float16", func(t *testing.T) {
+				input := []float16.Float16{f16(1), f16(2), f16(3)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumSum(params[0], 0, compute.CumSumOptions{})
+				})
+				if err != nil {
+					t.Fatalf("CumSum Float16 failed: %v", err)
+				}
+				want := []float16.Float16{f16(1), f16(3), f16(6)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumSum Float16 mismatch:\n%s", diff)
+				}
+			})
+		}
+
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			t.Run("1D_BFloat16", func(t *testing.T) {
+				input := []bfloat16.BFloat16{bf16(1), bf16(2), bf16(3)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumSum(params[0], 0, compute.CumSumOptions{Exclusive: true})
+				})
+				if err != nil {
+					t.Fatalf("CumSum BFloat16 failed: %v", err)
+				}
+				want := []bfloat16.BFloat16{bf16(0), bf16(1), bf16(3)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumSum BFloat16 mismatch:\n%s", diff)
+				}
+			})
 		}
 	})
 
@@ -338,7 +809,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("DynamicShapeReduction", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceSum)
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_reduce")
 			mainFn := builder.Main()
 			// Shape (batch, seq, 4) dynamic
@@ -592,7 +1063,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		// Test Case 4: Concatenating with dynamic shapes on non-concat axis
 		t.Run("DynamicNonConcatAxis", func(t *testing.T) {
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_concat_non_concat_axis")
 			mainFn := builder.Main()
 			s1 := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 2}, []string{"batch", ""})
@@ -770,7 +1241,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("DynamicShapeFullAxis", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeSlice)
-			testutil.SkipIfMissingDynamicAxes(t, b)
+			testutil.SkipIfMissingDynamicShapes(t, b)
 			builder := b.Builder("test_dynamic_slice")
 			mainFn := builder.Main()
 			sInput := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})

@@ -1,6 +1,8 @@
-package ops // BroadcastInDimsOp ====================================================================================================
+package ops
 
 import (
+	"slices"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -9,11 +11,20 @@ import (
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/xslices"
+	"github.com/pkg/errors"
 )
+
+type dynamicBroadcastInDimData struct {
+	broadcastAxes []int
+	specs         []compute.DynamicDimensionSpec
+}
 
 func init() {
 	gobackend.RegisterBroadcastInDim.Register(BroadcastInDim, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeBroadcastInDim, gobackend.PriorityGeneric, execBroadcastInDim)
+
+	gobackend.RegisterDynamicBroadcastInDim.Register(DynamicBroadcastInDim, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeDynamicBroadcastInDim, gobackend.PriorityGeneric, execDynamicBroadcastInDim)
 
 	// DTypeMap: broadcastInDimDTypeMap
 	broadcastInDimDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int8])
@@ -56,7 +67,7 @@ func BroadcastInDim(
 	outputShape shapes.Shape,
 	broadcastAxes []int,
 ) (compute.Value, error) {
-	inputs, err := f.VerifyAndCastValues("DotGeneral", operandValue)
+	inputs, err := f.VerifyAndCastValues("BroadcastInDim", operandValue)
 	if err != nil {
 		return nil, err
 	}
@@ -71,12 +82,39 @@ func BroadcastInDim(
 	return node, nil
 }
 
-// execBroadcastInDim executes the BroadcastInDim operation.
-func execBroadcastInDim(
-	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	_ = inputsOwned // We don't reuse the inputs, since presumably the shape will change.
+// DynamicBroadcastInDim broadcasts operand to target dimensions specified by specs.
+func DynamicBroadcastInDim(
+	f *gobackend.Function,
+	operandValue compute.Value,
+	broadcastAxes []int,
+	specs ...compute.DynamicDimensionSpec,
+) (compute.Value, error) {
+	allValues := []compute.Value{operandValue}
+	for _, spec := range specs {
+		if spec.Value != nil {
+			allValues = append(allValues, spec.Value)
+		}
+	}
+	inputs, err := f.VerifyAndCastValues("DynamicBroadcastInDim", allValues...)
+	if err != nil {
+		return nil, err
+	}
 	operand := inputs[0]
-	output, err := backend.GetBuffer(node.Shape)
+	opType := compute.OpTypeDynamicBroadcastInDim
+	outputShape, err := shapeinference.DynamicBroadcastInDim(operand.Shape, broadcastAxes, specs, f.KnownDynamicAxisNames())
+	if err != nil {
+		return nil, err
+	}
+	data := dynamicBroadcastInDimData{
+		broadcastAxes: slices.Clone(broadcastAxes),
+		specs:         slices.Clone(specs),
+	}
+	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, data)
+	return node, nil
+}
+
+func broadcastToShape(backend *gobackend.Backend, targetShape shapes.Shape, broadcastAxes []int, operand *gobackend.Buffer) (*gobackend.Buffer, error) {
+	output, err := backend.GetBuffer(targetShape)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +128,6 @@ func execBroadcastInDim(
 		// We are only changing the rank, but it stays the same size; hence the flat data doesn't change.
 		// Notice: broadcastAxes is strictly increasing (no transpositions are happening).
 		dims := xslices.SliceWithValue(output.RawShape.Rank(), 1)
-		broadcastAxes := node.Data.([]int)
 		for operandAxis, outputAxis := range broadcastAxes {
 			dims[outputAxis] = operand.RawShape.Dimensions[operandAxis]
 		}
@@ -101,12 +138,70 @@ func execBroadcastInDim(
 	}
 
 	// Call implementation for corresponding dtype.
-	fnAny, err := broadcastInDimDTypeMap.Get(node.Shape.DType)
+	fnAny, err := broadcastInDimDTypeMap.Get(targetShape.DType)
 	if err != nil {
 		return nil, err
 	}
 	fnAny.(func(*gobackend.Buffer, *gobackend.Buffer, *gobackend.BroadcastIterator))(operand, output, iter)
 	return output, nil
+}
+
+// execBroadcastInDim executes the BroadcastInDim operation.
+func execBroadcastInDim(
+	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	_ = inputsOwned // We don't reuse the inputs, since presumably the shape will change.
+	operand := inputs[0]
+	broadcastAxes := node.Data.([]int)
+	return broadcastToShape(backend, node.Shape, broadcastAxes, operand)
+}
+
+// execDynamicBroadcastInDim executes the DynamicBroadcastInDim operation.
+func execDynamicBroadcastInDim(
+	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	_ = inputsOwned
+	operand := inputs[0]
+	data := node.Data.(dynamicBroadcastInDimData)
+	specs := data.specs
+	broadcastAxes := data.broadcastAxes
+
+	concreteDims := make([]int, len(specs))
+	valIdx := 1
+
+	for i, spec := range specs {
+		if spec.Name == "" {
+			concreteDims[i] = spec.Static
+		} else {
+			if spec.Value != nil {
+				if valIdx >= len(inputs) {
+					return nil, errors.Errorf("execDynamicBroadcastInDim: missing input buffer for dynamic dimension value at spec index %d", i)
+				}
+				valSize, err := readScalarInt(inputs[valIdx])
+				if err != nil {
+					return nil, errors.Wrapf(err, "execDynamicBroadcastInDim reading dynamic dimension spec %d (%q)", i, spec.Name)
+				}
+				valIdx++
+				if valSize <= 0 {
+					return nil, errors.Errorf("execDynamicBroadcastInDim: dynamic dimension size for axis %q must be positive, got %d", spec.Name, valSize)
+				}
+				concreteDims[i] = valSize
+			} else {
+				resolved := false
+				for operandAxis, outputAxis := range broadcastAxes {
+					if outputAxis == i {
+						concreteDims[i] = operand.RawShape.Dimensions[operandAxis]
+						resolved = true
+						break
+					}
+				}
+				if !resolved {
+					return nil, errors.Errorf("execDynamicBroadcastInDim: dynamic dimension size for axis %d (%q) could not be resolved from input or dynamic value", i, spec.Name)
+				}
+			}
+		}
+	}
+
+	targetShape := shapes.Make(operand.RawShape.DType, concreteDims...)
+	return broadcastToShape(backend, targetShape, broadcastAxes, operand)
 }
 
 //gobackend:dtypemap execBroadcastInDimGeneric ints,uints,floats,half,bool

@@ -39,11 +39,14 @@ type Function interface {
 	// StandardOps includes all standard math/ML operations.
 	StandardOps
 
-	// CollectiveOps includes all collective (distributed cross-device) operations.
-	CollectiveOps
+	// DynamicOps includes operations that expect or operate on dynamic shapes.
+	DynamicOps
 
 	// FusedOps includes optional fused operations for better performance.
 	FusedOps
+
+	// CollectiveOps includes all collective (distributed cross-device) operations.
+	CollectiveOps
 
 	// Parameter creates an input parameter for this function.
 	//

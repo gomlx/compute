@@ -116,3 +116,173 @@ func TestDynamicReshape(t *testing.T) {
 		}
 	})
 }
+
+func TestDynamicBroadcastInDim(t *testing.T) {
+	fakeVal := &dummyValue{}
+
+	t.Run("StaticInput_FullyStaticSpecs", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 2, 1)
+		specs := []compute.DynamicDimensionSpec{
+			{Static: 3},
+			{Static: 2},
+			{Static: 4},
+		}
+		got, err := DynamicBroadcastInDim(operand, []int{1, 2}, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.IsDynamic() {
+			t.Fatalf("expected static shape, got dynamic: %s", got)
+		}
+		expected := shapes.Make(dtypes.Float32, 3, 2, 4)
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("DynamicInput_PreservesDynamicAxis", func(t *testing.T) {
+		operand := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 1}, []string{"batch", ""})
+		specs := []compute.DynamicDimensionSpec{
+			{Name: "batch"},
+			{Static: 10},
+		}
+		got, err := DynamicBroadcastInDim(operand, []int{0, 1}, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.IsDynamic() {
+			t.Fatalf("expected dynamic shape, got static: %s", got)
+		}
+		expected := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 10}, []string{"batch", ""})
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("Broadcast1ToDynamicValue", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 1, 4)
+		specs := []compute.DynamicDimensionSpec{
+			{Name: "seq_len", Value: fakeVal},
+			{Static: 4},
+		}
+		got, err := DynamicBroadcastInDim(operand, []int{0, 1}, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.IsDynamic() {
+			t.Fatalf("expected dynamic shape, got static: %s", got)
+		}
+		expected := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{"seq_len", ""})
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("MismatchedDynamicAxisNameError", func(t *testing.T) {
+		operand := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{"batch"})
+		specs := []compute.DynamicDimensionSpec{
+			{Name: "different_name", Value: fakeVal},
+		}
+		_, err := DynamicBroadcastInDim(operand, []int{0}, specs, nil)
+		if err == nil {
+			t.Fatalf("expected error for mismatched dynamic axis name")
+		}
+	})
+
+	t.Run("NonIncreasingBroadcastAxesError", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 2, 3)
+		specs := []compute.DynamicDimensionSpec{
+			{Static: 3},
+			{Static: 2},
+		}
+		_, err := DynamicBroadcastInDim(operand, []int{1, 0}, specs, nil)
+		if err == nil {
+			t.Fatalf("expected error for non-increasing broadcastAxes")
+		}
+	})
+}
+
+func TestDynamicIota(t *testing.T) {
+	fakeVal := &dummyValue{}
+
+	t.Run("FullyStatic", func(t *testing.T) {
+		specs := []compute.DynamicDimensionSpec{
+			{Static: 3},
+			{Static: 4},
+		}
+		got, err := DynamicIota(dtypes.Int32, 1, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.IsDynamic() {
+			t.Fatalf("expected static shape, got dynamic: %s", got)
+		}
+		if !got.Equal(shapes.Make(dtypes.Int32, 3, 4)) {
+			t.Fatalf("expected [3, 4], got %s", got)
+		}
+	})
+
+	t.Run("DynamicDim", func(t *testing.T) {
+		specs := []compute.DynamicDimensionSpec{
+			{Name: "batch", Value: fakeVal},
+			{Static: 5},
+		}
+		got, err := DynamicIota(dtypes.Float32, 0, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.IsDynamic() {
+			t.Fatalf("expected dynamic shape, got static: %s", got)
+		}
+		expected := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 5}, []string{"batch", ""})
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+}
+
+func TestDynamicPad(t *testing.T) {
+	fakeVal := &dummyValue{}
+
+	t.Run("FullyStatic", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 4, 6)
+		configs := []compute.DynamicPadAxis{
+			{Start: 1, End: 2, Interior: 0},
+			{Start: 0, End: 1, Interior: 1},
+		}
+		got, err := DynamicPad(operand, configs...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.IsDynamic() {
+			t.Fatalf("expected static shape, got dynamic: %s", got)
+		}
+		// Axis 0: 4 + 1 + 2 = 7
+		// Axis 1: 6 + 0 + 1 + (6-1)*1 = 12
+		expected := shapes.Make(dtypes.Float32, 7, 12)
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("DynamicPadValues", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 4, 6)
+		configs := []compute.DynamicPadAxis{
+			{StartValue: fakeVal, End: 2, TargetAxisName: "padded_dim0"},
+			{Start: 0, End: 1},
+		}
+		got, err := DynamicPad(operand, configs...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.IsDynamic() {
+			t.Fatalf("expected dynamic shape, got static: %s", got)
+		}
+		expected := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 7}, []string{"padded_dim0", ""})
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+}
+
+

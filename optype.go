@@ -32,6 +32,7 @@ const (
 	OpTypeBitwiseOr
 	OpTypeBitwiseXor
 	OpTypeBroadcastInDim
+	OpTypeDynamicBroadcastInDim
 	OpTypeCall
 	OpTypeClamp
 	OpTypeCeil
@@ -42,6 +43,7 @@ const (
 	OpTypeConvGeneral
 	OpTypeConvertDType
 	OpTypeCos
+	OpTypeCumSum
 	OpTypeDiv
 	OpTypeDot
 	OpTypeDotGeneral
@@ -63,6 +65,7 @@ const (
 	OpTypeGreaterThanTotalOrder
 	OpTypeImag
 	OpTypeIota
+	OpTypeDynamicIota
 	OpTypeIsFinite
 	OpTypeIsNaN
 	OpTypeLessOrEqual
@@ -83,6 +86,7 @@ const (
 	OpTypeNotEqual
 	OpTypeNotEqualTotalOrder
 	OpTypePad
+	OpTypeDynamicPad
 	OpTypePow
 	OpTypeReal
 	OpTypeReduceBitwiseAnd

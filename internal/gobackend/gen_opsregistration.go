@@ -113,12 +113,12 @@ func (f *Function) BitwiseXor(lhs compute.Value, rhs compute.Value) (compute.Val
 	return RegisterBitwiseXor.Fn(f, lhs, rhs)
 }
 
-func (f *Function) BroadcastInDim(x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
+func (f *Function) BroadcastInDim(operand compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error) {
 	if RegisterBroadcastInDim.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.BroadcastInDim(x, outputShape, broadcastAxes)
+		return f.Function.BroadcastInDim(operand, outputShape, broadcastAxes)
 	}
-	return RegisterBroadcastInDim.Fn(f, x, outputShape, broadcastAxes)
+	return RegisterBroadcastInDim.Fn(f, operand, outputShape, broadcastAxes)
 }
 
 func (f *Function) Call(fn compute.Function, inputs ...compute.Value) ([]compute.Value, error) {
@@ -201,6 +201,14 @@ func (f *Function) Cos(x compute.Value) (compute.Value, error) {
 	return RegisterCos.Fn(f, x)
 }
 
+func (f *Function) CumSum(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
+	if RegisterCumSum.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.CumSum(operand, axis, options)
+	}
+	return RegisterCumSum.Fn(f, operand, axis, options)
+}
+
 func (f *Function) Div(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	if RegisterDiv.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -217,12 +225,36 @@ func (f *Function) DotGeneral(lhs compute.Value, lhsContractingAxes []int, lhsBa
 	return RegisterDotGeneral.Fn(f, lhs, lhsContractingAxes, lhsBatchAxes, rhs, rhsContractingAxes, rhsBatchAxes, config)
 }
 
+func (f *Function) DynamicBroadcastInDim(operand compute.Value, broadcastAxes []int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	if RegisterDynamicBroadcastInDim.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicBroadcastInDim(operand, broadcastAxes, dimensions...)
+	}
+	return RegisterDynamicBroadcastInDim.Fn(f, operand, broadcastAxes, dimensions...)
+}
+
 func (f *Function) DynamicDimensionSize(operand compute.Value, axis int) (compute.Value, error) {
 	if RegisterDynamicDimensionSize.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.DynamicDimensionSize(operand, axis)
 	}
 	return RegisterDynamicDimensionSize.Fn(f, operand, axis)
+}
+
+func (f *Function) DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	if RegisterDynamicIota.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicIota(dtype, iotaAxis, dimensions...)
+	}
+	return RegisterDynamicIota.Fn(f, dtype, iotaAxis, dimensions...)
+}
+
+func (f *Function) DynamicPad(x compute.Value, fillValue compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error) {
+	if RegisterDynamicPad.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.DynamicPad(x, fillValue, axesConfig...)
+	}
+	return RegisterDynamicPad.Fn(f, x, fillValue, axesConfig...)
 }
 
 func (f *Function) DynamicReshape(operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error) {
@@ -970,7 +1002,7 @@ var (
 	RegisterBitwiseXor = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "BitwiseXor",
 	}
-	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, x compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
+	RegisterBroadcastInDim = OpHandlerRegistration[func(f *Function, operand compute.Value, outputShape shapes.Shape, broadcastAxes []int) (compute.Value, error)]{
 		Method: "BroadcastInDim",
 	}
 	RegisterCall = OpHandlerRegistration[func(f *Function, fn compute.Function, inputs ...compute.Value) ([]compute.Value, error)]{
@@ -1003,14 +1035,26 @@ var (
 	RegisterCos = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Cos",
 	}
+	RegisterCumSum = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error)]{
+		Method: "CumSum",
+	}
 	RegisterDiv = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Div",
 	}
 	RegisterDotGeneral = OpHandlerRegistration[func(f *Function, lhs compute.Value, lhsContractingAxes []int, lhsBatchAxes []int, rhs compute.Value, rhsContractingAxes []int, rhsBatchAxes []int, config compute.DotGeneralConfig) (compute.Value, error)]{
 		Method: "DotGeneral",
 	}
+	RegisterDynamicBroadcastInDim = OpHandlerRegistration[func(f *Function, operand compute.Value, broadcastAxes []int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
+		Method: "DynamicBroadcastInDim",
+	}
 	RegisterDynamicDimensionSize = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int) (compute.Value, error)]{
 		Method: "DynamicDimensionSize",
+	}
+	RegisterDynamicIota = OpHandlerRegistration[func(f *Function, dtype dtypes.DType, iotaAxis int, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
+		Method: "DynamicIota",
+	}
+	RegisterDynamicPad = OpHandlerRegistration[func(f *Function, x compute.Value, fillValue compute.Value, axesConfig ...compute.DynamicPadAxis) (compute.Value, error)]{
+		Method: "DynamicPad",
 	}
 	RegisterDynamicReshape = OpHandlerRegistration[func(f *Function, operand compute.Value, dimensions ...compute.DynamicDimensionSpec) (compute.Value, error)]{
 		Method: "DynamicReshape",
