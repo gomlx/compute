@@ -65,17 +65,9 @@ func FromBuffer(backend compute.Backend, buf compute.Buffer) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var flat any
-	if backend.HasSharedBuffers() {
-		flat, err = buf.Data()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		flat = dtypes.MakeAnySlice(shape.DType, shape.Size())
-		if err := buf.ToFlatData(flat); err != nil {
-			return nil, err
-		}
+	flat := dtypes.MakeAnySlice(shape.DType, shape.Size())
+	if err := buf.ToFlatData(flat); err != nil {
+		return nil, err
 	}
 
 	if shape.Rank() == 0 {

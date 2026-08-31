@@ -31,7 +31,11 @@ type Buffer interface {
 	ToFlatData(flat any) error
 
 	// Data returns a slice pointing to the buffer storage memory directly.
-	// This only works if the backend's HasSharedBuffer is true.
+	// This only works if the backend's HasSharedBuffers is true.
+	//
+	// And the returned flat data is only valid while the Buffer is alive.
+	// If the Buffer is finalized, the flat data returned may no longer be valid.
+	// For shared buffers, the memory is not necessarily managed by Go.
 	Data() (flat any, err error)
 
 	// CopyToDevice copies the buffer to the deviceNum.
