@@ -186,14 +186,14 @@ func avx512SmallBFloat16( //alt:bf16
 					var r0, r1 archsimd.Float32x16 //alt:f32|bf16|f16
 					//alt:f64  var r0, r1 archsimd.Float64x8
 					{ //alt:f32|bf16|f16|f64
-						//alt:f32 r0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
-						//alt:f32 r1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col+outputVecWidth)*iSize)))
+						//alt:f32 r0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+						//alt:f32 r1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col+outputVecWidth)*iSize)))
 						r0_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(col)*iSize))) //alt:bf16
 						r0, r1 = r0_bf16.ToFloat32()                                                                                 //alt:bf16
 						//alt:f16  r0_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
 						//alt:f16  r0, r1 = r0_f16.ToFloat32()
-						//alt:f64  r0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
-						//alt:f64  r1 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col+outputVecWidth)*iSize)))
+						//alt:f64  r0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+						//alt:f64  r1 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col+outputVecWidth)*iSize)))
 					} //alt:f32|bf16|f16|f64
 
 					outBase0 := outputBase + uintptr((row+0)*rhsCrossSize+col)*oSize
@@ -205,22 +205,22 @@ func avx512SmallBFloat16( //alt:bf16
 					//alt:f64  var o0_0, o0_1, o1_0, o1_1, o2_0, o2_1, o3_0, o3_1 archsimd.Float64x8
 
 					if k > 0 {
-						o0_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase0)))                                 //alt:f32|bf16|f16
-						o0_1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-						o1_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase1)))                                 //alt:f32|bf16|f16
-						o1_1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-						o2_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase2)))                                 //alt:f32|bf16|f16
-						o2_1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-						o3_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase3)))                                 //alt:f32|bf16|f16
-						o3_1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-						//alt:f64  o0_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase0)))
-						//alt:f64  o0_1 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize)))
-						//alt:f64  o1_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase1)))
-						//alt:f64  o1_1 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize)))
-						//alt:f64  o2_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase2)))
-						//alt:f64  o2_1 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize)))
-						//alt:f64  o3_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase3)))
-						//alt:f64  o3_1 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize)))
+						o0_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase0)))                                 //alt:f32|bf16|f16
+						o0_1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+						o1_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase1)))                                 //alt:f32|bf16|f16
+						o1_1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+						o2_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase2)))                                 //alt:f32|bf16|f16
+						o2_1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+						o3_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase3)))                                 //alt:f32|bf16|f16
+						o3_1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+						//alt:f64  o0_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase0)))
+						//alt:f64  o0_1 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize)))
+						//alt:f64  o1_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase1)))
+						//alt:f64  o1_1 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize)))
+						//alt:f64  o2_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase2)))
+						//alt:f64  o2_1 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize)))
+						//alt:f64  o3_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase3)))
+						//alt:f64  o3_1 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize)))
 					} else {
 						zero := archsimd.BroadcastFloat32x16(0.0) //alt:f32|bf16|f16
 						//alt:f64  zero := archsimd.BroadcastFloat64x8(0.0)
@@ -239,22 +239,22 @@ func avx512SmallBFloat16( //alt:bf16
 					o3_0 = l3.MulAdd(r0, o3_0) //alt:f32|bf16|f16|f64
 					o3_1 = l3.MulAdd(r1, o3_1) //alt:f32|bf16|f16|f64
 
-					o0_0.Store((*[16]float32)(unsafe.Pointer(outBase0)))                                 //alt:f32|bf16|f16
-					o0_1.Store((*[16]float32)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-					o1_0.Store((*[16]float32)(unsafe.Pointer(outBase1)))                                 //alt:f32|bf16|f16
-					o1_1.Store((*[16]float32)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-					o2_0.Store((*[16]float32)(unsafe.Pointer(outBase2)))                                 //alt:f32|bf16|f16
-					o2_1.Store((*[16]float32)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-					o3_0.Store((*[16]float32)(unsafe.Pointer(outBase3)))                                 //alt:f32|bf16|f16
-					o3_1.Store((*[16]float32)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
-					//alt:f64  o0_0.Store((*[8]float64)(unsafe.Pointer(outBase0)))
-					//alt:f64  o0_1.Store((*[8]float64)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize)))
-					//alt:f64  o1_0.Store((*[8]float64)(unsafe.Pointer(outBase1)))
-					//alt:f64  o1_1.Store((*[8]float64)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize)))
-					//alt:f64  o2_0.Store((*[8]float64)(unsafe.Pointer(outBase2)))
-					//alt:f64  o2_1.Store((*[8]float64)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize)))
-					//alt:f64  o3_0.Store((*[8]float64)(unsafe.Pointer(outBase3)))
-					//alt:f64  o3_1.Store((*[8]float64)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize)))
+					o0_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase0)))                                 //alt:f32|bf16|f16
+					o0_1.StoreArray((*[16]float32)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+					o1_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase1)))                                 //alt:f32|bf16|f16
+					o1_1.StoreArray((*[16]float32)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+					o2_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase2)))                                 //alt:f32|bf16|f16
+					o2_1.StoreArray((*[16]float32)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+					o3_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase3)))                                 //alt:f32|bf16|f16
+					o3_1.StoreArray((*[16]float32)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize))) //alt:f32|bf16|f16
+					//alt:f64  o0_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase0)))
+					//alt:f64  o0_1.StoreArray((*[8]float64)(unsafe.Pointer(outBase0 + uintptr(outputVecWidth)*oSize)))
+					//alt:f64  o1_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase1)))
+					//alt:f64  o1_1.StoreArray((*[8]float64)(unsafe.Pointer(outBase1 + uintptr(outputVecWidth)*oSize)))
+					//alt:f64  o2_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase2)))
+					//alt:f64  o2_1.StoreArray((*[8]float64)(unsafe.Pointer(outBase2 + uintptr(outputVecWidth)*oSize)))
+					//alt:f64  o3_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase3)))
+					//alt:f64  o3_1.StoreArray((*[8]float64)(unsafe.Pointer(outBase3 + uintptr(outputVecWidth)*oSize)))
 				}
 
 				//alt:f32 for ; col+outputVecWidth <= rhsCrossSize; col += outputVecWidth {
@@ -262,8 +262,8 @@ func avx512SmallBFloat16( //alt:bf16
 				//alt:f32 var r0 archsimd.Float32x16
 				//alt:f64  var r0 archsimd.Float64x8
 				//alt:f32|f64 {
-				//alt:f32 r0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
-				//alt:f64  r0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+				//alt:f32 r0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+				//alt:f64  r0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
 				//alt:f32|f64 }
 
 				//alt:f32|f64 outBase0 := outputBase + uintptr((row+0)*rhsCrossSize+col)*oSize
@@ -275,14 +275,14 @@ func avx512SmallBFloat16( //alt:bf16
 				//alt:f64  var o0_0, o1_0, o2_0, o3_0 archsimd.Float64x8
 
 				//alt:f32|f64 if k > 0 {
-				//alt:f32 o0_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase0)))
-				//alt:f32 o1_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase1)))
-				//alt:f32 o2_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase2)))
-				//alt:f32 o3_0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase3)))
-				//alt:f64  o0_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase0)))
-				//alt:f64  o1_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase1)))
-				//alt:f64  o2_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase2)))
-				//alt:f64  o3_0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase3)))
+				//alt:f32 o0_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase0)))
+				//alt:f32 o1_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase1)))
+				//alt:f32 o2_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase2)))
+				//alt:f32 o3_0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase3)))
+				//alt:f64  o0_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase0)))
+				//alt:f64  o1_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase1)))
+				//alt:f64  o2_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase2)))
+				//alt:f64  o3_0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase3)))
 				//alt:f32|f64 } else {
 				//alt:f32 zero := archsimd.BroadcastFloat32x16(0.0)
 				//alt:f64  zero := archsimd.BroadcastFloat64x8(0.0)
@@ -297,14 +297,14 @@ func avx512SmallBFloat16( //alt:bf16
 				//alt:f32|f64 o2_0 = l2.MulAdd(r0, o2_0)
 				//alt:f32|f64 o3_0 = l3.MulAdd(r0, o3_0)
 
-				//alt:f32 o0_0.Store((*[16]float32)(unsafe.Pointer(outBase0)))
-				//alt:f32 o1_0.Store((*[16]float32)(unsafe.Pointer(outBase1)))
-				//alt:f32 o2_0.Store((*[16]float32)(unsafe.Pointer(outBase2)))
-				//alt:f32 o3_0.Store((*[16]float32)(unsafe.Pointer(outBase3)))
-				//alt:f64  o0_0.Store((*[8]float64)(unsafe.Pointer(outBase0)))
-				//alt:f64  o1_0.Store((*[8]float64)(unsafe.Pointer(outBase1)))
-				//alt:f64  o2_0.Store((*[8]float64)(unsafe.Pointer(outBase2)))
-				//alt:f64  o3_0.Store((*[8]float64)(unsafe.Pointer(outBase3)))
+				//alt:f32 o0_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase0)))
+				//alt:f32 o1_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase1)))
+				//alt:f32 o2_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase2)))
+				//alt:f32 o3_0.StoreArray((*[16]float32)(unsafe.Pointer(outBase3)))
+				//alt:f64  o0_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase0)))
+				//alt:f64  o1_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase1)))
+				//alt:f64  o2_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase2)))
+				//alt:f64  o3_0.StoreArray((*[8]float64)(unsafe.Pointer(outBase3)))
 				//alt:f32|f64 }
 
 				for ; col < rhsCrossSize; col++ {
@@ -384,12 +384,12 @@ func avx512SmallBFloat16( //alt:bf16
 					var r1 archsimd.Float32x16 //alt:bf16
 					//alt:f16  var r1 archsimd.Float32x16
 					{ //alt:f32|bf16|f16|f64
-						//alt:f32 r0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+						//alt:f32 r0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
 						r0_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(col)*iSize))) //alt:bf16
 						r0, r1 = r0_bf16.ToFloat32()                                                                                 //alt:bf16
 						//alt:f16  r0_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
 						//alt:f16  r0, r1 = r0_f16.ToFloat32()
-						//alt:f64  r0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
+						//alt:f64  r0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(col)*iSize)))
 					} //alt:f32|bf16|f16|f64
 
 					outBase := outputBase + uintptr(row*rhsCrossSize+col)*oSize
@@ -399,10 +399,10 @@ func avx512SmallBFloat16( //alt:bf16
 					//alt:f16  var o1 archsimd.Float32x16
 
 					if k > 0 {
-						o0 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase))) //alt:f32|bf16|f16
-						//alt:f64  o0 = archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(outBase)))
-						o1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize))) //alt:bf16
-						//alt:f16  o1 = archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize)))
+						o0 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase))) //alt:f32|bf16|f16
+						//alt:f64  o0 = archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outBase)))
+						o1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize))) //alt:bf16
+						//alt:f16  o1 = archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize)))
 					} else {
 						o0 = archsimd.BroadcastFloat32x16(0.0) //alt:f32|bf16|f16
 						//alt:f64  o0 = archsimd.BroadcastFloat64x8(0.0)
@@ -414,10 +414,10 @@ func avx512SmallBFloat16( //alt:bf16
 					o1 = l0.MulAdd(r1, o1) //alt:bf16
 					//alt:f16  o1 = l0.MulAdd(r1, o1)
 
-					o0.Store((*[16]float32)(unsafe.Pointer(outBase))) //alt:f32|bf16|f16
-					//alt:f64  o0.Store((*[8]float64)(unsafe.Pointer(outBase)))
-					o1.Store((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize))) //alt:bf16
-					//alt:f16  o1.Store((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize)))
+					o0.StoreArray((*[16]float32)(unsafe.Pointer(outBase))) //alt:f32|bf16|f16
+					//alt:f64  o0.StoreArray((*[8]float64)(unsafe.Pointer(outBase)))
+					o1.StoreArray((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize))) //alt:bf16
+					//alt:f16  o1.StoreArray((*[16]float32)(unsafe.Pointer(outBase + uintptr(outputVecWidth)*oSize)))
 				}
 
 				for ; col < rhsCrossSize; col++ {
@@ -513,20 +513,20 @@ func avx512SmallBFloat16Transposed( //alt:bf16
 				// Unroll by 4 registers on the contracting size
 				for ; k+4*vecWidth <= contractingSize; k += 4 * vecWidth {
 					// Load LHS (contiguous)
-					//alt:f32 l0 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
+					//alt:f32 l0 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
 					l0_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(lRowBase + uintptr(k)*iSize))) //alt:bf16
 					l0a, l0b := l0_bf16.ToFloat32()                                                                            //alt:bf16
 					//alt:f16  l0_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
 					//alt:f16  l0a, l0b := l0_f16.ToFloat32()
-					//alt:f64  l0 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
+					//alt:f64  l0 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
 
 					// Load RHS (contiguous for Transposed)
-					//alt:f32 r0 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
+					//alt:f32 r0 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 					r0_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(k)*iSize))) //alt:bf16
 					r0a, r0b := r0_bf16.ToFloat32()                                                                            //alt:bf16
 					//alt:f16  r0_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 					//alt:f16  r0a, r0b := r0_f16.ToFloat32()
-					//alt:f64  r0 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
+					//alt:f64  r0 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 
 					//alt:f32|f64 acc = l0.MulAdd(r0, acc)
 					acc = l0a.MulAdd(r0a, acc) //alt:bf16
@@ -534,54 +534,54 @@ func avx512SmallBFloat16Transposed( //alt:bf16
 					//alt:f16  acc = l0a.MulAdd(r0a, acc)
 					//alt:f16  acc = l0b.MulAdd(r0b, acc)
 
-					//alt:f32 l1 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize)))
+					//alt:f32 l1 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize)))
 					l1_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize))) //alt:bf16
 					l1a, l1b := l1_bf16.ToFloat32()                                                                                     //alt:bf16
 					//alt:f16  l1_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize)))
 					//alt:f16  l1a, l1b := l1_f16.ToFloat32()
-					//alt:f64  l1 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize)))
-					//alt:f32 r1 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize)))
+					//alt:f64  l1 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+vecWidth)*iSize)))
+					//alt:f32 r1 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize)))
 					r1_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize))) //alt:bf16
 					r1a, r1b := r1_bf16.ToFloat32()                                                                                     //alt:bf16
 					//alt:f16  r1_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize)))
 					//alt:f16  r1a, r1b := r1_f16.ToFloat32()
-					//alt:f64  r1 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize)))
+					//alt:f64  r1 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+vecWidth)*iSize)))
 					//alt:f32|f64 acc = l1.MulAdd(r1, acc)
 					acc = l1a.MulAdd(r1a, acc) //alt:bf16
 					acc = l1b.MulAdd(r1b, acc) //alt:bf16
 					//alt:f16  acc = l1a.MulAdd(r1a, acc)
 					//alt:f16  acc = l1b.MulAdd(r1b, acc)
 
-					//alt:f32 l2 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize)))
+					//alt:f32 l2 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize)))
 					l2_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize))) //alt:bf16
 					l2a, l2b := l2_bf16.ToFloat32()                                                                                       //alt:bf16
 					//alt:f16  l2_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize)))
 					//alt:f16  l2a, l2b := l2_f16.ToFloat32()
-					//alt:f64  l2 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize)))
-					//alt:f32 r2 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize)))
+					//alt:f64  l2 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+2*vecWidth)*iSize)))
+					//alt:f32 r2 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize)))
 					r2_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize))) //alt:bf16
 					r2a, r2b := r2_bf16.ToFloat32()                                                                                       //alt:bf16
 					//alt:f16  r2_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize)))
 					//alt:f16  r2a, r2b := r2_f16.ToFloat32()
-					//alt:f64  r2 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize)))
+					//alt:f64  r2 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+2*vecWidth)*iSize)))
 					//alt:f32|f64 acc = l2.MulAdd(r2, acc)
 					acc = l2a.MulAdd(r2a, acc) //alt:bf16
 					acc = l2b.MulAdd(r2b, acc) //alt:bf16
 					//alt:f16  acc = l2a.MulAdd(r2a, acc)
 					//alt:f16  acc = l2b.MulAdd(r2b, acc)
 
-					//alt:f32 l3 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize)))
+					//alt:f32 l3 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize)))
 					l3_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize))) //alt:bf16
 					l3a, l3b := l3_bf16.ToFloat32()                                                                                       //alt:bf16
 					//alt:f16  l3_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize)))
 					//alt:f16  l3a, l3b := l3_f16.ToFloat32()
-					//alt:f64  l3 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize)))
-					//alt:f32 r3 := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize)))
+					//alt:f64  l3 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k+3*vecWidth)*iSize)))
+					//alt:f32 r3 := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize)))
 					r3_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize))) //alt:bf16
 					r3a, r3b := r3_bf16.ToFloat32()                                                                                       //alt:bf16
 					//alt:f16  r3_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize)))
 					//alt:f16  r3a, r3b := r3_f16.ToFloat32()
-					//alt:f64  r3 := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize)))
+					//alt:f64  r3 := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k+3*vecWidth)*iSize)))
 					//alt:f32|f64 acc = l3.MulAdd(r3, acc)
 					acc = l3a.MulAdd(r3a, acc) //alt:bf16
 					acc = l3b.MulAdd(r3b, acc) //alt:bf16
@@ -591,18 +591,18 @@ func avx512SmallBFloat16Transposed( //alt:bf16
 
 				// Remaining full vectors
 				for ; k+vecWidth <= contractingSize; k += vecWidth {
-					//alt:f32 lVal := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
+					//alt:f32 lVal := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
 					l_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(lRowBase + uintptr(k)*iSize))) //alt:bf16
 					la, lb := l_bf16.ToFloat32()                                                                              //alt:bf16
 					//alt:f16  l_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
 					//alt:f16  la, lb := l_f16.ToFloat32()
-					//alt:f64  lVal := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
-					//alt:f32 rVal := archsimd.LoadFloat32x16((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
+					//alt:f64  lVal := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(lRowBase + uintptr(k)*iSize)))
+					//alt:f32 rVal := archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 					r_bf16 := bfloat16.LoadBFloat16x32((*[32]bfloat16.BFloat16)(unsafe.Pointer(rColBase + uintptr(k)*iSize))) //alt:bf16
 					ra, rb := r_bf16.ToFloat32()                                                                              //alt:bf16
 					//alt:f16  r_f16 := float16.LoadFloat16x32((*[32]float16.Float16)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 					//alt:f16  ra, rb := r_f16.ToFloat32()
-					//alt:f64  rVal := archsimd.LoadFloat64x8((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
+					//alt:f64  rVal := archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(rColBase + uintptr(k)*iSize)))
 					//alt:f32|f64 acc = lVal.MulAdd(rVal, acc)
 					acc = la.MulAdd(ra, acc) //alt:bf16
 					acc = lb.MulAdd(rb, acc) //alt:bf16

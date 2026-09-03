@@ -47,18 +47,18 @@ func TestAVX512(t *testing.T) {
 			input[i] = uint64(i)
 		}
 
-		v0 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[0*8])))
-		v1 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[1*8])))
-		v2 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[2*8])))
-		v3 := archsimd.LoadUint64x8((*[8]uint64)(unsafe.Pointer(&input[3*8])))
+		v0 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Pointer(&input[0*8])))
+		v1 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Pointer(&input[1*8])))
+		v2 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Pointer(&input[2*8])))
+		v3 := archsimd.LoadUint64x8Array((*[8]uint64)(unsafe.Pointer(&input[3*8])))
 
 		q0, q1, q2, q3 := avx512Transpose4x8x64bits(v0, v1, v2, v3)
 
 		var output [4 * 8]uint64
-		q0.Store((*[8]uint64)(unsafe.Pointer(&output[0*8])))
-		q1.Store((*[8]uint64)(unsafe.Pointer(&output[1*8])))
-		q2.Store((*[8]uint64)(unsafe.Pointer(&output[2*8])))
-		q3.Store((*[8]uint64)(unsafe.Pointer(&output[3*8])))
+		q0.StoreArray((*[8]uint64)(unsafe.Pointer(&output[0*8])))
+		q1.StoreArray((*[8]uint64)(unsafe.Pointer(&output[1*8])))
+		q2.StoreArray((*[8]uint64)(unsafe.Pointer(&output[2*8])))
+		q3.StoreArray((*[8]uint64)(unsafe.Pointer(&output[3*8])))
 
 		for c := range 8 { // logical column
 			for r := range 4 { // logical row
@@ -77,10 +77,10 @@ func TestAVX512(t *testing.T) {
 			input[i] = uint32(i)
 		}
 
-		v0 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[0*16])))
-		v1 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[1*16])))
-		v2 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[2*16])))
-		v3 := archsimd.LoadUint32x16((*[16]uint32)(unsafe.Pointer(&input[3*16])))
+		v0 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(&input[0*16])))
+		v1 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(&input[1*16])))
+		v2 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(&input[2*16])))
+		v3 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(&input[3*16])))
 
 		q0, q1, q2, q3 := avx512Transpose4x16x32bits(v0, v1, v2, v3)
 
@@ -95,10 +95,10 @@ func TestAVX512(t *testing.T) {
 		fmt.Printf("q3: [%s]\n", transposeIndicesFor4x16x32bits(q3))
 
 		var output [4 * 16]uint32
-		q0.Store((*[16]uint32)(unsafe.Pointer(&output[0*16])))
-		q1.Store((*[16]uint32)(unsafe.Pointer(&output[1*16])))
-		q2.Store((*[16]uint32)(unsafe.Pointer(&output[2*16])))
-		q3.Store((*[16]uint32)(unsafe.Pointer(&output[3*16])))
+		q0.StoreArray((*[16]uint32)(unsafe.Pointer(&output[0*16])))
+		q1.StoreArray((*[16]uint32)(unsafe.Pointer(&output[1*16])))
+		q2.StoreArray((*[16]uint32)(unsafe.Pointer(&output[2*16])))
+		q3.StoreArray((*[16]uint32)(unsafe.Pointer(&output[3*16])))
 
 		for c := range 16 { // logical column
 			for r := range 4 { // logical row
@@ -117,10 +117,10 @@ func TestAVX512(t *testing.T) {
 			input[i] = uint16(i)
 		}
 
-		v0 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[0*32])))
-		v1 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[1*32])))
-		v2 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[2*32])))
-		v3 := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(&input[3*32])))
+		v0 := archsimd.LoadUint16x32Array((*[32]uint16)(unsafe.Pointer(&input[0*32])))
+		v1 := archsimd.LoadUint16x32Array((*[32]uint16)(unsafe.Pointer(&input[1*32])))
+		v2 := archsimd.LoadUint16x32Array((*[32]uint16)(unsafe.Pointer(&input[2*32])))
+		v3 := archsimd.LoadUint16x32Array((*[32]uint16)(unsafe.Pointer(&input[3*32])))
 
 		q0, q1, q2, q3 := avx512Transpose4x32x16bits(v0, v1, v2, v3)
 
@@ -135,10 +135,10 @@ func TestAVX512(t *testing.T) {
 		fmt.Printf("q3: [%s]\n", transposeIndicesFor4x32x16bits(q3))
 
 		var output [4 * 32]uint16
-		q0.Store((*[32]uint16)(unsafe.Pointer(&output[0*32])))
-		q1.Store((*[32]uint16)(unsafe.Pointer(&output[1*32])))
-		q2.Store((*[32]uint16)(unsafe.Pointer(&output[2*32])))
-		q3.Store((*[32]uint16)(unsafe.Pointer(&output[3*32])))
+		q0.StoreArray((*[32]uint16)(unsafe.Pointer(&output[0*32])))
+		q1.StoreArray((*[32]uint16)(unsafe.Pointer(&output[1*32])))
+		q2.StoreArray((*[32]uint16)(unsafe.Pointer(&output[2*32])))
+		q3.StoreArray((*[32]uint16)(unsafe.Pointer(&output[3*32])))
 
 		for c := range 32 { // logical column
 			for r := range 4 { // logical row
@@ -155,7 +155,7 @@ func TestAVX512(t *testing.T) {
 func transposeIndicesFor4x16x32bits(vec archsimd.Uint32x16) string {
 	var sb strings.Builder
 	var values [16]uint32
-	vec.Store(&values)
+	vec.StoreArray(&values)
 	for i, val := range values {
 		if i > 0 {
 			sb.WriteString(", ")
@@ -170,7 +170,7 @@ func transposeIndicesFor4x16x32bits(vec archsimd.Uint32x16) string {
 func transposeIndicesFor4x32x16bits(vec archsimd.Uint16x32) string {
 	var sb strings.Builder
 	var values [32]uint16
-	vec.Store(&values)
+	vec.StoreArray(&values)
 	for i, val := range values {
 		if i > 0 {
 			sb.WriteString(", ")

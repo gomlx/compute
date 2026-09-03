@@ -23,8 +23,8 @@ func TestBFloat16x32ToFloat32(t *testing.T) {
 	v := LoadBFloat16x32(&bf16s)
 	loF32s, hiF32s := v.ToFloat32()
 	var f32s [32]float32
-	loF32s.StoreSlice(f32s[0:16])
-	hiF32s.StoreSlice(f32s[16:32])
+	loF32s.Store(f32s[0:16])
+	hiF32s.Store(f32s[16:32])
 	fmt.Printf("- Got:      %v\n", f32s)
 	for i, v := range f32s {
 		// Due to lack of precision, we allow for a difference of 1.

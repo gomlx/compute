@@ -78,7 +78,7 @@ func registerAVX2(forTests bool) {
 // avx2ReduceSumFloat32x8 performs a horizontal reduction of a Float32x8 vector.
 func avx2ReduceSumFloat32x8(x8 archsimd.Float32x8) float32 {
 	x4 := x8.GetHi().Add(x8.GetLo())
-	x4sum := x4.AddPairs(x4)
+	x4sum := x4.ConcatAddPairs(x4)
 	return x4sum.GetElem(0) + x4sum.GetElem(1)
 }
 
@@ -113,14 +113,14 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
 			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
 			for range contractingRows {
-				v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr)))
-				v1 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr + 32)))
-				v2 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr + 64)))
-				v3 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr + 96)))
-				v0.Store((*[32]uint8)(unsafe.Pointer(panelPtr)))
-				v1.Store((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
-				v2.Store((*[32]uint8)(unsafe.Pointer(panelPtr + 64)))
-				v3.Store((*[32]uint8)(unsafe.Pointer(panelPtr + 96)))
+				v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr)))
+				v1 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 32)))
+				v2 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 64)))
+				v3 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 96)))
+				v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
+				v1.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
+				v2.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 64)))
+				v3.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 96)))
 				panelPtr += kernelColsBytes
 				rhsPtr += rhsStrideBytes
 			}
@@ -129,10 +129,10 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
 			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
 			for range contractingRows {
-				v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr)))
-				v1 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr + 32)))
-				v0.Store((*[32]uint8)(unsafe.Pointer(panelPtr)))
-				v1.Store((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
+				v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr)))
+				v1 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 32)))
+				v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
+				v1.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
 				panelPtr += kernelColsBytes
 				rhsPtr += rhsStrideBytes
 			}
@@ -141,8 +141,8 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
 			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
 			for range contractingRows {
-				v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr)))
-				v0.Store((*[32]uint8)(unsafe.Pointer(panelPtr)))
+				v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr)))
+				v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
 				panelPtr += kernelColsBytes
 				rhsPtr += rhsStrideBytes
 			}
@@ -153,8 +153,8 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 			for range contractingRows {
 				rowRhsPtr := rhsPtr
 				for kernelColIdx := uintptr(0); kernelColIdx < kernelColsBytes; kernelColIdx += 32 {
-					v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rowRhsPtr)))
-					v0.Store((*[32]uint8)(unsafe.Pointer(panelPtr)))
+					v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rowRhsPtr)))
+					v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
 					panelPtr += 32
 					rowRhsPtr += 32
 				}
@@ -173,8 +173,8 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 		rhsPtr := rhsStripStartPtr
 		colByteIdx := uintptr(0)
 		for ; colByteIdx+32 <= copyColsBytes; colByteIdx += 32 {
-			v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(rhsPtr)))
-			v0.Store((*[32]uint8)(unsafe.Pointer(panelPtr)))
+			v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr)))
+			v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
 			rhsPtr += 32
 			panelPtr += 32
 		}
@@ -224,39 +224,39 @@ func avx2PackLHSKernelRows4[T gotype.ScalarNotComplex](
 		lhsRow3Ptr := lhsRow2Ptr + lhsStrideBytes
 
 		for ; colByteIdx+32 <= contractingColsBytes; colByteIdx += 32 {
-			v0 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(lhsRow0Ptr)))
-			v1 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(lhsRow1Ptr)))
-			v2 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(lhsRow2Ptr)))
-			v3 := archsimd.LoadUint8x32((*[32]uint8)(unsafe.Pointer(lhsRow3Ptr)))
+			v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(lhsRow0Ptr)))
+			v1 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(lhsRow1Ptr)))
+			v2 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(lhsRow2Ptr)))
+			v3 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(lhsRow3Ptr)))
 
 			switch bytesPerElement {
 			case 4:
 				t0, t1, t2, t3 := avx2Transpose4x8x32bits(v0.AsUint32x8(), v1.AsUint32x8(), v2.AsUint32x8(), v3.AsUint32x8())
-				t0.Store((*[8]uint32)(unsafe.Pointer(panelPtr)))
-				t1.Store((*[8]uint32)(unsafe.Pointer(panelPtr + 32)))
-				t2.Store((*[8]uint32)(unsafe.Pointer(panelPtr + 64)))
-				t3.Store((*[8]uint32)(unsafe.Pointer(panelPtr + 96)))
+				t0.StoreArray((*[8]uint32)(unsafe.Pointer(panelPtr)))
+				t1.StoreArray((*[8]uint32)(unsafe.Pointer(panelPtr + 32)))
+				t2.StoreArray((*[8]uint32)(unsafe.Pointer(panelPtr + 64)))
+				t3.StoreArray((*[8]uint32)(unsafe.Pointer(panelPtr + 96)))
 				panelPtr += 128
 			case 8:
 				t0, t1, t2, t3 := avx2Transpose4x4x64bits(v0.AsUint64x4(), v1.AsUint64x4(), v2.AsUint64x4(), v3.AsUint64x4())
-				t0.Store((*[4]uint64)(unsafe.Pointer(panelPtr)))
-				t1.Store((*[4]uint64)(unsafe.Pointer(panelPtr + 32)))
-				t2.Store((*[4]uint64)(unsafe.Pointer(panelPtr + 64)))
-				t3.Store((*[4]uint64)(unsafe.Pointer(panelPtr + 96)))
+				t0.StoreArray((*[4]uint64)(unsafe.Pointer(panelPtr)))
+				t1.StoreArray((*[4]uint64)(unsafe.Pointer(panelPtr + 32)))
+				t2.StoreArray((*[4]uint64)(unsafe.Pointer(panelPtr + 64)))
+				t3.StoreArray((*[4]uint64)(unsafe.Pointer(panelPtr + 96)))
 				panelPtr += 128
 			case 2:
 				t0, t1, t2, t3 := avx2Transpose4x16x16bits(v0.AsUint16x16(), v1.AsUint16x16(), v2.AsUint16x16(), v3.AsUint16x16())
-				t0.Store((*[16]uint16)(unsafe.Pointer(panelPtr)))
-				t1.Store((*[16]uint16)(unsafe.Pointer(panelPtr + 32)))
-				t2.Store((*[16]uint16)(unsafe.Pointer(panelPtr + 64)))
-				t3.Store((*[16]uint16)(unsafe.Pointer(panelPtr + 96)))
+				t0.StoreArray((*[16]uint16)(unsafe.Pointer(panelPtr)))
+				t1.StoreArray((*[16]uint16)(unsafe.Pointer(panelPtr + 32)))
+				t2.StoreArray((*[16]uint16)(unsafe.Pointer(panelPtr + 64)))
+				t3.StoreArray((*[16]uint16)(unsafe.Pointer(panelPtr + 96)))
 				panelPtr += 128
 			case 1:
 				var tmp0, tmp1, tmp2, tmp3 [32]uint8
-				v0.Store(&tmp0)
-				v1.Store(&tmp1)
-				v2.Store(&tmp2)
-				v3.Store(&tmp3)
+				v0.StoreArray(&tmp0)
+				v1.StoreArray(&tmp1)
+				v2.StoreArray(&tmp2)
+				v3.StoreArray(&tmp3)
 				for i := uintptr(0); i < 32; i++ {
 					*(*uint8)(unsafe.Pointer(panelPtr)) = tmp0[i]
 					*(*uint8)(unsafe.Pointer(panelPtr + 1)) = tmp1[i]
@@ -350,8 +350,8 @@ func avx2ApplyPackedOutputFloat32(
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
 			for ; c+8 <= width; c += 8 {
-				packedVal := archsimd.LoadFloat32x8((*[8]float32)(unsafe.Pointer(&packedOutput[packedColIdx])))
-				packedVal.Store((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
+				packedVal := archsimd.LoadFloat32x8Array((*[8]float32)(unsafe.Pointer(&packedOutput[packedColIdx])))
+				packedVal.StoreArray((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
 				packedColIdx += 8
 				outputColIdx += 8
 			}
@@ -367,10 +367,10 @@ func avx2ApplyPackedOutputFloat32(
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
 			for ; c+8 <= width; c += 8 {
-				packedVal := archsimd.LoadFloat32x8((*[8]float32)(unsafe.Pointer(&packedOutput[packedColIdx])))
-				outputVal := archsimd.LoadFloat32x8((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
+				packedVal := archsimd.LoadFloat32x8Array((*[8]float32)(unsafe.Pointer(&packedOutput[packedColIdx])))
+				outputVal := archsimd.LoadFloat32x8Array((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
 				outputVal = packedVal.Add(outputVal)
-				outputVal.Store((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
+				outputVal.StoreArray((*[8]float32)(unsafe.Pointer(&output[outputColIdx])))
 				packedColIdx += 8
 				outputColIdx += 8
 			}
@@ -400,8 +400,8 @@ func avx2ApplyPackedOutputFloat64(
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
 			for ; c+4 <= width; c += 4 {
-				packedVal := archsimd.LoadFloat64x4((*[4]float64)(unsafe.Pointer(&packedOutput[packedColIdx])))
-				packedVal.Store((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
+				packedVal := archsimd.LoadFloat64x4Array((*[4]float64)(unsafe.Pointer(&packedOutput[packedColIdx])))
+				packedVal.StoreArray((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
 				packedColIdx += 4
 				outputColIdx += 4
 			}
@@ -417,10 +417,10 @@ func avx2ApplyPackedOutputFloat64(
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
 			for ; c+4 <= width; c += 4 {
-				packedVal := archsimd.LoadFloat64x4((*[4]float64)(unsafe.Pointer(&packedOutput[packedColIdx])))
-				outputVal := archsimd.LoadFloat64x4((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
+				packedVal := archsimd.LoadFloat64x4Array((*[4]float64)(unsafe.Pointer(&packedOutput[packedColIdx])))
+				outputVal := archsimd.LoadFloat64x4Array((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
 				outputVal = packedVal.Add(outputVal)
-				outputVal.Store((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
+				outputVal.StoreArray((*[4]float64)(unsafe.Pointer(&output[outputColIdx])))
 				packedColIdx += 4
 				outputColIdx += 4
 			}

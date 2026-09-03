@@ -16,7 +16,7 @@ import (
 // Only available if archsimd.X86.AVX512() returns true at runtime -- indicating AVX512 is available.
 // If not available, don't use this, it will crash!
 func LoadFloat16x32(ptr *[32]Float16) Float16x32 {
-	vec := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(ptr)))
+	vec := archsimd.LoadUint16x32((*[32]uint16)(unsafe.Pointer(ptr))[:])
 	return Float16x32(vec)
 }
 

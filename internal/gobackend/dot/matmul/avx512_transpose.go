@@ -36,23 +36,23 @@ func avx512Transpose4x16x32bits(v0, v1, v2, v3 archsimd.Uint32x16) (row0to4, row
 		}
 	)
 	{
-		t00 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t0Indices))
-		t01 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t0Indices))
+		t00 := v0.ConcatPermute(v2, archsimd.LoadUint32x16Array(&t0Indices))
+		t01 := v1.ConcatPermute(v3, archsimd.LoadUint32x16Array(&t0Indices))
 		row0to4 = t00.InterleaveLoGrouped(t01)
 	}
 	{
-		t10 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t1Indices))
-		t11 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t1Indices))
+		t10 := v0.ConcatPermute(v2, archsimd.LoadUint32x16Array(&t1Indices))
+		t11 := v1.ConcatPermute(v3, archsimd.LoadUint32x16Array(&t1Indices))
 		row4to8 = t10.InterleaveLoGrouped(t11)
 	}
 	{
-		t20 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t2Indices))
-		t21 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t2Indices))
+		t20 := v0.ConcatPermute(v2, archsimd.LoadUint32x16Array(&t2Indices))
+		t21 := v1.ConcatPermute(v3, archsimd.LoadUint32x16Array(&t2Indices))
 		row8to12 = t20.InterleaveLoGrouped(t21)
 	}
 	{
-		t30 := v0.ConcatPermute(v2, archsimd.LoadUint32x16(&t3Indices))
-		t31 := v1.ConcatPermute(v3, archsimd.LoadUint32x16(&t3Indices))
+		t30 := v0.ConcatPermute(v2, archsimd.LoadUint32x16Array(&t3Indices))
+		t31 := v1.ConcatPermute(v3, archsimd.LoadUint32x16Array(&t3Indices))
 		row12to16 = t30.InterleaveLoGrouped(t31)
 	}
 	return
@@ -93,23 +93,23 @@ func avx512Transpose4x32x16bits(v0, v1, v2, v3 archsimd.Uint16x32) (row0to8, row
 		}
 	)
 	{
-		t00 := v0.ConcatPermute(v2, archsimd.LoadUint16x32(&t0Indices))
-		t01 := v1.ConcatPermute(v3, archsimd.LoadUint16x32(&t0Indices))
+		t00 := v0.ConcatPermute(v2, archsimd.LoadUint16x32Array(&t0Indices))
+		t01 := v1.ConcatPermute(v3, archsimd.LoadUint16x32Array(&t0Indices))
 		row0to8 = t00.InterleaveLoGrouped(t01)
 	}
 	{
-		t10 := v0.ConcatPermute(v2, archsimd.LoadUint16x32(&t1Indices))
-		t11 := v1.ConcatPermute(v3, archsimd.LoadUint16x32(&t1Indices))
+		t10 := v0.ConcatPermute(v2, archsimd.LoadUint16x32Array(&t1Indices))
+		t11 := v1.ConcatPermute(v3, archsimd.LoadUint16x32Array(&t1Indices))
 		row8to16 = t10.InterleaveLoGrouped(t11)
 	}
 	{
-		t20 := v0.ConcatPermute(v2, archsimd.LoadUint16x32(&t2Indices))
-		t21 := v1.ConcatPermute(v3, archsimd.LoadUint16x32(&t2Indices))
+		t20 := v0.ConcatPermute(v2, archsimd.LoadUint16x32Array(&t2Indices))
+		t21 := v1.ConcatPermute(v3, archsimd.LoadUint16x32Array(&t2Indices))
 		row16to24 = t20.InterleaveLoGrouped(t21)
 	}
 	{
-		t30 := v0.ConcatPermute(v2, archsimd.LoadUint16x32(&t3Indices))
-		t31 := v1.ConcatPermute(v3, archsimd.LoadUint16x32(&t3Indices))
+		t30 := v0.ConcatPermute(v2, archsimd.LoadUint16x32Array(&t3Indices))
+		t31 := v1.ConcatPermute(v3, archsimd.LoadUint16x32Array(&t3Indices))
 		row24to32 = t30.InterleaveLoGrouped(t31)
 	}
 	return
@@ -129,23 +129,23 @@ func avx512Transpose4x8x64bits(v0, v1, v2, v3 archsimd.Uint64x8) (row0to2, row2t
 		t3Indices = [8]uint64{6, 0, 14, 0, 7, 0, 15, 0}
 	)
 	{
-		t00 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t0Indices))
-		t01 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t0Indices))
+		t00 := v0.ConcatPermute(v2, archsimd.LoadUint64x8Array(&t0Indices))
+		t01 := v1.ConcatPermute(v3, archsimd.LoadUint64x8Array(&t0Indices))
 		row0to2 = t00.InterleaveLoGrouped(t01)
 	}
 	{
-		t10 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t1Indices))
-		t11 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t1Indices))
+		t10 := v0.ConcatPermute(v2, archsimd.LoadUint64x8Array(&t1Indices))
+		t11 := v1.ConcatPermute(v3, archsimd.LoadUint64x8Array(&t1Indices))
 		row2to4 = t10.InterleaveLoGrouped(t11)
 	}
 	{
-		t20 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t2Indices))
-		t21 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t2Indices))
+		t20 := v0.ConcatPermute(v2, archsimd.LoadUint64x8Array(&t2Indices))
+		t21 := v1.ConcatPermute(v3, archsimd.LoadUint64x8Array(&t2Indices))
 		row4to6 = t20.InterleaveLoGrouped(t21)
 	}
 	{
-		t30 := v0.ConcatPermute(v2, archsimd.LoadUint64x8(&t3Indices))
-		t31 := v1.ConcatPermute(v3, archsimd.LoadUint64x8(&t3Indices))
+		t30 := v0.ConcatPermute(v2, archsimd.LoadUint64x8Array(&t3Indices))
+		t31 := v1.ConcatPermute(v3, archsimd.LoadUint64x8Array(&t3Indices))
 		row6to8 = t30.InterleaveLoGrouped(t31)
 	}
 	return
