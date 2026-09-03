@@ -115,18 +115,18 @@ Normal code files are prefixed with the following copyright line:
 
 Auto-generated files don't need a copyright, but should include a comment with the tool use to generate them.
 
-## How to use SIMD in Go with archsimd
+## How to use SIMD in Go with archsimd and simd
 
-Go 1.26 introduced experimental SIMD support through the `simd/archsimd` package. This allows for writing architecture-independent SIMD code while still leveraging specialized hardware instructions (like AVX-512 on x86).
+Go 1.26 introduced experimental SIMD support, and Go 1.27 updated it with the `simd` (high-level, architecture-independent) and `simd/archsimd` (low-level, direct hardware registers) packages.
 
-### Enabling archsimd
+### Enabling SIMD
 
-To use archsimd, you must:
-1. Use a compatible Go version (1.25+).
+To use Go SIMD, you must:
+1. Use a compatible Go version (1.26+ or 1.27+).
 2. Set the environment variable `GOEXPERIMENT=simd` during build and test.
-3. Use the `//go:build goexperiment.simd` build tag in your files.
+3. Use the `//go:build goexperiment.simd` build tag in your files (along with architecture tags like `amd64` when using `archsimd`).
 
-### Common Vector Types
+### Common Vector Types in `simd/archsimd`
 
 Vectors are named by their element type and the number of elements. They usually come in three widths:
 
@@ -138,6 +138,13 @@ Vectors are named by their element type and the number of elements. They usually
 
 Other types include `Float64x2/x4/x8`, `Uint64x2/x4/x8`, and corresponding `Mask` types (e.g., `Mask32x16`).
 
+### Go 1.27 Load/Store API Conventions
+
+In Go 1.27 `simd/archsimd`:
+- **Slices**: `archsimd.Load<Type>(slice []T)` and `vec.Store(slice []T)` load and store directly to/from slices.
+- **Fixed Arrays / Pointers**: `archsimd.Load<Type>Array(ptr *[N]T)` and `vec.StoreArray(ptr *[N]T)` load and store to/from fixed-size array pointers. Use this for raw pointer operations and microkernels (e.g. GEMM).
+- **Pairwise operations**: Pairwise reductions use `ConcatAddPairs`, `ConcatSubPairs`, and `ConcatAddPairsGrouped` (renamed from `AddPairs`/`SubPairs`).
+
 ### Basic Usage Example
 
 ```go
@@ -147,12 +154,23 @@ package mypackage
 
 import "simd/archsimd"
 
-func AddSlices(a, b, res []float32) {
+// AddSlicesUsingSlices uses slice-based Load/Store.
+func AddSlicesUsingSlices(a, b, res []float32) {
     for i := 0; i < len(a); i += 16 {
-        va := archsimd.LoadFloat32x16((*[16]float32)(&a[i]))
-        vb := archsimd.LoadFloat32x16((*[16]float32)(&b[i]))
+        va := archsimd.LoadFloat32x16(a[i : i+16])
+        vb := archsimd.LoadFloat32x16(b[i : i+16])
         vres := va.Add(vb)
-        vres.Store((*[16]float32)(&res[i]))
+        vres.Store(res[i : i+16])
+    }
+}
+
+// AddSlicesUsingArrays uses array-pointer-based Load/Store (zero slice header overhead).
+func AddSlicesUsingArrays(a, b, res []float32) {
+    for i := 0; i < len(a); i += 16 {
+        va := archsimd.LoadFloat32x16Array((*[16]float32)(&a[i]))
+        vb := archsimd.LoadFloat32x16Array((*[16]float32)(&b[i]))
+        vres := va.Add(vb)
+        vres.StoreArray((*[16]float32)(&res[i]))
     }
 }
 ```

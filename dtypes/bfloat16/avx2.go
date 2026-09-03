@@ -32,6 +32,6 @@ func (v BFloat16x16) ToFloat32() (lo, hi archsimd.Float32x8) {
 // Only available if archsimd.X86.AVX2() returns true at runtime -- indicating AVX2 is available.
 // If not available, don't use this, it will crash!
 func LoadBFloat16x16(ptr *[16]BFloat16) BFloat16x16 {
-	vec := archsimd.LoadUint16x16((*[16]uint16)(unsafe.Pointer(ptr)))
+	vec := archsimd.LoadUint16x16((*[16]uint16)(unsafe.Pointer(ptr))[:])
 	return BFloat16x16(vec)
 }

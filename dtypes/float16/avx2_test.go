@@ -23,8 +23,8 @@ func TestFloat16x16ToFloat32(t *testing.T) {
 	v := LoadFloat16x16(&f16s)
 	loF32s, hiF32s := v.ToFloat32()
 	var f32s [16]float32
-	loF32s.StoreSlice(f32s[0:8])
-	hiF32s.StoreSlice(f32s[8:16])
+	loF32s.Store(f32s[0:8])
+	hiF32s.Store(f32s[8:16])
 	fmt.Printf("- Got:      %v\n", f32s)
 	for i, v := range f32s {
 		// Due to lack of precision, we allow for a difference of 1.
@@ -62,8 +62,8 @@ func TestFloat16x16SpecialValues(t *testing.T) {
 	v := LoadFloat16x16(&f16s)
 	loF32s, hiF32s := v.ToFloat32()
 	var got [16]float32
-	loF32s.StoreSlice(got[0:8])
-	hiF32s.StoreSlice(got[8:16])
+	loF32s.Store(got[0:8])
+	hiF32s.Store(got[8:16])
 
 	for i := range f16s {
 		want := f16s[i].Float32()
