@@ -15,7 +15,6 @@ package matmul
 // - "f16": Implements the MatMul for Float16 -> Float32 dtypes.
 
 import (
-	"runtime"
 	"simd/archsimd"
 	"sync"
 	"unsafe"
@@ -240,6 +239,11 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 // avx512LargeKernelFloat32 implements a kernel of the matrix multiplication for
 // a lhs and rhs packed panels into an intermediate output panel.
 //
+// Memory safety note: We use raw unsafe pointers to avoid bounds-checking (BCE) overhead
+// in the inner loops. Because the caller (parent function on the stack) owns and holds references
+// to packedLHS, packedRHS, and packedOutput throughout execution, they remain reachable and
+// do not need runtime.KeepAlive() calls at the end.
+//
 //alt:f32 func avx512LargeKernelFloat32(
 func avx512LargeKernelBFloat16( //alt:bf16
 	//alt:f16  func avx512LargeKernelFloat16(
@@ -254,17 +258,7 @@ func avx512LargeKernelBFloat16( //alt:bf16
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
 ) {
-	defer func() {
-		runtime.KeepAlive(packedLHS)
-		runtime.KeepAlive(packedRHS)
-		runtime.KeepAlive(packedOutput)
-	}()
 	_ = lhsPanelRows // Not needed.
-
-	// BCE hints
-	_ = packedLHS[contractingLen*lhsActiveRows-1]
-	_ = packedRHS[contractingLen*rhsActiveCols-1]
-	_ = packedOutput[lhsActiveRows*rhsPanelCols-1]
 
 	const (
 		// These much match params.LHSL1BlockRows and params.LHSL1BlockCols.

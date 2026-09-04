@@ -5,7 +5,6 @@
 package matmul
 
 import (
-	"runtime"
 	"simd/archsimd"
 	"sync"
 	"unsafe"
@@ -226,6 +225,11 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 
 // avx2LargeKernelFloat32 implements a kernel of the matrix multiplication for
 // a lhs and rhs packed panels into an intermediate output panel.
+//
+// Memory safety note: We use raw unsafe pointers to avoid bounds-checking (BCE) overhead
+// in the inner loops. Because the caller (parent function on the stack) owns and holds references
+// to packedLHS, packedRHS, and packedOutput throughout execution, they remain reachable and
+// do not need runtime.KeepAlive() calls at the end.
 func avx2LargeKernelFloat32( //alt:f32
 	//alt:bf16 func avx2LargeKernelBFloat16(
 	//alt:f16 func avx2LargeKernelFloat16(
@@ -240,17 +244,7 @@ func avx2LargeKernelFloat32( //alt:f32
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
 ) {
-	defer func() {
-		runtime.KeepAlive(packedLHS)
-		runtime.KeepAlive(packedRHS)
-		runtime.KeepAlive(packedOutput)
-	}()
 	_ = lhsPanelRows // Not needed.
-
-	// BCE hints
-	_ = packedLHS[contractingLen*lhsActiveRows-1]
-	_ = packedRHS[contractingLen*rhsActiveCols-1]
-	_ = packedOutput[lhsActiveRows*rhsPanelCols-1]
 
 	const (
 		// These must match params.LHSL1KernelRows and params.RHSL1KernelCols.
