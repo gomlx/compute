@@ -63,51 +63,191 @@ loop_rhs:
 	SHLQ $2, DI
 	LEAQ (R9)(DI*1), DI                  // DI = rhsPtr
 
-	// 3. K-loop
-	MOVQ R12, CX                         // CX = k counter = contractingLen
+	// 3. K-loop with 2-stage ping-pong pipeline (unroll by 2)
+	MOVQ R12, CX                         // CX = contractingLen
 	TESTQ CX, CX
 	JLE store_output
 
+	SHRQ $1, CX                          // CX = pairs = contractingLen / 2
+	JZ k_odd                             // If 0 pairs (contractingLen == 1), do odd iteration
+
+	// Prime Buffer A for Step 0 outside the loop
+	VMOVDQU32 (DI), Z16
+	VMOVDQU32 64(DI), Z17
+	VMOVDQU32 128(DI), Z18
+	VMOVDQU32 192(DI), Z19
+	VBROADCASTSS (SI), Z20
+	VBROADCASTSS 4(SI), Z21
+	VBROADCASTSS 8(SI), Z22
+	VBROADCASTSS 12(SI), Z23
+	ADDQ $16, SI                         // Advance past Step 0 (points to Step 1 = Buffer B)
+	ADDQ $256, DI
+
+	DECQ CX                              // CX = pairs - 1
+	JZ k_last_pair                       // If only 1 pair total, skip k_pair_loop directly to k_last_pair
+
 	PCALIGN $64
-k_loop:
-	// Load 4 RHS vectors (64 floats = 256 bytes)
+k_pair_loop:
+	// Step A: Row 0 FMAs interleaved with Buffer B RHS loads (Z24..Z27)
+	VFMADD231PS Z16, Z20, Z0
+	VMOVDQU32 (DI), Z24
+	VFMADD231PS Z17, Z20, Z1
+	VMOVDQU32 64(DI), Z25
+	VFMADD231PS Z18, Z20, Z2
+	VMOVDQU32 128(DI), Z26
+	VFMADD231PS Z19, Z20, Z3
+	VMOVDQU32 192(DI), Z27
+
+	// Step A: Row 1 FMAs interleaved with Buffer B LHS loads (Z28..Z31)
+	VFMADD231PS Z16, Z21, Z4
+	VBROADCASTSS (SI), Z28
+	VFMADD231PS Z17, Z21, Z5
+	VBROADCASTSS 4(SI), Z29
+	VFMADD231PS Z18, Z21, Z6
+	VBROADCASTSS 8(SI), Z30
+	VFMADD231PS Z19, Z21, Z7
+	VBROADCASTSS 12(SI), Z31
+
+	ADDQ $16, SI                         // Advance past Step B
+	ADDQ $256, DI
+
+	// Step A: Rows 2-3 pure FMAs (provides 4-cycle runway for Buffer B loads to settle)
+	VFMADD231PS Z16, Z22, Z8
+	VFMADD231PS Z17, Z22, Z9
+	VFMADD231PS Z18, Z22, Z10
+	VFMADD231PS Z19, Z22, Z11
+
+	VFMADD231PS Z16, Z23, Z12
+	VFMADD231PS Z17, Z23, Z13
+	VFMADD231PS Z18, Z23, Z14
+	VFMADD231PS Z19, Z23, Z15
+
+	// Step B: Row 0 FMAs interleaved with next-iter Buffer A RHS loads (Z16..Z19)
+	VFMADD231PS Z24, Z28, Z0
+	VMOVDQU32 (DI), Z16
+	VFMADD231PS Z25, Z28, Z1
+	VMOVDQU32 64(DI), Z17
+	VFMADD231PS Z26, Z28, Z2
+	VMOVDQU32 128(DI), Z18
+	VFMADD231PS Z27, Z28, Z3
+	VMOVDQU32 192(DI), Z19
+
+	// Step B: Row 1 FMAs interleaved with next-iter Buffer A LHS loads (Z20..Z23)
+	VFMADD231PS Z24, Z29, Z4
+	VBROADCASTSS (SI), Z20
+	VFMADD231PS Z25, Z29, Z5
+	VBROADCASTSS 4(SI), Z21
+	VFMADD231PS Z26, Z29, Z6
+	VBROADCASTSS 8(SI), Z22
+	VFMADD231PS Z27, Z29, Z7
+	VBROADCASTSS 12(SI), Z23
+
+	ADDQ $16, SI                         // Advance past Step A of next iter
+	ADDQ $256, DI
+
+	// Step B: Rows 2-3 pure FMAs (provides 4-cycle runway for Buffer A loads to settle)
+	VFMADD231PS Z24, Z30, Z8
+	VFMADD231PS Z25, Z30, Z9
+	VFMADD231PS Z26, Z30, Z10
+	VFMADD231PS Z27, Z30, Z11
+
+	VFMADD231PS Z24, Z31, Z12
+	VFMADD231PS Z25, Z31, Z13
+	VFMADD231PS Z26, Z31, Z14
+	VFMADD231PS Z27, Z31, Z15
+
+	DECQ CX
+	JNZ k_pair_loop
+
+k_last_pair:
+	// Step A: Row 0 FMAs interleaved with Buffer B RHS loads (Z24..Z27)
+	VFMADD231PS Z16, Z20, Z0
+	VMOVDQU32 (DI), Z24
+	VFMADD231PS Z17, Z20, Z1
+	VMOVDQU32 64(DI), Z25
+	VFMADD231PS Z18, Z20, Z2
+	VMOVDQU32 128(DI), Z26
+	VFMADD231PS Z19, Z20, Z3
+	VMOVDQU32 192(DI), Z27
+
+	// Step A: Row 1 FMAs interleaved with Buffer B LHS loads (Z28..Z31)
+	VFMADD231PS Z16, Z21, Z4
+	VBROADCASTSS (SI), Z28
+	VFMADD231PS Z17, Z21, Z5
+	VBROADCASTSS 4(SI), Z29
+	VFMADD231PS Z18, Z21, Z6
+	VBROADCASTSS 8(SI), Z30
+	VFMADD231PS Z19, Z21, Z7
+	VBROADCASTSS 12(SI), Z31
+
+	ADDQ $16, SI
+	ADDQ $256, DI
+
+	// Step A: Rows 2-3 pure FMAs
+	VFMADD231PS Z16, Z22, Z8
+	VFMADD231PS Z17, Z22, Z9
+	VFMADD231PS Z18, Z22, Z10
+	VFMADD231PS Z19, Z22, Z11
+
+	VFMADD231PS Z16, Z23, Z12
+	VFMADD231PS Z17, Z23, Z13
+	VFMADD231PS Z18, Z23, Z14
+	VFMADD231PS Z19, Z23, Z15
+
+	// Step B: 16 FMAs using Buffer B (NO loads for next iter to prevent OOB)
+	VFMADD231PS Z24, Z28, Z0
+	VFMADD231PS Z25, Z28, Z1
+	VFMADD231PS Z26, Z28, Z2
+	VFMADD231PS Z27, Z28, Z3
+
+	VFMADD231PS Z24, Z29, Z4
+	VFMADD231PS Z25, Z29, Z5
+	VFMADD231PS Z26, Z29, Z6
+	VFMADD231PS Z27, Z29, Z7
+
+	VFMADD231PS Z24, Z30, Z8
+	VFMADD231PS Z25, Z30, Z9
+	VFMADD231PS Z26, Z30, Z10
+	VFMADD231PS Z27, Z30, Z11
+
+	VFMADD231PS Z24, Z31, Z12
+	VFMADD231PS Z25, Z31, Z13
+	VFMADD231PS Z26, Z31, Z14
+	VFMADD231PS Z27, Z31, Z15
+
+k_odd:
+	// Handle remaining odd iteration if contractingLen % 2 != 0
+	TESTQ $1, R12
+	JZ store_output
+
 	VMOVDQU32 (DI), Z16
 	VMOVDQU32 64(DI), Z17
 	VMOVDQU32 128(DI), Z18
 	VMOVDQU32 192(DI), Z19
 
-	// Row 0
 	VBROADCASTSS (SI), Z20
 	VFMADD231PS Z16, Z20, Z0
 	VFMADD231PS Z17, Z20, Z1
 	VFMADD231PS Z18, Z20, Z2
 	VFMADD231PS Z19, Z20, Z3
 
-	// Row 1
 	VBROADCASTSS 4(SI), Z21
 	VFMADD231PS Z16, Z21, Z4
 	VFMADD231PS Z17, Z21, Z5
 	VFMADD231PS Z18, Z21, Z6
 	VFMADD231PS Z19, Z21, Z7
 
-	// Row 2
 	VBROADCASTSS 8(SI), Z22
 	VFMADD231PS Z16, Z22, Z8
 	VFMADD231PS Z17, Z22, Z9
 	VFMADD231PS Z18, Z22, Z10
 	VFMADD231PS Z19, Z22, Z11
 
-	// Row 3
 	VBROADCASTSS 12(SI), Z23
 	VFMADD231PS Z16, Z23, Z12
 	VFMADD231PS Z17, Z23, Z13
 	VFMADD231PS Z18, Z23, Z14
 	VFMADD231PS Z19, Z23, Z15
-
-	ADDQ $16, SI                         // lhsPtr += kernelRows * 4 = 16
-	ADDQ $256, DI                        // rhsPtr += kernelCols * 4 = 256
-	DECQ CX
-	JNZ k_loop
 
 store_output:
 	// 4. Write back 16 accumulators to output:
