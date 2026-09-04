@@ -35,8 +35,8 @@ var (
 	AVX512ParamsFloat32 = CacheParams{
 		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
 		RHSL1KernelCols:      32,  // Nr: 32 for Go SIMD, updated to 64 if AVX512UseAsm is true
-		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
-		LHSPanelCrossSize:    24,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
+		PanelContractingSize: 192, // Kc: A strip fits in L1 cache
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
 		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
 	}
 
@@ -65,6 +65,15 @@ var (
 func init() {
 	if AVX512UseAsm {
 		AVX512ParamsFloat32.RHSL1KernelCols = 64
+	}
+	if kc := envutil.MustReadInt("GOMLX_AVX512_KC", 0); kc > 0 {
+		AVX512ParamsFloat32.PanelContractingSize = kc
+	}
+	if mc := envutil.MustReadInt("GOMLX_AVX512_MC", 0); mc > 0 {
+		AVX512ParamsFloat32.LHSPanelCrossSize = mc
+	}
+	if nc := envutil.MustReadInt("GOMLX_AVX512_NC", 0); nc > 0 {
+		AVX512ParamsFloat32.RHSPanelCrossSize = nc
 	}
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		return

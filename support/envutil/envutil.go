@@ -68,3 +68,16 @@ func ReadInt(name string, defaultValue int) (int, error) {
 	}
 	return valInt, nil
 }
+
+// MustReadInt reads the integer value of the environment variable with the given name.
+// If not set, it returns the defaultValue.
+//
+// It panics with an informative error if the value is set but it is not able to parse a valid integer value.
+func MustReadInt(name string, defaultValue int) int {
+	result, err := ReadInt(name, defaultValue)
+	if err != nil {
+		panic(errors.Errorf("Invalid value for %q: %+v", name, err))
+	}
+	return result
+}
+
