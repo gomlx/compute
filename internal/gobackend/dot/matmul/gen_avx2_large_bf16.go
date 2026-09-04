@@ -9,6 +9,7 @@
 package matmul
 
 import (
+	"runtime"
 	"simd/archsimd"
 	"sync"
 	"unsafe"
@@ -251,7 +252,17 @@ func avx2LargeKernelBFloat16( //alt:bf16
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
 ) {
+	defer func() {
+		runtime.KeepAlive(packedLHS)
+		runtime.KeepAlive(packedRHS)
+		runtime.KeepAlive(packedOutput)
+	}()
 	_ = lhsPanelRows // Not needed.
+
+	// BCE hints
+	_ = packedLHS[contractingLen*lhsActiveRows-1]
+	_ = packedRHS[contractingLen*rhsActiveCols-1]
+	_ = packedOutput[lhsActiveRows*rhsPanelCols-1]
 
 	const (
 		// These must match params.LHSL1KernelRows and params.RHSL1KernelCols.
