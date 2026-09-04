@@ -65,6 +65,9 @@ var (
 func init() {
 	if AVX512UseAsm {
 		AVX512ParamsFloat32.RHSL1KernelCols = 64
+		AVX512ParamsFloat16.RHSL1KernelCols = 64
+		AVX512ParamsBFloat16.RHSL1KernelCols = 64
+		AVX512ParamsFloat64.RHSL1KernelCols = 32
 	}
 	if kc := envutil.MustReadInt("GOMLX_AVX512_KC", 0); kc > 0 {
 		AVX512ParamsFloat32.PanelContractingSize = kc

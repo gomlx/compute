@@ -179,12 +179,9 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
-	if params.LHSL1KernelRows != 4 || (params.RHSL1KernelCols != 32 && params.RHSL1KernelCols != 64) { //alt:f32
-	//alt:bf16|f16 if params.LHSL1KernelRows != 4 || params.RHSL1KernelCols != 32 {
-	//alt:f64 if params.LHSL1KernelRows != 4 || params.RHSL1KernelCols != 16 {
-		panic(errors.Errorf("unsupported kernel L1 block sizes for avx512 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d (params=%+v)", //alt:f32
-			//alt:bf16|f16 panic(errors.Errorf("unsupported kernel L1 block sizes for avx512 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d, wanted 4 and 32 respectively (params=%+v)",
-			//alt:f64 panic(errors.Errorf("unsupported kernel L1 block sizes for avx512 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d, wanted 4 and 16 respectively (params=%+v)",
+	if params.LHSL1KernelRows != 4 || (params.RHSL1KernelCols != 32 && params.RHSL1KernelCols != 64) { //alt:f32|bf16|f16
+	//alt:f64 if params.LHSL1KernelRows != 4 || (params.RHSL1KernelCols != 16 && params.RHSL1KernelCols != 32) {
+		panic(errors.Errorf("unsupported kernel L1 block sizes for avx512 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d (params=%+v)", //alt:f32|bf16|f16|f64
 			params.LHSL1KernelRows, params.RHSL1KernelCols, params))
 	}
 
@@ -208,14 +205,17 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 				avx512PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32|bf16|f16|f64
 
-				if AVX512UseAsm { //alt:f32
+				if AVX512UseAsm { //alt:f32|bf16|f16|f64
 					avx512LargeKernelFloat32Asm( //alt:f32
-						packedLHS, packedRHS, packedOutput, //alt:f32
-						params.LHSPanelCrossSize, params.RHSPanelCrossSize, //alt:f32
-						contractingPanelWidth, //alt:f32
-						lhsPanelHeight, rhsPanelWidth, //alt:f32
-					) //alt:f32
-				} else { //alt:f32
+						//alt:bf16 avx512LargeKernelBFloat16Asm(
+						//alt:f16 avx512LargeKernelFloat16Asm(
+						//alt:f64 avx512LargeKernelFloat64Asm(
+						packedLHS, packedRHS, packedOutput,
+						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+					)
+				} else { //alt:f32|bf16|f16|f64
 					avx512LargeKernelFloat32( //alt:f32
 						//alt:bf16 avx512LargeKernelBFloat16(
 						//alt:f16 avx512LargeKernelFloat16(
@@ -225,7 +225,7 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 						contractingPanelWidth,
 						lhsPanelHeight, rhsPanelWidth,
 					) //alt:bf16|f16|f64
-				} //alt:f32
+				} //alt:f32|bf16|f16|f64
 
 				// Accumulate (or write) packedOutput to output.
 				isFirstContractingPanel := contractingPanelIdx == 0
