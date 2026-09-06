@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"testing"
@@ -59,6 +60,9 @@ func (be *benchExec) run(b *testing.B) {
 	for range 3 {
 		outputs, err := be.exec.Execute(be.inputs, nil, 0)
 		if err != nil {
+			if errors.Is(err, compute.ErrNotImplemented) {
+				b.Skipf("Execute not implemented: %+v", err)
+			}
 			b.Fatalf("Execute failed: %+v", err)
 		}
 		for _, buf := range outputs {
@@ -71,6 +75,9 @@ func (be *benchExec) run(b *testing.B) {
 	for b.Loop() {
 		outputs, err := be.exec.Execute(be.inputs, nil, 0)
 		if err != nil {
+			if errors.Is(err, compute.ErrNotImplemented) {
+				b.Skipf("Execute not implemented: %+v", err)
+			}
 			b.Fatalf("Execute failed: %+v", err)
 		}
 		for _, buf := range outputs {
@@ -202,29 +209,38 @@ func BenchmarkSoftmax(b *testing.B, backend compute.Backend) {
 		data := randomFloat32(shape.Size())
 		axis := sz.axis
 
-		fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedSoftmax(params[0], axis)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create fused benchmark: %+v", err)
-		}
+		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
+			fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedSoftmax(params[0], axis)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create fused benchmark: %+v", err)
+			}
+			fused.run(b)
+		})
 
-		decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				x := params[0]
-				maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
-				shifted := benchMust(f.Sub(x, maxVal))
-				exps := benchMust(f.Exp(shifted))
-				sumExps := reduceAndKeep(f, exps, f.ReduceSum, shape, axis)
-				return f.Div(exps, sumExps)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
-		}
-
-		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
-		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
+		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) {
+			decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					x := params[0]
+					maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
+					shifted := benchMust(f.Sub(x, maxVal))
+					exps := benchMust(f.Exp(shifted))
+					sumExps := reduceAndKeep(f, exps, f.ReduceSum, shape, axis)
+					return f.Div(exps, sumExps)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+			}
+			decomposed.run(b)
+		})
 	}
 }
 
@@ -245,37 +261,46 @@ func BenchmarkGelu(b *testing.B, backend compute.Backend) {
 		shape := shapes.Make(dtypes.Float32, sz.dims...)
 		data := randomFloat32(shape.Size())
 
-		fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedGelu(params[0], true)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create fused benchmark: %+v", err)
-		}
+		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
+			fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedGelu(params[0], true)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create fused benchmark: %+v", err)
+			}
+			fused.run(b)
+		})
 
 		// Decomposed GELU: x * 0.5 * (1 + erf(x / sqrt(2)))
-		decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				x := params[0]
-				sqrt2Inv := benchMust(f.Constant([]float32{float32(1.0 / 1.4142135623730951)}, 1))
-				sqrt2InvBroadcast := benchMust(f.BroadcastInDim(sqrt2Inv, shape, []int{0}))
-				half := benchMust(f.Constant([]float32{0.5}, 1))
-				halfBroadcast := benchMust(f.BroadcastInDim(half, shape, []int{0}))
-				one := benchMust(f.Constant([]float32{1.0}, 1))
-				oneBroadcast := benchMust(f.BroadcastInDim(one, shape, []int{0}))
+		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) {
+			decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					x := params[0]
+					sqrt2Inv := benchMust(f.Constant([]float32{float32(1.0 / 1.4142135623730951)}, 1))
+					sqrt2InvBroadcast := benchMust(f.BroadcastInDim(sqrt2Inv, shape, []int{0}))
+					half := benchMust(f.Constant([]float32{0.5}, 1))
+					halfBroadcast := benchMust(f.BroadcastInDim(half, shape, []int{0}))
+					one := benchMust(f.Constant([]float32{1.0}, 1))
+					oneBroadcast := benchMust(f.BroadcastInDim(one, shape, []int{0}))
 
-				scaled := benchMust(f.Mul(x, sqrt2InvBroadcast))
-				erfVal := benchMust(f.Erf(scaled))
-				onePlusErf := benchMust(f.Add(oneBroadcast, erfVal))
-				xHalf := benchMust(f.Mul(x, halfBroadcast))
-				return f.Mul(xHalf, onePlusErf)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
-		}
-
-		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
-		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
+					scaled := benchMust(f.Mul(x, sqrt2InvBroadcast))
+					erfVal := benchMust(f.Erf(scaled))
+					onePlusErf := benchMust(f.Add(oneBroadcast, erfVal))
+					xHalf := benchMust(f.Mul(x, halfBroadcast))
+					return f.Mul(xHalf, onePlusErf)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+			}
+			decomposed.run(b)
+		})
 	}
 }
 
@@ -306,67 +331,76 @@ func BenchmarkLayerNorm(b *testing.B, backend compute.Backend) {
 		allShapes := []shapes.Shape{shape, gammaShape, betaShape}
 		allDatas := []any{data, gammaData, betaData}
 
-		fused, err := newBenchExec(backend, allShapes, allDatas,
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedLayerNorm(params[0], []int{axis}, 1e-5, params[1], params[2])
-			})
-		if err != nil {
-			b.Fatalf("Failed to create fused benchmark: %+v", err)
-		}
+		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
+			fused, err := newBenchExec(backend, allShapes, allDatas,
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedLayerNorm(params[0], []int{axis}, 1e-5, params[1], params[2])
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create fused benchmark: %+v", err)
+			}
+			fused.run(b)
+		})
 
 		// Decomposed: mean, variance, normalize, scale, offset.
-		decomposed, err := newBenchExec(backend, allShapes, allDatas,
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				x := params[0]
-				gamma := params[1]
-				beta := params[2]
+		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) {
+			decomposed, err := newBenchExec(backend, allShapes, allDatas,
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					x := params[0]
+					gamma := params[1]
+					beta := params[2]
 
-				// Compute normSize as float constant.
-				normSizeF := float32(sz.dims[axis])
-				normSizeConst := benchMust(f.Constant([]float32{normSizeF}, 1))
-				normSizeBroadcast := benchMust(f.BroadcastInDim(normSizeConst, shape, []int{0}))
+					// Compute normSize as float constant.
+					normSizeF := float32(sz.dims[axis])
+					normSizeConst := benchMust(f.Constant([]float32{normSizeF}, 1))
+					normSizeBroadcast := benchMust(f.BroadcastInDim(normSizeConst, shape, []int{0}))
 
-				// Mean.
-				sum := reduceAndKeep(f, x, f.ReduceSum, shape, axis)
-				mean := benchMust(f.Div(sum, normSizeBroadcast))
+					// Mean.
+					sum := reduceAndKeep(f, x, f.ReduceSum, shape, axis)
+					mean := benchMust(f.Div(sum, normSizeBroadcast))
 
-				// Variance.
-				diff := benchMust(f.Sub(x, mean))
-				diffSq := benchMust(f.Mul(diff, diff))
-				varSum := reduceAndKeep(f, diffSq, f.ReduceSum, shape, axis)
-				variance := benchMust(f.Div(varSum, normSizeBroadcast))
+					// Variance.
+					diff := benchMust(f.Sub(x, mean))
+					diffSq := benchMust(f.Mul(diff, diff))
+					varSum := reduceAndKeep(f, diffSq, f.ReduceSum, shape, axis)
+					variance := benchMust(f.Div(varSum, normSizeBroadcast))
 
-				// Normalize.
-				epsConst := benchMust(f.Constant([]float32{1e-5}, 1))
-				epsBroadcast := benchMust(f.BroadcastInDim(epsConst, shape, []int{0}))
-				varPlusEps := benchMust(f.Add(variance, epsBroadcast))
-				invStd := benchMust(f.Rsqrt(varPlusEps))
-				normalized := benchMust(f.Mul(diff, invStd))
+					// Normalize.
+					epsConst := benchMust(f.Constant([]float32{1e-5}, 1))
+					epsBroadcast := benchMust(f.BroadcastInDim(epsConst, shape, []int{0}))
+					varPlusEps := benchMust(f.Add(variance, epsBroadcast))
+					invStd := benchMust(f.Rsqrt(varPlusEps))
+					normalized := benchMust(f.Mul(diff, invStd))
 
-				// Scale and offset: gamma and beta have shape [normDim], need to broadcast.
-				broadcastShape := shape.Clone()
-				for i := range broadcastShape.Dimensions {
-					broadcastShape.Dimensions[i] = 1
+					// Scale and offset: gamma and beta have shape [normDim], need to broadcast.
+					broadcastShape := shape.Clone()
+					for i := range broadcastShape.Dimensions {
+						broadcastShape.Dimensions[i] = 1
+					}
+					broadcastShape.Dimensions[axis] = normDim
+					gammaReshaped := benchMust(f.Reshape(gamma, broadcastShape.Dimensions...))
+					broadcastAxes := make([]int, shape.Rank())
+					for i := range broadcastAxes {
+						broadcastAxes[i] = i
+					}
+					gammaBroadcast := benchMust(f.BroadcastInDim(gammaReshaped, shape, broadcastAxes))
+					scaled := benchMust(f.Mul(normalized, gammaBroadcast))
+
+					betaReshaped := benchMust(f.Reshape(beta, broadcastShape.Dimensions...))
+					betaBroadcast := benchMust(f.BroadcastInDim(betaReshaped, shape, broadcastAxes))
+					return f.Add(scaled, betaBroadcast)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
 				}
-				broadcastShape.Dimensions[axis] = normDim
-				gammaReshaped := benchMust(f.Reshape(gamma, broadcastShape.Dimensions...))
-				broadcastAxes := make([]int, shape.Rank())
-				for i := range broadcastAxes {
-					broadcastAxes[i] = i
-				}
-				gammaBroadcast := benchMust(f.BroadcastInDim(gammaReshaped, shape, broadcastAxes))
-				scaled := benchMust(f.Mul(normalized, gammaBroadcast))
-
-				betaReshaped := benchMust(f.Reshape(beta, broadcastShape.Dimensions...))
-				betaBroadcast := benchMust(f.BroadcastInDim(betaReshaped, shape, broadcastAxes))
-				return f.Add(scaled, betaBroadcast)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
-		}
-
-		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
-		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
+				b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+			}
+			decomposed.run(b)
+		})
 	}
 }
 
@@ -397,34 +431,43 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 		allShapes := []shapes.Shape{xShape, wShape, bShape}
 		allDatas := []any{xData, wData, biasData}
 
-		fused, err := newBenchExec(backend, allShapes, allDatas,
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
-			})
-		if err != nil {
-			b.Fatalf("Failed to create fused benchmark: %+v", err)
-		}
+		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
+			fused, err := newBenchExec(backend, allShapes, allDatas,
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create fused benchmark: %+v", err)
+			}
+			fused.run(b)
+		})
 
 		// Decomposed: DotGeneral + bias add.
-		decomposed, err := newBenchExec(backend, allShapes, allDatas,
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				x := params[0]
-				weight := params[1]
-				bias := params[2]
+		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) {
+			decomposed, err := newBenchExec(backend, allShapes, allDatas,
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					x := params[0]
+					weight := params[1]
+					bias := params[2]
 
-				// x @ weight via DotGeneral: contract x's axis 1 with weight's axis 0.
-				y := benchMust(f.DotGeneral(x, []int{1}, nil, weight, []int{0}, nil, compute.DotGeneralConfig{}))
+					// x @ weight via DotGeneral: contract x's axis 1 with weight's axis 0.
+					y := benchMust(f.DotGeneral(x, []int{1}, nil, weight, []int{0}, nil, compute.DotGeneralConfig{}))
 
-				// Add bias: broadcast [outFeatures] -> [batch, outFeatures].
-				biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
-				return f.Add(y, biasBroadcast)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create decomposed benchmark: %+v", err)
-		}
-
-		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) { fused.run(b) })
-		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) { decomposed.run(b) })
+					// Add bias: broadcast [outFeatures] -> [batch, outFeatures].
+					biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
+					return f.Add(y, biasBroadcast)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+			}
+			decomposed.run(b)
+		})
 	}
 }
 
@@ -481,50 +524,65 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 		nf4Data := randomUint8(K * N)
 		nf4Shape := shapes.Make(dtypes.Uint8, K, N)
 
-		nf4Fused, err := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
-			[]any{xData, nf4Data, scalesData, biasData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedQuantizedDense(params[0], params[1], params[3],
-					&compute.Quantization{Scheme: compute.QuantNF4, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-					compute.ActivationNone)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create NF4/Fused benchmark: %+v", err)
-		}
-		b.Run(fmt.Sprintf("NF4/Fused/%s", sz.name), func(b *testing.B) { nf4Fused.run(b) })
+		b.Run(fmt.Sprintf("NF4/Fused/%s", sz.name), func(b *testing.B) {
+			nf4Fused, err := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
+				[]any{xData, nf4Data, scalesData, biasData},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedQuantizedDense(params[0], params[1], params[3],
+						&compute.Quantization{Scheme: compute.QuantNF4, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
+						compute.ActivationNone)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create NF4/Fused benchmark: %+v", err)
+			}
+			nf4Fused.run(b)
+		})
 
 		// --- Linear Int8 (second set) ---
 		int4WeightsData := randomInt8(K * N)
 		int4WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int4Fused, err := newBenchExec(
-			backend, []shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
-			[]any{xData, int4WeightsData, scalesData, biasData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedQuantizedDense(params[0], params[1], params[3],
-					&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-					compute.ActivationNone)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create LinearInt8_2/Fused benchmark: %+v", err)
-		}
-		b.Run(fmt.Sprintf("LinearInt8_2/Fused/%s", sz.name), func(b *testing.B) { int4Fused.run(b) })
+		b.Run(fmt.Sprintf("LinearInt8_2/Fused/%s", sz.name), func(b *testing.B) {
+			int4Fused, err := newBenchExec(
+				backend, []shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
+				[]any{xData, int4WeightsData, scalesData, biasData},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedQuantizedDense(params[0], params[1], params[3],
+						&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
+						compute.ActivationNone)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create LinearInt8_2/Fused benchmark: %+v", err)
+			}
+			int4Fused.run(b)
+		})
 
 		// --- Int8 ---
 		int8WeightsData := randomInt8(K * N)
 		int8WeightsShape := shapes.Make(dtypes.Int8, K, N)
 
-		int8Fused, err := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
-			[]any{xData, int8WeightsData, scalesData, biasData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedQuantizedDense(params[0], params[1], params[3],
-					&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-					compute.ActivationNone)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create Int8/Fused benchmark: %+v", err)
-		}
-		b.Run(fmt.Sprintf("Int8/Fused/%s", sz.name), func(b *testing.B) { int8Fused.run(b) })
+		b.Run(fmt.Sprintf("Int8/Fused/%s", sz.name), func(b *testing.B) {
+			int8Fused, err := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
+				[]any{xData, int8WeightsData, scalesData, biasData},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedQuantizedDense(params[0], params[1], params[3],
+						&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
+						compute.ActivationNone)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create Int8/Fused benchmark: %+v", err)
+			}
+			int8Fused.run(b)
+		})
 
 		// Int8 Decomposed: ConvertDType + Mul(scales) + DotGeneral + bias.
 		// Scales are pre-expanded from [K, numGroups] to [K, N] in Go because
@@ -538,44 +596,54 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 		}
 		expandedScalesShape := shapes.Make(dtypes.Float32, K, N)
 
-		int8Decomposed, err := newBenchExec(backend,
-			[]shapes.Shape{xShape, int8WeightsShape, expandedScalesShape, biasShape},
-			[]any{xData, int8WeightsData, expandedScalesData, biasData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				x := params[0]
-				weights := params[1]
-				expandedScales := params[2]
-				bias := params[3]
+		b.Run(fmt.Sprintf("Int8/Decomposed/%s", sz.name), func(b *testing.B) {
+			int8Decomposed, err := newBenchExec(backend,
+				[]shapes.Shape{xShape, int8WeightsShape, expandedScalesShape, biasShape},
+				[]any{xData, int8WeightsData, expandedScalesData, biasData},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					x := params[0]
+					weights := params[1]
+					expandedScales := params[2]
+					bias := params[3]
 
-				// Dequantize: float32(int8) * scales → [K, N] float32.
-				wFloat := benchMust(f.ConvertDType(weights, dtypes.Float32))
-				wDequant := benchMust(f.Mul(wFloat, expandedScales))
+					// Dequantize: float32(int8) * scales → [K, N] float32.
+					wFloat := benchMust(f.ConvertDType(weights, dtypes.Float32))
+					wDequant := benchMust(f.Mul(wFloat, expandedScales))
 
-				// Matmul: x [M, K] @ wDequant [K, N] → [M, N].
-				y := benchMust(f.DotGeneral(x, []int{1}, nil, wDequant, []int{0}, nil, compute.DotGeneralConfig{}))
+					// Matmul: x [M, K] @ wDequant [K, N] → [M, N].
+					y := benchMust(f.DotGeneral(x, []int{1}, nil, wDequant, []int{0}, nil, compute.DotGeneralConfig{}))
 
-				// Add bias.
-				biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
-				return f.Add(y, biasBroadcast)
-			})
-		if err != nil {
-			b.Fatalf("Failed to create Int8/Decomposed benchmark: %+v", err)
-		}
-		b.Run(fmt.Sprintf("Int8/Decomposed/%s", sz.name), func(b *testing.B) { int8Decomposed.run(b) })
+					// Add bias.
+					biasBroadcast := benchMust(f.BroadcastInDim(bias, outShape, []int{1}))
+					return f.Add(y, biasBroadcast)
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create Int8/Decomposed benchmark: %+v", err)
+			}
+			int8Decomposed.run(b)
+		})
 
 		// Float32 Dense reference (same M×K×N, full-precision weights).
 		f32WeightsData := randomFloat32(K * N)
 		f32WeightsShape := shapes.Make(dtypes.Float32, K, N)
 
-		f32Dense, err := newBenchExec(backend,
-			[]shapes.Shape{xShape, f32WeightsShape, biasShape},
-			[]any{xData, f32WeightsData, biasData},
-			func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
-			})
-		if err != nil {
-			b.Fatalf("Failed to create Float32Dense benchmark: %+v", err)
-		}
-		b.Run(fmt.Sprintf("Float32Dense/%s", sz.name), func(b *testing.B) { f32Dense.run(b) })
+		b.Run(fmt.Sprintf("Float32Dense/%s", sz.name), func(b *testing.B) {
+			f32Dense, err := newBenchExec(backend,
+				[]shapes.Shape{xShape, f32WeightsShape, biasShape},
+				[]any{xData, f32WeightsData, biasData},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+				})
+			if err != nil {
+				if errors.Is(err, compute.ErrNotImplemented) {
+					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+				}
+				b.Fatalf("Failed to create Float32Dense benchmark: %+v", err)
+			}
+			f32Dense.run(b)
+		})
 	}
 }
