@@ -114,7 +114,7 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
   - **Graceful Skips**: If an op, layout, or data type combination returns `compute.ErrNotImplemented`, compliance benchmarks skip cleanly via `b.Skipf(...)`.
   - **Warm-up & Timer**: Benchmarks use Go's `for b.Loop()`. Warm-up iterations (3 runs) are executed *before* `for b.Loop()`, which allows `b.Loop()` to cleanly reset the benchmark timer on its first call and enables compiler loop-variable keep-alive optimizations.
   - **Reported Metrics**: Benchmarks report standard `ns/op` as well as custom metrics via `b.ReportMetric`:
-    - `ms/op`: execution time per iteration in milliseconds across all benchmarked ops.
+    - `<duration>/op`: execution time per iteration formatted dynamically (e.g. `µs/op`, `ms/op`, `s/op`) via `humanize.Duration` across all benchmarked ops.
     - `GFlops/s`: throughput for `DotGeneral` operations (calculated as $2 \times \text{outputSize} \times \prod \text{contractingDims}$).
 
 ### Follow Existing Patterns
