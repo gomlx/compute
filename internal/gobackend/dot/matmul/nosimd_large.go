@@ -43,7 +43,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
-		const maxAccumPanels = 16
+		const maxAccumPanels = 64
 		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
 		if !ok {
 			return
@@ -100,7 +100,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
-		const maxAccumPanels = 16
+		const maxAccumPanels = 64
 		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
 		if !ok {
 			return
@@ -172,27 +172,31 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 				unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
 					lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
 
-				largeNoSIMDPanel( //alt:generic
-					//alt:half largeNoSIMDPanelHalfPrecision(
-					packedLHS, packedRHS, packedOutput,
-					params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-					contractingPanelWidth,
-					lhsPanelHeight, rhsPanelWidth,
-				)
-
-				// Accumulate (or write) packedOutput to accumBuffer (in L2 cache) or outputMatrix.
 				isFirstContractingPanel := contractingPanelIdx == 0
+				accumulate := !isFirstContractingPanel
+
 				if useAccum {
 					accumOffset := mIdx * panelSize
-					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
-					noSIMDApplyPackedOutput(
-						packedOutput, accumSlice,
-						isFirstContractingPanel,
-						params.RHSPanelCrossSize,
-						0, 0,
-						accumPanelStride,
-						lhsPanelHeight, rhsPanelWidth)
+					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
+					largeNoSIMDPanel( //alt:generic
+						//alt:half largeNoSIMDPanelHalfPrecision(
+						packedLHS, packedRHS, accumSlice,
+						params.LHSPanelCrossSize, accumPanelStride,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+						accumulate,
+					)
 				} else {
+					largeNoSIMDPanel( //alt:generic
+						//alt:half largeNoSIMDPanelHalfPrecision(
+						packedLHS, packedRHS, packedOutput,
+						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+						false,
+					)
+
+					// Accumulate (or write) packedOutput to outputMatrix.
 					noSIMDApplyPackedOutput(
 						packedOutput, outputMatrix,
 						isFirstContractingPanel,
@@ -238,6 +242,7 @@ func largeNoSIMDPanel[I, O gotype.NumericNotComplex]( //alt:generic
 	lhsPanelRows, rhsPanelCols int,
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
+	accumulate bool,
 ) {
 	const kernelRows = 2
 	const kernelCols = 4
@@ -431,17 +436,30 @@ func largeNoSIMDPanel[I, O gotype.NumericNotComplex]( //alt:generic
 			// The buffer is large enough even for fringe blocks.
 			// Row 0
 			rowOffset := rowIdx*rhsPanelCols + colIdx
-			packedOutput[rowOffset] = c00
-			packedOutput[rowOffset+1] = c01
-			packedOutput[rowOffset+2] = c02
-			packedOutput[rowOffset+3] = c03
-
-			// Row 1
 			rowOffset1 := rowOffset + rhsPanelCols
-			packedOutput[rowOffset1] = c10
-			packedOutput[rowOffset1+1] = c11
-			packedOutput[rowOffset1+2] = c12
-			packedOutput[rowOffset1+3] = c13
+			if !accumulate {
+				packedOutput[rowOffset] = c00
+				packedOutput[rowOffset+1] = c01
+				packedOutput[rowOffset+2] = c02
+				packedOutput[rowOffset+3] = c03
+
+				// Row 1
+				packedOutput[rowOffset1] = c10
+				packedOutput[rowOffset1+1] = c11
+				packedOutput[rowOffset1+2] = c12
+				packedOutput[rowOffset1+3] = c13
+			} else {
+				packedOutput[rowOffset] += c00
+				packedOutput[rowOffset+1] += c01
+				packedOutput[rowOffset+2] += c02
+				packedOutput[rowOffset+3] += c03
+
+				// Row 1
+				packedOutput[rowOffset1] += c10
+				packedOutput[rowOffset1+1] += c11
+				packedOutput[rowOffset1+2] += c12
+				packedOutput[rowOffset1+3] += c13
+			}
 
 			rhsOffset += rhsBlockStride
 		}

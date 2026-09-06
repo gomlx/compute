@@ -68,9 +68,15 @@ func TestAVX512(t *testing.T) {
 		rhs[65] = float16.FromFloat32(13)
 
 		out := make([]float32, 4*64)
-		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2)
+		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2, false)
 		if out[0] != 34 || out[1] != 37 || out[64] != 78 || out[65] != 85 {
 			t.Fatalf("Float16AsmDirect: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[64], out[65])
+		}
+
+		// Test accumulate = true:
+		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2, true)
+		if out[0] != 68 || out[1] != 74 || out[64] != 156 || out[65] != 170 {
+			t.Fatalf("Float16AsmDirect accumulate: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[64], out[65])
 		}
 	})
 

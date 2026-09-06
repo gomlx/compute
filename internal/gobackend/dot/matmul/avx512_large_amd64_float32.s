@@ -8,8 +8,9 @@
 //     packedLHS, packedRHS, packedOutput []float32,
 //     lhsPanelRows, rhsPanelCols int,
 //     contractingLen int,
-//     lhsActiveRows, rhsActiveCols int)
-TEXT ·avx512LargeKernelFloat32Asm(SB), NOSPLIT, $0-112
+//     lhsActiveRows, rhsActiveCols int,
+//     accumulate bool)
+TEXT ·avx512LargeKernelFloat32Asm(SB), NOSPLIT, $0-120
 	MOVQ packedLHS_base+0(FP), R8        // R8 = lhsBasePtr
 	MOVQ packedRHS_base+24(FP), R9       // R9 = rhsBasePtr
 	MOVQ packedOutput_base+48(FP), R10   // R10 = outBasePtr
@@ -17,6 +18,7 @@ TEXT ·avx512LargeKernelFloat32Asm(SB), NOSPLIT, $0-112
 	MOVQ contractingLen+88(FP), R12      // R12 = contractingLen (K)
 	MOVQ lhsActiveRows+96(FP), R13       // R13 = lhsActiveRows (M)
 	MOVQ rhsActiveCols+104(FP), R14      // R14 = rhsActiveCols (N)
+	MOVB accumulate+112(FP), R15         // R15 = accumulate (0 = overwrite, 1 = add)
 
 	SHLQ $2, R11                         // R11 = outputStride in bytes
 
@@ -259,6 +261,9 @@ store_output:
 	ADDQ CX, DX
 	LEAQ (R10)(DX*1), DX                 // DX = outRow0Ptr
 
+	TESTB R15, R15
+	JNZ store_output_accum
+
 	// Row 0
 	VMOVDQU32 Z0, (DX)
 	VMOVDQU32 Z1, 64(DX)
@@ -284,6 +289,53 @@ store_output:
 	VMOVDQU32 Z12, (DX)
 	VMOVDQU32 Z13, 64(DX)
 	VMOVDQU32 Z14, 128(DX)
+	VMOVDQU32 Z15, 192(DX)
+
+	ADDQ $64, BX                         // rhsColIdx += 64
+	JMP loop_rhs
+
+store_output_accum:
+	// Row 0
+	VADDPS (DX), Z0, Z0
+	VMOVDQU32 Z0, (DX)
+	VADDPS 64(DX), Z1, Z1
+	VMOVDQU32 Z1, 64(DX)
+	VADDPS 128(DX), Z2, Z2
+	VMOVDQU32 Z2, 128(DX)
+	VADDPS 192(DX), Z3, Z3
+	VMOVDQU32 Z3, 192(DX)
+
+	// Row 1
+	ADDQ R11, DX                         // DX = outRow1Ptr
+	VADDPS (DX), Z4, Z4
+	VMOVDQU32 Z4, (DX)
+	VADDPS 64(DX), Z5, Z5
+	VMOVDQU32 Z5, 64(DX)
+	VADDPS 128(DX), Z6, Z6
+	VMOVDQU32 Z6, 128(DX)
+	VADDPS 192(DX), Z7, Z7
+	VMOVDQU32 Z7, 192(DX)
+
+	// Row 2
+	ADDQ R11, DX                         // DX = outRow2Ptr
+	VADDPS (DX), Z8, Z8
+	VMOVDQU32 Z8, (DX)
+	VADDPS 64(DX), Z9, Z9
+	VMOVDQU32 Z9, 64(DX)
+	VADDPS 128(DX), Z10, Z10
+	VMOVDQU32 Z10, 128(DX)
+	VADDPS 192(DX), Z11, Z11
+	VMOVDQU32 Z11, 192(DX)
+
+	// Row 3
+	ADDQ R11, DX                         // DX = outRow3Ptr
+	VADDPS (DX), Z12, Z12
+	VMOVDQU32 Z12, (DX)
+	VADDPS 64(DX), Z13, Z13
+	VMOVDQU32 Z13, 64(DX)
+	VADDPS 128(DX), Z14, Z14
+	VMOVDQU32 Z14, 128(DX)
+	VADDPS 192(DX), Z15, Z15
 	VMOVDQU32 Z15, 192(DX)
 
 	ADDQ $64, BX                         // rhsColIdx += 64

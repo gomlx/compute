@@ -140,7 +140,7 @@ func avx512LargeFloat32( //alt:f32
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
-		const maxAccumPanels = 16
+		const maxAccumPanels = 64
 		accumOutputRef, accumOutput, ok := GetBuffer[float32](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
 		//alt:f64 accumOutputRef, accumOutput, ok := GetBuffer[float64](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
 		if !ok {
@@ -227,42 +227,61 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 				avx512PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32|bf16|f16|f64
 
-				if AVX512UseAsm { //alt:f32|bf16|f16|f64
-					avx512LargeKernelFloat32Asm( //alt:f32
-						//alt:bf16 avx512LargeKernelBFloat16Asm(
-						//alt:f16 avx512LargeKernelFloat16Asm(
-						//alt:f64 avx512LargeKernelFloat64Asm(
-						packedLHS, packedRHS, packedOutput,
-						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-						contractingPanelWidth,
-						lhsPanelHeight, rhsPanelWidth,
-					)
-				} else { //alt:f32|bf16|f16|f64
-					avx512LargeKernelFloat32( //alt:f32
-						//alt:bf16 avx512LargeKernelBFloat16(
-						//alt:f16 avx512LargeKernelFloat16(
-						//alt:f64 avx512LargeKernelFloat64(
-						packedLHS, packedRHS, packedOutput,
-						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-						contractingPanelWidth,
-						lhsPanelHeight, rhsPanelWidth,
-					) //alt:bf16|f16|f64
-				} //alt:f32|bf16|f16|f64
-
-				// Accumulate (or write) packedOutput to accumBuffer (in L2 cache) or outputMatrix.
 				isFirstContractingPanel := contractingPanelIdx == 0
+				accumulate := !isFirstContractingPanel
+
 				if useAccum {
 					accumOffset := mIdx * panelSize
-					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
-					avx512ApplyPackedOutputFloat32( //alt:f32|bf16|f16
-						//alt:f64 avx512ApplyPackedOutputFloat64(
-						packedOutput, accumSlice,
-						isFirstContractingPanel,
-						params.RHSPanelCrossSize,
-						0, 0,
-						accumPanelStride,
-						lhsPanelHeight, rhsPanelWidth)
+					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
+					if AVX512UseAsm { //alt:f32|bf16|f16|f64
+						avx512LargeKernelFloat32Asm( //alt:f32
+							//alt:bf16 avx512LargeKernelBFloat16Asm(
+							//alt:f16 avx512LargeKernelFloat16Asm(
+							//alt:f64 avx512LargeKernelFloat64Asm(
+							packedLHS, packedRHS, accumSlice,
+							params.LHSPanelCrossSize, accumPanelStride,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						)
+					} else { //alt:f32|bf16|f16|f64
+						avx512LargeKernelFloat32( //alt:f32
+							//alt:bf16 avx512LargeKernelBFloat16(
+							//alt:f16 avx512LargeKernelFloat16(
+							//alt:f64 avx512LargeKernelFloat64(
+							packedLHS, packedRHS, accumSlice,
+							params.LHSPanelCrossSize, accumPanelStride,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						) //alt:bf16|f16|f64
+					} //alt:f32|bf16|f16|f64
 				} else {
+					if AVX512UseAsm { //alt:f32|bf16|f16|f64
+						avx512LargeKernelFloat32Asm( //alt:f32
+							//alt:bf16 avx512LargeKernelBFloat16Asm(
+							//alt:f16 avx512LargeKernelFloat16Asm(
+							//alt:f64 avx512LargeKernelFloat64Asm(
+							packedLHS, packedRHS, packedOutput,
+							params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							false,
+						)
+					} else { //alt:f32|bf16|f16|f64
+						avx512LargeKernelFloat32( //alt:f32
+							//alt:bf16 avx512LargeKernelBFloat16(
+							//alt:f16 avx512LargeKernelFloat16(
+							//alt:f64 avx512LargeKernelFloat64(
+							packedLHS, packedRHS, packedOutput,
+							params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							false,
+						) //alt:bf16|f16|f64
+					} //alt:f32|bf16|f16|f64
+
+					// Accumulate (or write) packedOutput to outputMatrix.
 					avx512ApplyPackedOutputFloat32( //alt:f32|bf16|f16
 						//alt:f64 avx512ApplyPackedOutputFloat64(
 						packedOutput, outputMatrix,
@@ -314,6 +333,7 @@ func avx512LargeKernelFloat32( //alt:f32
 	lhsPanelRows, rhsPanelCols int,
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
+	accumulate bool,
 ) {
 	defer func() {
 		runtime.KeepAlive(packedLHS)
@@ -471,22 +491,41 @@ func avx512LargeKernelFloat32( //alt:f32
 			outputIdx3 := outputIdx0 + uintptr(3*rhsPanelCols*bytesPerOutputElement)
 			registerStride := uintptr(outputNumLanes * bytesPerOutputElement) // It should be 64 bytes (512 bits) for AVX512.
 
-			accum_lhs0_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs0_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
-			accum_lhs0_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs0_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
-			accum_lhs1_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs1_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
-			accum_lhs1_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs1_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
-			accum_lhs2_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs2_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
-			accum_lhs2_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs2_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
-			accum_lhs3_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs3_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
-			accum_lhs3_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
-			//alt:f64 accum_lhs3_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
+			if !accumulate {
+				accum_lhs0_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs0_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
+				accum_lhs0_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs0_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
+				accum_lhs1_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs1_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
+				accum_lhs1_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs1_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
+				accum_lhs2_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs2_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
+				accum_lhs2_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs2_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
+				accum_lhs3_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs3_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
+				accum_lhs3_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs3_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
+			} else {
+				accum_lhs0_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs0_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
+				accum_lhs0_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs0_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
+				accum_lhs1_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs1_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
+				accum_lhs1_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs1_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
+				accum_lhs2_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs2_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
+				accum_lhs2_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs2_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
+				accum_lhs3_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs3_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
+				accum_lhs3_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
+				//alt:f64 accum_lhs3_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
+			}
 		}
 	}
 }
