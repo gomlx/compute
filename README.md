@@ -125,6 +125,14 @@ func TestCompliance(t *testing.T) {
 }
 ```
 
+- In addition to tests, `support/backendtest` also provides standard compliance benchmarks (by calling `backendtest.RunAllBenchmarks(b *testing.B, backend compute.Backend)`). This includes benchmarks across various sizes and configurations of `DotGeneral` (matrix multiplication), as well as standard neural network operations (`Dense`, `QuantizedDense`, `Softmax`, `LayerNorm`, `Gelu`). Example:
+
+```go
+func BenchmarkCompliance(b *testing.B) {
+	backendtest.RunAllBenchmarks(b, myBackend)
+}
+```
+
 Consider using GoMLX tests against your Backend to test that they are working --
 just set the environment variable `GOMLX_BACKEND` to your new backend, and you
 can run arbitrary tests. Also, once you have enough ops implemented, you can use
