@@ -11,7 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 )
 
-// avx512LargeKernelFloat32Asm is the assembly implementation of the 4 rows x 64 cols GEMM microkernel for Float32.
+// avx512LargeKernelFloat32Asm is the assembly implementation of the 8 rows x 32 cols GEMM microkernel for Float32.
 // Defined in avx512_large_amd64_float32.s.
 //
 //go:noescape
@@ -34,7 +34,7 @@ func avx512PackLHSKernelRows4Float32Asm(
 	copyRows, contractingCols int,
 )
 
-// avx512LargeKernelFloat16Asm is the assembly implementation of the 4 rows x 64 cols GEMM microkernel for Float16.
+// avx512LargeKernelFloat16Asm is the assembly implementation of the 8 rows x 32 cols GEMM microkernel for Float16.
 // Defined in avx512_large_amd64_float16.s.
 //
 //go:noescape
@@ -47,7 +47,7 @@ func avx512LargeKernelFloat16Asm(
 	accumulate bool,
 )
 
-// avx512LargeKernelBFloat16Asm is the assembly implementation of the 4 rows x 64 cols GEMM microkernel for BFloat16.
+// avx512LargeKernelBFloat16Asm is the assembly implementation of the 8 rows x 32 cols GEMM microkernel for BFloat16.
 // Defined in avx512_large_amd64_bfloat16.s.
 //
 //go:noescape
@@ -60,7 +60,7 @@ func avx512LargeKernelBFloat16Asm(
 	accumulate bool,
 )
 
-// avx512LargeKernelFloat64Asm is the assembly implementation of the 4 rows x 32 cols GEMM microkernel for Float64.
+// avx512LargeKernelFloat64Asm is the assembly implementation of the 8 rows x 16 cols GEMM microkernel for Float64.
 // Defined in avx512_large_amd64_float64.s.
 //
 //go:noescape

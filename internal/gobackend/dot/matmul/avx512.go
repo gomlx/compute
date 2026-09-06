@@ -29,26 +29,26 @@ import (
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f16,f64
 
 var (
-	// AVX512UseAsm enables the assembly microkernel for Float32 large matrices (4 rows x 64 cols).
+	// AVX512UseAsm enables the assembly microkernel for large matrices (8 rows x 32 cols for F32/F16/BF16, 8 rows x 16 cols for F64).
 	// Set GOMLX_GO_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
 	AVX512UseAsm = envutil.MustReadBool(envutil.GoBackendAVX512_ASM, true)
 
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX512ParamsFloat32 = CacheParams{
-		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
-		RHSL1KernelCols:      32,  // Nr: 32 for Go SIMD, updated to 64 if AVX512UseAsm is true
+		LHSL1KernelRows:      8,   // Mr: 8 rows
+		RHSL1KernelCols:      32,  // Nr: 32 cols
 		PanelContractingSize: 192, // Kc: A strip fits in L1 cache
-		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
-		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows)
+		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols)
 	}
 
 	// AVX512ParamsBFloat16 are the parameters to use for BFloat16, tuned for the 16 registers implementations.
 	AVX512ParamsBFloat16 = CacheParams{
-		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
-		RHSL1KernelCols:      32,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 16 values
+		LHSL1KernelRows:      8,   // Mr: 8 rows
+		RHSL1KernelCols:      32,  // Nr: 32 cols
 		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
-		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
-		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows)
+		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols)
 	}
 
 	// AVX512ParamsFloat16 are the parameters to use for Float16, tuned for the 16 registers implementations.
@@ -56,29 +56,38 @@ var (
 
 	// AVX512ParamsFloat64 are the parameters to use for Float64, tuned for the 16 registers implementations.
 	AVX512ParamsFloat64 = CacheParams{
-		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
-		RHSL1KernelCols:      16,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 8 values
+		LHSL1KernelRows:      8,   // Mr: 8 rows
+		RHSL1KernelCols:      16,  // Nr: 16 cols
 		PanelContractingSize: 64,  // Kc: A strip fits in L1 cache
-		LHSPanelCrossSize:    16,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
-		RHSPanelCrossSize:    256, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
+		LHSPanelCrossSize:    16,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows)
+		RHSPanelCrossSize:    256, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols)
 	}
 )
 
 func init() {
-	if AVX512UseAsm {
-		AVX512ParamsFloat32.RHSL1KernelCols = 64
-		AVX512ParamsFloat16.RHSL1KernelCols = 64
-		AVX512ParamsBFloat16.RHSL1KernelCols = 64
-		AVX512ParamsFloat64.RHSL1KernelCols = 32
+	if !AVX512UseAsm {
+		AVX512ParamsFloat32.LHSL1KernelRows = 4
+		AVX512ParamsFloat16.LHSL1KernelRows = 4
+		AVX512ParamsBFloat16.LHSL1KernelRows = 4
+		AVX512ParamsFloat64.LHSL1KernelRows = 4
 	}
 	if kc := envutil.MustReadInt(envutil.GoBackendAVX512_KC, 0); kc > 0 {
 		AVX512ParamsFloat32.PanelContractingSize = kc
+		AVX512ParamsFloat16.PanelContractingSize = kc
+		AVX512ParamsBFloat16.PanelContractingSize = kc
+		AVX512ParamsFloat64.PanelContractingSize = kc
 	}
 	if mc := envutil.MustReadInt(envutil.GoBackendAVX512_MC, 0); mc > 0 {
 		AVX512ParamsFloat32.LHSPanelCrossSize = mc
+		AVX512ParamsFloat16.LHSPanelCrossSize = mc
+		AVX512ParamsBFloat16.LHSPanelCrossSize = mc
+		AVX512ParamsFloat64.LHSPanelCrossSize = mc
 	}
 	if nc := envutil.MustReadInt(envutil.GoBackendAVX512_NC, 0); nc > 0 {
 		AVX512ParamsFloat32.RHSPanelCrossSize = nc
+		AVX512ParamsFloat16.RHSPanelCrossSize = nc
+		AVX512ParamsBFloat16.RHSPanelCrossSize = nc
+		AVX512ParamsFloat64.RHSPanelCrossSize = nc
 	}
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		return
@@ -498,8 +507,12 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	lhsColStartBytes := uintptr(lhsColStart) * bytesPerElement
 	contractingColsBytes := uintptr(contractingCols) * bytesPerElement
 
+	if kernelRows == 8 {
+		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
+		return
+	}
 	if kernelRows != 4 {
-		panic("avx512PackLHSKernelRows4: kernelRows must be set to 4")
+		panic("avx512PackLHSKernelRows4: kernelRows must be set to 4 or 8")
 	}
 
 	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement

@@ -45,40 +45,169 @@ func TestAVX512(t *testing.T) {
 
 	t.Run("Float16AsmDirect", func(t *testing.T) {
 		// contractingLen = 2, lhsActiveRows = 2, rhsActiveCols = 2
-		// LHS has 4 rows x 2 cols, packed in strips of 4 rows:
-		// for col 0: row0, row1, row2, row3
-		// for col 1: row0, row1, row2, row3
-		lhs := make([]float16.Float16, 4*2)
+		// LHS has 8 rows x 2 cols, packed in strips of 8 rows:
+		// for col 0: row0..row7
+		// for col 1: row0..row7
+		lhs := make([]float16.Float16, 8*2)
 		// col 0:
 		lhs[0] = float16.FromFloat32(1) // row 0
 		lhs[1] = float16.FromFloat32(3) // row 1
-		lhs[2] = float16.FromFloat32(0) // row 2
-		lhs[3] = float16.FromFloat32(0) // row 3
 		// col 1:
-		lhs[4] = float16.FromFloat32(2) // row 0
-		lhs[5] = float16.FromFloat32(4) // row 1
-		lhs[6] = float16.FromFloat32(0) // row 2
-		lhs[7] = float16.FromFloat32(0) // row 3
+		lhs[8] = float16.FromFloat32(2) // row 0
+		lhs[9] = float16.FromFloat32(4) // row 1
 
-		// RHS has 2 rows x 64 cols:
-		rhs := make([]float16.Float16, 2*64)
+		// RHS has 2 rows x 32 cols:
+		rhs := make([]float16.Float16, 2*32)
 		// row 0: col 0 = 10, col 1 = 11
 		rhs[0] = float16.FromFloat32(10)
 		rhs[1] = float16.FromFloat32(11)
 		// row 1: col 0 = 12, col 1 = 13
-		rhs[64] = float16.FromFloat32(12)
-		rhs[65] = float16.FromFloat32(13)
+		rhs[32] = float16.FromFloat32(12)
+		rhs[33] = float16.FromFloat32(13)
 
-		out := make([]float32, 4*64)
-		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2, false)
-		if out[0] != 34 || out[1] != 37 || out[64] != 78 || out[65] != 85 {
-			t.Fatalf("Float16AsmDirect: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[64], out[65])
+		out := make([]float32, 8*32)
+		avx512LargeKernelFloat16Asm(lhs, rhs, out, 8, 32, 2, 2, 2, false)
+		if out[0] != 34 || out[1] != 37 || out[32] != 78 || out[33] != 85 {
+			t.Fatalf("Float16AsmDirect: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[32], out[33])
 		}
 
 		// Test accumulate = true:
-		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2, true)
-		if out[0] != 68 || out[1] != 74 || out[64] != 156 || out[65] != 170 {
-			t.Fatalf("Float16AsmDirect accumulate: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[64], out[65])
+		avx512LargeKernelFloat16Asm(lhs, rhs, out, 8, 32, 2, 2, 2, true)
+		if out[0] != 68 || out[1] != 74 || out[32] != 156 || out[33] != 170 {
+			t.Fatalf("Float16AsmDirect accumulate: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[32], out[33])
+		}
+	})
+
+	t.Run("Kernel8x32Float32Direct", func(t *testing.T) {
+		for _, K := range []int{1, 2, 3, 4, 7, 8, 15, 16, 17, 32, 64, 192} {
+			M, N := 8, 32
+			A := make([]float32, M*K)
+			for i := range A {
+				A[i] = float32(i%13 - 6)
+			}
+			B := make([]float32, K*N)
+			for i := range B {
+				B[i] = float32(i%17 - 8)
+			}
+
+			// Reference C = A * B
+			refC := make([]float32, M*N)
+			for r := 0; r < M; r++ {
+				for c := 0; c < N; c++ {
+					var sum float32
+					for k := 0; k < K; k++ {
+						sum += A[r*K+k] * B[k*N+c]
+					}
+					refC[r*N+c] = sum
+				}
+			}
+
+			// Pack LHS: strip of 8 rows, stride 8 floats per K
+			packedLHS := make([]float32, M*K)
+			for k := 0; k < K; k++ {
+				for r := 0; r < M; r++ {
+					packedLHS[k*8+r] = A[r*K+k]
+				}
+			}
+
+			packedLHSUnsafe := make([]float32, M*K)
+			unsafePackLHS(A, packedLHSUnsafe, 0, 0, K, M, K, 8)
+			for i := range packedLHS {
+				if packedLHS[i] != packedLHSUnsafe[i] {
+					t.Fatalf("unsafePackLHS mismatch at %d: got %v, expected %v", i, packedLHSUnsafe[i], packedLHS[i])
+				}
+			}
+
+			// Pack RHS: strip of 32 cols, stride 32 floats per K
+			packedRHS := make([]float32, K*N)
+			for k := 0; k < K; k++ {
+				for c := 0; c < N; c++ {
+					packedRHS[k*32+c] = B[k*N+c]
+				}
+			}
+
+			out := make([]float32, M*N)
+			avx512LargeKernelFloat32Asm(packedLHS, packedRHS, out, M, N, K, M, N, false)
+
+			for r := 0; r < M; r++ {
+				for c := 0; c < N; c++ {
+					got := out[r*N+c]
+					expected := refC[r*N+c]
+					if got != expected {
+						t.Fatalf("K=%d mismatch at (%d, %d): got %v, expected %v", K, r, c, got, expected)
+					}
+				}
+			}
+
+			// Test accumulate = true
+			avx512LargeKernelFloat32Asm(packedLHS, packedRHS, out, M, N, K, M, N, true)
+			for r := 0; r < M; r++ {
+				for c := 0; c < N; c++ {
+					got := out[r*N+c]
+					expected := 2 * refC[r*N+c]
+					if got != expected {
+						t.Fatalf("K=%d accumulate mismatch at (%d, %d): got %v, expected %v", K, r, c, got, expected)
+					}
+				}
+			}
+		}
+
+		// Multi-strip test: M=16 (2 strips), N=64 (2 strips), K=32
+		{
+			M, N, K := 16, 64, 32
+			A := make([]float32, M*K)
+			for i := range A {
+				A[i] = float32(i%19 - 9)
+			}
+			B := make([]float32, K*N)
+			for i := range B {
+				B[i] = float32(i%23 - 11)
+			}
+			refC := make([]float32, M*N)
+			for r := 0; r < M; r++ {
+				for c := 0; c < N; c++ {
+					var sum float32
+					for k := 0; k < K; k++ {
+						sum += A[r*K+k] * B[k*N+c]
+					}
+					refC[r*N+c] = sum
+				}
+			}
+
+			// Pack LHS: 2 strips of 8 rows
+			packedLHS := make([]float32, M*K)
+			for s := 0; s < 2; s++ {
+				stripOffset := s * 8 * K
+				for k := 0; k < K; k++ {
+					for r := 0; r < 8; r++ {
+						packedLHS[stripOffset+k*8+r] = A[(s*8+r)*K+k]
+					}
+				}
+			}
+
+			// Pack RHS: 2 strips of 32 cols
+			packedRHS := make([]float32, K*N)
+			for s := 0; s < 2; s++ {
+				stripOffset := s * 32 * K
+				for k := 0; k < K; k++ {
+					for c := 0; c < 32; c++ {
+						packedRHS[stripOffset+k*32+c] = B[k*N+(s*32+c)]
+					}
+				}
+			}
+
+			out := make([]float32, M*N)
+			avx512LargeKernelFloat32Asm(packedLHS, packedRHS, out, M, N, K, M, N, false)
+
+			for r := 0; r < M; r++ {
+				for c := 0; c < N; c++ {
+					got := out[r*N+c]
+					expected := refC[r*N+c]
+					if got != expected {
+						t.Fatalf("Multi-strip mismatch at (%d, %d): got %v, expected %v", r, c, got, expected)
+					}
+				}
+			}
 		}
 	})
 
@@ -452,3 +581,34 @@ func TestChoose2DSplit(t *testing.T) {
 			tc.m, tc.n, tc.workers, numM, numN, (tc.n+numN-1)/numN, (tc.m+numM-1)/numM)
 	}
 }
+
+func BenchmarkMicrokernels(b *testing.B) {
+	for _, tc := range []struct {
+		name    string
+		M, N, K int
+	}{
+		{"Panel_192x384x192", 192, 384, 192},
+		{"Small_32x64x192", 32, 64, 192},
+	} {
+		M, N, K := tc.M, tc.N, tc.K
+		flops := float64(2 * M * N * K)
+
+		// Setup 8x32:
+		lhs8 := make([]float32, M*K)
+		rhs32 := make([]float32, K*N)
+		out8x32 := make([]float32, M*N)
+
+		b.Run(tc.name+"/Kernel8x32", func(b *testing.B) {
+			b.ResetTimer()
+			for b.Loop() {
+				avx512LargeKernelFloat32Asm(lhs8, rhs32, out8x32, M, N, K, M, N, false)
+			}
+			elapsed := b.Elapsed()
+			if elapsed > 0 && b.N > 0 {
+				gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
+				b.ReportMetric(gflops, "GFlops/s")
+			}
+		})
+	}
+}
+

@@ -197,8 +197,8 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
-	if params.LHSL1KernelRows != 4 || (params.RHSL1KernelCols != 32 && params.RHSL1KernelCols != 64) { //alt:f32|bf16|f16
-	//alt:f64 if params.LHSL1KernelRows != 4 || (params.RHSL1KernelCols != 16 && params.RHSL1KernelCols != 32) {
+	if (params.LHSL1KernelRows != 4 && params.LHSL1KernelRows != 8) || (params.RHSL1KernelCols != 32 && params.RHSL1KernelCols != 64) { //alt:f32|bf16|f16
+	//alt:f64 if (params.LHSL1KernelRows != 4 && params.LHSL1KernelRows != 8) || (params.RHSL1KernelCols != 16 && params.RHSL1KernelCols != 32) {
 		panic(errors.Errorf("unsupported kernel L1 block sizes for avx512 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d (params=%+v)", //alt:f32|bf16|f16|f64
 			params.LHSL1KernelRows, params.RHSL1KernelCols, params))
 	}

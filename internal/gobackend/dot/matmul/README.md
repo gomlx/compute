@@ -159,30 +159,48 @@ The following benchmarks were recorded on an **AMD Ryzen 9 9950X3D** (16 cores /
 
 ---
 
-## 7. Exploration: Alternative Kernel Geometries (6x48 vs 4x64)
+## 7. Exploration: Alternative Kernel Geometries (4x64 vs 6x48 vs 8x32)
 
-During optimization, we explored an alternative microkernel geometry for AVX-512 Float32: **6 rows × 48 cols** ($M_r = 6, N_r = 48$) compared to the default **4 rows × 64 cols** ($M_r = 4, N_r = 64$).
+During optimization, we thoroughly evaluated three microkernel geometries on AVX-512 (AMD Zen 5, 32 ZMM registers):
+1. **4 rows × 64 cols** ($M_r = 4, N_r = 64$): 16 accumulators ($4 \times 4$ ZMMs), 4 RHS vectors, 4 LHS broadcasts.
+2. **6 rows × 48 cols** ($M_r = 6, N_r = 48$): 18 accumulators ($6 \times 3$ ZMMs), 3 RHS vectors, 6 LHS broadcasts.
+3. **8 rows × 32 cols** ($M_r = 8, N_r = 32$): 16 accumulators ($8 \times 2$ ZMMs), 2 RHS vectors, 8 LHS broadcasts.
 
-### Theoretical Motivation
-* **Register Allocation**: AVX-512 has 32 registers (`Z0`–`Z31`).
-  * In **4x64**: 16 accumulators ($4 \times 4$), 4 RHS vectors ($4 \times 16$), 4 LHS scalar broadcasts. 24 registers used, 8 spare. Each loaded RHS vector is reused across 4 FMAs. Arithmetic intensity: $\approx 1.88$ Flops/byte.
-  * In **6x48**: 18 accumulators ($6 \times 3$), 3 RHS vectors ($3 \times 16$), 6 LHS scalar broadcasts. 27 registers used, 5 spare. Each loaded RHS vector is reused across 6 FMAs (+50% reuse). Arithmetic intensity: $\approx 2.67$ Flops/byte (+42%).
-* In microkernel isolation, compute throughput was measured at **~350 GFlops/s** per core, and on whole matrices where dimensions were multiples of 48 (e.g. $N=384, 1536$ in `BAAI-bge-small`), end-to-end performance improved by **+20% to +30%** (jumping from 1,800 to 2,350 GFlops/s).
+### Single-Core Compute Ceiling
+In isolated single-core benchmarks (resident $192 \times 384 \times 192$ panel):
+* **4x64**: **351.8 GFlops/s** (99.9% of Zen 5 physical dual-512 FMA pipe capacity).
+* **8x32**: **347.8 GFlops/s** (98.8% of Zen 5 physical dual-512 FMA pipe capacity).
 
-### Why 4x64 Remains the Default
-Despite the higher arithmetic intensity, 6x48 was set aside in favor of 4x64 for universal workloads due to two critical issues:
+All architectures max out the execution units in cache; the real differentiator is memory hierarchy, dimension divisibility, and thread spatial partitioning.
 
-1. **LHS Cache-Line Straddling (24 bytes vs 16 bytes)**:
-   * In **4x64**: Each strip in `PackLHS` is 4 rows × 4 bytes = **16 bytes**. Exactly 4 strips make **64 bytes** (one CPU cache line). Memory writes during packing and broadcast loads during compute are perfectly cache-line aligned; no strip ever crosses a cache line.
-   * In **6x48**: Each strip in `PackLHS` is 6 rows × 4 bytes = **24 bytes**. Because 24 does not divide 64, every 3rd strip crosses a 64-byte cache line boundary (e.g., bytes 48–71 span line 0 and line 1). This incurs CPU split-cache-line access penalties and prevents aligned vector packing stores.
-2. **Dimension Multiples & Remainder Tails**:
-   * Most deep learning models use dimensions that are powers of 2 or multiples of 64 ($N \in \{128, 256, 512, 1024, 2048, 4096\}$).
-   * 64 divides all of these cleanly with 0 remainder.
-   * 48 leaves fractional remainder tails on common sizes (e.g. $1024 = 21 \times 48 + 16$), creating tiny edge strips, uneven thread work distribution, and severe regressions on batched workloads (e.g. `Batched-Large-1` dropped from 2,770 to 2,007 GFlops/s).
-3. **Cross-DType Complexity**:
-   * Maintaining 6-row layouts would require dedicated AVX-512 transposition microkernels and packing logic across Float16, BFloat16, and Float64 for ambiguous overall returns.
+### Full GEMM Benchmark Comparison
 
-*Conclusion*: 4x64 remains the standard architecture default. The 6x48 geometry can be revisited in specialized scenarios (e.g., dedicated fused layers with fixed multiples of 48).
+| Problem Regime | Matrix Shapes | $4 \times 64$ Baseline | $8 \times 32$ Geometry | Impact |
+| :--- | :--- | :--- | :--- | :--- |
+| **Giant Square** | $2048 \times 2048 \times 2048$ | **3,017 GFlops/s** ($5.7\text{ ms}$) | **2,817 GFlops/s** ($6.1\text{ ms}$) | -6.6% |
+| **Large Wide** | $1536 \times 1920 \times 1024$ | **2,695 GFlops/s** ($2.2\text{ ms}$) | **2,423 GFlops/s** ($2.5\text{ ms}$) | -10.0% |
+| **Transformer Projections** | $42 \times 48 \times 1536 \times 384$ | **1,610 GFlops/s** ($1.5\text{ ms}$) | **1,929 GFlops/s** ($1.2\text{ ms}$) | **+19.8%** 🚀 |
+| **Transformer Projections** | $64 \times 32 \times 1536 \times 384$ | **1,641 GFlops/s** ($1.5\text{ ms}$) | **1,955 GFlops/s** ($1.2\text{ ms}$) | **+19.1%** 🚀 |
+| **Transformer Projections** | $85 \times 24 \times 1536 \times 384$ | **1,828 GFlops/s** ($1.3\text{ ms}$) | **1,994 GFlops/s** ($1.2\text{ ms}$) | **+9.1%** 🚀 |
+| **Transformer Projections** | $16 \times 128 \times 1536 \times 384$ | **1,806 GFlops/s** ($1.3\text{ ms}$) | **1,956 GFlops/s** ($1.2\text{ ms}$) | **+8.3%** 🚀 |
+
+### Why 8x32 was Adopted as the Standard Architecture
+While $4 \times 64$ reaches higher peak throughput on massive square matrices due to lower instruction decoding overhead (8 loads vs 10 loads per 16 FMAs), **$8 \times 32$** is chosen as the standardized geometry:
+
+1. **Massive Wins on Real Transformer Shapes (+8% to +20%)**:
+   In modern deep learning (e.g. BAAI embedding, BERT, LLaMA), column projections frequently have $N=384, 512, 768$ and moderate sequence lengths ($M \in [16, 128]$). $N_r = 32$ tiles these shapes with zero remainder padding and enables much finer thread work partitioning across 32+ cores.
+2. **Arithmetic Intensity & L1/L2 RHS Bandwidth**:
+   In $8 \times 32$, each loaded RHS vector is reused across **8 FMAs** (compared to 4 in $4 \times 64$), cutting RHS memory traffic in half and reducing cache port pressure.
+3. **Perfect Cache-Line Alignment**:
+   8 rows × 4 bytes = 32 bytes (exactly half of a 64-byte cache line). Two consecutive $K$ steps form a perfectly aligned 64-byte cache line, avoiding the split-cache-line penalties that afflicted $6 \times 48$.
+4. **Universal Symmetry Across Data Types**:
+   Across all types, the accumulator tile is symmetrically **8 rows × 2 vector registers** (16 ZMM accumulators):
+   * Float32: $8 \times 32$
+   * Float16 / BFloat16 $\to$ Float32: $8 \times 32$
+   * Float64: $8 \times 16$
+
+### Note on 6x48
+The $6 \times 48$ geometry delivered +20% to +30% on dimensions that were exact multiples of 48, but suffered severely on powers-of-two ($1024 = 21 \times 48 + 16$) due to fractional remainder tails, and 24-byte LHS strips straddled 64-byte cache lines. $8 \times 32$ captures similar transformer acceleration without any of the alignment or divisibility drawbacks.
 
 ---
 
@@ -249,3 +267,21 @@ go test -v -run TestCompliance ./gobackend
 # Run Large DotGeneral benchmarks:
 go test -run none -bench BenchmarkCompliance/DotGeneral/Large ./gobackend
 ```
+
+---
+
+## 10. Future Work: Multi-Geometry Dynamic Microkernel Selection
+
+State-of-the-art inference engines such as Google's **XNNPACK**, **BLIS**, and Intel's **oneDNN** implement families of specialized microkernels rather than a single fixed geometry. Potential future enhancements for `compute/dot/matmul`:
+
+1. **Dynamic Multi-Geometry Microkernel Routing**:
+   * Inspect $(M, N, K)$ at dispatch time to choose the optimal microkernel:
+     * **4x64**: Selected for massive square or wide matrices where $N \pmod{64} == 0$ and $M \ge 512$ (delivering ~3,000 GFlops/s peak).
+     * **8x32**: Selected for transformer projections and moderate sequence lengths ($N \pmod{32} == 0, N \le 512$) (delivering +8% to +20% higher throughput).
+     * **6x48**: Specialized for models whose hidden sizes are fixed multiples of 48.
+2. **Dedicated GEMV Fast Paths ($M=1$ or $M \le 3$)**:
+   * In LLM autoregressive token generation (e.g. sequence length $M=1$), 2D BLAS tiling and LHS packing introduce unnecessary memory copies.
+   * A dedicated vector-matrix microkernel ($1 \times 64$ or $1 \times 32$) that directly reads the single activation vector and streams weights without packing can yield substantial speedups for token-by-token generation.
+3. **Specialized Edge Remainder Kernels**:
+   * For matrix boundaries ($M \pmod{M_r} \ne 0$ or $N \pmod{N_r} \ne 0$), specialized remainder kernels (e.g. $1 \times N_r$, $2 \times N_r$, $3 \times N_r$) avoid zero-padding and wasted FMA cycles on trailing rows.
+
