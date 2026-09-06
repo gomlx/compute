@@ -7,35 +7,49 @@
 [![Windows/amd64 Tests](https://github.com/gomlx/compute/actions/workflows/windows_amd64_tests.yaml/badge.svg)](https://github.com/gomlx/compute/actions/workflows/windows_amd64_tests.yaml)
 
 
-# Compute Backends API
+# Compute Backend APIs
 
 Package `compute` provides a modular API for defining and executing multidimensional computation graphs with pluggable backends.
 
 It defines `shapes` (tensor shapes) and `dtypes` (data types) and the top-level `compute` package defines a `Backend` API (a series of interfaces), that
 can be used to define a computation graph, JIT-compile it, transfer buffers (raw values) to/from the backend, and execute compiled computations.
 
-It powers [GoMLX](https://github.com/gomlx/gomlx), the machine learning framework for Go, but can be used directly also. With the caveat that the `compute.Backend` doesn't aim to be ergonomic, but instead "correct" and "minimal". For a more convenient API for complex computation, and auto-differentiation, use GoMLX instead.
+It powers [GoMLX](https://github.com/gomlx/gomlx), the machine learning framework for Go, but can be used directly also. With the caveat that the `compute.Backend` doesn't aim to be ergonomic, but instead "correct" and "minimal" (including minimal dependencies). 
+For a more convenient API for complex computation, and auto-differentiation, use GoMLX instead.
 
-## Available Backends
+## Available Backend Implementations
 
-The `compute.Backend` API is currently implemented by:
 
-- Package `gobackend`: a native Go implementation, hence very portable
-  (including it runs in WASM). It covers 80% of the API (some ops are still
-  missing). We are working on SIMD versions: AVX512 and AVX2 using
-  `simd/archsimd` for now, only for _matmul_ (with huge performance gains).
+### The Native **"go"** Backend
+
+This repo also include the package `gobackend` that implements the `compute.Backend` API using pure Go. 
+It is very portable but relatively slow (when compared with well supported backends like XLA and ONNX).
+
+It has some support for SIMD for AVX2 and AVX512 (_amd64_) when using `GOEXPERIMENT=simd`, and there are 
+plenty of "low-hanging fruit" to improve performance, for anyone interested in contributing.
+
+See below "Environment Varaiables" for more fine-control.
+
+### Other backends:
+
+The `compute.Backend` APIs is currently implemented by:
+
 - Package
-  [`compute/xla`](https://github.com/gomlx/go-xla/tree/main/compute/xla): an
+  [`github.com/gomlx/go-xla/compute/xla`](https://github.com/gomlx/go-xla/tree/main/compute/xla): an
   [XLA (PJRT)](https://openxla.org/) based implementation, the same used by Jax
   and TensorFlow. It uses CGO (it's a C++ library), but it supports GPUs and
   TPUs, as well as a fast CPU, proper JIT compilation. Limited to static shapes
-  though.
+  though. It includes an optional "auto-installer".
+- Package [`github.com/gomlx/compute-onnx`](https://github.com/gomlx/compute-onnx): a ONNX Runtime (ORT) based
+  based implementation. It converts a `compute.Backend` computation graph into a ONNX proto and executes it
+  using ORT. It includes an optional "auto-installer". Broader support for hardware, dyanmic shape support in
+  some platforms, accelerated web-assembly (using "onnx:webgpu") with some caveats.
 - The project [go-darwinml](https://github.com/gomlx/go-darwinml/) is an
   **experimental** support to Apple's CoreML, with accelerate for GPU (Metal)
-  and CPU (arm64).
+  and CPU (arm64). It's currently broken, and looking for collaborator -- or donations so I can acquire hardware
+  to support it.
 
 ## Using the `compute.Backend` interface
-
 
 ## Roadmap
 
@@ -49,9 +63,9 @@ The `compute.Backend` API is currently implemented by:
 We are exploring support (Backend implementations) for:
 
 * Integrate more SIMD using go-highway for the Go backend.
-* ONNX Runtime: dynamically generate an ONNX proto and use ORT to execute it;
+* [LiteRTX](https://github.com/google-ai-edge/litert): Add LiteRT based Backend implementation. Broad support for
+  edge hardware (as well as web assembly), and supposedly very efficient.
 * [llama.cpp](https://github.com/ggml-org/llama.cpp): using [github.com/hybridgroup/yzma](https://github.com/hybridgroup/yzma) a "pure-go" binding;
-* [WebNN](https://learn.microsoft.com/en-us/windows/ai/directml/webnn-overview) or WebGL.
 
 ## Implementing your own backend
 
@@ -86,9 +100,11 @@ some of the example models to benchmark your backend against some of the others.
     One can install PJRTs build for NVIDIA GPUs (there is an installation script for that), there is also one for ROCm (not tested by the author),
     for TPU (Google Cloud) and reports of PJRTs being built to even new accelerators (e.g.: [TensTorrent XLA](https://github.com/tenstorrent/tt-xla))
 - For the native Go backend:
-  - `GOMLX_SIMD_AVX512`: set to `0` or `false` to disable AVX512 SIMD implementation in the native Go backend. The default is enabled if AVX512 is present.
-  - `GOMLX_SIMD_AVX2`: set to `0` or `false` to disable AVX2 SIMD implementation in the native Go backend. The default is enabled if AVX2 is present.
-  - `GOMLX_FUSION`: if set to `0`, `false` to disable fused operations in the native Go backend. The default is enabled.
+  - `GOMLX_GO_SIMD_AVX512`: set to `0` or `false` to disable AVX512 SIMD implementation in the native Go backend. The default is enabled if AVX512 is present.
+  - `GOMLX_GO_SIMD_AVX2`: set to `0` or `false` to disable AVX2 SIMD implementation in the native Go backend. The default is enabled if AVX2 is present.
+  - `GOMLX_GO_AVX512_ASM`: set to `0` or `false` to disable the assembly microkernel for Float32 and use the Go SIMD kernel instead.
+  - `GOMLX_GO_AVX512_KC`, `GOMLX_GO_AVX512_MC`, `GOMLX_GO_AVX512_NC`: cache blocking tuning parameters for AVX512 matrix multiplication.
+  - `GOMLX_GO_FUSION`: if set to `0`, `false` to disable fused operations in the native Go backend. The default is enabled.
 - For the [XLA backend](https://github.com/gomlx/go-xla/tree/main/compute/xla)
   - `PJRT_PLUGIN_LIBRARY_PATH`: the underlying XLA backend uses this variable as an extra directory to search for plugin locations.
     It searches for the systems library paths (`$LD_LIBRARY_PATH`, `/etc/ld.so.conf`), the default `/usr/local/lib/gomlx/pjrt` and `$PJRT_PLUGIN_LIBRARY_PATH` if set.
