@@ -174,8 +174,82 @@ type workItem struct {
 	rhsColStart, rhsColEnd int
 }
 
-// feedWorkItems split the matrix-multiplication tasks is "workItems" optimized (as large as possible, prioritizing whole batch items)
-// for maxWokers (>=1).
+// choose2DSplit determines the 2D grid (numM, numN) of workers to divide an M x N matrix multiplication.
+func choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int) {
+	if targetWorkers <= 1 {
+		return 1, 1
+	}
+
+	minCol := max(1, params.RHSL1KernelCols)
+	minRow := max(1, params.LHSL1KernelRows)
+	targetRow := max(minRow, params.LHSPanelCrossSize)
+	targetCol := max(minCol, params.RHSPanelCrossSize)
+
+	bestNumM := targetWorkers
+	bestNumN := 1
+	bestScore := -1.0
+
+	// Consider candidate numN values: powers of 2 from 1 up to targetWorkers
+	for candN := 1; candN <= targetWorkers; candN *= 2 {
+		candM := (targetWorkers + candN - 1) / candN
+
+		colChunk := (N + candN - 1) / candN
+		rowChunk := (M + candM - 1) / candM
+
+		if colChunk < minCol || rowChunk < minRow {
+			continue
+		}
+
+		// Score components:
+		// 1. Worker utilization: penalize if candM * candN != targetWorkers
+		workerRatio := float64(candM*candN) / float64(targetWorkers)
+		if workerRatio < 1.0 {
+			workerRatio = 1.0 / workerRatio
+		}
+		utilPenalty := (workerRatio - 1.0) * 100.0
+
+		// 2. Row panel reuse: rowChunk should be at least targetRow (LHSPanelCrossSize)
+		// so that packed RHS in L2/L3 cache is reused across multiple LHS panels.
+		rowPenalty := 0.0
+		if rowChunk < targetRow {
+			rowPenalty = float64(targetRow-rowChunk) / float64(targetRow) * 500.0
+		}
+
+		// 3. Col panel size: colChunk <= targetCol avoids re-packing LHS multiple times per worker.
+		// Also colChunk >= 2 * minCol ensures efficient SIMD loop unrolling.
+		colPenalty := 0.0
+		if colChunk > targetCol {
+			colPenalty = float64(colChunk-targetCol) / float64(targetCol) * 100.0
+		} else if colChunk < 2*minCol && N >= 4*minCol {
+			colPenalty = 50.0
+		}
+
+		// 4. Memory traffic estimation:
+		// RHS packing traffic is proportional to candM * N.
+		// LHS packing traffic is proportional to candN * M * ceil(colChunk / targetCol).
+		nPanels := (colChunk + targetCol - 1) / targetCol
+		traffic := float64(candM*N + candN*M*nPanels)
+		trafficScore := traffic / float64(M+N)
+
+		totalScore := trafficScore + utilPenalty + rowPenalty + colPenalty
+		// Bonus for candN == 1 if rowChunk is large enough:
+		// When rowChunk is already >= targetRow, splitting along M alone avoids
+		// multiple workers having to write to different columns of the same row.
+		if candN == 1 && rowChunk >= targetRow {
+			totalScore -= 200.0
+		}
+		if bestScore < 0 || totalScore < bestScore {
+			bestScore = totalScore
+			bestNumM = candM
+			bestNumN = candN
+		}
+	}
+
+	return bestNumM, bestNumN
+}
+
+// feedWorkItems split the matrix-multiplication tasks into "workItems" optimized
+// for maxWorkers (>=1).
 // It closes workChan on exit.
 //
 // feedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
@@ -188,59 +262,66 @@ func feedWorkItems(
 		// Invariant: it closes the channel on exit.
 		close(workChan)
 	}()
-	if batchSize >= 2*maxWorkers {
-		// Split the work on the batch dimension only.
-		batchStep := batchSize / maxWorkers
-		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
-			workChan <- workItem{
-				batchIdx, batchIdx + min(batchStep, batchSize-batchIdx),
-				0, lhsCrossSize,
-				0, rhsCrossSize}
+
+	if maxWorkers <= 1 {
+		workChan <- workItem{
+			0, batchSize,
+			0, lhsCrossSize,
+			0, rhsCrossSize,
 		}
 		return
 	}
 
-	// First maxWorkers batch examples are handled as one at a time:
-	batchIdx := 0
+	if batchSize >= 2*maxWorkers {
+		// Split the work on the batch dimension only.
+		batchStep := (batchSize + maxWorkers - 1) / maxWorkers
+		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
+			workChan <- workItem{
+				batchIdx, min(batchSize, batchIdx+batchStep),
+				0, lhsCrossSize,
+				0, rhsCrossSize,
+			}
+		}
+		return
+	}
+
 	if batchSize >= maxWorkers {
-		for ; batchIdx < maxWorkers; batchIdx++ {
+		// Plenty of batch items: each worker gets whole batch items dynamically.
+		for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
 			workChan <- workItem{
 				batchIdx, batchIdx + 1,
 				0, lhsCrossSize,
-				0, rhsCrossSize}
-		}
-	}
-
-	// The remaining work is split into RHS or LHS slices.
-	batchCountRemaining := batchSize - batchIdx
-	if batchCountRemaining == 0 {
-		return // We are finished.
-	}
-	splitFactor := (maxWorkers + batchCountRemaining - 1) / batchCountRemaining
-	if lhsCrossSize > rhsCrossSize {
-		// Split on the LHS dimension, in multiples of LHSPanelCrossSize.
-		lhsSplitSize := (lhsCrossSize + splitFactor - 1) / splitFactor
-		lhsSplitSize = max(1, lhsSplitSize/params.LHSPanelCrossSize) * params.LHSPanelCrossSize
-		batchStart := batchIdx
-		for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
-			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
-				workChan <- workItem{
-					batchIdx, batchIdx + 1,
-					lhsRowIdx, lhsRowIdx + min(lhsSplitSize, lhsCrossSize-lhsRowIdx),
-					0, rhsCrossSize}
+				0, rhsCrossSize,
 			}
 		}
-	} else {
-		// Split on the RHS dimension, in multiples of RHSPanelCrossSize.
-		rhsSplitSize := (rhsCrossSize + splitFactor - 1) / splitFactor
-		rhsSplitSize = max(1, rhsSplitSize/params.RHSPanelCrossSize) * params.RHSPanelCrossSize
-		batchStart := batchIdx
+		return
+	}
+
+	// batchSize < maxWorkers: distribute workers across the batch items,
+	// using 2D grid partitioning on each matrix slice.
+	// Target 2 * maxWorkers to saturate the worker pool (2 workers per GOMAXPROCS).
+	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
+	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
+
+	rhsSplitSize := (rhsCrossSize + numN - 1) / numN
+	if params.RHSL1KernelCols > 0 {
+		rhsSplitSize = max(params.RHSL1KernelCols, (rhsSplitSize/params.RHSL1KernelCols)*params.RHSL1KernelCols)
+	}
+	lhsSplitSize := (lhsCrossSize + numM - 1) / numM
+	if params.LHSL1KernelRows > 0 {
+		lhsSplitSize = max(params.LHSL1KernelRows, (lhsSplitSize/params.LHSL1KernelRows)*params.LHSL1KernelRows)
+	}
+
+	for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
+		rowEnd := min(lhsCrossSize, lhsRowIdx+lhsSplitSize)
 		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
-			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
+			colEnd := min(rhsCrossSize, rhsColIdx+rhsSplitSize)
+			for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
 				workChan <- workItem{
 					batchIdx, batchIdx + 1,
-					0, lhsCrossSize,
-					rhsColIdx, rhsColIdx + min(rhsSplitSize, rhsCrossSize-rhsColIdx)}
+					lhsRowIdx, rowEnd,
+					rhsColIdx, colEnd,
+				}
 			}
 		}
 	}
