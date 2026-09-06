@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -536,6 +537,9 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 							return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, config)
 						})
 					if err != nil {
+						if errors.Is(err, compute.ErrNotImplemented) {
+							b.Skipf("Skipping benchmark %s: %+v", benchCase.name, err)
+						}
 						b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)
 					}
 					b.ResetTimer()
