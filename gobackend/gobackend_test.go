@@ -56,11 +56,11 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// BenchmarkGoBackend runs all compliance (backendtest) compute.Backend benchmarks on the given backend.
+// BenchmarkCompliance runs all compliance (backendtest) compute.Backend benchmarks on the given backend.
 // To run:
 //
 //	$ go test -bench=. -benchmem
-func BenchmarkGoBackend(b *testing.B) {
+func BenchmarkCompliance(b *testing.B) {
 	fmt.Printf("Running benchmarks on backend: %s, %s\n", backend.Name(), backend.Description())
 	backendtest.RunAllBenchmarks(b, backend)
 }
