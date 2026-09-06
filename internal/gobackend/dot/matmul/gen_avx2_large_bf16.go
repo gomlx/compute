@@ -72,6 +72,13 @@ func avx2LargeBFloat16( //alt:bf16
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 16
+		accumOutputRef, accumOutput, ok := GetBuffer[float32](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+		//alt:f64  accumOutputRef, accumOutput, ok := GetBuffer[float64](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		lhsFlatIdx := 0
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
@@ -89,6 +96,7 @@ func avx2LargeBFloat16( //alt:bf16
 				0, lhsCrossSize, 0, rhsCrossSize,
 				params,
 				packedLHS, packedRHS, packedOutput,
+				accumOutput,
 			)
 			lhsFlatIdx += lhsBatchStride
 			rhsFlatIdx += rhsBatchStride
@@ -130,6 +138,13 @@ func avx2LargeBFloat16( //alt:bf16
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 16
+		accumOutputRef, accumOutput, ok := GetBuffer[float32](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+		//alt:f64  accumOutputRef, accumOutput, ok := GetBuffer[float64](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		for item := range workChan {
 			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
 				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
@@ -145,6 +160,7 @@ func avx2LargeBFloat16( //alt:bf16
 					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
 					params,
 					packedLHS, packedRHS, packedOutput,
+					accumOutput,
 				)
 			}
 		}
@@ -175,6 +191,8 @@ func avx2LargeMatrixSliceBFloat16( //alt:bf16
 	packedLHS, packedRHS []bfloat16.BFloat16, packedOutput []float32, //alt:bf16
 	//alt:f16  packedLHS, packedRHS []float16.Float16, packedOutput []float32,
 	//alt:f64  packedLHS, packedRHS []float64, packedOutput []float64,
+	accumBuffer []float32, //alt:f32|bf16|f16
+	//alt:f64  accumBuffer []float64,
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
@@ -188,6 +206,10 @@ func avx2LargeMatrixSliceBFloat16( //alt:bf16
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
 		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
+		numMPanels := (rowEnd - rowStart + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+		accumPanelStride := params.RHSPanelCrossSize
+		panelSize := params.LHSPanelCrossSize * accumPanelStride
+		useAccum := len(accumBuffer) >= numMPanels*panelSize
 
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
@@ -201,7 +223,7 @@ func avx2LargeMatrixSliceBFloat16( //alt:bf16
 			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
-			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 				avx2PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32|bf16|f16|f64
 
@@ -215,13 +237,43 @@ func avx2LargeMatrixSliceBFloat16( //alt:bf16
 					lhsPanelHeight, rhsPanelWidth,
 				)
 
-				// Accumulate (or write) packedOutput to output.
+				// Accumulate (or write) packedOutput to accumBuffer (in L2 cache) or outputMatrix.
 				isFirstContractingPanel := contractingPanelIdx == 0
+				if useAccum {
+					accumOffset := mIdx * panelSize
+					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
+					avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
+						//alt:f64  avx2ApplyPackedOutputFloat64(
+						packedOutput, accumSlice,
+						isFirstContractingPanel,
+						params.RHSPanelCrossSize,
+						0, 0,
+						accumPanelStride,
+						lhsPanelHeight, rhsPanelWidth)
+				} else {
+					avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
+						//alt:f64  avx2ApplyPackedOutputFloat64(
+						packedOutput, outputMatrix,
+						isFirstContractingPanel,
+						params.RHSPanelCrossSize,
+						lhsPanelRowIdx, rhsPanelColIdx,
+						rhsCrossSize,
+						lhsPanelHeight, rhsPanelWidth)
+				}
+			}
+		}
+
+		if useAccum {
+			// Copy accumulated results from L2 cache to outputMatrix in a single pass.
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
+				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+				accumOffset := mIdx * panelSize
+				accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
 				avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
 					//alt:f64  avx2ApplyPackedOutputFloat64(
-					packedOutput, outputMatrix,
-					isFirstContractingPanel,
-					params.RHSPanelCrossSize,
+					accumSlice, outputMatrix,
+					true,
+					accumPanelStride,
 					lhsPanelRowIdx, rhsPanelColIdx,
 					rhsCrossSize,
 					lhsPanelHeight, rhsPanelWidth)

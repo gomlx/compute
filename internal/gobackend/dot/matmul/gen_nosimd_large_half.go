@@ -48,6 +48,12 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 16
+		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		lhsFlatIdx := 0
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
@@ -63,6 +69,7 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 				0, lhsCrossSize, 0, rhsCrossSize,
 				params,
 				packedLHS, packedRHS, packedOutput,
+				accumOutput,
 			)
 			lhsFlatIdx += lhsBatchStride
 			rhsFlatIdx += rhsBatchStride
@@ -98,6 +105,12 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 16
+		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		for item := range workChan {
 			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
 				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
@@ -111,6 +124,7 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
 					params,
 					packedLHS, packedRHS, packedOutput,
+					accumOutput,
 				)
 			}
 		}
@@ -133,12 +147,17 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 	rowStart, rowEnd, colStart, colEnd int,
 	params CacheParams,
 	packedLHS, packedRHS []I, packedOutput []O,
+	accumBuffer []O,
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
 		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
+		numMPanels := (rowEnd - rowStart + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+		accumPanelStride := params.RHSPanelCrossSize
+		panelSize := params.LHSPanelCrossSize * accumPanelStride
+		useAccum := len(accumBuffer) >= numMPanels*panelSize
 
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
@@ -152,7 +171,7 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
-			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 
 				// PACK LHS
@@ -167,12 +186,40 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 					lhsPanelHeight, rhsPanelWidth,
 				)
 
-				// Accumulate (or write) packedOutput to output.
+				// Accumulate (or write) packedOutput to accumBuffer (in L2 cache) or outputMatrix.
 				isFirstContractingPanel := contractingPanelIdx == 0
+				if useAccum {
+					accumOffset := mIdx * panelSize
+					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
+					noSIMDApplyPackedOutput(
+						packedOutput, accumSlice,
+						isFirstContractingPanel,
+						params.RHSPanelCrossSize,
+						0, 0,
+						accumPanelStride,
+						lhsPanelHeight, rhsPanelWidth)
+				} else {
+					noSIMDApplyPackedOutput(
+						packedOutput, outputMatrix,
+						isFirstContractingPanel,
+						params.RHSPanelCrossSize,
+						lhsPanelRowIdx, rhsPanelColIdx,
+						rhsCrossSize,
+						lhsPanelHeight, rhsPanelWidth)
+				}
+			}
+		}
+
+		if useAccum {
+			// Copy accumulated results from L2 cache to outputMatrix in a single pass.
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
+				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+				accumOffset := mIdx * panelSize
+				accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
 				noSIMDApplyPackedOutput(
-					packedOutput, outputMatrix,
-					isFirstContractingPanel,
-					params.RHSPanelCrossSize,
+					accumSlice, outputMatrix,
+					true,
+					accumPanelStride,
 					lhsPanelRowIdx, rhsPanelColIdx,
 					rhsCrossSize,
 					lhsPanelHeight, rhsPanelWidth)
