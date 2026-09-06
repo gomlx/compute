@@ -151,7 +151,20 @@ func avx512ApplyPackedOutputFloat32(
 			c := 0
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
-			// Vectorized loop
+			// 64-float unrolled loop (4 ZMM registers)
+			for ; c+64 <= width; c += 64 {
+				v0 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx]))
+				v1 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+16]))
+				v2 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+32]))
+				v3 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+48]))
+				v0.StoreArray(castToArray16(&output[outputColIdx]))
+				v1.StoreArray(castToArray16(&output[outputColIdx+16]))
+				v2.StoreArray(castToArray16(&output[outputColIdx+32]))
+				v3.StoreArray(castToArray16(&output[outputColIdx+48]))
+				packedColIdx += 64
+				outputColIdx += 64
+			}
+			// Vectorized loop (1 ZMM register)
 			for ; c+16 <= width; c += 16 {
 				packedVal := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx]))
 				packedVal.StoreArray(castToArray16(&output[outputColIdx]))
@@ -175,6 +188,23 @@ func avx512ApplyPackedOutputFloat32(
 			c := 0
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
+			// 64-float unrolled loop (4 ZMM registers)
+			for ; c+64 <= width; c += 64 {
+				p0 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx]))
+				p1 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+16]))
+				p2 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+32]))
+				p3 := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx+48]))
+				o0 := archsimd.LoadFloat32x16Array(castToArray16(&output[outputColIdx]))
+				o1 := archsimd.LoadFloat32x16Array(castToArray16(&output[outputColIdx+16]))
+				o2 := archsimd.LoadFloat32x16Array(castToArray16(&output[outputColIdx+32]))
+				o3 := archsimd.LoadFloat32x16Array(castToArray16(&output[outputColIdx+48]))
+				p0.Add(o0).StoreArray(castToArray16(&output[outputColIdx]))
+				p1.Add(o1).StoreArray(castToArray16(&output[outputColIdx+16]))
+				p2.Add(o2).StoreArray(castToArray16(&output[outputColIdx+32]))
+				p3.Add(o3).StoreArray(castToArray16(&output[outputColIdx+48]))
+				packedColIdx += 64
+				outputColIdx += 64
+			}
 			// Vectorized loop
 			for ; c+16 <= width; c += 16 {
 				packedVal := archsimd.LoadFloat32x16Array(castToArray16(&packedOutput[packedColIdx]))
@@ -214,6 +244,19 @@ func avx512ApplyPackedOutputFloat64(
 			c := 0
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
+			// 32-float unrolled loop (4 ZMM registers)
+			for ; c+32 <= width; c += 32 {
+				v0 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx]))
+				v1 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+8]))
+				v2 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+16]))
+				v3 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+24]))
+				v0.StoreArray(castToArray8(&output[outputColIdx]))
+				v1.StoreArray(castToArray8(&output[outputColIdx+8]))
+				v2.StoreArray(castToArray8(&output[outputColIdx+16]))
+				v3.StoreArray(castToArray8(&output[outputColIdx+24]))
+				packedColIdx += 32
+				outputColIdx += 32
+			}
 			// Vectorized loop
 			for ; c+8 <= width; c += 8 {
 				packedVal := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx]))
@@ -238,6 +281,23 @@ func avx512ApplyPackedOutputFloat64(
 			c := 0
 			outputColIdx := outputRowIdx
 			packedColIdx := packedRowIdx
+			// 32-float unrolled loop (4 ZMM registers)
+			for ; c+32 <= width; c += 32 {
+				p0 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx]))
+				p1 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+8]))
+				p2 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+16]))
+				p3 := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx+24]))
+				o0 := archsimd.LoadFloat64x8Array(castToArray8(&output[outputColIdx]))
+				o1 := archsimd.LoadFloat64x8Array(castToArray8(&output[outputColIdx+8]))
+				o2 := archsimd.LoadFloat64x8Array(castToArray8(&output[outputColIdx+16]))
+				o3 := archsimd.LoadFloat64x8Array(castToArray8(&output[outputColIdx+24]))
+				p0.Add(o0).StoreArray(castToArray8(&output[outputColIdx]))
+				p1.Add(o1).StoreArray(castToArray8(&output[outputColIdx+8]))
+				p2.Add(o2).StoreArray(castToArray8(&output[outputColIdx+16]))
+				p3.Add(o3).StoreArray(castToArray8(&output[outputColIdx+24]))
+				packedColIdx += 32
+				outputColIdx += 32
+			}
 			// Vectorized loop
 			for ; c+8 <= width; c += 8 {
 				packedVal := archsimd.LoadFloat64x8Array(castToArray8(&packedOutput[packedColIdx]))

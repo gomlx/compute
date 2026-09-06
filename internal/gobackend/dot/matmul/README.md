@@ -144,7 +144,7 @@ We introduced an `accumulate bool` parameter directly into all microkernels:
 
 ## 6. Optimization History & Benchmark Gains
 
-The following benchmarks were recorded on an **AMD Ryzen 9 9950X3D** (16 cores / 32 threads, AVX-512) for large Float32 matrix multiplications (`NoBatch-Large-1`: $1536 \times 1024 \times 1920$):
+The following benchmarks were recorded on an **AMD Ryzen 9 9950X3D** (16 cores / 32 threads, AVX-512, Ubuntu 26.04, CPU governor: balanced) for large Float32 matrix multiplications (`NoBatch-Large-1`: $1536 \times 1024 \times 1920$):
 
 | Optimization Milestone | Throughput | Latency | Key Changes |
 | :--- | :--- | :--- | :--- |
@@ -159,7 +159,34 @@ The following benchmarks were recorded on an **AMD Ryzen 9 9950X3D** (16 cores /
 
 ---
 
-## 7. File Map & Code Generation
+## 7. Exploration: Alternative Kernel Geometries (6x48 vs 4x64)
+
+During optimization, we explored an alternative microkernel geometry for AVX-512 Float32: **6 rows × 48 cols** ($M_r = 6, N_r = 48$) compared to the default **4 rows × 64 cols** ($M_r = 4, N_r = 64$).
+
+### Theoretical Motivation
+* **Register Allocation**: AVX-512 has 32 registers (`Z0`–`Z31`).
+  * In **4x64**: 16 accumulators ($4 \times 4$), 4 RHS vectors ($4 \times 16$), 4 LHS scalar broadcasts. 24 registers used, 8 spare. Each loaded RHS vector is reused across 4 FMAs. Arithmetic intensity: $\approx 1.88$ Flops/byte.
+  * In **6x48**: 18 accumulators ($6 \times 3$), 3 RHS vectors ($3 \times 16$), 6 LHS scalar broadcasts. 27 registers used, 5 spare. Each loaded RHS vector is reused across 6 FMAs (+50% reuse). Arithmetic intensity: $\approx 2.67$ Flops/byte (+42%).
+* In microkernel isolation, compute throughput was measured at **~350 GFlops/s** per core, and on whole matrices where dimensions were multiples of 48 (e.g. $N=384, 1536$ in `BAAI-bge-small`), end-to-end performance improved by **+20% to +30%** (jumping from 1,800 to 2,350 GFlops/s).
+
+### Why 4x64 Remains the Default
+Despite the higher arithmetic intensity, 6x48 was set aside in favor of 4x64 for universal workloads due to two critical issues:
+
+1. **LHS Cache-Line Straddling (24 bytes vs 16 bytes)**:
+   * In **4x64**: Each strip in `PackLHS` is 4 rows × 4 bytes = **16 bytes**. Exactly 4 strips make **64 bytes** (one CPU cache line). Memory writes during packing and broadcast loads during compute are perfectly cache-line aligned; no strip ever crosses a cache line.
+   * In **6x48**: Each strip in `PackLHS` is 6 rows × 4 bytes = **24 bytes**. Because 24 does not divide 64, every 3rd strip crosses a 64-byte cache line boundary (e.g., bytes 48–71 span line 0 and line 1). This incurs CPU split-cache-line access penalties and prevents aligned vector packing stores.
+2. **Dimension Multiples & Remainder Tails**:
+   * Most deep learning models use dimensions that are powers of 2 or multiples of 64 ($N \in \{128, 256, 512, 1024, 2048, 4096\}$).
+   * 64 divides all of these cleanly with 0 remainder.
+   * 48 leaves fractional remainder tails on common sizes (e.g. $1024 = 21 \times 48 + 16$), creating tiny edge strips, uneven thread work distribution, and severe regressions on batched workloads (e.g. `Batched-Large-1` dropped from 2,770 to 2,007 GFlops/s).
+3. **Cross-DType Complexity**:
+   * Maintaining 6-row layouts would require dedicated AVX-512 transposition microkernels and packing logic across Float16, BFloat16, and Float64 for ambiguous overall returns.
+
+*Conclusion*: 4x64 remains the standard architecture default. The 6x48 geometry can be revisited in specialized scenarios (e.g., dedicated fused layers with fixed multiples of 48).
+
+---
+
+## 8. File Map & Code Generation
 
 Because `matmul` provides high performance across multiple architectures and data types, Go template generation is used to maintain symmetry:
 
