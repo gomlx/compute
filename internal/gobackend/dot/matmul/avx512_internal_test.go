@@ -41,6 +41,39 @@ func TestAVX512(t *testing.T) {
 		})
 	})
 
+	t.Run("Float16AsmDirect", func(t *testing.T) {
+		// contractingLen = 2, lhsActiveRows = 2, rhsActiveCols = 2
+		// LHS has 4 rows x 2 cols, packed in strips of 4 rows:
+		// for col 0: row0, row1, row2, row3
+		// for col 1: row0, row1, row2, row3
+		lhs := make([]float16.Float16, 4*2)
+		// col 0:
+		lhs[0] = float16.FromFloat32(1) // row 0
+		lhs[1] = float16.FromFloat32(3) // row 1
+		lhs[2] = float16.FromFloat32(0) // row 2
+		lhs[3] = float16.FromFloat32(0) // row 3
+		// col 1:
+		lhs[4] = float16.FromFloat32(2) // row 0
+		lhs[5] = float16.FromFloat32(4) // row 1
+		lhs[6] = float16.FromFloat32(0) // row 2
+		lhs[7] = float16.FromFloat32(0) // row 3
+
+		// RHS has 2 rows x 64 cols:
+		rhs := make([]float16.Float16, 2*64)
+		// row 0: col 0 = 10, col 1 = 11
+		rhs[0] = float16.FromFloat32(10)
+		rhs[1] = float16.FromFloat32(11)
+		// row 1: col 0 = 12, col 1 = 13
+		rhs[64] = float16.FromFloat32(12)
+		rhs[65] = float16.FromFloat32(13)
+
+		out := make([]float32, 4*64)
+		avx512LargeKernelFloat16Asm(lhs, rhs, out, 4, 64, 2, 2, 2)
+		if out[0] != 34 || out[1] != 37 || out[64] != 78 || out[65] != 85 {
+			t.Fatalf("Float16AsmDirect: unexpected output: row0=[%v, %v], row1=[%v, %v]", out[0], out[1], out[64], out[65])
+		}
+	})
+
 	t.Run("Transpose/4x8x64bits", func(t *testing.T) {
 		var input [4 * 8]uint64
 		for i := range input {

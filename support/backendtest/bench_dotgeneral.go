@@ -3,10 +3,12 @@
 package backendtest
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -492,6 +494,34 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 			lhsBatch:    []int{},
 			rhsBatch:    []int{},
 		},
+		{
+			model: "Large",
+		},
+		{
+			name:        "NoBatch-Large",
+			lhsShape:    shapes.Make(dtypes.Float32, 1536, 1920),
+			rhsShape:    shapes.Make(dtypes.Float32, 1920, 1024),
+			lhsContract: []int{1},
+			rhsContract: []int{0},
+		},
+		{
+			name:        "Batched-Large-1",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 1536, 1920),
+			rhsShape:    shapes.Make(dtypes.Float32, 16, 1920, 1024),
+			lhsContract: []int{2},
+			lhsBatch:    []int{0},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0},
+		},
+		{
+			name:        "Batched-Large-2",
+			lhsShape:    shapes.Make(dtypes.Float32, 16, 1024, 1920),
+			rhsShape:    shapes.Make(dtypes.Float32, 16, 1920, 1536),
+			lhsContract: []int{2},
+			lhsBatch:    []int{0},
+			rhsContract: []int{1},
+			rhsBatch:    []int{0},
+		},
 	}
 
 	benchIdx := 0
@@ -527,19 +557,41 @@ func BenchmarkDotGeneral(b *testing.B, backend compute.Backend) {
 					rhsData = randomBFloat16(benchCase.rhsShape.Size())
 				}
 				b.Run(benchCase.name, func(b *testing.B) {
+					config := compute.DotGeneralConfig{}
+					if benchCase.lhsShape.DType == dtypes.BFloat16 {
+						config.OutputDType = dtypes.Float32
+					}
 					be, err := newBenchExec(backend, []shapes.Shape{benchCase.lhsShape, benchCase.rhsShape}, []any{lhsData, rhsData},
 						func(f compute.Function, params []compute.Value) (compute.Value, error) {
-							config := compute.DotGeneralConfig{}
-							if benchCase.lhsShape.DType == dtypes.BFloat16 {
-								config.OutputDType = dtypes.Float32
-							}
 							return f.DotGeneral(params[0], benchCase.lhsContract, benchCase.lhsBatch, params[1], benchCase.rhsContract, benchCase.rhsBatch, config)
 						})
 					if err != nil {
+						if errors.Is(err, compute.ErrNotImplemented) {
+							b.Skipf("Skipping benchmark %s: %+v", benchCase.name, err)
+						}
 						b.Fatalf("Failed to create benchmark %s: %+v", benchCase.name, err)
 					}
-					b.ResetTimer()
+					outShape, err := shapeinference.DotGeneral(
+						benchCase.lhsShape, benchCase.lhsContract, benchCase.lhsBatch,
+						benchCase.rhsShape, benchCase.rhsContract, benchCase.rhsBatch,
+						config,
+					)
+					var flops float64
+					if err == nil {
+						contractingSize := 1
+						for _, axis := range benchCase.lhsContract {
+							contractingSize *= benchCase.lhsShape.Dimensions[axis]
+						}
+						flops = float64(2 * outShape.Size() * contractingSize)
+					}
+
 					be.run(b)
+
+					elapsed := b.Elapsed()
+					if flops > 0 && elapsed > 0 && b.N > 0 {
+						gflops := (flops * float64(b.N)) / (elapsed.Seconds() * 1e9)
+						b.ReportMetric(gflops, "GFlops/s")
+					}
 				})
 			}
 		})

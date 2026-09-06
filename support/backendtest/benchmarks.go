@@ -54,6 +54,20 @@ type benchExec struct {
 
 func (be *benchExec) run(b *testing.B) {
 	b.Helper()
+	// Warm up before the benchmark loop. b.Loop() automatically resets
+	// the timer on its first call, so warm-up iterations are not measured.
+	for range 3 {
+		outputs, err := be.exec.Execute(be.inputs, nil, 0)
+		if err != nil {
+			b.Fatalf("Execute failed: %+v", err)
+		}
+		for _, buf := range outputs {
+			err = buf.Finalize()
+			if err != nil {
+				b.Fatalf("Failed to finalize buffer: %+v", err)
+			}
+		}
+	}
 	for b.Loop() {
 		outputs, err := be.exec.Execute(be.inputs, nil, 0)
 		if err != nil {
@@ -65,6 +79,11 @@ func (be *benchExec) run(b *testing.B) {
 				b.Fatalf("Failed to finalize buffer: %+v", err)
 			}
 		}
+	}
+	elapsed := b.Elapsed()
+	if elapsed > 0 && b.N > 0 {
+		msPerOp := (elapsed.Seconds() * 1000) / float64(b.N)
+		b.ReportMetric(msPerOp, "ms/op")
 	}
 }
 

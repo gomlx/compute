@@ -1,0 +1,50 @@
+name: "Windows/amd64"
+permissions:
+  # read|write|none
+  actions: read
+  checks: read
+  contents: read
+  deployments: read
+  # id-token: read    --> doesn't work
+  issues: read
+  discussions: read
+  packages: read
+  pages: read
+  pull-requests: read
+  repository-projects: read
+  security-events: read
+  statuses: read
+
+# Triggers the workflow on push or pull request events but only for the "main" branch
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  windows-amd64-tests:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.1"
+
+      - name: Test
+        run: |
+          go test ./...
+
+      - name: Test with SIMD
+        env:
+          GOEXPERIMENT: simd
+        run: |
+          go test ./...

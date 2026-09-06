@@ -13,7 +13,7 @@ const (
 	// EnabledEnv is the environment variable that controls whether the default matmul
 	// implementations are enabled.
 	// It's on by default, and can be disabled by setting it to false.
-	EnabledEnv = "GOMLX_DOT_MATMUL"
+	EnabledEnv = envutil.GoBackendDotMatmul
 )
 
 // Block/packs parameters for current architecture.
@@ -53,9 +53,9 @@ const (
 )
 
 func init() {
-	avx512Enabled, err := envutil.ReadBool(envutil.SIMD_AVX512_Env, true)
+	avx512Enabled, err := envutil.ReadBool(envutil.GoBackendSIMD_AVX512, true)
 	if err != nil {
-		klog.Fatalf("Invalid value for %q: %+v", envutil.SIMD_AVX512_Env, err)
+		klog.Fatalf("Invalid value for %q: %+v", envutil.GoBackendSIMD_AVX512, err)
 	}
 	_ = avx512Enabled
 }

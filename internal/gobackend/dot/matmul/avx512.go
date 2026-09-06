@@ -27,12 +27,16 @@ import (
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f16,f64
 
 var (
+	// AVX512UseAsm enables the assembly microkernel for Float32 large matrices (4 rows x 64 cols).
+	// Set GOMLX_GO_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
+	AVX512UseAsm = envutil.MustReadBool(envutil.GoBackendAVX512_ASM, true)
+
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX512ParamsFloat32 = CacheParams{
 		LHSL1KernelRows:      4,   // Mr: Uses 4 ZMM registers for accumulation rows, this number must be a multiple of 4
-		RHSL1KernelCols:      32,  // Nr: Uses 2 ZMM registers for accumulation cols, each holds 16 values
-		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
-		LHSPanelCrossSize:    24,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
+		RHSL1KernelCols:      32,  // Nr: 32 for Go SIMD, updated to 64 if AVX512UseAsm is true
+		PanelContractingSize: 192, // Kc: A strip fits in L1 cache
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows), multiple of LHSL1KernelRows, but usually just LHSL1KernelRows.
 		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols), multiple of RHSL1KernelRows.
 	}
 
@@ -59,11 +63,26 @@ var (
 )
 
 func init() {
+	if AVX512UseAsm {
+		AVX512ParamsFloat32.RHSL1KernelCols = 64
+		AVX512ParamsFloat16.RHSL1KernelCols = 64
+		AVX512ParamsBFloat16.RHSL1KernelCols = 64
+		AVX512ParamsFloat64.RHSL1KernelCols = 32
+	}
+	if kc := envutil.MustReadInt(envutil.GoBackendAVX512_KC, 0); kc > 0 {
+		AVX512ParamsFloat32.PanelContractingSize = kc
+	}
+	if mc := envutil.MustReadInt(envutil.GoBackendAVX512_MC, 0); mc > 0 {
+		AVX512ParamsFloat32.LHSPanelCrossSize = mc
+	}
+	if nc := envutil.MustReadInt(envutil.GoBackendAVX512_NC, 0); nc > 0 {
+		AVX512ParamsFloat32.RHSPanelCrossSize = nc
+	}
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		return
 	}
 
-	allowed := envutil.MustReadBool(envutil.SIMD_AVX512_Env, true)
+	allowed := envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true)
 	if allowed && archsimd.X86.AVX512() {
 		registerAVX512(false)
 	}
