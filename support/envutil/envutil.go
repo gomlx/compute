@@ -16,11 +16,17 @@ var (
 	TrueValues  = sets.MakeWith("1", "true", "t", "yes", "on", "enabled")
 )
 
-// Environment variables to control usage of SIMD instructions.
+// Environment variables used by the Go backend: mostly SIMD instructions and optimizations.
 // By default it uses whatever the CPU supports, but this allows one to disable them in case of issues.
 const (
-	SIMD_AVX512_Env = "GOMLX_SIMD_AVX512"
-	SIMD_AVX2_Env   = "GOMLX_SIMD_AVX2"
+	GoBackendSIMD_AVX512 = "GOMLX_GO_SIMD_AVX512"
+	GoBackendSIMD_AVX2   = "GOMLX_GO_SIMD_AVX2"
+	GoBackendFusion      = "GOMLX_GO_FUSION"
+	GoBackendDotMatmul   = "GOMLX_GO_DOT_MATMUL"
+	GoBackendAVX512_ASM  = "GOMLX_GO_AVX512_ASM"
+	GoBackendAVX512_KC   = "GOMLX_GO_AVX512_KC"
+	GoBackendAVX512_MC   = "GOMLX_GO_AVX512_MC"
+	GoBackendAVX512_NC   = "GOMLX_GO_AVX512_NC"
 )
 
 // ReadBool reads the boolean value of the environment variable with the given name.
@@ -80,4 +86,3 @@ func MustReadInt(name string, defaultValue int) int {
 	}
 	return result
 }
-

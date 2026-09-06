@@ -51,7 +51,7 @@ func init() {
 		return
 	}
 
-	allowed := envutil.MustReadBool(envutil.SIMD_AVX2_Env, true)
+	allowed := envutil.MustReadBool(envutil.GoBackendSIMD_AVX2, true)
 	if allowed && archsimd.X86.AVX2() {
 		registerAVX2(false)
 	}

@@ -28,8 +28,8 @@ import (
 
 var (
 	// AVX512UseAsm enables the assembly microkernel for Float32 large matrices (4 rows x 64 cols).
-	// Set GOMLX_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
-	AVX512UseAsm = envutil.MustReadBool("GOMLX_AVX512_ASM", true)
+	// Set GOMLX_GO_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
+	AVX512UseAsm = envutil.MustReadBool(envutil.GoBackendAVX512_ASM, true)
 
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX512ParamsFloat32 = CacheParams{
@@ -69,20 +69,20 @@ func init() {
 		AVX512ParamsBFloat16.RHSL1KernelCols = 64
 		AVX512ParamsFloat64.RHSL1KernelCols = 32
 	}
-	if kc := envutil.MustReadInt("GOMLX_AVX512_KC", 0); kc > 0 {
+	if kc := envutil.MustReadInt(envutil.GoBackendAVX512_KC, 0); kc > 0 {
 		AVX512ParamsFloat32.PanelContractingSize = kc
 	}
-	if mc := envutil.MustReadInt("GOMLX_AVX512_MC", 0); mc > 0 {
+	if mc := envutil.MustReadInt(envutil.GoBackendAVX512_MC, 0); mc > 0 {
 		AVX512ParamsFloat32.LHSPanelCrossSize = mc
 	}
-	if nc := envutil.MustReadInt("GOMLX_AVX512_NC", 0); nc > 0 {
+	if nc := envutil.MustReadInt(envutil.GoBackendAVX512_NC, 0); nc > 0 {
 		AVX512ParamsFloat32.RHSPanelCrossSize = nc
 	}
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		return
 	}
 
-	allowed := envutil.MustReadBool(envutil.SIMD_AVX512_Env, true)
+	allowed := envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true)
 	if allowed && archsimd.X86.AVX512() {
 		registerAVX512(false)
 	}

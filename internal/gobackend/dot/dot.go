@@ -15,10 +15,10 @@
 //
 // Environment variables that can be used to disable certain features:
 //
-//   - GOMLX_DOT_MATMUL: set to false to disable the default matmul implementation.
+//   - GOMLX_GO_DOT_MATMUL: set to false to disable the default matmul implementation.
 //     if you haven't added other plugin implementations, it will effectively disable DotGeneral.
-//   - GOMLX_SIMD_AVX512: set to false to disable the AVX512 implementation, even if the runtime architecture allows it.
-//   - GOMLX_SIMD_AVX2: set to false to disable the AVX2 implementation, even if the runtime architecture allows it.
+//   - GOMLX_GO_SIMD_AVX512: set to false to disable the AVX512 implementation, even if the runtime architecture allows it.
+//   - GOMLX_GO_SIMD_AVX2: set to false to disable the AVX2 implementation, even if the runtime architecture allows it.
 package dot
 
 import (
