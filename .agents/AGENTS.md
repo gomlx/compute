@@ -49,10 +49,10 @@ auto-differentiation, use GoMLX instead.
 - `support`: generic support libraries.
   - `support/testutil`: test utilities that can be used by any `compute.Backend`
     implementation to test. 
-  - `support/backendtest`: Backend compliance tests, that can be run against
-    any backend. Simply call `RunAll(t *testing.T, b compute.Backend)` from your
-    backend tests. These tests always check the capabilities of the backend, and
-    tests not implemented by the backend are skipped.
+  - `support/backendtest`: Backend compliance tests and standard benchmarks, that can be run
+    against any backend. Call `RunAll(t *testing.T, b compute.Backend)` from your backend tests,
+    and `RunAllBenchmarks(b *testing.B, backend compute.Backend)` from your backend benchmarks.
+    Tests/benchmarks check backend capabilities and gracefully skip features returning `ErrNotImplemented`.
 
 ## Coding Style In GoMLX projects, including this one.
 
@@ -91,12 +91,31 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 - Use `any` instead of `interface{}`.
 - Organize tests in hierarchies using `t.Run()` to group related tests.
 
-### Tests
+### Compliance Tests & Benchmarks
 
-- For backend tests that could be used for any backend, write them in `support/backendtest` so other
+- For backend tests and benchmarks that could be used for any backend, write them in `support/backendtest` so other
   backends can benefit.
 - We DONT depend on testify or other test libraries: we are trying to minimize external dependencies.
 - Use the locally defined `support/testutil` for test utilities for equality (or InDelta or InRelativeDelta comparisons of buffers, etc.).
+- **Standard Benchmarks**:
+  - `support/backendtest` also provides a standard benchmark suite (call `backendtest.RunAllBenchmarks(b *testing.B, backend compute.Backend)` in `support/backendtest/benchmarks.go`).
+  - Includes benchmarks for standard operations (`BenchmarkDotGeneral`, `BenchmarkDense`, `BenchmarkQuantizedDense`, `BenchmarkSoftmax`, `BenchmarkGelu`, `BenchmarkLayerNorm`).
+  - **How to run**: `support/backendtest` is backend-agnostic and does not instantiate a backend directly. Run benchmarks via a concrete backend package (e.g. `gobackend`), for example:
+    ```bash
+    # Run all benchmarks on the Go backend:
+    go test -bench=. -benchmem ./gobackend
+
+    # Run only DotGeneral benchmarks without running unit tests:
+    go test -run none -bench BenchmarkGoBackend/DotGeneral ./gobackend
+
+    # Run a specific sub-benchmark model (e.g. the "Large" matrix multiplications):
+    go test -run none -bench BenchmarkGoBackend/DotGeneral/Large ./gobackend
+    ```
+  - **Graceful Skips**: If an op, layout, or data type combination returns `compute.ErrNotImplemented`, compliance benchmarks skip cleanly via `b.Skipf(...)`.
+  - **Warm-up & Timer**: Benchmarks use Go's `for b.Loop()`. Warm-up iterations (3 runs) are executed *before* `for b.Loop()`, which allows `b.Loop()` to cleanly reset the benchmark timer on its first call and enables compiler loop-variable keep-alive optimizations.
+  - **Reported Metrics**: Benchmarks report standard `ns/op` as well as custom metrics via `b.ReportMetric`:
+    - `ms/op`: execution time per iteration in milliseconds across all benchmarked ops.
+    - `GFlops/s`: throughput for `DotGeneral` operations (calculated as $2 \times \text{outputSize} \times \prod \text{contractingDims}$).
 
 ### Follow Existing Patterns
 
