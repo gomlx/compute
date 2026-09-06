@@ -66,4 +66,38 @@ func avx512LargeKernelFloat64Asm(
 	lhsActiveRows, rhsActiveCols int,
 )
 
+// avx512PackLHSKernelRows4Float16Asm packs 4 rows of float16 LHS matrix in strips of 4 into panel.
+// Only full 4-row strips are packed; any remaining partial strip is handled by the caller.
+// Defined in avx512_pack_amd64_float16.s.
+//
+//go:noescape
+func avx512PackLHSKernelRows4Float16Asm(
+	lhs, panel []float16.Float16,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
+// avx512PackLHSKernelRows4BFloat16Asm packs 4 rows of bfloat16 LHS matrix in strips of 4 into panel.
+// Only full 4-row strips are packed; any remaining partial strip is handled by the caller.
+// Defined in avx512_pack_amd64_float16.s.
+//
+//go:noescape
+func avx512PackLHSKernelRows4BFloat16Asm(
+	lhs, panel []bfloat16.BFloat16,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
+// avx512PackLHSKernelRows4Float64Asm packs 4 rows of float64 LHS matrix in strips of 4 into panel.
+// Only full 4-row strips are packed; any remaining partial strip is handled by the caller.
+// Defined in avx512_pack_amd64_float64.s.
+//
+//go:noescape
+func avx512PackLHSKernelRows4Float64Asm(
+	lhs, panel []float64,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
+
 

@@ -210,6 +210,84 @@ func TestAVX512(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("PackLHS/Float64Asm", func(t *testing.T) {
+		for _, rows := range []int{1, 2, 3, 4, 5, 7, 8, 11, 12, 15, 16, 24, 32} {
+			for _, cols := range []int{8, 16, 24, 32, 64, 128, 192, 7, 13, 35} {
+				lhsCols := cols + 8
+				lhs := make([]float64, (rows+4)*lhsCols)
+				for i := range lhs {
+					lhs[i] = float64(i + 1)
+				}
+				numStrips := (rows + 3) / 4
+				expectedPanel := make([]float64, numStrips*4*cols)
+				gotPanel := make([]float64, numStrips*4*cols)
+
+				AVX512UseAsm = false
+				avx512PackLHSKernelRows4(lhs, expectedPanel, 2, 3, lhsCols, rows, cols, 4)
+				AVX512UseAsm = true
+				avx512PackLHSKernelRows4(lhs, gotPanel, 2, 3, lhsCols, rows, cols, 4)
+
+				for i := range expectedPanel {
+					if expectedPanel[i] != gotPanel[i] {
+						t.Fatalf("Float64 Mismatch at rows=%d, cols=%d, idx=%d: expected %v, got %v", rows, cols, i, expectedPanel[i], gotPanel[i])
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("PackLHS/Float16Asm", func(t *testing.T) {
+		for _, rows := range []int{1, 2, 3, 4, 5, 7, 8, 11, 12, 15, 16, 24, 32} {
+			for _, cols := range []int{16, 32, 48, 64, 128, 192, 256, 17, 33, 49} {
+				lhsCols := cols + 8
+				lhs := make([]float16.Float16, (rows+4)*lhsCols)
+				for i := range lhs {
+					lhs[i] = float16.FromFloat32(float32(i + 1))
+				}
+				numStrips := (rows + 3) / 4
+				expectedPanel := make([]float16.Float16, numStrips*4*cols)
+				gotPanel := make([]float16.Float16, numStrips*4*cols)
+
+				AVX512UseAsm = false
+				avx512PackLHSKernelRows4(lhs, expectedPanel, 2, 3, lhsCols, rows, cols, 4)
+				AVX512UseAsm = true
+				avx512PackLHSKernelRows4(lhs, gotPanel, 2, 3, lhsCols, rows, cols, 4)
+
+				for i := range expectedPanel {
+					if expectedPanel[i] != gotPanel[i] {
+						t.Fatalf("Float16 Mismatch at rows=%d, cols=%d, idx=%d: expected %v, got %v", rows, cols, i, expectedPanel[i], gotPanel[i])
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("PackLHS/BFloat16Asm", func(t *testing.T) {
+		for _, rows := range []int{1, 2, 3, 4, 5, 7, 8, 11, 12, 15, 16, 24, 32} {
+			for _, cols := range []int{16, 32, 48, 64, 128, 192, 256, 17, 33, 49} {
+				lhsCols := cols + 8
+				lhs := make([]bfloat16.BFloat16, (rows+4)*lhsCols)
+				for i := range lhs {
+					lhs[i] = bfloat16.FromFloat32(float32(i + 1))
+				}
+				numStrips := (rows + 3) / 4
+				expectedPanel := make([]bfloat16.BFloat16, numStrips*4*cols)
+				gotPanel := make([]bfloat16.BFloat16, numStrips*4*cols)
+
+				AVX512UseAsm = false
+				avx512PackLHSKernelRows4(lhs, expectedPanel, 2, 3, lhsCols, rows, cols, 4)
+				AVX512UseAsm = true
+				avx512PackLHSKernelRows4(lhs, gotPanel, 2, 3, lhsCols, rows, cols, 4)
+
+				for i := range expectedPanel {
+					if expectedPanel[i] != gotPanel[i] {
+						t.Fatalf("BFloat16 Mismatch at rows=%d, cols=%d, idx=%d: expected %v, got %v", rows, cols, i, expectedPanel[i], gotPanel[i])
+					}
+				}
+			}
+		}
+	})
 }
 
 func transposeIndicesFor4x16x32bits(vec archsimd.Uint32x16) string {
@@ -244,9 +322,9 @@ func transposeIndicesFor4x32x16bits(vec archsimd.Uint16x32) string {
 
 func BenchmarkAVX512(b *testing.B) {
 	sizes := []struct {
-		name                   string
-		totalRows, totalCols   int
-		panelRows, panelCols   int
+		name                 string
+		totalRows, totalCols int
+		panelRows, panelCols int
 	}{
 		{"Large-1_1536x1920", 1536, 1920, 32, 192},
 		{"Large-2_1024x1920", 1024, 1920, 32, 192},
@@ -254,17 +332,57 @@ func BenchmarkAVX512(b *testing.B) {
 	}
 
 	for _, s := range sizes {
-		b.Run(s.name+"/GoSIMD", func(b *testing.B) {
+		b.Run(s.name+"/Float32/GoSIMD", func(b *testing.B) {
 			orig := AVX512UseAsm
 			AVX512UseAsm = false
 			defer func() { AVX512UseAsm = orig }()
 			runBenchmarkPackLHS[float32](b, "float32", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
 		})
-		b.Run(s.name+"/Asm", func(b *testing.B) {
+		b.Run(s.name+"/Float32/Asm", func(b *testing.B) {
 			orig := AVX512UseAsm
 			AVX512UseAsm = true
 			defer func() { AVX512UseAsm = orig }()
 			runBenchmarkPackLHS[float32](b, "float32", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
 		})
+
+		b.Run(s.name+"/Float64/GoSIMD", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = false
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[float64](b, "float64", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+		b.Run(s.name+"/Float64/Asm", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = true
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[float64](b, "float64", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+
+		b.Run(s.name+"/Float16/GoSIMD", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = false
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[float16.Float16](b, "float16", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+		b.Run(s.name+"/Float16/Asm", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = true
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[float16.Float16](b, "float16", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+
+		b.Run(s.name+"/BFloat16/GoSIMD", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = false
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[bfloat16.BFloat16](b, "bfloat16", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+		b.Run(s.name+"/BFloat16/Asm", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = true
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[bfloat16.BFloat16](b, "bfloat16", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
 	}
 }
+

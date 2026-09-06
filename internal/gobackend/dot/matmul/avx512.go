@@ -16,6 +16,8 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/support/envutil"
@@ -429,12 +431,32 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	stripRowIdx := 0
 
 	if AVX512UseAsm {
-		if lhsF32, ok := any(lhs).([]float32); ok {
-			panelF32 := any(panel).([]float32)
-			fullRows := copyRows & ^3
+		handled := false
+		fullRows := copyRows & ^3
+		switch lhsTyped := any(lhs).(type) {
+		case []float32:
 			if fullRows > 0 {
-				avx512PackLHSKernelRows4Float32Asm(lhsF32, panelF32, lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				avx512PackLHSKernelRows4Float32Asm(lhsTyped, any(panel).([]float32), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
 			}
+			handled = true
+		case []float64:
+			if fullRows > 0 {
+				avx512PackLHSKernelRows4Float64Asm(lhsTyped, any(panel).([]float64), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+			}
+			handled = true
+		case []float16.Float16:
+			if fullRows > 0 {
+				avx512PackLHSKernelRows4Float16Asm(lhsTyped, any(panel).([]float16.Float16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+			}
+			handled = true
+		case []bfloat16.BFloat16:
+			if fullRows > 0 {
+				avx512PackLHSKernelRows4BFloat16Asm(lhsTyped, any(panel).([]bfloat16.BFloat16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+			}
+			handled = true
+		}
+
+		if handled {
 			if fullRows == copyRows {
 				return
 			}
