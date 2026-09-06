@@ -5,6 +5,8 @@
 package matmul
 
 import (
+	"unsafe"
+
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 )
@@ -101,6 +103,17 @@ func avx512PackLHSKernelRows4Float64Asm(
 	lhs, panel []float64,
 	lhsRowStart, lhsColStart, lhsCols,
 	copyRows, contractingCols int,
+)
+
+// avx512PackRHSFullStripsAsm packs full strips of RHS matrix into panel using AVX-512.
+// kernelColsBytes must be 256, 128, or 64.
+// Defined in avx512_pack_rhs_amd64.s.
+//
+//go:noescape
+func avx512PackRHSFullStripsAsm(
+	rhsPtr, panelPtr unsafe.Pointer,
+	rhsStrideBytes uintptr,
+	contractingRows, numStrips, kernelColsBytes int,
 )
 
 

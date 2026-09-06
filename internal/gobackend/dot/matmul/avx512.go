@@ -357,6 +357,22 @@ func avx512PackRHSNonTransposed[T gotype.ScalarNotComplex](
 	panelPtr := panelBasePtr
 	// Iterate over full-strips (using all the kernelCols, so no padding needed).
 	stripColIdx := uintptr(0)
+	if AVX512UseAsm && (kernelColsBytes == 256 || kernelColsBytes == 128 || kernelColsBytes == 64) {
+		numFullStrips := int(copyColsBytesAll / kernelColsBytes)
+		if numFullStrips > 0 {
+			rhsStartPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes
+			avx512PackRHSFullStripsAsm(
+				unsafe.Pointer(rhsStartPtr),
+				unsafe.Pointer(panelBasePtr),
+				rhsStrideBytes,
+				contractingRows,
+				numFullStrips,
+				int(kernelColsBytes),
+			)
+			stripColIdx = uintptr(numFullStrips) * kernelColsBytes
+			panelPtr = panelBasePtr + uintptr(numFullStrips)*uintptr(contractingRows)*kernelColsBytes
+		}
+	}
 	switch kernelColsBytes { // Multiple of 64.
 	case 256:
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {

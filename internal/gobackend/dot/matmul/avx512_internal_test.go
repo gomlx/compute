@@ -9,10 +9,12 @@ import (
 	"simd/archsimd"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/support/humanize"
 )
 
 func TestAVX512(t *testing.T) {
@@ -390,5 +392,63 @@ func BenchmarkAVX512(b *testing.B) {
 			runBenchmarkPackLHS[bfloat16.BFloat16](b, "bfloat16", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
 		})
 	}
+
+	rhsSizes := []struct {
+		name                 string
+		contractingRows, rhsCols int
+		panelContracting, panelCols int
+		kernelCols           int
+	}{
+		{"Large-1_1920x1024", 1920, 1024, 192, 384, 64},
+		{"Large-2_1920x1536", 1920, 1536, 192, 384, 64},
+		{"Large-3_2048x2048", 2048, 2048, 192, 384, 64},
+	}
+	for _, s := range rhsSizes {
+		b.Run("PackRHS/"+s.name+"/Float32", func(b *testing.B) {
+			runBenchmarkPackRHS(b, "float32", avx512PackRHSNonTransposed[float32], s.contractingRows, s.rhsCols, s.panelContracting, s.panelCols, s.kernelCols)
+		})
+	}
 }
 
+func runBenchmarkPackRHS(b *testing.B, name string, packFn PackRHSFn[float32], contractingRows, rhsCols, panelContracting, panelCols, kernelCols int) {
+	src := make([]float32, contractingRows*rhsCols)
+	for i := range src {
+		src[i] = float32(i)
+	}
+	numStrips := (panelCols + kernelCols - 1) / kernelCols
+	dstSize := numStrips * panelContracting * kernelCols
+	dst := make([]float32, dstSize)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for colStart := 0; colStart < rhsCols; colStart += panelCols {
+			copyCols := min(panelCols, rhsCols-colStart)
+			for rowStart := 0; rowStart < contractingRows; rowStart += panelContracting {
+				copyRows := min(panelContracting, contractingRows-rowStart)
+				packFn(src, dst, rowStart, colStart, rhsCols, copyRows, copyCols, kernelCols)
+			}
+		}
+	}
+	elapsed := b.Elapsed()
+	if elapsed > 0 && b.N > 0 {
+		durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
+		durStr := humanize.Duration(durationPerOp)
+		b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+		_ = durStr
+	}
+}
+func TestChoose2DSplit(t *testing.T) {
+	params := AVX512ParamsFloat32
+	for _, tc := range []struct {
+		m, n, workers int
+	}{
+		{1536, 1024, 64},
+		{1536, 1024, 32},
+		{1536, 1536, 64},
+		{2048, 2048, 64},
+	} {
+		numM, numN := choose2DSplit(tc.m, tc.n, tc.workers, &params)
+		t.Logf("M=%d, N=%d, workers=%d -> numM=%d, numN=%d (colChunk=%d, rowChunk=%d)",
+			tc.m, tc.n, tc.workers, numM, numN, (tc.n+numN-1)/numN, (tc.m+numM-1)/numM)
+	}
+}

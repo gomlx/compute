@@ -186,7 +186,34 @@ Despite the higher arithmetic intensity, 6x48 was set aside in favor of 4x64 for
 
 ---
 
-## 8. File Map & Code Generation
+## 8. Exploration: RHS Packing Optimization (Pre-Packing vs Assembly Unrolling)
+
+During optimization of RHS packing, we investigated two approaches:
+1. **Multithreaded Pre-Packing of RHS**: Pre-packing the entire RHS matrix in parallel across all worker threads into a single shared buffer before initiating the GEMM compute phase.
+2. **AVX-512 Assembly Microkernel with 4-Row Unrolling**: Accelerating worker-local RHS packing using handwritten AVX-512 assembly.
+
+### 1. Multithreaded Global Pre-Packing (Why It Regressed)
+In theory, pre-packing the entire RHS matrix upfront across 32 threads should eliminate redundant packing across workers that share column ranges. However, in benchmarks, this caused a **~15% regression** (dropping throughput from ~2,750 down to 2,285 GFlops/s). Profiling revealed three root causes:
+
+1. **L1/L2 Cache Locality Loss**:
+   * In worker-local packing, each worker tiles $N$ into narrow chunks (e.g. 128 cols, $96\text{ KB}$ for $K_c=192$). It packs this $96\text{ KB}$ directly into its private L2 cache ($1\text{ MB}$ per core on Zen 5) immediately before multiplying it by multiple LHS rows. The compute microkernel reads RHS at full L1/L2 bandwidth ($>3\text{ TB/s}$ per core).
+   * In global pre-packing, the entire matrix ($7.86\text{ MB}$) is written upfront to memory. By the time GEMM starts, each worker's L1 and L2 caches are completely cold, forcing initial misses to L3/DRAM.
+2. **Dual-CCD NUMA / Interconnect Traffic**:
+   * On dual-CCD architectures (such as the AMD Ryzen 9 9950X3D with two 8-core CCDs), strips packed by a core on CCD0 must cross the high-latency Infinity Fabric when read by a worker running on CCD1.
+3. **Double Synchronization Barrier**:
+   * Calling `backend.Workers.Saturate` twice per matrix multiplication (once for pre-packing, once for GEMM) added lock contention and thread synchronization overhead.
+
+### 2. AVX-512 Assembly Microkernel (`avx512PackRHSFullStripsAsm`)
+Instead of global pre-packing, we accelerated the worker-local packing path with a dedicated AVX-512 assembly kernel (`avx512_pack_rhs_amd64.s`):
+* **Elimination of Compiler Overhead**: Go's pure SIMD loop previously emitted 8 separate `LEAQ` index calculations per row (4 for loads, 4 for stores). The assembly kernel uses direct hardware displacement offsets.
+* **4-Row Unrolling with 16 ZMM Registers**:
+  * Unrolls 4 consecutive rows ($K$) per iteration: $1024\text{ bytes}$ per iteration for Float32 (256-byte strips), $512\text{ bytes}$ for Float16/BFloat16, and $256\text{ bytes}$ for Float64.
+  * Interleaves 16 ZMM loads (`Z0`–`Z15`) and stores, allowing CPU out-of-order execution to saturate memory copy bandwidth at **~70 GB/s** (the physical limit of dual-channel DDR5-6000 memory).
+* **Impact**: Keeps RHS hot in each core's private L2 cache while cutting packing latency, lifting Large benchmarks across the board (`NoBatch-Large-2` to **2,733 GFlops/s**, `NoBatch-Large-3` to **2,934 GFlops/s**, and `Batched-Large-1` to **2,802 GFlops/s**).
+
+---
+
+## 9. File Map & Code Generation
 
 Because `matmul` provides high performance across multiple architectures and data types, Go template generation is used to maintain symmetry:
 
@@ -197,7 +224,8 @@ Because `matmul` provides high performance across multiple architectures and dat
 | `avx512_large.go` | Base template for AVX-512 large matrix multiplication (Go SIMD + Assembly caller). |
 | `avx512_large_amd64.go` | Assembly function forward declarations (`//go:noescape`). |
 | `avx512_large_amd64_*.s` | Handwritten AVX-512 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx512_pack_amd64_*.s` | Handwritten AVX-512 fast transposition and packing kernels. |
+| `avx512_pack_amd64_*.s` | Handwritten AVX-512 fast LHS transposition and packing kernels. |
+| `avx512_pack_rhs_amd64.s` | Handwritten AVX-512 unrolled RHS strip packing kernel. |
 | `avx2_*.go` | AVX2 (256-bit SIMD) router, small kernels, large kernels, and transpositions. |
 | `nosimd_*.go` | Architecture-agnostic portable Go fallback with scalar loop blocking. |
 | `gen_*` | **Auto-generated files** created by `alternates_generator` for alternative dtypes (`f16`, `bf16`, `f64`). |
