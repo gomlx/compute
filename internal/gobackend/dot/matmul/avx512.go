@@ -426,9 +426,25 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 
 	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement
 	panelPtr := panelBasePtr
+	stripRowIdx := 0
+
+	if AVX512UseAsm {
+		if lhsF32, ok := any(lhs).([]float32); ok {
+			panelF32 := any(panel).([]float32)
+			fullRows := copyRows & ^3
+			if fullRows > 0 {
+				avx512PackLHSKernelRows4Float32Asm(lhsF32, panelF32, lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+			}
+			if fullRows == copyRows {
+				return
+			}
+			stripRowIdx = fullRows
+			panelPtr = panelBasePtr + uintptr(stripRowIdx*contractingCols)*bytesPerElement
+			goto edge_strip
+		}
+	}
 
 	// Iterate over full strips first:
-	stripRowIdx := 0
 	for ; stripRowIdx < copyRows-kernelRows+1; stripRowIdx += kernelRows {
 		colByteIdx := uintptr(0)
 		lhsRow0Ptr := lhsBasePtr + uintptr(lhsRowStart+stripRowIdx)*lhsStrideBytes + lhsColStartBytes
@@ -521,6 +537,7 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 		}
 	}
 
+edge_strip:
 	// Last strip, with less than kernelRows (4) valid rows, the rest needs to be zero-padded:
 	if stripRowIdx < copyRows {
 		remainingRows := copyRows - stripRowIdx

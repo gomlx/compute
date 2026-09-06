@@ -4,10 +4,15 @@ package matmul
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
+	"unicode"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/gotype"
+	"github.com/gomlx/compute/support/humanize"
 	"github.com/gomlx/compute/support/testutil"
 )
 
@@ -262,6 +267,23 @@ func runBenchmarkPackLHS[T gotype.ScalarNotComplex](b *testing.B, name string, p
 						contractingCols = totalCols - colStart
 					}
 					packFn(src, dst, rowStart, colStart, totalCols, copyRows, contractingCols, kernelRows)
+				}
+			}
+		}
+		elapsed := b.Elapsed()
+		if elapsed > 0 && b.N > 0 {
+			durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
+			durStr := humanize.Duration(durationPerOp)
+			splitIdx := strings.IndexFunc(durStr, func(r rune) bool {
+				return !unicode.IsDigit(r) && r != '.' && r != '-'
+			})
+			if splitIdx > 0 {
+				valStr := durStr[:splitIdx]
+				unitStr := durStr[splitIdx:]
+				if strings.ContainsAny(unitStr, "0123456789") {
+					b.ReportMetric(durationPerOp.Seconds(), "s/op")
+				} else if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+					b.ReportMetric(val, unitStr+"/op")
 				}
 			}
 		}

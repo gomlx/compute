@@ -20,6 +20,17 @@ func avx512LargeKernelFloat32Asm(
 	lhsActiveRows, rhsActiveCols int,
 )
 
+// avx512PackLHSKernelRows4Float32Asm packs 4 rows of float32 LHS matrix in strips of 4 into panel.
+// Only full 4-row strips are packed; any remaining partial strip is handled by the caller.
+// Defined in avx512_pack_amd64_float32.s.
+//
+//go:noescape
+func avx512PackLHSKernelRows4Float32Asm(
+	lhs, panel []float32,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
 // avx512LargeKernelFloat16Asm is the assembly implementation of the 4 rows x 64 cols GEMM microkernel for Float16.
 // Defined in avx512_large_amd64_float16.s.
 //
