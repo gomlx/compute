@@ -352,8 +352,15 @@ go test -v ./internal/gobackend/dot/matmul
 # Run backend compliance tests:
 go test -v -run TestCompliance ./gobackend
 
-# Run Large DotGeneral benchmarks:
+# Run All Large DotGeneral benchmarks:
+go test -run none -bench BenchmarkCompliance/DotGeneral ./gobackend
+
+# Run Subset Of Large DotGeneral benchmarks:
 go test -run none -bench BenchmarkCompliance/DotGeneral/Large ./gobackend
+
+# Disable AVX512, so AVX2 is used instead:
+$ GOMLX_GO_SIMD_AVX512=0 go test -run none -bench Compliance/DotGeneral ./gobackend
+
 ```
 
 ---
