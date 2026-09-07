@@ -26,6 +26,8 @@ import (
 // Auto-generate alternate specialized versions of AVX512 operations -- for half-precision input data types.
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_router.go -tags=bf16,f16,f64
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_small.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_small_transposed.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx512_small_nontransposed.go -tags=bf16,f16,f64
 //go:generate go run ../../../cmd/alternates_generator -base=avx512_large.go -tags=bf16,f16,f64
 
 var (

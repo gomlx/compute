@@ -110,6 +110,16 @@ func avx512SmallFloat64( //alt:f64
 		return
 	}
 
+	{ //alt:f32|bf16|f16|f64
+		if AVX512UseAsm { //alt:f32|bf16|f16|f64
+			//alt:f32 avx512SmallFloat32NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:bf16  avx512SmallBFloat16NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:f16  avx512SmallFloat16NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			avx512SmallFloat64NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:f64
+			return                                                                                                                    //alt:f32|bf16|f16|f64
+		} //alt:f32|bf16|f16|f64
+	} //alt:f32|bf16|f16|f64
+
 	lhsStride := lhsCrossSize * contractingSize
 	rhsStride := contractingSize * rhsCrossSize
 	outputStride := lhsCrossSize * rhsCrossSize
@@ -468,6 +478,16 @@ func avx512SmallFloat64Transposed( //alt:f64
 	if batchCount == 0 || lhsCrossSize == 0 || rhsCrossSize == 0 || contractingSize == 0 {
 		return
 	}
+
+	{ //alt:f32|bf16|f16|f64
+		if AVX512UseAsm { //alt:f32|bf16|f16|f64
+			//alt:f32 avx512SmallFloat32TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:bf16  avx512SmallBFloat16TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:f16  avx512SmallFloat16TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			avx512SmallFloat64TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:f64
+			return                                                                                                                 //alt:f32|bf16|f16|f64
+		} //alt:f32|bf16|f16|f64
+	} //alt:f32|bf16|f16|f64
 
 	lhsStride := lhsCrossSize * contractingSize
 	rhsStride := contractingSize * rhsCrossSize

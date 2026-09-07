@@ -44,45 +44,11 @@ func avx512RouterFloat32( //alt:f32
 	}
 
 	if useSmallVariant {
-		// Vector width: 16 for float32, 32 for bfloat16/float16, 8 for float64
-		const vecWidth = 16 //alt:f32
-		//alt:bf16 const vecWidth = 32
-		//alt:f16 const vecWidth = 32
-		//alt:f64 const vecWidth = 8
-
-		if layout == dot.LayoutNonTransposed {
-			if rhsCrossSize > vecWidth {
-				avx512SmallFloat32Parallel( //alt:f32
-					//alt:bf16 avx512SmallBFloat16Parallel(
-					//alt:f16 avx512SmallFloat16Parallel(
-					//alt:f64 avx512SmallFloat64Parallel(
-					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-				return
-			}
-			// No benefit from SIMD:
-			noSIMDRouter( //alt:f32
-				//alt:bf16 noSIMDHalfPrecisionRouter(
-				//alt:f16 noSIMDHalfPrecisionRouter(
-				//alt:f64 noSIMDRouter(
-				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-			return
-		} else {
-			// Transposed matmul:
-			if contractingSize >= vecWidth {
-				avx512SmallFloat32Parallel( //alt:f32
-					//alt:bf16 avx512SmallBFloat16Parallel(
-					//alt:f16 avx512SmallFloat16Parallel(
-					//alt:f64 avx512SmallFloat64Parallel(
-					backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-				return
-			}
-			// No benefit from SIMD:
-			noSIMDRouter( //alt:f32
-				//alt:bf16 noSIMDHalfPrecisionRouter(
-				//alt:f16 noSIMDHalfPrecisionRouter(
-				//alt:f64 noSIMDRouter(
-				backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-		}
+		avx512SmallFloat32Parallel( //alt:f32
+			//alt:bf16 avx512SmallBFloat16Parallel(
+			//alt:f16 avx512SmallFloat16Parallel(
+			//alt:f64 avx512SmallFloat64Parallel(
+			backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		return
 	}
 

@@ -145,6 +145,41 @@ While Go 1.27 introduced experimental SIMD via `simd/archsimd`, achieving peak h
    - Modern x86 cores (e.g. AMD Zen 4/5, Intel Sapphire Rapids) contain two 512-bit FMA execution ports with a **4-cycle pipeline latency**.
    - With 16 independent accumulator registers and loop unrolling in $K$, each accumulator is updated once every 16 instructions. The 4-cycle pipeline latency is completely hidden, sustaining 2 FMAs per cycle (near 100% theoretical peak compute throughput).
 
+### Why Assembly Was Essential for Small MatMul As Well
+
+When benchmarking the small matrix multiplication path (where tensors are un-packed and accessed directly in place), we implemented and empirically compared both pure Go `archsimd` and handwritten AVX-512 assembly for the Transposed $4 \times 4$ microkernel:
+
+- **Baseline (1 accumulator)**: 11.34 µs (6.22 GFlops/s)
+- **Go SIMD (`archsimd`, 16 accumulators)**: 3.75 µs (18.82 GFlops/s) — 3.0× faster than baseline
+- **Handwritten Assembly (`VFMADD231PS`, 16 accumulators)**: **1.11 µs (63.38 GFlops/s)** — **3.4× faster than Go SIMD** and **10.2× faster than baseline**
+
+**Root Cause**:
+Disassembly (`go tool objdump`) revealed that `archsimd.Float32x16.MulAdd` emits destructive `VFMADD213PS`. Because the 16 accumulator registers are constantly overwritten, the Go compiler's SSA register allocator fails to keep all 16 accumulators and operands live in hardware registers. It emits dozens of register-to-register moves (`VMOVDQU64`) and spills 512-bit ZMM registers to stack memory (`0x458(SP)`, `0x418(SP)`, `0xd8(SP)`) in every iteration of the contracting loop.
+In contrast, handwritten assembly uses non-destructive `VFMADD231PS` to keep `Z0`–`Z15` permanently pinned in the register file with **zero stack spills, zero register moves**, and an 8-instruction vector reduction macro. Consequently, assembly was adopted as the high-performance implementation for small matmul as well.
+
+### Non-Transposed Small MatMul Optimization
+
+In the Non-Transposed layout ($C = A \times B$ where $A$ is $[M, K]$, $B$ is $[K, N]$, $C$ is $[M, N]$), previous versions suffered from two major bottlenecks:
+1. **Fallback to Scalar Go**: The router previously checked `if rhsCrossSize > vecWidth`. For narrow matrices with $N \le 16$ (e.g. $N = 1$ and $N = 4$ in `adult-demo`), it dropped completely into scalar pure Go (`noSIMDRouter`), taking over 37 µs for a $[128, 69] \times [69, 4]$ multiplication.
+2. **Intermediate Memory RMW in $K$**: For $N > 16$, the loop nested columns inside the $K$ loop, repeatedly reading and writing partial sums to output memory for every single $k$ step.
+
+We resolved this with a three-tiered AVX-512 strategy:
+1. **GEMV Direct Routing ($N = 1$)**: When $N = 1$, $B[K, 1]$ in memory is a contiguous vector of length $K$. This is layout-identical to a Transposed matrix $B^T[1, K]$. It is zero-copy routed directly into `avx512SmallFloat32TransposedAsm`.
+2. **Stack-Buffered Transposition for Narrow $N$ ($N \in [2, 15]$)**: For $N < 16$, column vectorization cannot fill a 16-wide vector (leaving SIMD lanes idle or falling back to scalar). In contrast, $K$ is typically $\ge 16$. We transpose $B$ into a stack-allocated buffer (e.g. $69 \times 4 = 276$ floats = 1.1 KB in L1 cache, taking ~15 ns) and invoke `avx512SmallFloat32TransposedAsm`, unlocking full 16-wide 512-bit vectorization across $K$.
+3. **Column-Vectorized Assembly Microkernels ($N \ge 16$)**: For wide matrices ($N \ge 16$), the loop is inverted so column vectors are processed in the outer loops and $K$ is in the inner loop. Accumulators stay resident in ZMM registers across the entire $K$ loop, writing to output memory once at the end:
+   - `avx512SmallNonTransposedTile4x64Float32Asm`: 4 rows $\times$ 64 cols (16 accumulators `Z0`–`Z15`).
+   - `avx512SmallNonTransposedTile4x16Float32Asm`: 4 rows $\times$ 16 cols (4 accumulators `Z0`–`Z3`).
+
+#### Non-Transposed Benchmark Results (AMD Ryzen 9 9950X3D):
+
+| Benchmark Case | Baseline (Old Scalar Fallback) | Go SIMD | Handwritten Assembly | Speedup vs. Baseline |
+| :--- | :--- | :--- | :--- | :--- |
+| **`[128, 69] x [69, 4]`** | 37,227 ns (1.90 GFlops/s) | 3,947 ns (17.90 GFlops/s) | **1,304 ns (54.20 GFlops/s)** | **28.5× faster** 🚀 |
+| **`[49, 69] x [69, 4]`** | 12,309 ns (2.20 GFlops/s) | 1,603 ns (16.88 GFlops/s) | **638 ns (42.38 GFlops/s)** | **19.3× faster** 🚀 |
+| **`[25, 69] x [69, 4]`** | 4,227 ns (3.26 GFlops/s) | 903 ns (15.29 GFlops/s) | **428 ns (32.21 GFlops/s)** | **9.9× faster** 🚀 |
+
+In end-to-end graph execution (`adult-demo` compliance suite), `non-transposed/[128, 69]x[69, 4]` dropped from **23.5 µs down to 8.7 µs** (a **2.7× end-to-end speedup**, with computation time dropping from 18.3 µs to 3.5 µs).
+
 ---
 
 ## 5. Direct Output Accumulation in L2 Cache
@@ -367,6 +402,11 @@ Because `matmul` provides high performance across multiple architectures and dat
 | :--- | :--- |
 | `matmul.go` | Cache parameters, priority constants, and feature flags. |
 | `avx512_router.go` | Routes between Small and Large AVX-512 kernels. |
+| `avx512_small.go` | Dispatcher for AVX-512 small matrix multiplication across layouts. |
+| `avx512_small_transposed.go` | Base template for AVX-512 small transposed matmul caller ($4 \times 4$ tiling). |
+| `avx512_small_transposed_amd64.s` | Handwritten AVX-512 small transposed $4 \times 4$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `avx512_small_nontransposed.go` | Base template for AVX-512 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
+| `avx512_small_nontransposed_amd64.s` | Handwritten AVX-512 small non-transposed $4 \times 64$ and $4 \times 16$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
 | `avx512_large.go` | Base template for AVX-512 large matrix multiplication (Go SIMD + Assembly caller). |
 | `avx512_large_amd64.go` | Assembly function forward declarations (`//go:noescape`). |
 | `avx512_large_amd64_*.s` | Handwritten AVX-512 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
