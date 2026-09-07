@@ -9,6 +9,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/activations"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -37,17 +38,9 @@ func FusedActivation(f *gobackend.Function, x compute.Value, cfg compute.Activat
 	}
 	xNode := inputs[0]
 
-	outShape := xNode.Shape.Clone()
-	if cfg.Type == compute.ActivationSwiGLU {
-		rank := xNode.Shape.Rank()
-		if rank < 1 {
-			return nil, errors.Errorf("FusedActivation: SwiGLU requires rank >= 1, got %d", rank)
-		}
-		lastDim := xNode.Shape.Dimensions[rank-1]
-		if lastDim%2 != 0 {
-			return nil, errors.Errorf("FusedActivation: SwiGLU requires even last dimension, got %d", lastDim)
-		}
-		outShape.Dimensions[rank-1] = lastDim / 2
+	outShape, err := shapeinference.FusedActivation(xNode.Shape, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	data := &nodeFusedActivation{cfg: cfg}
@@ -117,20 +110,16 @@ func FusedActivationVJP(f *gobackend.Function, y, x, dOutput compute.Value, cfg 
 	if dOutput == nil {
 		return nil, errors.Errorf("FusedActivationVJP: dOutput cannot be nil")
 	}
-	if cfg.Type.VJPRequiresInput() && x == nil {
-		return nil, errors.Errorf("FusedActivationVJP: activation %s requires input x, got nil", cfg.Type)
-	}
-	if y == nil && x == nil {
-		return nil, errors.Errorf("FusedActivationVJP: at least one of y or x must be non-nil")
-	}
 
 	var inputNodes []*gobackend.Node
+	var yShape, xShape shapes.Shape
 	if y != nil {
 		nodes, err := f.VerifyAndCastValues("FusedActivationVJP", y)
 		if err != nil {
 			return nil, err
 		}
 		inputNodes = append(inputNodes, nodes[0])
+		yShape = nodes[0].Shape
 	}
 	if x != nil {
 		nodes, err := f.VerifyAndCastValues("FusedActivationVJP", x)
@@ -138,44 +127,18 @@ func FusedActivationVJP(f *gobackend.Function, y, x, dOutput compute.Value, cfg 
 			return nil, err
 		}
 		inputNodes = append(inputNodes, nodes[0])
+		xShape = nodes[0].Shape
 	}
 	dOutNodes, err := f.VerifyAndCastValues("FusedActivationVJP", dOutput)
 	if err != nil {
 		return nil, err
 	}
 	inputNodes = append(inputNodes, dOutNodes[0])
+	dOutputShape := dOutNodes[0].Shape
 
-	var outShape shapes.Shape
-	if cfg.Type == compute.ActivationSwiGLU {
-		if x == nil {
-			return nil, errors.Errorf("FusedActivationVJP: SwiGLU requires x")
-		}
-		xIdx := 0
-		if y != nil {
-			xIdx = 1
-		}
-		xShape := inputNodes[xIdx].Shape
-		rank := xShape.Rank()
-		if rank < 1 {
-			return nil, errors.Errorf("FusedActivationVJP: SwiGLU requires rank >= 1, got %d", rank)
-		}
-		lastDim := xShape.Dimensions[rank-1]
-		if lastDim%2 != 0 {
-			return nil, errors.Errorf("FusedActivationVJP: SwiGLU requires even last dimension, got %d", lastDim)
-		}
-		dOutShape := dOutNodes[0].Shape
-		if dOutShape.Rank() != rank || dOutShape.Dimensions[rank-1] != lastDim/2 {
-			return nil, errors.Errorf("FusedActivationVJP: SwiGLU dOutput shape %s incompatible with x shape %s", dOutShape, xShape)
-		}
-		outShape = xShape.Clone()
-	} else if x != nil {
-		xIdx := 0
-		if y != nil {
-			xIdx = 1
-		}
-		outShape = inputNodes[xIdx].Shape.Clone()
-	} else {
-		outShape = dOutNodes[0].Shape.Clone()
+	outShape, err := shapeinference.FusedActivationVJP(yShape, xShape, dOutputShape, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	data := &nodeFusedActivationVJP{
