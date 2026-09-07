@@ -200,6 +200,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 		})
 
 		t.Run("BFloat16", func(t *testing.T) {
+			testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
 			bf16 := bfloat16.FromFloat32
 			xBF16 := [][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}, {bf16(4), bf16(5), bf16(6)}}
 			wBF16 := [][]bfloat16.BFloat16{

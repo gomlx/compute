@@ -183,6 +183,7 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("BFloat16", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.BFloat16)
 		bf16 := bfloat16.FromFloat32
 		inputBF16 := []bfloat16.BFloat16{bf16(0), bf16(-1), bf16(2), bf16(-3), bf16(4)}
 		got, err := testutil.Exec1(b, []any{inputBF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
