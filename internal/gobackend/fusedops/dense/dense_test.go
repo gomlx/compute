@@ -45,7 +45,7 @@ func TestDenseLayouts(t *testing.T) {
 
 		got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
-				Activation:   compute.ActivationNone,
+				Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
 				WeightLayout: compute.DenseLayoutInputOutputs,
 			})
 		})
@@ -65,7 +65,7 @@ func TestDenseLayouts(t *testing.T) {
 
 		got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
-				Activation:   compute.ActivationNone,
+				Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
 				WeightLayout: compute.DenseLayoutOutputsInput,
 			})
 		})
@@ -83,7 +83,7 @@ func TestDenseLayouts(t *testing.T) {
 
 		got, err := testutil.Exec1(b, []any{x, w}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedDense(params[0], params[1], nil, compute.DenseConfig{
-				Activation:   compute.ActivationNone,
+				Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
 				WeightLayout: compute.DenseLayoutInputOutputs,
 			})
 		})
@@ -109,7 +109,7 @@ func TestDenseActivations(t *testing.T) {
 	t.Run("Relu", func(t *testing.T) {
 		want := [][]float32{{2, 0}}
 		got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationRelu})
+			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationRelu}})
 		})
 		if err != nil {
 			t.Fatalf("FusedDense Relu failed: %+v", err)
@@ -124,7 +124,7 @@ func TestDenseActivations(t *testing.T) {
 		// x=-2: -2 * min(max(-2/6 + 0.5, 0), 1) = -2 * (1/6) = -1/3 = -0.333333
 		want := [][]float32{{5.0 / 3.0, -1.0 / 3.0}}
 		got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationHardSwish})
+			return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationHardSwish}})
 		})
 		if err != nil {
 			t.Fatalf("FusedDense HardSwish failed: %+v", err)
@@ -147,7 +147,7 @@ func TestDenseBFloat16(t *testing.T) {
 	want := [][]bfloat16.BFloat16{{bf16(23), bf16(36)}}
 
 	got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-		return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+		return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
 	})
 	if err != nil {
 		t.Fatalf("FusedDense BF16 failed: %+v", err)
@@ -167,7 +167,7 @@ func TestDenseFloat16(t *testing.T) {
 	want := [][]float16.Float16{{f16(23), f16(36)}}
 
 	got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-		return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+		return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
 	})
 	if err != nil {
 		t.Fatalf("FusedDense F16 failed: %+v", err)

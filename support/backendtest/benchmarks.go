@@ -15,6 +15,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/humanize"
@@ -24,6 +25,9 @@ import (
 func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
 	b.Run("Softmax", func(b *testing.B) {
 		BenchmarkSoftmax(b, backend)
+	})
+	b.Run("FusedActivation", func(b *testing.B) {
+		BenchmarkFusedActivation(b, backend)
 	})
 	b.Run("Gelu", func(b *testing.B) {
 		BenchmarkGelu(b, backend)
@@ -198,12 +202,157 @@ func randomFloat32(n int) []float32 {
 	return data
 }
 
+func randomFloat64(n int) []float64 {
+	data := make([]float64, n)
+	for i := range data {
+		data[i] = rand.Float64()*2 - 1
+	}
+	return data
+}
+
 func randomBFloat16(n int) []bfloat16.BFloat16 {
 	data := make([]bfloat16.BFloat16, n)
 	for i := range data {
 		data[i] = bfloat16.FromFloat32(rand.Float32()*2 - 1)
 	}
 	return data
+}
+
+func randomFloat16(n int) []float16.Float16 {
+	data := make([]float16.Float16, n)
+	for i := range data {
+		data[i] = float16.FromFloat32(rand.Float32()*2 - 1)
+	}
+	return data
+}
+
+// --- FusedActivation Benchmarks ---
+
+func BenchmarkFusedActivation(b *testing.B, backend compute.Backend) {
+	sizes := []struct {
+		name string
+		dims []int
+	}{
+		{"Small_512", []int{512}},
+		{"Large_65536", []int{64, 1024}},
+	}
+
+	actTypes := []struct {
+		name string
+		act  compute.ActivationType
+	}{
+		{"Relu", compute.ActivationRelu},
+		{"Sigmoid", compute.ActivationSigmoid},
+		{"HardSigmoid", compute.ActivationHardSigmoid},
+		{"LeakyRelu", compute.ActivationLeakyRelu},
+		{"Selu", compute.ActivationSelu},
+		{"Silu", compute.ActivationSilu},
+		{"HardSwish", compute.ActivationHardSwish},
+		{"Tanh", compute.ActivationTanh},
+		{"GeluExact", compute.ActivationGelu},
+		{"GeluApprox", compute.ActivationGeluApproximate},
+		{"SwiGLU", compute.ActivationSwiGLU},
+	}
+
+	for _, sz := range sizes {
+		b.Run(sz.name, func(b *testing.B) {
+			for _, at := range actTypes {
+				b.Run(at.name, func(b *testing.B) {
+					// 1. Float32
+					b.Run("Float32", func(b *testing.B) {
+						dims := sz.dims
+						if at.act == compute.ActivationSwiGLU {
+							dims = make([]int, len(sz.dims))
+							copy(dims, sz.dims)
+							dims[len(dims)-1] *= 2
+						}
+						shape := shapes.Make(dtypes.Float32, dims...)
+						data := randomFloat32(shape.Size())
+						exec, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+							func(f compute.Function, params []compute.Value) (compute.Value, error) {
+								return f.FusedActivation(params[0], compute.ActivationConfig{Type: at.act})
+							})
+						if err != nil {
+							if errors.Is(err, compute.ErrNotImplemented) {
+								b.Skipf("Skipping Float32 %s: %+v", at.name, err)
+							}
+							b.Fatalf("Failed to create benchmark: %+v", err)
+						}
+						exec.run(b)
+					})
+
+					// 2. Float64
+					b.Run("Float64", func(b *testing.B) {
+						dims := sz.dims
+						if at.act == compute.ActivationSwiGLU {
+							dims = make([]int, len(sz.dims))
+							copy(dims, sz.dims)
+							dims[len(dims)-1] *= 2
+						}
+						shape := shapes.Make(dtypes.Float64, dims...)
+						data := randomFloat64(shape.Size())
+						exec, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+							func(f compute.Function, params []compute.Value) (compute.Value, error) {
+								return f.FusedActivation(params[0], compute.ActivationConfig{Type: at.act})
+							})
+						if err != nil {
+							if errors.Is(err, compute.ErrNotImplemented) {
+								b.Skipf("Skipping Float64 %s: %+v", at.name, err)
+							}
+							b.Fatalf("Failed to create benchmark: %+v", err)
+						}
+						exec.run(b)
+					})
+
+					// 3. BFloat16
+					b.Run("BFloat16", func(b *testing.B) {
+						dims := sz.dims
+						if at.act == compute.ActivationSwiGLU {
+							dims = make([]int, len(sz.dims))
+							copy(dims, sz.dims)
+							dims[len(dims)-1] *= 2
+						}
+						shape := shapes.Make(dtypes.BFloat16, dims...)
+						data := randomBFloat16(shape.Size())
+						exec, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+							func(f compute.Function, params []compute.Value) (compute.Value, error) {
+								return f.FusedActivation(params[0], compute.ActivationConfig{Type: at.act})
+							})
+						if err != nil {
+							if errors.Is(err, compute.ErrNotImplemented) {
+								b.Skipf("Skipping BFloat16 %s: %+v", at.name, err)
+							}
+							b.Fatalf("Failed to create benchmark: %+v", err)
+						}
+						exec.run(b)
+					})
+
+					// 4. Float16
+					b.Run("Float16", func(b *testing.B) {
+						dims := sz.dims
+						if at.act == compute.ActivationSwiGLU {
+							dims = make([]int, len(sz.dims))
+							copy(dims, sz.dims)
+							dims[len(dims)-1] *= 2
+						}
+						shape := shapes.Make(dtypes.Float16, dims...)
+						data := randomFloat16(shape.Size())
+						exec, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+							func(f compute.Function, params []compute.Value) (compute.Value, error) {
+								return f.FusedActivation(params[0], compute.ActivationConfig{Type: at.act})
+							})
+						if err != nil {
+							if errors.Is(err, compute.ErrNotImplemented) {
+								b.Skipf("Skipping Float16 %s: %+v", at.name, err)
+							}
+							b.Fatalf("Failed to create benchmark: %+v", err)
+						}
+						exec.run(b)
+					})
+				})
+			}
+		})
+	}
 }
 
 // --- Softmax Benchmarks ---
@@ -475,7 +624,7 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 				b.Run(fmt.Sprintf("Float32/Fused/%s", act.name), func(b *testing.B) {
 					fused, err := newBenchExec(backend, allShapesF32, allDatasF32,
 						func(f compute.Function, params []compute.Value) (compute.Value, error) {
-							return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: act.act})
+							return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: act.act}})
 						})
 					if err != nil {
 						if errors.Is(err, compute.ErrNotImplemented) {
@@ -528,7 +677,7 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 				b.Run(fmt.Sprintf("BFloat16/Fused/%s", act), func(b *testing.B) {
 					fused, err := newBenchExec(backend, allShapesBF16, allDatasBF16,
 						func(f compute.Function, params []compute.Value) (compute.Value, error) {
-							return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: actType})
+							return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: actType}})
 						})
 					if err != nil {
 						if errors.Is(err, compute.ErrNotImplemented) {
@@ -707,7 +856,7 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 				[]shapes.Shape{xShape, f32WeightsShape, biasShape},
 				[]any{xData, f32WeightsData, biasData},
 				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+					return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
 				})
 			if err != nil {
 				if errors.Is(err, compute.ErrNotImplemented) {

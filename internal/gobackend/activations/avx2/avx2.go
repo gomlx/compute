@@ -26,29 +26,29 @@ func init() {
 }
 
 func registerAVX2() {
-	// Float32
-	activations.Register[float32]("avx2:relu", compute.ActivationRelu, reluAVX2, PriorityAVX2)
-	activations.Register[float32]("avx2:hardswish", compute.ActivationHardSwish, hardSwishAVX2, PriorityAVX2)
-	activations.Register[float32]("avx2:silu", compute.ActivationSilu, siluAVX2, PriorityAVX2)
-	activations.Register[float32]("avx2:gelu", compute.ActivationGelu, geluAVX2, PriorityAVX2)
-	activations.Register[float32]("avx2:tanh", compute.ActivationTanh, tanhAVX2, PriorityAVX2)
+// Float32
+	activations.Register[float32]("avx2:relu", compute.ActivationRelu, ReluAVX2, PriorityAVX2)
+	activations.Register[float32]("avx2:hardswish", compute.ActivationHardSwish, HardSwishAVX2, PriorityAVX2)
+	activations.Register[float32]("avx2:silu", compute.ActivationSilu, SiluAVX2, PriorityAVX2)
+	activations.Register[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluAVX2, PriorityAVX2)
+	activations.Register[float32]("avx2:tanh", compute.ActivationTanh, TanhAVX2, PriorityAVX2)
 
 	// BFloat16
 	activations.Register[bfloat16.BFloat16]("avx2:relu", compute.ActivationRelu, reluBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:silu", compute.ActivationSilu, siluBF16AVX2, PriorityAVX2)
-	activations.Register[bfloat16.BFloat16]("avx2:gelu", compute.ActivationGelu, geluBF16AVX2, PriorityAVX2)
+	activations.Register[bfloat16.BFloat16]("avx2:geluapprox", compute.ActivationGeluApproximate, geluBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:tanh", compute.ActivationTanh, tanhBF16AVX2, PriorityAVX2)
 
 	// Float16
 	activations.Register[float16.Float16]("avx2:relu", compute.ActivationRelu, reluF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:silu", compute.ActivationSilu, siluF16AVX2, PriorityAVX2)
-	activations.Register[float16.Float16]("avx2:gelu", compute.ActivationGelu, geluF16AVX2, PriorityAVX2)
+	activations.Register[float16.Float16]("avx2:geluapprox", compute.ActivationGeluApproximate, geluF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:tanh", compute.ActivationTanh, tanhF16AVX2, PriorityAVX2)
 }
 
-func reluAVX2(data []float32) {
+func ReluAVX2(data []float32) {
 	vZero := archsimd.BroadcastFloat32x8(0)
 	i := 0
 	for ; i+8 <= len(data); i += 8 {
@@ -62,7 +62,7 @@ func reluAVX2(data []float32) {
 	}
 }
 
-func hardSwishAVX2(data []float32) {
+func HardSwishAVX2(data []float32) {
 	vZero := archsimd.BroadcastFloat32x8(0)
 	vOne := archsimd.BroadcastFloat32x8(1)
 	vOneSixth := archsimd.BroadcastFloat32x8(1.0 / 6.0)
@@ -130,7 +130,7 @@ func exp256(x archsimd.Float32x8) archsimd.Float32x8 {
 	return n.Mul(poly)
 }
 
-func siluAVX2(data []float32) {
+func SiluAVX2(data []float32) {
 	vOne := archsimd.BroadcastFloat32x8(1.0)
 	i := 0
 	for ; i+8 <= len(data); i += 8 {
@@ -161,7 +161,7 @@ func tanh256(x archsimd.Float32x8) archsimd.Float32x8 {
 	return num.Div(den)
 }
 
-func tanhAVX2(data []float32) {
+func TanhAVX2(data []float32) {
 	i := 0
 	for ; i+8 <= len(data); i += 8 {
 		v := archsimd.LoadFloat32x8(data[i : i+8])
@@ -172,7 +172,7 @@ func tanhAVX2(data []float32) {
 	}
 }
 
-func geluAVX2(data []float32) {
+func GeluAVX2(data []float32) {
 	// 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
 	vHalf := archsimd.BroadcastFloat32x8(0.5)
 	vOne := archsimd.BroadcastFloat32x8(1.0)
@@ -207,7 +207,7 @@ func reluBF16AVX2(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		reluAVX2(buf[:len(chunk)])
+		ReluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -222,7 +222,7 @@ func hardSwishBF16AVX2(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		hardSwishAVX2(buf[:len(chunk)])
+		HardSwishAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -237,7 +237,7 @@ func siluBF16AVX2(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		siluAVX2(buf[:len(chunk)])
+		SiluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -252,7 +252,7 @@ func geluBF16AVX2(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		geluAVX2(buf[:len(chunk)])
+		GeluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -267,7 +267,7 @@ func tanhBF16AVX2(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		tanhAVX2(buf[:len(chunk)])
+		TanhAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -282,7 +282,7 @@ func reluF16AVX2(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		reluAVX2(buf[:len(chunk)])
+		ReluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -297,7 +297,7 @@ func hardSwishF16AVX2(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		hardSwishAVX2(buf[:len(chunk)])
+		HardSwishAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -312,7 +312,7 @@ func siluF16AVX2(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		siluAVX2(buf[:len(chunk)])
+		SiluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -327,7 +327,7 @@ func geluF16AVX2(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		geluAVX2(buf[:len(chunk)])
+		GeluAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -342,7 +342,7 @@ func tanhF16AVX2(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		tanhAVX2(buf[:len(chunk)])
+		TanhAVX2(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}

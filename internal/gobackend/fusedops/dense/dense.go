@@ -153,7 +153,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			biasFlat = bias.Flat.([]float32)
 		}
 
-		actFn := activations.Get[float32](data.options.Activation)
+		actFn := activations.Get[float32](data.options.Activation.Type)
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasFlat,
 			Activation: actFn,
@@ -178,7 +178,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			biasFlat = bias.Flat.([]float64)
 		}
 
-		actFn := activations.Get[float64](data.options.Activation)
+		actFn := activations.Get[float64](data.options.Activation.Type)
 		epilogue := matmul.Epilogue[float64]{
 			Bias:       biasFlat,
 			Activation: actFn,
@@ -213,7 +213,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 		}
 
-		actFn := activations.Get[float32](data.options.Activation)
+		actFn := activations.Get[float32](data.options.Activation.Type)
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasF32,
 			Activation: actFn,
@@ -251,7 +251,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 		}
 
-		actFn := activations.Get[float32](data.options.Activation)
+		actFn := activations.Get[float32](data.options.Activation.Type)
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasF32,
 			Activation: actFn,

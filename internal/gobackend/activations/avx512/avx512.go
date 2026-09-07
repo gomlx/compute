@@ -27,28 +27,41 @@ func init() {
 
 func registerAVX512() {
 	// Float32
-	activations.Register[float32]("avx512:relu", compute.ActivationRelu, reluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, hardSwishAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:silu", compute.ActivationSilu, siluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:gelu", compute.ActivationGelu, geluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, tanhAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:relu", compute.ActivationRelu, ReluAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:sigmoid", compute.ActivationSigmoid, SigmoidAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:hardsigmoid", compute.ActivationHardSigmoid, HardSigmoidAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:leakyrelu", compute.ActivationLeakyRelu, LeakyReluAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:selu", compute.ActivationSelu, SeluAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:silu", compute.ActivationSilu, SiluAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, TanhAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluAVX512, PriorityAVX512)
+	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512)
 
 	// BFloat16
 	activations.Register[bfloat16.BFloat16]("avx512:relu", compute.ActivationRelu, reluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:selu", compute.ActivationSelu, seluBF16AVX512, PriorityAVX512)
 	activations.Register[bfloat16.BFloat16]("avx512:silu", compute.ActivationSilu, siluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:gelu", compute.ActivationGelu, geluBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX512, PriorityAVX512)
 	activations.Register[bfloat16.BFloat16]("avx512:tanh", compute.ActivationTanh, tanhBF16AVX512, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:geluapprox", compute.ActivationGeluApproximate, geluBF16AVX512, PriorityAVX512)
 
 	// Float16
 	activations.Register[float16.Float16]("avx512:relu", compute.ActivationRelu, reluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:selu", compute.ActivationSelu, seluF16AVX512, PriorityAVX512)
 	activations.Register[float16.Float16]("avx512:silu", compute.ActivationSilu, siluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:gelu", compute.ActivationGelu, geluF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishF16AVX512, PriorityAVX512)
 	activations.Register[float16.Float16]("avx512:tanh", compute.ActivationTanh, tanhF16AVX512, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:geluapprox", compute.ActivationGeluApproximate, geluF16AVX512, PriorityAVX512)
 }
 
-func reluAVX512(data []float32) {
+func ReluAVX512(data []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	i := 0
 	for ; i+16 <= len(data); i += 16 {
@@ -62,7 +75,7 @@ func reluAVX512(data []float32) {
 	}
 }
 
-func hardSwishAVX512(data []float32) {
+func HardSwishAVX512(data []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	vOne := archsimd.BroadcastFloat32x16(1)
 	vOneSixth := archsimd.BroadcastFloat32x16(1.0 / 6.0)
@@ -130,7 +143,7 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	return n.Mul(poly)
 }
 
-func siluAVX512(data []float32) {
+func SiluAVX512(data []float32) {
 	vOne := archsimd.BroadcastFloat32x16(1.0)
 	i := 0
 	for ; i+16 <= len(data); i += 16 {
@@ -161,7 +174,7 @@ func tanh512(x archsimd.Float32x16) archsimd.Float32x16 {
 	return num.Div(den)
 }
 
-func tanhAVX512(data []float32) {
+func TanhAVX512(data []float32) {
 	i := 0
 	for ; i+16 <= len(data); i += 16 {
 		v := archsimd.LoadFloat32x16(data[i : i+16])
@@ -172,7 +185,7 @@ func tanhAVX512(data []float32) {
 	}
 }
 
-func geluAVX512(data []float32) {
+func GeluAVX512(data []float32) {
 	vHalf := archsimd.BroadcastFloat32x16(0.5)
 	vOne := archsimd.BroadcastFloat32x16(1.0)
 	vSqrt2ByPi := archsimd.BroadcastFloat32x16(float32(math.Sqrt(2.0 / math.Pi)))
@@ -206,7 +219,7 @@ func reluBF16AVX512(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		reluAVX512(buf[:len(chunk)])
+		ReluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -221,7 +234,7 @@ func hardSwishBF16AVX512(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		hardSwishAVX512(buf[:len(chunk)])
+		HardSwishAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -236,7 +249,7 @@ func siluBF16AVX512(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		siluAVX512(buf[:len(chunk)])
+		SiluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -251,7 +264,7 @@ func geluBF16AVX512(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		geluAVX512(buf[:len(chunk)])
+		GeluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -266,7 +279,7 @@ func tanhBF16AVX512(data []bfloat16.BFloat16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		tanhAVX512(buf[:len(chunk)])
+		TanhAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = bfloat16.FromFloat32(buf[j])
 		}
@@ -281,7 +294,7 @@ func reluF16AVX512(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		reluAVX512(buf[:len(chunk)])
+		ReluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -296,7 +309,7 @@ func hardSwishF16AVX512(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		hardSwishAVX512(buf[:len(chunk)])
+		HardSwishAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -311,7 +324,7 @@ func siluF16AVX512(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		siluAVX512(buf[:len(chunk)])
+		SiluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -326,7 +339,7 @@ func geluF16AVX512(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		geluAVX512(buf[:len(chunk)])
+		GeluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}
@@ -341,7 +354,224 @@ func tanhF16AVX512(data []float16.Float16) {
 		for j, v := range chunk {
 			buf[j] = v.Float32()
 		}
-		tanhAVX512(buf[:len(chunk)])
+		TanhAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = float16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func SigmoidAVX512(data []float32) {
+	vOne := archsimd.BroadcastFloat32x16(1.0)
+	i := 0
+	for ; i+16 <= len(data); i += 16 {
+		v := archsimd.LoadFloat32x16(data[i : i+16])
+		expNegV := exp512(v.Neg())
+		denom := vOne.Add(expNegV)
+		vOne.Div(denom).Store(data[i : i+16])
+	}
+	for ; i < len(data); i++ {
+		data[i] = float32(1.0 / (1.0 + math.Exp(float64(-data[i]))))
+	}
+}
+
+func HardSigmoidAVX512(data []float32) {
+	vZero := archsimd.BroadcastFloat32x16(0)
+	vOne := archsimd.BroadcastFloat32x16(1)
+	vSlope := archsimd.BroadcastFloat32x16(0.2)
+	vBias := archsimd.BroadcastFloat32x16(0.5)
+	i := 0
+	for ; i+16 <= len(data); i += 16 {
+		v := archsimd.LoadFloat32x16(data[i : i+16])
+		v.MulAdd(vSlope, vBias).Max(vZero).Min(vOne).Store(data[i : i+16])
+	}
+	for ; i < len(data); i++ {
+		data[i] = min(max(data[i]*0.2+0.5, 0), 1)
+	}
+}
+
+func LeakyReluAVX512(data []float32) {
+	vZero := archsimd.BroadcastFloat32x16(0)
+	vAlpha := archsimd.BroadcastFloat32x16(0.3)
+	i := 0
+	for ; i+16 <= len(data); i += 16 {
+		v := archsimd.LoadFloat32x16(data[i : i+16])
+		scaled := v.Mul(vAlpha)
+		mask := v.GreaterEqual(vZero)
+		v.Merge(scaled, mask).Store(data[i : i+16])
+	}
+	for ; i < len(data); i++ {
+		if data[i] < 0 {
+			data[i] = 0.3 * data[i]
+		}
+	}
+}
+
+const (
+	seluScaleAVX512     = 1.0507009873554804934193349852946
+	seluScaleAlphaAVX512 = 1.0507009873554804934193349852946 * 1.6732632423543772848170429916717
+)
+
+func SeluAVX512(data []float32) {
+	vZero := archsimd.BroadcastFloat32x16(0)
+	vOne := archsimd.BroadcastFloat32x16(1)
+	vScale := archsimd.BroadcastFloat32x16(float32(seluScaleAVX512))
+	vScaleAlpha := archsimd.BroadcastFloat32x16(float32(seluScaleAlphaAVX512))
+	i := 0
+	for ; i+16 <= len(data); i += 16 {
+		v := archsimd.LoadFloat32x16(data[i : i+16])
+		pos := v.Mul(vScale)
+		neg := exp512(v).Sub(vOne).Mul(vScaleAlpha)
+		mask := v.Greater(vZero)
+		pos.Merge(neg, mask).Store(data[i : i+16])
+	}
+	for ; i < len(data); i++ {
+		x := data[i]
+		if x > 0 {
+			data[i] = float32(seluScaleAVX512 * float64(x))
+		} else {
+			data[i] = float32(seluScaleAlphaAVX512 * (math.Exp(float64(x)) - 1.0))
+		}
+	}
+}
+
+func SwiGLUAVX512(in, out []float32, numRows, hiddenDim int) {
+	vOne := archsimd.BroadcastFloat32x16(1.0)
+	for m := range numRows {
+		inOffset := m * 2 * hiddenDim
+		outOffset := m * hiddenDim
+		j := 0
+		for ; j+16 <= hiddenDim; j += 16 {
+			gate := archsimd.LoadFloat32x16(in[inOffset+j : inOffset+j+16])
+			val := archsimd.LoadFloat32x16(in[inOffset+hiddenDim+j : inOffset+hiddenDim+j+16])
+			expNegGate := exp512(gate.Neg())
+			denom := vOne.Add(expNegGate)
+			siluGate := gate.Div(denom)
+			siluGate.Mul(val).Store(out[outOffset+j : outOffset+j+16])
+		}
+		for ; j < hiddenDim; j++ {
+			gate := in[inOffset+j]
+			val := in[inOffset+hiddenDim+j]
+			siluGate := gate / (1.0 + float32(math.Exp(float64(-gate))))
+			out[outOffset+j] = siluGate * val
+		}
+	}
+}
+
+func sigmoidBF16AVX512(data []bfloat16.BFloat16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		SigmoidAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = bfloat16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func hardSigmoidBF16AVX512(data []bfloat16.BFloat16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		HardSigmoidAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = bfloat16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func leakyReluBF16AVX512(data []bfloat16.BFloat16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		LeakyReluAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = bfloat16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func seluBF16AVX512(data []bfloat16.BFloat16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		SeluAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = bfloat16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func sigmoidF16AVX512(data []float16.Float16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		SigmoidAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = float16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func hardSigmoidF16AVX512(data []float16.Float16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		HardSigmoidAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = float16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func leakyReluF16AVX512(data []float16.Float16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		LeakyReluAVX512(buf[:len(chunk)])
+		for j := range chunk {
+			chunk[j] = float16.FromFloat32(buf[j])
+		}
+	}
+}
+
+func seluF16AVX512(data []float16.Float16) {
+	var buf [halfChunk]float32
+	for i := 0; i < len(data); i += halfChunk {
+		end := min(i+halfChunk, len(data))
+		chunk := data[i:end]
+		for j, v := range chunk {
+			buf[j] = v.Float32()
+		}
+		SeluAVX512(buf[:len(chunk)])
 		for j := range chunk {
 			chunk[j] = float16.FromFloat32(buf[j])
 		}

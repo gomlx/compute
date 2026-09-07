@@ -345,7 +345,7 @@ func (f *Function) Floor(x compute.Value) (compute.Value, error) {
 	return RegisterFloor.Fn(f, x)
 }
 
-func (f *Function) FusedActivation(x compute.Value, cfg ActivationConfig) (compute.Value, error) {
+func (f *Function) FusedActivation(x compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
 	if RegisterFusedActivation.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedActivation(x, cfg)
@@ -353,7 +353,7 @@ func (f *Function) FusedActivation(x compute.Value, cfg ActivationConfig) (compu
 	return RegisterFusedActivation.Fn(f, x, cfg)
 }
 
-func (f *Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg ActivationConfig) (compute.Value, error) {
+func (f *Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
 	if RegisterFusedActivationVJP.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
 		return f.Function.FusedActivationVJP(y, x, dOutput, cfg)
@@ -1097,10 +1097,10 @@ var (
 	RegisterFloor = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Floor",
 	}
-	RegisterFusedActivation = OpHandlerRegistration[func(f *Function, x compute.Value, cfg ActivationConfig) (compute.Value, error)]{
+	RegisterFusedActivation = OpHandlerRegistration[func(f *Function, x compute.Value, cfg compute.ActivationConfig) (compute.Value, error)]{
 		Method: "FusedActivation",
 	}
-	RegisterFusedActivationVJP = OpHandlerRegistration[func(f *Function, y compute.Value, x compute.Value, dOutput compute.Value, cfg ActivationConfig) (compute.Value, error)]{
+	RegisterFusedActivationVJP = OpHandlerRegistration[func(f *Function, y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error)]{
 		Method: "FusedActivationVJP",
 	}
 	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{

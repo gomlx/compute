@@ -149,7 +149,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 
 		t.Run("None", func(t *testing.T) {
 			got, err := testutil.Exec1(b, []any{x, w, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
 			})
 			if err != nil {
 				t.Fatalf("FusedDense failed: %+v", err)
@@ -165,7 +165,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			w2 := [][]float32{{1, 1}, {0, -1}}
 			b2 := []float32{-1, -1}
 			got, err := testutil.Exec1(b, []any{x2, w2, b2}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationRelu})
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationRelu}})
 			})
 			if err != nil {
 				t.Fatalf("FusedDense failed: %+v", err)
@@ -186,7 +186,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 			got, err := testutil.Exec1(b, []any{x, wT, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
-					Activation:   compute.ActivationNone,
+					Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
 					WeightLayout: compute.DenseLayoutOutputsInput,
 				})
 			})
@@ -209,7 +209,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 			bBF16 := []bfloat16.BFloat16{bf16(10), bf16(20), bf16(30), bf16(40)}
 			got, err := testutil.Exec1(b, []any{xBF16, wBF16, bBF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
 			})
 			if err != nil {
 				t.Fatalf("FusedDense failed: %+v", err)

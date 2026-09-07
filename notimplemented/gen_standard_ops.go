@@ -387,7 +387,7 @@ func (f Function) Floor(x compute.Value) (compute.Value, error) {
 
 // FusedActivation applies the configured activation function.
 // cfg.Type is obligatory, other fields are optional and specific for activations.
-func (f Function) FusedActivation(x compute.Value, cfg ActivationConfig) (compute.Value, error) {
+func (f Function) FusedActivation(x compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedActivation)
 }
 
@@ -399,7 +399,7 @@ func (f Function) FusedActivation(x compute.Value, cfg ActivationConfig) (comput
 //   - x: input to the activation. If cfg.Type.VJPRequiresInput() is false, x can be nil if y is provided.
 //   - dOutput: the incoming adjoint gradient (the "V" in "VJP"), with the same shape as y.
 //   - cfg: the activation configuration.
-func (f Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg ActivationConfig) (compute.Value, error) {
+func (f Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedActivationVJP)
 }
 

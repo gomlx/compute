@@ -95,13 +95,29 @@ func TestActivationsFloat32(t *testing.T) {
 				t.Fatal("Gelu implementation not found")
 			}
 			fn(data)
+			for i, x := range inputs {
+				xf := float64(x)
+				want := float32(xf * 0.5 * (1.0 + math.Erf(xf/math.Sqrt2)))
+				if ok, diff := testutil.IsInDelta(want, data[i], 1e-4); !ok {
+					t.Fatalf("Gelu[%d] (x=%f) mismatch: %s", i, x, diff)
+				}
+			}
+		})
+
+		t.Run("GeluApproximate", func(t *testing.T) {
+			data := append([]float32(nil), inputs...)
+			fn := activations.Get[float32](compute.ActivationGeluApproximate)
+			if fn == nil {
+				t.Fatal("GeluApproximate implementation not found")
+			}
+			fn(data)
 			sqrt2ByPi := float64(math.Sqrt(2.0 / math.Pi))
 			for i, x := range inputs {
 				xf := float64(x)
 				inner := sqrt2ByPi * (xf + 0.044715*xf*xf*xf)
 				want := float32(xf * 0.5 * (1.0 + math.Tanh(inner)))
 				if ok, diff := testutil.IsInDelta(want, data[i], 1e-4); !ok {
-					t.Fatalf("Gelu[%d] (x=%f) mismatch: %s", i, x, diff)
+					t.Fatalf("GeluApproximate[%d] (x=%f) mismatch: %s", i, x, diff)
 				}
 			}
 		})

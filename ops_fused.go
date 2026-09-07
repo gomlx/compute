@@ -227,7 +227,7 @@ func (l DenseLayout) String() string {
 // DenseConfig holds configuration parameters for FusedDense operations.
 type DenseConfig struct {
 	// Activation is applied after the matmul+bias; set to ActivationNone for no activation.
-	Activation ActivationType
+	Activation ActivationConfig
 	// WeightLayout specifies the layout of the weight matrix (DenseLayoutInputOutputs or DenseLayoutOutputsInput).
 	WeightLayout DenseLayout
 }
