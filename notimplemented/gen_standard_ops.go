@@ -414,6 +414,12 @@ func (f Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput c
 //     or [out_features..., in_features] (if WeightLayout is DenseLayoutOutputsInput)
 //   - bias: [out_features...] (nil-able).
 //   - options: DenseConfig options (activation and weight layout).
+//
+// Note: ActivationSwiGLU is explicitly not supported for FusedDense because it halves the
+// last dimension (output shape changes). This would require allocating temporary memory
+// and complicate the matmul implementation, eliminating the cache-locality gains of epilogue
+// fusion. Instead, use FusedDense with no activation, followed by FusedActivation with
+// ActivationSwiGLU as a separate operation.
 func (f Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedDense)
 }

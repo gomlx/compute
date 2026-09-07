@@ -377,6 +377,14 @@ func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias comput
 	return RegisterFusedDense.Fn(f, x, weight, bias, options)
 }
 
+func (f *Function) FusedDenseVJP(x compute.Value, weight compute.Value, bias compute.Value, y compute.Value, dOutput compute.Value, options compute.DenseConfig) (dx compute.Value, dWeight compute.Value, dBias compute.Value, err error) {
+	if RegisterFusedDenseVJP.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedDenseVJP(x, weight, bias, y, dOutput, options)
+	}
+	return RegisterFusedDenseVJP.Fn(f, x, weight, bias, y, dOutput, options)
+}
+
 func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error) {
 	if RegisterFusedLayerNorm.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1108,6 +1116,9 @@ var (
 	}
 	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error)]{
 		Method: "FusedDense",
+	}
+	RegisterFusedDenseVJP = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, y compute.Value, dOutput compute.Value, options compute.DenseConfig) (dx compute.Value, dWeight compute.Value, dBias compute.Value, err error)]{
+		Method: "FusedDenseVJP",
 	}
 	RegisterFusedLayerNorm = OpHandlerRegistration[func(f *Function, x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error)]{
 		Method: "FusedLayerNorm",

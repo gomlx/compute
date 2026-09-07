@@ -483,6 +483,32 @@ type FusedOps interface {
 	// ActivationSwiGLU as a separate operation.
 	FusedDense(x, weight, bias Value, options DenseConfig) (Value, error)
 
+	// FusedDenseVJP computes the vector-jacobian product (gradients) of FusedDense with respect to
+	// its inputs (x, weight, and bias).
+	//
+	// Parameters:
+	//   - x: original input tensor to FusedDense, of shape [batch..., in_features].
+	//   - weight: weight tensor to FusedDense.
+	//   - bias: bias tensor to FusedDense (can be nil if FusedDense was called without bias).
+	//   - y: output of the forward FusedDense call.
+	//   - dOutput: incoming adjoint gradient with respect to y (same shape as y).
+	//   - options: configuration passed to the forward FusedDense call.
+	//
+	// Outputs:
+	//   - dx: gradient with respect to x (same shape as x).
+	//   - dWeight: gradient with respect to weight (same shape as weight).
+	//   - dBias: gradient with respect to bias (same shape as bias, or nil if bias was nil).
+	//
+	// Note: FusedDenseVJP only works for activations that return false to
+	// ActivationType.VJPRequiresInput() (such as ActivationNone, ActivationRelu, ActivationSigmoid,
+	// ActivationHardSigmoid, ActivationLeakyRelu, ActivationSelu, and ActivationTanh).
+	// If the activation requires the input (where VJPRequiresInput() returns true, such as
+	// ActivationSilu, ActivationHardSwish, ActivationGelu, and ActivationGeluApproximate), it is
+	// recommended to use FusedDense without an activation (ActivationNone), and then use
+	// FusedActivation separately so that the pre-activation intermediate can be preserved for
+	// FusedActivationVJP.
+	FusedDenseVJP(x, weight, bias, y, dOutput Value, options DenseConfig) (dx, dWeight, dBias Value, err error)
+
 	// FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
 	//
 	// output = softmax(query @ key^T * scale + mask) @ value, computed per-head with GQA support.

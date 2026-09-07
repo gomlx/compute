@@ -157,6 +157,7 @@ const (
 	OpTypeFusedLayerNorm
 	OpTypeFusedGelu
 	OpTypeFusedDense
+	OpTypeFusedDenseVJP
 	OpTypeFusedScaledDotProductAttention
 	OpTypeFusedScaledDotProductAttentionVJP
 	OpTypeFusedAttentionQKVProjection
