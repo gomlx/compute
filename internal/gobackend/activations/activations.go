@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 )
 
@@ -310,14 +311,21 @@ func GetSwiGLUVJP[T gotype.Supported]() SwiGLUVJPFn[T] {
 	return fn.(SwiGLUVJPFn[T])
 }
 
-// ExecuteVJP applies the VJP of the given activation function.
-// y and/or x may be empty/nil depending on whether the activation VJP requires x.
+// ExecuteVJP applies the VJP of the given activation function:
+//
+//	dx = dOutput * f'(y or x)
+//
+// Note: For activations where act.VJPRequiresInput() == false (e.g. Relu, Sigmoid, HardSigmoid,
+// LeakyRelu, Selu, Tanh, None), the parameter x is optional (can be nil or empty), and the calculation
+// will use only y.
 func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.ActivationType, y, x, dOutput, dx []T) {
 	if len(dOutput) == 0 {
 		return
 	}
 	if act == compute.ActivationNone {
-		copy(dx, dOutput)
+		if len(dx) > 0 && len(dOutput) > 0 && &dOutput[0] != &dx[0] {
+			copy(dx, dOutput)
+		}
 		return
 	}
 	fn := GetVJPKernel[T](act)
@@ -351,6 +359,29 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 	} else {
 		fn(y, x, dOutput, dx)
 	}
+}
+
+// ExecuteVJPFromOutput applies the VJP of an activation that only depends on the forward output y:
+//
+//	dz = dOutput * f'(y)
+//
+// It requires that act.VJPRequiresInput() == false.
+// dz and dOutput can be the same slice (in-place).
+func ExecuteVJPFromOutput[T gotype.Supported](backend *gobackend.Backend, act compute.ActivationType, y, dOutput, dz []T) error {
+	if act.VJPRequiresInput() {
+		return errors.Errorf("ExecuteVJPFromOutput: activation %s requires input x (VJPRequiresInput() == true)", act)
+	}
+	if len(dOutput) == 0 {
+		return nil
+	}
+	if act == compute.ActivationNone {
+		if len(dz) > 0 && len(dOutput) > 0 && &dOutput[0] != &dz[0] {
+			copy(dz, dOutput)
+		}
+		return nil
+	}
+	ExecuteVJP[T](backend, act, y, nil, dOutput, dz)
+	return nil
 }
 
 // ExecuteSwiGLUVJP applies SwiGLU VJP across numRows rows.

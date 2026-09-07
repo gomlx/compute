@@ -476,7 +476,11 @@ func SwiGLUBFloat16SIMD(in, out []bfloat16.BFloat16, numRows, hiddenDim int) { /
 // VJP (Vector-Jacobian Product) Kernels
 // -------------------------------------------------------------------------------------------------
 
+// vjpReluBFloat16SIMD computes the ReLU VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpReluFloat16SIMD computes the ReLU VJP.
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpReluFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {
@@ -530,7 +534,11 @@ func vjpReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
 	}
 }
 
+// vjpSigmoidBFloat16SIMD computes the Sigmoid VJP: dx = dOutput * y * (1 - y).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpSigmoidBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpSigmoidFloat16SIMD computes the Sigmoid VJP: dx = dOutput * y * (1 - y).
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpSigmoidFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {
@@ -627,7 +635,11 @@ func vjpSigmoidBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloa
 	}
 }
 
+// vjpHardSigmoidBFloat16SIMD computes the HardSigmoid VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpHardSigmoidBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpHardSigmoidFloat16SIMD computes the HardSigmoid VJP.
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpHardSigmoidFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {
@@ -734,7 +746,11 @@ func vjpHardSigmoidBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:b
 	}
 }
 
+// vjpLeakyReluBFloat16SIMD computes the LeakyRelu VJP: dx = dOutput * (1 if y >= 0 else 0.3).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpLeakyReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpLeakyReluFloat16SIMD computes the LeakyRelu VJP: dx = dOutput * (1 if y >= 0 else 0.3).
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpLeakyReluFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {
@@ -744,20 +760,24 @@ func vjpLeakyReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfl
 	vecLen := dummy.Len()
 	vZero := simd.BroadcastFloat32s(0)
 	vSlope := simd.BroadcastFloat32s(0.3)
+	ref := y
+	if len(ref) == 0 {
+		ref = x
+	}
 	i := 0
 	for ; i+vecLen <= n; i += vecLen {
-		vX := bfloat16.LoadBFloat16s(x[i : i+vecLen]) //alt:bfloat16
-		//alt:float16 vX := float16.LoadFloat16s(x[i : i+vecLen])
-		evenX, oddX := bfloat16.ToFloat32SIMD(vX) //alt:bfloat16
-		//alt:float16 evenX, oddX := float16.ToFloat32SIMD(vX)
+		vRef := bfloat16.LoadBFloat16s(ref[i : i+vecLen]) //alt:bfloat16
+		//alt:float16 vRef := float16.LoadFloat16s(ref[i : i+vecLen])
+		evenRef, oddRef := bfloat16.ToFloat32SIMD(vRef) //alt:bfloat16
+		//alt:float16 evenRef, oddRef := float16.ToFloat32SIMD(vRef)
 
 		vDOut := bfloat16.LoadBFloat16s(dOutput[i : i+vecLen]) //alt:bfloat16
 		//alt:float16 vDOut := float16.LoadFloat16s(dOutput[i : i+vecLen])
 		evenDOut, oddDOut := bfloat16.ToFloat32SIMD(vDOut) //alt:bfloat16
 		//alt:float16 evenDOut, oddDOut := float16.ToFloat32SIMD(vDOut)
 
-		evenDx := selectFloat32s(evenX.GreaterEqual(vZero), evenDOut, evenDOut.Mul(vSlope))
-		oddDx := selectFloat32s(oddX.GreaterEqual(vZero), oddDOut, oddDOut.Mul(vSlope))
+		evenDx := selectFloat32s(evenRef.GreaterEqual(vZero), evenDOut, evenDOut.Mul(vSlope))
+		oddDx := selectFloat32s(oddRef.GreaterEqual(vZero), oddDOut, oddDOut.Mul(vSlope))
 
 		res := bfloat16.FromFloat32SIMD(evenDx, oddDx) //alt:bfloat16
 		//alt:float16 res := float16.FromFloat32SIMD(evenDx, oddDx)
@@ -765,18 +785,18 @@ func vjpLeakyReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfl
 		//alt:float16 float16.StoreFloat16s(res, dx[i : i+vecLen])
 	}
 	if i < n {
-		vX, _ := bfloat16.LoadBFloat16sPart(x[i:]) //alt:bfloat16
-		//alt:float16 vX, _ := float16.LoadFloat16sPart(x[i:])
-		evenX, oddX := bfloat16.ToFloat32SIMD(vX) //alt:bfloat16
-		//alt:float16 evenX, oddX := float16.ToFloat32SIMD(vX)
+		vRef, _ := bfloat16.LoadBFloat16sPart(ref[i:]) //alt:bfloat16
+		//alt:float16 vRef, _ := float16.LoadFloat16sPart(ref[i:])
+		evenRef, oddRef := bfloat16.ToFloat32SIMD(vRef) //alt:bfloat16
+		//alt:float16 evenRef, oddRef := float16.ToFloat32SIMD(vRef)
 
 		vDOut, _ := bfloat16.LoadBFloat16sPart(dOutput[i:]) //alt:bfloat16
 		//alt:float16 vDOut, _ := float16.LoadFloat16sPart(dOutput[i:])
 		evenDOut, oddDOut := bfloat16.ToFloat32SIMD(vDOut) //alt:bfloat16
 		//alt:float16 evenDOut, oddDOut := float16.ToFloat32SIMD(vDOut)
 
-		evenDx := selectFloat32s(evenX.GreaterEqual(vZero), evenDOut, evenDOut.Mul(vSlope))
-		oddDx := selectFloat32s(oddX.GreaterEqual(vZero), oddDOut, oddDOut.Mul(vSlope))
+		evenDx := selectFloat32s(evenRef.GreaterEqual(vZero), evenDOut, evenDOut.Mul(vSlope))
+		oddDx := selectFloat32s(oddRef.GreaterEqual(vZero), oddDOut, oddDOut.Mul(vSlope))
 
 		res := bfloat16.FromFloat32SIMD(evenDx, oddDx) //alt:bfloat16
 		//alt:float16 res := float16.FromFloat32SIMD(evenDx, oddDx)
@@ -785,7 +805,11 @@ func vjpLeakyReluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfl
 	}
 }
 
+// vjpSeluBFloat16SIMD computes the SELU VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpSeluBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpSeluFloat16SIMD computes the SELU VJP.
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpSeluFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {
@@ -1026,7 +1050,11 @@ func vjpHardSwishBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfl
 	}
 }
 
+// vjpTanhBFloat16SIMD computes the Tanh VJP: dx = dOutput * (1 - y^2).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpTanhBFloat16SIMD(y, x, dOutput, dx []bfloat16.BFloat16) { //alt:bfloat16
+//alt:float16 // vjpTanhFloat16SIMD computes the Tanh VJP: dx = dOutput * (1 - y^2).
+//alt:float16 // Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 //alt:float16 func vjpTanhFloat16SIMD(y, x, dOutput, dx []float16.Float16) {
 	n := len(dOutput)
 	if n == 0 {

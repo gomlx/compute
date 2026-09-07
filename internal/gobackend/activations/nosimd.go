@@ -454,6 +454,8 @@ func swigluF16NoSIMD(in, out []float16.Float16, numRows, hiddenDim int) {
 
 // VJP scalar implementations:
 
+// vjpReluNoSIMD computes the ReLU VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpReluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	if len(y) > 0 {
 		for i, dOut := range dOutput {
@@ -474,6 +476,8 @@ func vjpReluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
+// vjpSigmoidNoSIMD computes the Sigmoid VJP: dx = dOutput * y * (1 - y).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpSigmoidNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	if len(y) > 0 {
 		for i, dOut := range dOutput {
@@ -488,6 +492,8 @@ func vjpSigmoidNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
+// vjpHardSigmoidNoSIMD computes the HardSigmoid VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpHardSigmoidNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	const slope = 0.2
 	if len(y) > 0 {
@@ -509,6 +515,8 @@ func vjpHardSigmoidNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
+// vjpLeakyReluNoSIMD computes the LeakyRelu VJP: dx = dOutput * (1 if y >= 0 else 0.3).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpLeakyReluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	const alpha = 0.3
 	if len(y) > 0 {
@@ -530,6 +538,8 @@ func vjpLeakyReluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
+// vjpSeluNoSIMD computes the SELU VJP.
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpSeluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	const scale = 1.0507009873554804934193349852946
 	const alpha = 1.6732632423543772848170429916717
@@ -553,6 +563,8 @@ func vjpSeluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
+// vjpTanhNoSIMD computes the Tanh VJP: dx = dOutput * (1 - y^2).
+// Note: x is optional; if not provided (nil or empty), the calculation only uses y.
 func vjpTanhNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	if len(y) > 0 {
 		for i, dOut := range dOutput {

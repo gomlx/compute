@@ -169,3 +169,151 @@ func TestActivationsFloat16(t *testing.T) {
 		t.Errorf("Relu F16 positive values unchanged")
 	}
 }
+
+func TestVJPFromOutput(t *testing.T) {
+	supportedActs := []compute.ActivationType{
+		compute.ActivationNone,
+		compute.ActivationRelu,
+		compute.ActivationSigmoid,
+		compute.ActivationHardSigmoid,
+		compute.ActivationLeakyRelu,
+		compute.ActivationSelu,
+		compute.ActivationTanh,
+	}
+
+	t.Run("Float32", func(t *testing.T) {
+		xs := []float32{-3.0, -1.5, -0.5, 0.0, 0.5, 1.5, 3.0}
+		dOut := []float32{1.0, -1.0, 2.0, 0.5, -2.0, 1.0, -0.5}
+
+		for _, act := range supportedActs {
+			t.Run(act.String(), func(t *testing.T) {
+				ys := make([]float32, len(xs))
+				activations.Execute[float32](nil, act, xs, ys)
+
+				dz := make([]float32, len(xs))
+				err := activations.ExecuteVJPFromOutput[float32](nil, act, ys, dOut, dz)
+				if err != nil {
+					t.Fatalf("unexpected error: %+v", err)
+				}
+
+				// Expected from full VJP with x
+				expected := make([]float32, len(xs))
+				activations.ExecuteVJP[float32](nil, act, ys, xs, dOut, expected)
+
+				for i := range dz {
+					if ok, diff := testutil.IsInDelta(expected[i], dz[i], 1e-4); !ok {
+						t.Errorf("VJPFromOutput[%d] mismatch for %s: %s (got %f, want %f)", i, act, diff, dz[i], expected[i])
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("Float64", func(t *testing.T) {
+		xs := []float64{-3.0, -1.5, -0.5, 0.0, 0.5, 1.5, 3.0}
+		dOut := []float64{1.0, -1.0, 2.0, 0.5, -2.0, 1.0, -0.5}
+
+		for _, act := range supportedActs {
+			t.Run(act.String(), func(t *testing.T) {
+				ys := make([]float64, len(xs))
+				activations.Execute[float64](nil, act, xs, ys)
+
+				dz := make([]float64, len(xs))
+				err := activations.ExecuteVJPFromOutput[float64](nil, act, ys, dOut, dz)
+				if err != nil {
+					t.Fatalf("unexpected error: %+v", err)
+				}
+
+				expected := make([]float64, len(xs))
+				activations.ExecuteVJP[float64](nil, act, ys, xs, dOut, expected)
+
+				for i := range dz {
+					if ok, diff := testutil.IsInDelta(expected[i], dz[i], 1e-6); !ok {
+						t.Errorf("VJPFromOutput[%d] mismatch for %s: %s", i, act, diff)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("BFloat16", func(t *testing.T) {
+		xsF32 := []float32{-2.0, -0.5, 0.0, 0.5, 2.0}
+		dOutF32 := []float32{1.0, 1.0, 1.0, 1.0, 1.0}
+
+		xs := make([]bfloat16.BFloat16, len(xsF32))
+		dOut := make([]bfloat16.BFloat16, len(dOutF32))
+		for i := range xs {
+			xs[i] = bfloat16.FromFloat32(xsF32[i])
+			dOut[i] = bfloat16.FromFloat32(dOutF32[i])
+		}
+
+		for _, act := range supportedActs {
+			t.Run(act.String(), func(t *testing.T) {
+				ys := make([]bfloat16.BFloat16, len(xs))
+				activations.Execute[bfloat16.BFloat16](nil, act, xs, ys)
+
+				dz := make([]bfloat16.BFloat16, len(xs))
+				err := activations.ExecuteVJPFromOutput[bfloat16.BFloat16](nil, act, ys, dOut, dz)
+				if err != nil {
+					t.Fatalf("unexpected error: %+v", err)
+				}
+
+				expected := make([]bfloat16.BFloat16, len(xs))
+				activations.ExecuteVJP[bfloat16.BFloat16](nil, act, ys, xs, dOut, expected)
+
+				for i := range dz {
+					if ok, diff := testutil.IsInDelta(expected[i].Float32(), dz[i].Float32(), 1e-2); !ok {
+						t.Errorf("VJPFromOutput[%d] mismatch for %s: %s", i, act, diff)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("Float16", func(t *testing.T) {
+		xsF32 := []float32{-2.0, -0.5, 0.0, 0.5, 2.0}
+		dOutF32 := []float32{1.0, 1.0, 1.0, 1.0, 1.0}
+
+		xs := make([]float16.Float16, len(xsF32))
+		dOut := make([]float16.Float16, len(dOutF32))
+		for i := range xs {
+			xs[i] = float16.FromFloat32(xsF32[i])
+			dOut[i] = float16.FromFloat32(dOutF32[i])
+		}
+
+		for _, act := range supportedActs {
+			t.Run(act.String(), func(t *testing.T) {
+				ys := make([]float16.Float16, len(xs))
+				activations.Execute[float16.Float16](nil, act, xs, ys)
+
+				dz := make([]float16.Float16, len(xs))
+				err := activations.ExecuteVJPFromOutput[float16.Float16](nil, act, ys, dOut, dz)
+				if err != nil {
+					t.Fatalf("unexpected error: %+v", err)
+				}
+
+				expected := make([]float16.Float16, len(xs))
+				activations.ExecuteVJP[float16.Float16](nil, act, ys, xs, dOut, expected)
+
+				for i := range dz {
+					if ok, diff := testutil.IsInDelta(expected[i].Float32(), dz[i].Float32(), 1e-2); !ok {
+						t.Errorf("VJPFromOutput[%d] mismatch for %s: %s", i, act, diff)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("UnsupportedRejection", func(t *testing.T) {
+		dummy := []float32{1.0}
+		err := activations.ExecuteVJPFromOutput[float32](nil, compute.ActivationSilu, dummy, dummy, dummy)
+		if err == nil {
+			t.Errorf("expected error for ActivationSilu, got nil")
+		}
+		err = activations.ExecuteVJPFromOutput[float32](nil, compute.ActivationGelu, dummy, dummy, dummy)
+		if err == nil {
+			t.Errorf("expected error for ActivationGelu, got nil")
+		}
+	})
+}
+
