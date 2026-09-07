@@ -1,0 +1,454 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64
+
+#include "textflag.h"
+
+// ============================================================================
+// Float32 Non-Transposed Kernels
+// ============================================================================
+
+// func avx2SmallNonTransposedTile4x16Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+//     rhsCol unsafe.Pointer,
+//     contractingLen int,
+//     rowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·avx2SmallNonTransposedTile4x16Float32Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+loop_k_f32:
+	VBROADCASTSS (R8), Y10
+	VBROADCASTSS (R9), Y11
+	VBROADCASTSS (R10), Y12
+	VBROADCASTSS (R11), Y13
+
+	VMOVUPS (R12), Y8
+	VMOVUPS 32(R12), Y9
+
+	VFMADD231PS Y8, Y10, Y0
+	VFMADD231PS Y9, Y10, Y1
+	VFMADD231PS Y8, Y11, Y2
+	VFMADD231PS Y9, Y11, Y3
+	VFMADD231PS Y8, Y12, Y4
+	VFMADD231PS Y9, Y12, Y5
+	VFMADD231PS Y8, Y13, Y6
+	VFMADD231PS Y9, Y13, Y7
+
+	ADDQ $4, R8
+	ADDQ $4, R9
+	ADDQ $4, R10
+	ADDQ $4, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_f32
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 32(R14)
+	VMOVUPS Y2, 0(R15)
+	VMOVUPS Y3, 32(R15)
+	VMOVUPS Y4, 0(DI)
+	VMOVUPS Y5, 32(DI)
+	VMOVUPS Y6, 0(SI)
+	VMOVUPS Y7, 32(SI)
+	RET
+
+// func avx2SmallNonTransposedTile4x8Float32Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x8Float32Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+loop_k_4x8_f32:
+	VBROADCASTSS (R8), Y5
+	VBROADCASTSS (R9), Y6
+	VBROADCASTSS (R10), Y7
+	VBROADCASTSS (R11), Y8
+
+	VMOVUPS (R12), Y4
+
+	VFMADD231PS Y4, Y5, Y0
+	VFMADD231PS Y4, Y6, Y1
+	VFMADD231PS Y4, Y7, Y2
+	VFMADD231PS Y4, Y8, Y3
+
+	ADDQ $4, R8
+	ADDQ $4, R9
+	ADDQ $4, R10
+	ADDQ $4, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_4x8_f32
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 0(R15)
+	VMOVUPS Y2, 0(DI)
+	VMOVUPS Y3, 0(SI)
+	RET
+
+// ============================================================================
+// Float64 Non-Transposed Kernels
+// ============================================================================
+
+// func avx2SmallNonTransposedTile4x8Float64Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x8Float64Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+	VXORPD Y4, Y4, Y4
+	VXORPD Y5, Y5, Y5
+	VXORPD Y6, Y6, Y6
+	VXORPD Y7, Y7, Y7
+
+loop_k_f64:
+	VBROADCASTSD (R8), Y10
+	VBROADCASTSD (R9), Y11
+	VBROADCASTSD (R10), Y12
+	VBROADCASTSD (R11), Y13
+
+	VMOVUPD (R12), Y8
+	VMOVUPD 32(R12), Y9
+
+	VFMADD231PD Y8, Y10, Y0
+	VFMADD231PD Y9, Y10, Y1
+	VFMADD231PD Y8, Y11, Y2
+	VFMADD231PD Y9, Y11, Y3
+	VFMADD231PD Y8, Y12, Y4
+	VFMADD231PD Y9, Y12, Y5
+	VFMADD231PD Y8, Y13, Y6
+	VFMADD231PD Y9, Y13, Y7
+
+	ADDQ $8, R8
+	ADDQ $8, R9
+	ADDQ $8, R10
+	ADDQ $8, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_f64
+
+	VMOVUPD Y0, 0(R14)
+	VMOVUPD Y1, 32(R14)
+	VMOVUPD Y2, 0(R15)
+	VMOVUPD Y3, 32(R15)
+	VMOVUPD Y4, 0(DI)
+	VMOVUPD Y5, 32(DI)
+	VMOVUPD Y6, 0(SI)
+	VMOVUPD Y7, 32(SI)
+	RET
+
+// func avx2SmallNonTransposedTile4x4Float64Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x4Float64Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+
+loop_k_4x4_f64:
+	VBROADCASTSD (R8), Y5
+	VBROADCASTSD (R9), Y6
+	VBROADCASTSD (R10), Y7
+	VBROADCASTSD (R11), Y8
+
+	VMOVUPD (R12), Y4
+
+	VFMADD231PD Y4, Y5, Y0
+	VFMADD231PD Y4, Y6, Y1
+	VFMADD231PD Y4, Y7, Y2
+	VFMADD231PD Y4, Y8, Y3
+
+	ADDQ $8, R8
+	ADDQ $8, R9
+	ADDQ $8, R10
+	ADDQ $8, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_4x4_f64
+
+	VMOVUPD Y0, 0(R14)
+	VMOVUPD Y1, 0(R15)
+	VMOVUPD Y2, 0(DI)
+	VMOVUPD Y3, 0(SI)
+	RET
+
+// ============================================================================
+// Float16 Non-Transposed Kernels
+// ============================================================================
+
+// func avx2SmallNonTransposedTile4x16Float16Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x16Float16Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+loop_k_f16:
+	MOVWLZX (R8), AX; VMOVD AX, X10; VCVTPH2PS X10, X10; VBROADCASTSS X10, Y10
+	MOVWLZX (R9), AX; VMOVD AX, X11; VCVTPH2PS X11, X11; VBROADCASTSS X11, Y11
+	MOVWLZX (R10), AX; VMOVD AX, X12; VCVTPH2PS X12, X12; VBROADCASTSS X12, Y12
+	MOVWLZX (R11), AX; VMOVD AX, X13; VCVTPH2PS X13, X13; VBROADCASTSS X13, Y13
+
+	VCVTPH2PS (R12), Y8
+	VCVTPH2PS 16(R12), Y9
+
+	VFMADD231PS Y8, Y10, Y0
+	VFMADD231PS Y9, Y10, Y1
+	VFMADD231PS Y8, Y11, Y2
+	VFMADD231PS Y9, Y11, Y3
+	VFMADD231PS Y8, Y12, Y4
+	VFMADD231PS Y9, Y12, Y5
+	VFMADD231PS Y8, Y13, Y6
+	VFMADD231PS Y9, Y13, Y7
+
+	ADDQ $2, R8
+	ADDQ $2, R9
+	ADDQ $2, R10
+	ADDQ $2, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_f16
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 32(R14)
+	VMOVUPS Y2, 0(R15)
+	VMOVUPS Y3, 32(R15)
+	VMOVUPS Y4, 0(DI)
+	VMOVUPS Y5, 32(DI)
+	VMOVUPS Y6, 0(SI)
+	VMOVUPS Y7, 32(SI)
+	RET
+
+// func avx2SmallNonTransposedTile4x8Float16Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x8Float16Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+loop_k_4x8_f16:
+	MOVWLZX (R8), AX; VMOVD AX, X5; VCVTPH2PS X5, X5; VBROADCASTSS X5, Y5
+	MOVWLZX (R9), AX; VMOVD AX, X6; VCVTPH2PS X6, X6; VBROADCASTSS X6, Y6
+	MOVWLZX (R10), AX; VMOVD AX, X7; VCVTPH2PS X7, X7; VBROADCASTSS X7, Y7
+	MOVWLZX (R11), AX; VMOVD AX, X8; VCVTPH2PS X8, X8; VBROADCASTSS X8, Y8
+
+	VCVTPH2PS (R12), Y4
+
+	VFMADD231PS Y4, Y5, Y0
+	VFMADD231PS Y4, Y6, Y1
+	VFMADD231PS Y4, Y7, Y2
+	VFMADD231PS Y4, Y8, Y3
+
+	ADDQ $2, R8
+	ADDQ $2, R9
+	ADDQ $2, R10
+	ADDQ $2, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_4x8_f16
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 0(R15)
+	VMOVUPS Y2, 0(DI)
+	VMOVUPS Y3, 0(SI)
+	RET
+
+// ============================================================================
+// BFloat16 Non-Transposed Kernels
+// ============================================================================
+
+// func avx2SmallNonTransposedTile4x16BFloat16Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x16BFloat16Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+loop_k_bf16:
+	MOVWLZX (R8), AX; SHLL $16, AX; VMOVD AX, X10; VBROADCASTSS X10, Y10
+	MOVWLZX (R9), AX; SHLL $16, AX; VMOVD AX, X11; VBROADCASTSS X11, Y11
+	MOVWLZX (R10), AX; SHLL $16, AX; VMOVD AX, X12; VBROADCASTSS X12, Y12
+	MOVWLZX (R11), AX; SHLL $16, AX; VMOVD AX, X13; VBROADCASTSS X13, Y13
+
+	VPMOVZXWD (R12), Y8; VPSLLD $16, Y8, Y8
+	VPMOVZXWD 16(R12), Y9; VPSLLD $16, Y9, Y9
+
+	VFMADD231PS Y8, Y10, Y0
+	VFMADD231PS Y9, Y10, Y1
+	VFMADD231PS Y8, Y11, Y2
+	VFMADD231PS Y9, Y11, Y3
+	VFMADD231PS Y8, Y12, Y4
+	VFMADD231PS Y9, Y12, Y5
+	VFMADD231PS Y8, Y13, Y6
+	VFMADD231PS Y9, Y13, Y7
+
+	ADDQ $2, R8
+	ADDQ $2, R9
+	ADDQ $2, R10
+	ADDQ $2, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_bf16
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 32(R14)
+	VMOVUPS Y2, 0(R15)
+	VMOVUPS Y3, 32(R15)
+	VMOVUPS Y4, 0(DI)
+	VMOVUPS Y5, 32(DI)
+	VMOVUPS Y6, 0(SI)
+	VMOVUPS Y7, 32(SI)
+	RET
+
+// func avx2SmallNonTransposedTile4x8BFloat16Asm(...)
+TEXT ·avx2SmallNonTransposedTile4x8BFloat16Asm(SB), NOSPLIT, $0-88
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rhsCol+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ rowStrideBytes+48(FP), R13
+	MOVQ outRow0+56(FP), R14
+	MOVQ outRow1+64(FP), R15
+	MOVQ outRow2+72(FP), DI
+	MOVQ outRow3+80(FP), SI
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+loop_k_4x8_bf16:
+	MOVWLZX (R8), AX; SHLL $16, AX; VMOVD AX, X5; VBROADCASTSS X5, Y5
+	MOVWLZX (R9), AX; SHLL $16, AX; VMOVD AX, X6; VBROADCASTSS X6, Y6
+	MOVWLZX (R10), AX; SHLL $16, AX; VMOVD AX, X7; VBROADCASTSS X7, Y7
+	MOVWLZX (R11), AX; SHLL $16, AX; VMOVD AX, X8; VBROADCASTSS X8, Y8
+
+	VPMOVZXWD (R12), Y4; VPSLLD $16, Y4, Y4
+
+	VFMADD231PS Y4, Y5, Y0
+	VFMADD231PS Y4, Y6, Y1
+	VFMADD231PS Y4, Y7, Y2
+	VFMADD231PS Y4, Y8, Y3
+
+	ADDQ $2, R8
+	ADDQ $2, R9
+	ADDQ $2, R10
+	ADDQ $2, R11
+	ADDQ R13, R12
+
+	DECQ BX
+	JNZ loop_k_4x8_bf16
+
+	VMOVUPS Y0, 0(R14)
+	VMOVUPS Y1, 0(R15)
+	VMOVUPS Y2, 0(DI)
+	VMOVUPS Y3, 0(SI)
+	RET

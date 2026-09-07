@@ -81,6 +81,37 @@ func smallNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.NumericNotComp
 		return
 	}
 
+	if rhsCrossSize == 1 {
+		//alt:generic smallNoSIMDGenericTransposed(
+		smallNoSIMDHalfPrecisionTransposed( //alt:half
+			lhs, rhs,
+			batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize,
+			output)
+		return
+	}
+
+	if rhsCrossSize <= 16 && contractingSize*rhsCrossSize <= 2048 {
+		var buf [2048]I
+		rhsTransposed := buf[:contractingSize*rhsCrossSize]
+		for b := batchStart; b < batchStart+batchCount; b++ {
+			rhsBatch := rhs[b*rhsStride : (b+1)*rhsStride]
+			for col := range rhsCrossSize {
+				dstRow := rhsTransposed[col*contractingSize : (col+1)*contractingSize]
+				srcIdx := col
+				for k := range contractingSize {
+					dstRow[k] = rhsBatch[srcIdx]
+					srcIdx += rhsCrossSize
+				}
+			}
+			//alt:generic smallNoSIMDGenericTransposed(
+			smallNoSIMDHalfPrecisionTransposed( //alt:half
+				lhs[b*lhsStride:(b+1)*lhsStride], rhsTransposed,
+				0, 1, lhsCrossSize, rhsCrossSize, contractingSize,
+				output[b*outputStride:(b+1)*outputStride])
+		}
+		return
+	}
+
 	var iZero I
 	iSize := unsafe.Sizeof(iZero)
 	var oZero O

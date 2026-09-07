@@ -48,6 +48,12 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 64
+		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		lhsFlatIdx := 0
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
@@ -63,6 +69,7 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 				0, lhsCrossSize, 0, rhsCrossSize,
 				params,
 				packedLHS, packedRHS, packedOutput,
+				accumOutput,
 			)
 			lhsFlatIdx += lhsBatchStride
 			rhsFlatIdx += rhsBatchStride
@@ -98,8 +105,14 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 			return
 		}
 		defer ReleaseBuffer(packedOutputRef)
+		const maxAccumPanels = 64
+		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+		if !ok {
+			return
+		}
+		defer ReleaseBuffer(accumOutputRef)
 		for item := range workChan {
-			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
+			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				batchRHS := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
@@ -108,9 +121,10 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 					layout,
 					batchLHS, batchRHS, batchOutput,
 					lhsCrossSize, rhsCrossSize, contractingSize,
-					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
+					item.LHSRowStart, item.LHSRowEnd, item.RHSColStart, item.RHSColEnd,
 					params,
 					packedLHS, packedRHS, packedOutput,
+					accumOutput,
 				)
 			}
 		}
@@ -133,18 +147,23 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 	rowStart, rowEnd, colStart, colEnd int,
 	params CacheParams,
 	packedLHS, packedRHS []I, packedOutput []O,
+	accumBuffer []O,
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
 		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
+		numMPanels := (rowEnd - rowStart + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+		accumPanelStride := params.RHSPanelCrossSize
+		panelSize := params.LHSPanelCrossSize * accumPanelStride
+		useAccum := len(accumBuffer) >= numMPanels*panelSize
 
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
 			if layout == dot.LayoutNonTransposed {
-				packRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+				unsafePackRHS(rhsMatrix, packedRHS, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
 			} else {
 				// For LayoutTransposed, the rhs has the same layout as the lhs, so we use packLHS instead.
 				unsafePackLHS(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize,
@@ -152,27 +171,78 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
-			for lhsPanelRowIdx := rowStart; lhsPanelRowIdx < rowEnd; lhsPanelRowIdx += params.LHSPanelCrossSize {
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
 
 				// PACK LHS
 				unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
 					lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
 
-				//alt:generic largeNoSIMDPanel(
-				largeNoSIMDPanelHalfPrecision( //alt:half
-					packedLHS, packedRHS, packedOutput,
-					params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-					contractingPanelWidth,
-					lhsPanelHeight, rhsPanelWidth,
-				)
-
-				// Accumulate (or write) packedOutput to output.
 				isFirstContractingPanel := contractingPanelIdx == 0
+				accumulate := !isFirstContractingPanel
+				canDirectOutput := (contractingSize <= params.PanelContractingSize) &&
+					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
+					(rhsPanelWidth%params.RHSL1KernelCols == 0)
+
+				if canDirectOutput {
+					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
+					outSlice := outputMatrix[outOffset : outOffset+(lhsPanelHeight-1)*rhsCrossSize+rhsPanelWidth]
+					//alt:generic largeNoSIMDPanel(
+					largeNoSIMDPanelHalfPrecision( //alt:half
+						packedLHS, packedRHS, outSlice,
+						params.LHSPanelCrossSize, rhsCrossSize,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+						accumulate,
+					)
+				} else if useAccum {
+					accumOffset := mIdx * panelSize
+					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
+					//alt:generic largeNoSIMDPanel(
+					largeNoSIMDPanelHalfPrecision( //alt:half
+						packedLHS, packedRHS, accumSlice,
+						params.LHSPanelCrossSize, accumPanelStride,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+						accumulate,
+					)
+				} else {
+					//alt:generic largeNoSIMDPanel(
+					largeNoSIMDPanelHalfPrecision( //alt:half
+						packedLHS, packedRHS, packedOutput,
+						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+						contractingPanelWidth,
+						lhsPanelHeight, rhsPanelWidth,
+						false,
+					)
+
+					// Accumulate (or write) packedOutput to outputMatrix.
+					noSIMDApplyPackedOutput(
+						packedOutput, outputMatrix,
+						isFirstContractingPanel,
+						params.RHSPanelCrossSize,
+						lhsPanelRowIdx, rhsPanelColIdx,
+						rhsCrossSize,
+						lhsPanelHeight, rhsPanelWidth)
+				}
+			}
+		}
+
+		if useAccum {
+			// Copy accumulated results from L2 cache to outputMatrix in a single pass.
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
+				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+				if (contractingSize <= params.PanelContractingSize) &&
+					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
+					(rhsPanelWidth%params.RHSL1KernelCols == 0) {
+					continue
+				}
+				accumOffset := mIdx * panelSize
+				accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
 				noSIMDApplyPackedOutput(
-					packedOutput, outputMatrix,
-					isFirstContractingPanel,
-					params.RHSPanelCrossSize,
+					accumSlice, outputMatrix,
+					true,
+					accumPanelStride,
 					lhsPanelRowIdx, rhsPanelColIdx,
 					rhsCrossSize,
 					lhsPanelHeight, rhsPanelWidth)
@@ -182,14 +252,11 @@ func largeNoSIMDMatrixSliceHalfPrecision[I gotype.HalfPrecision[I], O gotype.Sca
 }
 
 // largeNoSIMDPanel implements a kernel of the matrix multiplication for
-// a lhs and rhs packed panels into an intermediate output panel.
+// a lhs and rhs packed panels into an intermediate output panel (or directly into outputMatrix).
 //
-// It uses register blocking: it divides the 4x4 matrix in 4 4x4 sub-matrices.
-// For each sub-matrix it iterates over k (contracting dim), accumulating the results
-// in local variables (registers).
-// finally it writes the results to output.
-//
-// It assumes lhsL1KernelRows=4 and rhsL1KernelCols=4.
+// It uses register blocking with a 2x4 microkernel (8 scalar accumulators + 6 input variables = 14 variables),
+// which fits 100% in hardware XMM/vector registers on both x86-64 (15 available) and ARM64 (32 available),
+// with ZERO register spills to the stack.
 //
 //alt:generic func largeNoSIMDPanel[I, O gotype.NumericNotComplex](
 func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotComplex]( //alt:half
@@ -198,63 +265,51 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 	lhsPanelRows, rhsPanelCols int,
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
+	accumulate bool,
 ) {
 	const kernelRows = 2
 	const kernelCols = 4
 
-	// Boundary check elimination (BCE) hints.
-	_ = packedLHS[contractingLen*lhsPanelRows-1]
-	_ = packedRHS[contractingLen*rhsPanelCols-1]
-	_ = packedOutput[lhsPanelRows*rhsPanelCols-1]
+	maxRow := (lhsActiveRows + kernelRows - 1) / kernelRows * kernelRows
+	maxCol := (rhsActiveCols + kernelCols - 1) / kernelCols * kernelCols
 
-	// Strides in the packed buffers for one block.
+	// Boundary check elimination (BCE) hints.
+	_ = packedLHS[contractingLen*maxRow-1]
+	_ = packedRHS[contractingLen*maxCol-1]
+	_ = packedOutput[(maxRow-1)*rhsPanelCols+maxCol-1]
+
 	lhsBlockStride := kernelRows * contractingLen
 	rhsBlockStride := kernelCols * contractingLen
 	lhsOffset := 0
 
-	// Write active part of 4x4 block to output
-	// Helper to write a row
-	// Write active part of 4x4 block to output
-	// Bounds check is not needed as packedOutput is allocated to panel size, and we will discard
-	// whatever is written beyond the active part.
-
 	for rowIdx := 0; rowIdx < lhsActiveRows; rowIdx += kernelRows {
 		rhsOffset := 0
 		for colIdx := 0; colIdx < rhsActiveCols; colIdx += kernelCols {
-			// Process 2x4 block at (r, c)
-			// Accumulators for 2x4 block
 			var c00, c01, c02, c03 O
 			var c10, c11, c12, c13 O
 
 			idxLhs := lhsOffset
 			idxRhs := rhsOffset
 
-			// K-Loop unrolled by 4
+			// K-Loop unrolled by 8 with constant offsets
 			k := 0
-			for ; k+3 < contractingLen; k += 4 {
-				// We need 4 steps.
-				// For each step (l is k offset):
-				//   load lhs (2 vals), load rhs (4 vals), fma.
+			for ; k+7 < contractingLen; k += 8 {
+				_ = packedLHS[idxLhs+15]
+				_ = packedRHS[idxRhs+31]
 
-				// --- Step 0 ---
-				// BCE hint
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-
+				// Step 0
 				//alt:generic l0 := packedLHS[idxLhs]
 				//alt:generic l1 := packedLHS[idxLhs+1]
-				l0 := packedLHS[idxLhs].Float32()   //alt:half
-				l1 := packedLHS[idxLhs+1].Float32() //alt:half
-
 				//alt:generic r0 := packedRHS[idxRhs]
 				//alt:generic r1 := packedRHS[idxRhs+1]
 				//alt:generic r2 := packedRHS[idxRhs+2]
 				//alt:generic r3 := packedRHS[idxRhs+3]
+				l0 := packedLHS[idxLhs].Float32()   //alt:half
+				l1 := packedLHS[idxLhs+1].Float32() //alt:half
 				r0 := packedRHS[idxRhs].Float32()   //alt:half
 				r1 := packedRHS[idxRhs+1].Float32() //alt:half
 				r2 := packedRHS[idxRhs+2].Float32() //alt:half
 				r3 := packedRHS[idxRhs+3].Float32() //alt:half
-
 				c00 += O(l0 * r0)
 				c01 += O(l0 * r1)
 				c02 += O(l0 * r2)
@@ -264,27 +319,19 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 				c12 += O(l1 * r2)
 				c13 += O(l1 * r3)
 
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 1 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-
-				//alt:generic l0 = packedLHS[idxLhs]
-				//alt:generic l1 = packedLHS[idxLhs+1]
-				l0 = packedLHS[idxLhs].Float32()   //alt:half
-				l1 = packedLHS[idxLhs+1].Float32() //alt:half
-
-				//alt:generic r0 = packedRHS[idxRhs]
-				//alt:generic r1 = packedRHS[idxRhs+1]
-				//alt:generic r2 = packedRHS[idxRhs+2]
-				//alt:generic r3 = packedRHS[idxRhs+3]
-				r0 = packedRHS[idxRhs].Float32()   //alt:half
-				r1 = packedRHS[idxRhs+1].Float32() //alt:half
-				r2 = packedRHS[idxRhs+2].Float32() //alt:half
-				r3 = packedRHS[idxRhs+3].Float32() //alt:half
-
+				// Step 1
+				//alt:generic l0 = packedLHS[idxLhs+2]
+				//alt:generic l1 = packedLHS[idxLhs+3]
+				//alt:generic r0 = packedRHS[idxRhs+4]
+				//alt:generic r1 = packedRHS[idxRhs+5]
+				//alt:generic r2 = packedRHS[idxRhs+6]
+				//alt:generic r3 = packedRHS[idxRhs+7]
+				l0 = packedLHS[idxLhs+2].Float32() //alt:half
+				l1 = packedLHS[idxLhs+3].Float32() //alt:half
+				r0 = packedRHS[idxRhs+4].Float32() //alt:half
+				r1 = packedRHS[idxRhs+5].Float32() //alt:half
+				r2 = packedRHS[idxRhs+6].Float32() //alt:half
+				r3 = packedRHS[idxRhs+7].Float32() //alt:half
 				c00 += O(l0 * r0)
 				c01 += O(l0 * r1)
 				c02 += O(l0 * r2)
@@ -294,27 +341,19 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 				c12 += O(l1 * r2)
 				c13 += O(l1 * r3)
 
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 2 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-
-				//alt:generic l0 = packedLHS[idxLhs]
-				//alt:generic l1 = packedLHS[idxLhs+1]
-				l0 = packedLHS[idxLhs].Float32()   //alt:half
-				l1 = packedLHS[idxLhs+1].Float32() //alt:half
-
-				//alt:generic r0 = packedRHS[idxRhs]
-				//alt:generic r1 = packedRHS[idxRhs+1]
-				//alt:generic r2 = packedRHS[idxRhs+2]
-				//alt:generic r3 = packedRHS[idxRhs+3]
-				r0 = packedRHS[idxRhs].Float32()   //alt:half
-				r1 = packedRHS[idxRhs+1].Float32() //alt:half
-				r2 = packedRHS[idxRhs+2].Float32() //alt:half
-				r3 = packedRHS[idxRhs+3].Float32() //alt:half
-
+				// Step 2
+				//alt:generic l0 = packedLHS[idxLhs+4]
+				//alt:generic l1 = packedLHS[idxLhs+5]
+				//alt:generic r0 = packedRHS[idxRhs+8]
+				//alt:generic r1 = packedRHS[idxRhs+9]
+				//alt:generic r2 = packedRHS[idxRhs+10]
+				//alt:generic r3 = packedRHS[idxRhs+11]
+				l0 = packedLHS[idxLhs+4].Float32()  //alt:half
+				l1 = packedLHS[idxLhs+5].Float32()  //alt:half
+				r0 = packedRHS[idxRhs+8].Float32()  //alt:half
+				r1 = packedRHS[idxRhs+9].Float32()  //alt:half
+				r2 = packedRHS[idxRhs+10].Float32() //alt:half
+				r3 = packedRHS[idxRhs+11].Float32() //alt:half
 				c00 += O(l0 * r0)
 				c01 += O(l0 * r1)
 				c02 += O(l0 * r2)
@@ -324,27 +363,19 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 				c12 += O(l1 * r2)
 				c13 += O(l1 * r3)
 
-				idxLhs += kernelRows
-				idxRhs += kernelCols
-
-				// --- Step 3 ---
-				_ = packedLHS[idxLhs+1]
-				_ = packedRHS[idxRhs+3]
-
-				//alt:generic l0 = packedLHS[idxLhs]
-				//alt:generic l1 = packedLHS[idxLhs+1]
-				l0 = packedLHS[idxLhs].Float32()   //alt:half
-				l1 = packedLHS[idxLhs+1].Float32() //alt:half
-
-				//alt:generic r0 = packedRHS[idxRhs]
-				//alt:generic r1 = packedRHS[idxRhs+1]
-				//alt:generic r2 = packedRHS[idxRhs+2]
-				//alt:generic r3 = packedRHS[idxRhs+3]
-				r0 = packedRHS[idxRhs].Float32()   //alt:half
-				r1 = packedRHS[idxRhs+1].Float32() //alt:half
-				r2 = packedRHS[idxRhs+2].Float32() //alt:half
-				r3 = packedRHS[idxRhs+3].Float32() //alt:half
-
+				// Step 3
+				//alt:generic l0 = packedLHS[idxLhs+6]
+				//alt:generic l1 = packedLHS[idxLhs+7]
+				//alt:generic r0 = packedRHS[idxRhs+12]
+				//alt:generic r1 = packedRHS[idxRhs+13]
+				//alt:generic r2 = packedRHS[idxRhs+14]
+				//alt:generic r3 = packedRHS[idxRhs+15]
+				l0 = packedLHS[idxLhs+6].Float32()  //alt:half
+				l1 = packedLHS[idxLhs+7].Float32()  //alt:half
+				r0 = packedRHS[idxRhs+12].Float32() //alt:half
+				r1 = packedRHS[idxRhs+13].Float32() //alt:half
+				r2 = packedRHS[idxRhs+14].Float32() //alt:half
+				r3 = packedRHS[idxRhs+15].Float32() //alt:half
 				c00 += O(l0 * r0)
 				c01 += O(l0 * r1)
 				c02 += O(l0 * r2)
@@ -354,11 +385,99 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 				c12 += O(l1 * r2)
 				c13 += O(l1 * r3)
 
-				idxLhs += kernelRows
-				idxRhs += kernelCols
+				// Step 4
+				//alt:generic l0 = packedLHS[idxLhs+8]
+				//alt:generic l1 = packedLHS[idxLhs+9]
+				//alt:generic r0 = packedRHS[idxRhs+16]
+				//alt:generic r1 = packedRHS[idxRhs+17]
+				//alt:generic r2 = packedRHS[idxRhs+18]
+				//alt:generic r3 = packedRHS[idxRhs+19]
+				l0 = packedLHS[idxLhs+8].Float32()  //alt:half
+				l1 = packedLHS[idxLhs+9].Float32()  //alt:half
+				r0 = packedRHS[idxRhs+16].Float32() //alt:half
+				r1 = packedRHS[idxRhs+17].Float32() //alt:half
+				r2 = packedRHS[idxRhs+18].Float32() //alt:half
+				r3 = packedRHS[idxRhs+19].Float32() //alt:half
+				c00 += O(l0 * r0)
+				c01 += O(l0 * r1)
+				c02 += O(l0 * r2)
+				c03 += O(l0 * r3)
+				c10 += O(l1 * r0)
+				c11 += O(l1 * r1)
+				c12 += O(l1 * r2)
+				c13 += O(l1 * r3)
+
+				// Step 5
+				//alt:generic l0 = packedLHS[idxLhs+10]
+				//alt:generic l1 = packedLHS[idxLhs+11]
+				//alt:generic r0 = packedRHS[idxRhs+20]
+				//alt:generic r1 = packedRHS[idxRhs+21]
+				//alt:generic r2 = packedRHS[idxRhs+22]
+				//alt:generic r3 = packedRHS[idxRhs+23]
+				l0 = packedLHS[idxLhs+10].Float32() //alt:half
+				l1 = packedLHS[idxLhs+11].Float32() //alt:half
+				r0 = packedRHS[idxRhs+20].Float32() //alt:half
+				r1 = packedRHS[idxRhs+21].Float32() //alt:half
+				r2 = packedRHS[idxRhs+22].Float32() //alt:half
+				r3 = packedRHS[idxRhs+23].Float32() //alt:half
+				c00 += O(l0 * r0)
+				c01 += O(l0 * r1)
+				c02 += O(l0 * r2)
+				c03 += O(l0 * r3)
+				c10 += O(l1 * r0)
+				c11 += O(l1 * r1)
+				c12 += O(l1 * r2)
+				c13 += O(l1 * r3)
+
+				// Step 6
+				//alt:generic l0 = packedLHS[idxLhs+12]
+				//alt:generic l1 = packedLHS[idxLhs+13]
+				//alt:generic r0 = packedRHS[idxRhs+24]
+				//alt:generic r1 = packedRHS[idxRhs+25]
+				//alt:generic r2 = packedRHS[idxRhs+26]
+				//alt:generic r3 = packedRHS[idxRhs+27]
+				l0 = packedLHS[idxLhs+12].Float32() //alt:half
+				l1 = packedLHS[idxLhs+13].Float32() //alt:half
+				r0 = packedRHS[idxRhs+24].Float32() //alt:half
+				r1 = packedRHS[idxRhs+25].Float32() //alt:half
+				r2 = packedRHS[idxRhs+26].Float32() //alt:half
+				r3 = packedRHS[idxRhs+27].Float32() //alt:half
+				c00 += O(l0 * r0)
+				c01 += O(l0 * r1)
+				c02 += O(l0 * r2)
+				c03 += O(l0 * r3)
+				c10 += O(l1 * r0)
+				c11 += O(l1 * r1)
+				c12 += O(l1 * r2)
+				c13 += O(l1 * r3)
+
+				// Step 7
+				//alt:generic l0 = packedLHS[idxLhs+14]
+				//alt:generic l1 = packedLHS[idxLhs+15]
+				//alt:generic r0 = packedRHS[idxRhs+28]
+				//alt:generic r1 = packedRHS[idxRhs+29]
+				//alt:generic r2 = packedRHS[idxRhs+30]
+				//alt:generic r3 = packedRHS[idxRhs+31]
+				l0 = packedLHS[idxLhs+14].Float32() //alt:half
+				l1 = packedLHS[idxLhs+15].Float32() //alt:half
+				r0 = packedRHS[idxRhs+28].Float32() //alt:half
+				r1 = packedRHS[idxRhs+29].Float32() //alt:half
+				r2 = packedRHS[idxRhs+30].Float32() //alt:half
+				r3 = packedRHS[idxRhs+31].Float32() //alt:half
+				c00 += O(l0 * r0)
+				c01 += O(l0 * r1)
+				c02 += O(l0 * r2)
+				c03 += O(l0 * r3)
+				c10 += O(l1 * r0)
+				c11 += O(l1 * r1)
+				c12 += O(l1 * r2)
+				c13 += O(l1 * r3)
+
+				idxLhs += 16
+				idxRhs += 32
 			}
 
-			// K-Loop Tail
+			// Tail loop
 			for ; k < contractingLen; k++ {
 				//alt:generic l0 := packedLHS[idxLhs]
 				//alt:generic l1 := packedLHS[idxLhs+1]
@@ -387,21 +506,31 @@ func largeNoSIMDPanelHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNot
 				idxRhs += kernelCols
 			}
 
-			// Optimization: write full 2x4 block directly to packedOutput.
-			// The buffer is large enough even for fringe blocks.
-			// Row 0
-			rowOffset := rowIdx*rhsPanelCols + colIdx
-			packedOutput[rowOffset] = c00
-			packedOutput[rowOffset+1] = c01
-			packedOutput[rowOffset+2] = c02
-			packedOutput[rowOffset+3] = c03
+			// Store 2x4 block directly to packedOutput
+			rowOffset0 := rowIdx*rhsPanelCols + colIdx
+			rowOffset1 := rowOffset0 + rhsPanelCols
 
-			// Row 1
-			rowOffset1 := rowOffset + rhsPanelCols
-			packedOutput[rowOffset1] = c10
-			packedOutput[rowOffset1+1] = c11
-			packedOutput[rowOffset1+2] = c12
-			packedOutput[rowOffset1+3] = c13
+			if !accumulate {
+				packedOutput[rowOffset0] = c00
+				packedOutput[rowOffset0+1] = c01
+				packedOutput[rowOffset0+2] = c02
+				packedOutput[rowOffset0+3] = c03
+
+				packedOutput[rowOffset1] = c10
+				packedOutput[rowOffset1+1] = c11
+				packedOutput[rowOffset1+2] = c12
+				packedOutput[rowOffset1+3] = c13
+			} else {
+				packedOutput[rowOffset0] += c00
+				packedOutput[rowOffset0+1] += c01
+				packedOutput[rowOffset0+2] += c02
+				packedOutput[rowOffset0+3] += c03
+
+				packedOutput[rowOffset1] += c10
+				packedOutput[rowOffset1+1] += c11
+				packedOutput[rowOffset1+2] += c12
+				packedOutput[rowOffset1+3] += c13
+			}
 
 			rhsOffset += rhsBlockStride
 		}

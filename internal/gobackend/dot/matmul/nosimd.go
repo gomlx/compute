@@ -28,31 +28,41 @@ var (
 	// These values are somewhat arbitrary, assuming "standard" modern cache sizes.
 	// They are parameterized so they can be tuned or determined dynamically later.
 	NoSIMDParams = CacheParams{
-		// Do not change these 2 values: they are hard-coded by the allocated registers in basicSymmetricMicroKernel8x8.
-		LHSL1KernelRows: 2, // Mr: Rows of LHS in local registers.
-		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers.
+		LHSL1KernelRows: 2, // Mr: Rows of LHS in local registers (2).
+		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers (4).
 
 		PanelContractingSize: 512, // Kc: L1 Block contracting "depth".
 		LHSPanelCrossSize:    2,   // Mc: Block Height fitting L2/L3 cache.
 		RHSPanelCrossSize:    512, // Nc: Block Width fitting L2/L3 cache.
 	}
 
-	// Threshold in byte size for switching to the small matrix multiplication kernel.
+	// SmallMatMulSizeThreshold is the threshold in byte size for switching to the small matrix multiplication kernel.
 	// If the total number of operations is below this threshold, the small
 	// matrix multiplication kernel is used instead of the tiled implementation.
 	// This is a heuristic and may need to be tuned for different architectures.
 	// Expressed in number of bytes.
-	noSIMDSmallMatMulSizeThreshold = 4 * 1024 * 1024
+	SmallMatMulSizeThreshold = 4 * 1024 * 1024
+	noSIMDSmallMatMulSizeThreshold = SmallMatMulSizeThreshold
 
-	// Minimum number of flops per worker: above this number, if possible we should
+	// MinMatMulFlopsPerWorker is the minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	noSIMDMinMatMulFlopsPerWorker = 32 * 1024
+	MinMatMulFlopsPerWorker = 32 * 1024
+	noSIMDMinMatMulFlopsPerWorker = MinMatMulFlopsPerWorker
 )
 
 func init() {
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		klog.Info("dot/nontransposed MatMul implementations disabled")
 		return
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_KC, 0); v > 0 {
+		NoSIMDParams.PanelContractingSize = v
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_MC, 0); v > 0 {
+		NoSIMDParams.LHSPanelCrossSize = v
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_NC, 0); v > 0 {
+		NoSIMDParams.RHSPanelCrossSize = v
 	}
 	registerNoSIMD(false)
 }
@@ -167,84 +177,171 @@ func ReleaseBuffer(ref *gobackend.Buffer) {
 	ref.Backend().(*gobackend.Backend).PutBuffer(ref)
 }
 
-// workItem is used when parallelizing the DotGeneral: it allows spliting the work into batch/lhs/rhs slices.
-type workItem struct {
-	batchStart, batchEnd,
-	lhsRowStart, lhsRowEnd,
-	rhsColStart, rhsColEnd int
+// WorkItem is used when parallelizing the DotGeneral: it allows splitting the work into batch/lhs/rhs slices.
+type WorkItem struct {
+	BatchStart, BatchEnd,
+	LHSRowStart, LHSRowEnd,
+	RHSColStart, RHSColEnd int
 }
 
-// feedWorkItems split the matrix-multiplication tasks is "workItems" optimized (as large as possible, prioritizing whole batch items)
-// for maxWokers (>=1).
+type workItem = WorkItem
+
+// Choose2DSplit determines the 2D grid (numM, numN) of workers to divide an M x N matrix multiplication.
+func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int) {
+	if targetWorkers <= 1 {
+		return 1, 1
+	}
+
+	minCol := max(1, params.RHSL1KernelCols)
+	minRow := max(1, params.LHSL1KernelRows)
+	targetRow := minRow
+	targetCol := max(minCol, params.RHSPanelCrossSize)
+
+	bestNumM := targetWorkers
+	bestNumN := 1
+	bestScore := -1.0
+
+	// Consider candidate numN values: powers of 2 from 1 up to targetWorkers
+	for candN := 1; candN <= targetWorkers; candN *= 2 {
+		candM := (targetWorkers + candN - 1) / candN
+
+		colChunk := (N + candN - 1) / candN
+		rowChunk := (M + candM - 1) / candM
+
+		if colChunk < minCol || rowChunk < minRow {
+			continue
+		}
+
+		// Score components:
+		// 1. Worker utilization: penalize if candM * candN != targetWorkers
+		workerRatio := float64(candM*candN) / float64(targetWorkers)
+		if workerRatio < 1.0 {
+			workerRatio = 1.0 / workerRatio
+		}
+		utilPenalty := (workerRatio - 1.0) * 100.0
+
+		// 2. Row panel reuse: rowChunk should be at least targetRow (LHSPanelCrossSize)
+		// so that packed RHS in L2/L3 cache is reused across multiple LHS panels.
+		rowPenalty := 0.0
+		if rowChunk < targetRow {
+			rowPenalty = float64(targetRow-rowChunk) / float64(targetRow) * 500.0
+		}
+
+		// 3. Col panel size: colChunk <= targetCol avoids re-packing LHS multiple times per worker.
+		// Also colChunk >= 2 * minCol ensures efficient SIMD loop unrolling.
+		colPenalty := 0.0
+		if colChunk > targetCol {
+			colPenalty = float64(colChunk-targetCol) / float64(targetCol) * 100.0
+		} else if colChunk < 2*minCol && N >= 4*minCol {
+			colPenalty = 50.0
+		}
+
+		// 4. Memory traffic estimation:
+		// RHS packing traffic is proportional to candM * N.
+		// LHS packing traffic is proportional to candN * M * ceil(colChunk / targetCol).
+		nPanels := (colChunk + targetCol - 1) / targetCol
+		traffic := float64(candM*N + candN*M*nPanels)
+		trafficScore := traffic / float64(M+N)
+
+		totalScore := trafficScore + utilPenalty + rowPenalty + colPenalty
+		// Bonus for candN == 1 if rowChunk is large enough:
+		// When rowChunk is already >= targetRow, splitting along M alone avoids
+		// multiple workers having to write to different columns of the same row.
+		if candN == 1 && rowChunk >= targetRow {
+			totalScore -= 200.0
+		}
+		if bestScore < 0 || totalScore < bestScore {
+			bestScore = totalScore
+			bestNumM = candM
+			bestNumN = candN
+		}
+	}
+
+	return bestNumM, bestNumN
+}
+
+var choose2DSplit = Choose2DSplit
+
+// FeedWorkItems splits the matrix-multiplication tasks into "WorkItem"s optimized
+// for maxWorkers (>=1).
 // It closes workChan on exit.
 //
-// feedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
-func feedWorkItems(
+// FeedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
+func FeedWorkItems(
 	batchSize, lhsCrossSize, rhsCrossSize int,
 	params *CacheParams,
 	maxWorkers int,
-	workChan chan<- workItem) {
+	workChan chan<- WorkItem) {
 	defer func() {
 		// Invariant: it closes the channel on exit.
 		close(workChan)
 	}()
-	if batchSize >= 2*maxWorkers {
-		// Split the work on the batch dimension only.
-		batchStep := batchSize / maxWorkers
-		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
-			workChan <- workItem{
-				batchIdx, batchIdx + min(batchStep, batchSize-batchIdx),
-				0, lhsCrossSize,
-				0, rhsCrossSize}
+
+	if maxWorkers <= 1 {
+		workChan <- WorkItem{
+			0, batchSize,
+			0, lhsCrossSize,
+			0, rhsCrossSize,
 		}
 		return
 	}
 
-	// First maxWorkers batch examples are handled as one at a time:
-	batchIdx := 0
-	if batchSize >= maxWorkers {
-		for ; batchIdx < maxWorkers; batchIdx++ {
-			workChan <- workItem{
-				batchIdx, batchIdx + 1,
+	if batchSize >= 2*maxWorkers {
+		// Split the work on the batch dimension only.
+		batchStep := (batchSize + maxWorkers - 1) / maxWorkers
+		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
+			workChan <- WorkItem{
+				batchIdx, min(batchSize, batchIdx+batchStep),
 				0, lhsCrossSize,
-				0, rhsCrossSize}
-		}
-	}
-
-	// The remaining work is split into RHS or LHS slices.
-	batchCountRemaining := batchSize - batchIdx
-	if batchCountRemaining == 0 {
-		return // We are finished.
-	}
-	splitFactor := (maxWorkers + batchCountRemaining - 1) / batchCountRemaining
-	if lhsCrossSize > rhsCrossSize {
-		// Split on the LHS dimension, in multiples of LHSPanelCrossSize.
-		lhsSplitSize := (lhsCrossSize + splitFactor - 1) / splitFactor
-		lhsSplitSize = max(1, lhsSplitSize/params.LHSPanelCrossSize) * params.LHSPanelCrossSize
-		batchStart := batchIdx
-		for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
-			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
-				workChan <- workItem{
-					batchIdx, batchIdx + 1,
-					lhsRowIdx, lhsRowIdx + min(lhsSplitSize, lhsCrossSize-lhsRowIdx),
-					0, rhsCrossSize}
+				0, rhsCrossSize,
 			}
 		}
-	} else {
-		// Split on the RHS dimension, in multiples of RHSPanelCrossSize.
-		rhsSplitSize := (rhsCrossSize + splitFactor - 1) / splitFactor
-		rhsSplitSize = max(1, rhsSplitSize/params.RHSPanelCrossSize) * params.RHSPanelCrossSize
-		batchStart := batchIdx
+		return
+	}
+
+	if batchSize >= maxWorkers {
+		// Plenty of batch items: each worker gets whole batch items dynamically.
+		for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
+			workChan <- WorkItem{
+				batchIdx, batchIdx + 1,
+				0, lhsCrossSize,
+				0, rhsCrossSize,
+			}
+		}
+		return
+	}
+
+	// batchSize < maxWorkers: distribute workers across the batch items,
+	// using 2D grid partitioning on each matrix slice.
+	// Target 2 * maxWorkers to saturate the worker pool (2 workers per GOMAXPROCS).
+	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
+	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
+
+	rhsSplitSize := (rhsCrossSize + numN - 1) / numN
+	if params.RHSL1KernelCols > 0 {
+		rhsSplitSize = max(params.RHSL1KernelCols, (rhsSplitSize/params.RHSL1KernelCols)*params.RHSL1KernelCols)
+	}
+	lhsSplitSize := (lhsCrossSize + numM - 1) / numM
+	if params.LHSL1KernelRows > 0 {
+		lhsSplitSize = max(params.LHSL1KernelRows, (lhsSplitSize/params.LHSL1KernelRows)*params.LHSL1KernelRows)
+	}
+
+	for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
+		rowEnd := min(lhsCrossSize, lhsRowIdx+lhsSplitSize)
 		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
-			for batchIdx = batchStart; batchIdx < batchSize; batchIdx++ {
-				workChan <- workItem{
+			colEnd := min(rhsCrossSize, rhsColIdx+rhsSplitSize)
+			for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
+				workChan <- WorkItem{
 					batchIdx, batchIdx + 1,
-					0, lhsCrossSize,
-					rhsColIdx, rhsColIdx + min(rhsSplitSize, rhsCrossSize-rhsColIdx)}
+					lhsRowIdx, rowEnd,
+					rhsColIdx, colEnd,
+				}
 			}
 		}
 	}
 }
+
+var feedWorkItems = FeedWorkItems
 
 // applyPackedOutput applies the computed packedOutput to the final output.
 func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
@@ -277,3 +374,21 @@ func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
 		}
 	}
 }
+
+// ApplyPackedOutput applies the computed packedOutput to the final output.
+func ApplyPackedOutput[T gotype.ScalarNotComplex](
+	packedOutput, output []T,
+	isFirstContractingPanel bool,
+	packedOutputRowStride int,
+	lhsRowOffset, rhsColOffset int, // Global output offsets
+	outputRowStride int,
+	height, width int, // actual amount of data to copy
+) {
+	noSIMDApplyPackedOutput(packedOutput, output, isFirstContractingPanel, packedOutputRowStride, lhsRowOffset, rhsColOffset, outputRowStride, height, width)
+}
+
+// TestNoSIMDRouterFloat32 exposes noSIMDRouter for testing and benchmarking.
+func TestNoSIMDRouterFloat32(backend *gobackend.Backend, layout dot.Layout, lhs, rhs []float32, batchSize, lhsCrossSize, rhsCrossSize, contractingSize int, output []float32) {
+	noSIMDRouter[float32, float32](backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+}
+

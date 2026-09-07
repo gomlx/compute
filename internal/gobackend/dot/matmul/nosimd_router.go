@@ -43,6 +43,12 @@ func noSIMDRouter[I, O gotype.NumericNotComplex]( //alt:generic
 	}
 
 	if useSmallVariant {
+		// When rhsCrossSize == 1 (GEMV) in non-transposed layout, B[K, 1] in memory is
+		// identical to B^T[1, K], so we can route directly to the transposed layout without copy.
+		if layout == dot.LayoutNonTransposed && rhsCrossSize == 1 {
+			layout = dot.LayoutTransposed
+		}
+
 		matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
 		matricesPerWorker = min(matricesPerWorker, batchSize)
 		maxWorkers := 1

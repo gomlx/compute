@@ -1,0 +1,370 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64
+
+#include "textflag.h"
+
+// func avx512LargeKernelFloat32Asm(
+//     packedLHS, packedRHS, packedOutput []float32,
+//     lhsPanelRows, rhsPanelCols int,
+//     contractingLen int,
+//     lhsActiveRows, rhsActiveCols int,
+//     accumulate bool)
+TEXT ·avx512LargeKernelFloat32Asm(SB), NOSPLIT, $0-120
+	MOVQ packedLHS_base+0(FP), R8        // R8 = lhsBasePtr
+	MOVQ packedRHS_base+24(FP), R9       // R9 = rhsBasePtr
+	MOVQ packedOutput_base+48(FP), R10   // R10 = outBasePtr
+	MOVQ rhsPanelCols+80(FP), R11        // R11 = outputStride (cols)
+	MOVQ contractingLen+88(FP), R12      // R12 = contractingLen (K)
+	MOVQ lhsActiveRows+96(FP), R13       // R13 = lhsActiveRows (M)
+	MOVQ rhsActiveCols+104(FP), R14      // R14 = rhsActiveCols (N)
+	MOVB accumulate+112(FP), R15         // R15 = accumulate (0 = overwrite, 1 = add)
+
+	SHLQ $2, R11                         // R11 = outputStride in bytes
+
+	XORQ AX, AX                          // AX = lhsRowIdx = 0
+
+loop_lhs:
+	CMPQ AX, R13
+	JGE done
+
+	XORQ BX, BX                          // BX = rhsColIdx = 0
+
+loop_rhs:
+	CMPQ BX, R14
+	JGE next_lhs
+
+	// 1. Zero all 16 accumulators (Z0..Z15)
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+	VXORPS Z4, Z4, Z4
+	VXORPS Z5, Z5, Z5
+	VXORPS Z6, Z6, Z6
+	VXORPS Z7, Z7, Z7
+	VXORPS Z8, Z8, Z8
+	VXORPS Z9, Z9, Z9
+	VXORPS Z10, Z10, Z10
+	VXORPS Z11, Z11, Z11
+	VXORPS Z12, Z12, Z12
+	VXORPS Z13, Z13, Z13
+	VXORPS Z14, Z14, Z14
+	VXORPS Z15, Z15, Z15
+
+	// 2. Compute lhsPtr and rhsPtr
+	// For 8-row LHS strip: strip has 8 floats = 32 bytes per step.
+	// SI = R8 + (lhsRowIdx * contractingLen * 4)
+	MOVQ AX, SI
+	IMULQ R12, SI
+	SHLQ $2, SI
+	ADDQ R8, SI
+
+	// For 32-col RHS strip: strip has 32 floats = 128 bytes per step.
+	// DI = R9 + (rhsColIdx * contractingLen * 4)
+	MOVQ BX, DI
+	IMULQ R12, DI
+	SHLQ $2, DI
+	ADDQ R9, DI
+
+	// 3. K-loop with 2-stage ping-pong pipeline (unroll by 2)
+	MOVQ R12, CX                         // CX = contractingLen
+	TESTQ CX, CX
+	JLE store_output
+
+	SHRQ $1, CX                          // CX = pairs = contractingLen / 2
+	JZ k_odd
+
+	// Prime Buffer A for Step 0 outside the loop
+	VMOVDQU32 (DI), Z16                  // RHS col 0..15
+	VMOVDQU32 64(DI), Z17                // RHS col 16..31
+	VBROADCASTSS (SI), Z18               // LHS row 0
+	VBROADCASTSS 4(SI), Z19              // LHS row 1
+	VBROADCASTSS 8(SI), Z20              // LHS row 2
+	VBROADCASTSS 12(SI), Z21             // LHS row 3
+	VBROADCASTSS 16(SI), Z22             // LHS row 4
+	VBROADCASTSS 20(SI), Z23             // LHS row 5
+	VBROADCASTSS 24(SI), Z24             // LHS row 6
+	VBROADCASTSS 28(SI), Z25             // LHS row 7
+
+	ADDQ $32, SI
+	ADDQ $128, DI
+
+	DECQ CX
+	JZ k_last_pair
+
+	PCALIGN $64
+k_pair_loop:
+	// Step A: FMAs using Buffer A (Z16, Z17) while loading Buffer B (Z26, Z27, Z18..Z25)
+	VFMADD231PS Z16, Z18, Z0
+	VMOVDQU32 (DI), Z26
+	VFMADD231PS Z17, Z18, Z1
+	VBROADCASTSS (SI), Z18
+
+	VFMADD231PS Z16, Z19, Z2
+	VMOVDQU32 64(DI), Z27
+	VFMADD231PS Z17, Z19, Z3
+	VBROADCASTSS 4(SI), Z19
+
+	VFMADD231PS Z16, Z20, Z4
+	VFMADD231PS Z17, Z20, Z5
+	VBROADCASTSS 8(SI), Z20
+
+	VFMADD231PS Z16, Z21, Z6
+	VFMADD231PS Z17, Z21, Z7
+	VBROADCASTSS 12(SI), Z21
+
+	VFMADD231PS Z16, Z22, Z8
+	VFMADD231PS Z17, Z22, Z9
+	VBROADCASTSS 16(SI), Z22
+
+	VFMADD231PS Z16, Z23, Z10
+	VFMADD231PS Z17, Z23, Z11
+	VBROADCASTSS 20(SI), Z23
+
+	VFMADD231PS Z16, Z24, Z12
+	VFMADD231PS Z17, Z24, Z13
+	VBROADCASTSS 24(SI), Z24
+
+	VFMADD231PS Z16, Z25, Z14
+	VFMADD231PS Z17, Z25, Z15
+	VBROADCASTSS 28(SI), Z25
+
+	ADDQ $32, SI
+	ADDQ $128, DI
+
+	// Step B: FMAs using Buffer B (Z26, Z27) while loading next Buffer A (Z16, Z17, Z18..Z25)
+	VFMADD231PS Z26, Z18, Z0
+	VMOVDQU32 (DI), Z16
+	VFMADD231PS Z27, Z18, Z1
+	VBROADCASTSS (SI), Z18
+
+	VFMADD231PS Z26, Z19, Z2
+	VMOVDQU32 64(DI), Z17
+	VFMADD231PS Z27, Z19, Z3
+	VBROADCASTSS 4(SI), Z19
+
+	VFMADD231PS Z26, Z20, Z4
+	VFMADD231PS Z27, Z20, Z5
+	VBROADCASTSS 8(SI), Z20
+
+	VFMADD231PS Z26, Z21, Z6
+	VFMADD231PS Z27, Z21, Z7
+	VBROADCASTSS 12(SI), Z21
+
+	VFMADD231PS Z26, Z22, Z8
+	VFMADD231PS Z27, Z22, Z9
+	VBROADCASTSS 16(SI), Z22
+
+	VFMADD231PS Z26, Z23, Z10
+	VFMADD231PS Z27, Z23, Z11
+	VBROADCASTSS 20(SI), Z23
+
+	VFMADD231PS Z26, Z24, Z12
+	VFMADD231PS Z27, Z24, Z13
+	VBROADCASTSS 24(SI), Z24
+
+	VFMADD231PS Z26, Z25, Z14
+	VFMADD231PS Z27, Z25, Z15
+	VBROADCASTSS 28(SI), Z25
+
+	ADDQ $32, SI
+	ADDQ $128, DI
+
+	DECQ CX
+	JNZ k_pair_loop
+
+k_last_pair:
+	// Step A: FMAs using Buffer A (Z16, Z17) while loading Buffer B (Z26, Z27, Z18..Z25)
+	VFMADD231PS Z16, Z18, Z0
+	VMOVDQU32 (DI), Z26
+	VFMADD231PS Z17, Z18, Z1
+	VBROADCASTSS (SI), Z18
+
+	VFMADD231PS Z16, Z19, Z2
+	VMOVDQU32 64(DI), Z27
+	VFMADD231PS Z17, Z19, Z3
+	VBROADCASTSS 4(SI), Z19
+
+	VFMADD231PS Z16, Z20, Z4
+	VFMADD231PS Z17, Z20, Z5
+	VBROADCASTSS 8(SI), Z20
+
+	VFMADD231PS Z16, Z21, Z6
+	VFMADD231PS Z17, Z21, Z7
+	VBROADCASTSS 12(SI), Z21
+
+	VFMADD231PS Z16, Z22, Z8
+	VFMADD231PS Z17, Z22, Z9
+	VBROADCASTSS 16(SI), Z22
+
+	VFMADD231PS Z16, Z23, Z10
+	VFMADD231PS Z17, Z23, Z11
+	VBROADCASTSS 20(SI), Z23
+
+	VFMADD231PS Z16, Z24, Z12
+	VFMADD231PS Z17, Z24, Z13
+	VBROADCASTSS 24(SI), Z24
+
+	VFMADD231PS Z16, Z25, Z14
+	VFMADD231PS Z17, Z25, Z15
+	VBROADCASTSS 28(SI), Z25
+
+	ADDQ $32, SI
+	ADDQ $128, DI
+
+	// Step B: Pure FMAs using Buffer B (Z26, Z27) - NO further memory loads!
+	VFMADD231PS Z26, Z18, Z0
+	VFMADD231PS Z27, Z18, Z1
+	VFMADD231PS Z26, Z19, Z2
+	VFMADD231PS Z27, Z19, Z3
+	VFMADD231PS Z26, Z20, Z4
+	VFMADD231PS Z27, Z20, Z5
+	VFMADD231PS Z26, Z21, Z6
+	VFMADD231PS Z27, Z21, Z7
+	VFMADD231PS Z26, Z22, Z8
+	VFMADD231PS Z27, Z22, Z9
+	VFMADD231PS Z26, Z23, Z10
+	VFMADD231PS Z27, Z23, Z11
+	VFMADD231PS Z26, Z24, Z12
+	VFMADD231PS Z27, Z24, Z13
+	VFMADD231PS Z26, Z25, Z14
+	VFMADD231PS Z27, Z25, Z15
+
+k_odd:
+	TESTQ $1, R12
+	JZ store_output
+
+	VMOVDQU32 (DI), Z16
+	VMOVDQU32 64(DI), Z17
+	VBROADCASTSS (SI), Z18
+	VBROADCASTSS 4(SI), Z19
+	VBROADCASTSS 8(SI), Z20
+	VBROADCASTSS 12(SI), Z21
+	VBROADCASTSS 16(SI), Z22
+	VBROADCASTSS 20(SI), Z23
+	VBROADCASTSS 24(SI), Z24
+	VBROADCASTSS 28(SI), Z25
+
+	VFMADD231PS Z16, Z18, Z0
+	VFMADD231PS Z17, Z18, Z1
+	VFMADD231PS Z16, Z19, Z2
+	VFMADD231PS Z17, Z19, Z3
+	VFMADD231PS Z16, Z20, Z4
+	VFMADD231PS Z17, Z20, Z5
+	VFMADD231PS Z16, Z21, Z6
+	VFMADD231PS Z17, Z21, Z7
+	VFMADD231PS Z16, Z22, Z8
+	VFMADD231PS Z17, Z22, Z9
+	VFMADD231PS Z16, Z23, Z10
+	VFMADD231PS Z17, Z23, Z11
+	VFMADD231PS Z16, Z24, Z12
+	VFMADD231PS Z17, Z24, Z13
+	VFMADD231PS Z16, Z25, Z14
+	VFMADD231PS Z17, Z25, Z15
+
+store_output:
+	MOVQ AX, DX
+	IMULQ R11, DX
+	MOVQ BX, CX
+	SHLQ $2, CX
+	ADDQ CX, DX
+	LEAQ (R10)(DX*1), DX
+
+	TESTB R15, R15
+	JNZ store_output_accum
+
+	// Row 0
+	VMOVDQU32 Z0, (DX)
+	VMOVDQU32 Z1, 64(DX)
+	// Row 1
+	ADDQ R11, DX
+	VMOVDQU32 Z2, (DX)
+	VMOVDQU32 Z3, 64(DX)
+	// Row 2
+	ADDQ R11, DX
+	VMOVDQU32 Z4, (DX)
+	VMOVDQU32 Z5, 64(DX)
+	// Row 3
+	ADDQ R11, DX
+	VMOVDQU32 Z6, (DX)
+	VMOVDQU32 Z7, 64(DX)
+	// Row 4
+	ADDQ R11, DX
+	VMOVDQU32 Z8, (DX)
+	VMOVDQU32 Z9, 64(DX)
+	// Row 5
+	ADDQ R11, DX
+	VMOVDQU32 Z10, (DX)
+	VMOVDQU32 Z11, 64(DX)
+	// Row 6
+	ADDQ R11, DX
+	VMOVDQU32 Z12, (DX)
+	VMOVDQU32 Z13, 64(DX)
+	// Row 7
+	ADDQ R11, DX
+	VMOVDQU32 Z14, (DX)
+	VMOVDQU32 Z15, 64(DX)
+
+	ADDQ $32, BX                         // rhsColIdx += 32
+	JMP loop_rhs
+
+store_output_accum:
+	// Row 0
+	VADDPS (DX), Z0, Z0
+	VMOVDQU32 Z0, (DX)
+	VADDPS 64(DX), Z1, Z1
+	VMOVDQU32 Z1, 64(DX)
+	// Row 1
+	ADDQ R11, DX
+	VADDPS (DX), Z2, Z2
+	VMOVDQU32 Z2, (DX)
+	VADDPS 64(DX), Z3, Z3
+	VMOVDQU32 Z3, 64(DX)
+	// Row 2
+	ADDQ R11, DX
+	VADDPS (DX), Z4, Z4
+	VMOVDQU32 Z4, (DX)
+	VADDPS 64(DX), Z5, Z5
+	VMOVDQU32 Z5, 64(DX)
+	// Row 3
+	ADDQ R11, DX
+	VADDPS (DX), Z6, Z6
+	VMOVDQU32 Z6, (DX)
+	VADDPS 64(DX), Z7, Z7
+	VMOVDQU32 Z7, 64(DX)
+	// Row 4
+	ADDQ R11, DX
+	VADDPS (DX), Z8, Z8
+	VMOVDQU32 Z8, (DX)
+	VADDPS 64(DX), Z9, Z9
+	VMOVDQU32 Z9, 64(DX)
+	// Row 5
+	ADDQ R11, DX
+	VADDPS (DX), Z10, Z10
+	VMOVDQU32 Z10, (DX)
+	VADDPS 64(DX), Z11, Z11
+	VMOVDQU32 Z11, 64(DX)
+	// Row 6
+	ADDQ R11, DX
+	VADDPS (DX), Z12, Z12
+	VMOVDQU32 Z12, (DX)
+	VADDPS 64(DX), Z13, Z13
+	VMOVDQU32 Z13, 64(DX)
+	// Row 7
+	ADDQ R11, DX
+	VADDPS (DX), Z14, Z14
+	VMOVDQU32 Z14, (DX)
+	VADDPS 64(DX), Z15, Z15
+	VMOVDQU32 Z15, 64(DX)
+
+	ADDQ $32, BX                         // rhsColIdx += 32
+	JMP loop_rhs
+
+next_lhs:
+	ADDQ $8, AX                          // lhsRowIdx += 8
+	JMP loop_lhs
+
+done:
+	VZEROUPPER
+	RET

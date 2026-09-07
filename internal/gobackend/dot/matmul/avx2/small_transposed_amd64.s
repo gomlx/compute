@@ -1,0 +1,715 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64
+
+#include "textflag.h"
+
+// REDUCE_Y reduces an 8-element float32 YMM register to a single float32 in xres using xtmp.
+#define REDUCE_Y(ymm, xmm, xtmp, xres) \
+	VEXTRACTF128 $1, ymm, xtmp \
+	VADDPS xtmp, xmm, xres \
+	VPERMILPS $0xEE, xres, xtmp \
+	VADDPS xtmp, xres, xres \
+	VPERMILPS $0x01, xres, xtmp \
+	VADDSS xtmp, xres, xres
+
+// REDUCE_Y_F64 reduces a 4-element float64 YMM register to a single float64 in xres using xtmp.
+#define REDUCE_Y_F64(ymm, xmm, xtmp, xres) \
+	VEXTRACTF128 $1, ymm, xtmp \
+	VADDPD xtmp, xmm, xres \
+	VPERMILPD $0x01, xres, xtmp \
+	VADDSD xtmp, xres, xres
+
+// ============================================================================
+// Float32 Transposed Kernels
+// ============================================================================
+
+// func avx2SmallTransposedTile4x2Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+//     rCol0, rCol1 unsafe.Pointer,
+//     contractingLen int,
+//     outPtr unsafe.Pointer,
+//     outStrideBytes int)
+TEXT ·avx2SmallTransposedTile4x2Float32Asm(SB), NOSPLIT, $0-72
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ rCol1+40(FP), R13
+	MOVQ contractingLen+48(FP), BX
+	MOVQ outPtr+56(FP), R14
+	MOVQ outStrideBytes+64(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	XORQ SI, SI
+
+loop_k8:
+	CMPQ BX, $8
+	JL tail_k
+
+	VMOVUPS (0)(R8)(SI*1), Y8
+	VMOVUPS (0)(R9)(SI*1), Y9
+	VMOVUPS (0)(R10)(SI*1), Y10
+	VMOVUPS (0)(R11)(SI*1), Y11
+
+	VMOVUPS (0)(R12)(SI*1), Y12
+	VMOVUPS (0)(R13)(SI*1), Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	ADDQ $32, SI
+	SUBQ $8, BX
+	JMP loop_k8
+
+tail_k:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+	REDUCE_Y(Y4, X4, X14, X4)
+	REDUCE_Y(Y5, X5, X14, X5)
+	REDUCE_Y(Y6, X6, X14, X6)
+	REDUCE_Y(Y7, X7, X14, X7)
+
+	TESTQ BX, BX
+	JZ write_output
+
+loop_k_scalar:
+	VMOVSS (0)(R8)(SI*1), X8
+	VMOVSS (0)(R9)(SI*1), X9
+	VMOVSS (0)(R10)(SI*1), X10
+	VMOVSS (0)(R11)(SI*1), X11
+
+	VMOVSS (0)(R12)(SI*1), X12
+	VMOVSS (0)(R13)(SI*1), X13
+
+	VFMADD231SS X12, X8, X0
+	VFMADD231SS X13, X8, X1
+	VFMADD231SS X12, X9, X2
+	VFMADD231SS X13, X9, X3
+	VFMADD231SS X12, X10, X4
+	VFMADD231SS X13, X10, X5
+	VFMADD231SS X12, X11, X6
+	VFMADD231SS X13, X11, X7
+
+	ADDQ $4, SI
+	DECQ BX
+	JNZ loop_k_scalar
+
+write_output:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 4(R14)
+	VMOVSS X2, 0(R14)(R15*1)
+	VMOVSS X3, 4(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X4, 0(DX)
+	VMOVSS X5, 4(DX)
+	VMOVSS X6, 0(DX)(R15*1)
+	VMOVSS X7, 4(DX)(R15*1)
+	RET
+
+// func avx2SmallTransposedTile4x1Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+//     rCol0 unsafe.Pointer,
+//     contractingLen int,
+//     outPtr unsafe.Pointer,
+//     outStrideBytes int)
+TEXT ·avx2SmallTransposedTile4x1Float32Asm(SB), NOSPLIT, $0-64
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ outPtr+48(FP), R14
+	MOVQ outStrideBytes+56(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	XORQ SI, SI
+
+loop_k8_4x1:
+	CMPQ BX, $8
+	JL tail_k_4x1
+
+	VMOVUPS (0)(R8)(SI*1), Y4
+	VMOVUPS (0)(R9)(SI*1), Y5
+	VMOVUPS (0)(R10)(SI*1), Y6
+	VMOVUPS (0)(R11)(SI*1), Y7
+
+	VMOVUPS (0)(R12)(SI*1), Y8
+
+	VFMADD231PS Y8, Y4, Y0
+	VFMADD231PS Y8, Y5, Y1
+	VFMADD231PS Y8, Y6, Y2
+	VFMADD231PS Y8, Y7, Y3
+
+	ADDQ $32, SI
+	SUBQ $8, BX
+	JMP loop_k8_4x1
+
+tail_k_4x1:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+
+	TESTQ BX, BX
+	JZ write_output_4x1
+
+loop_k_scalar_4x1:
+	VMOVSS (0)(R8)(SI*1), X4
+	VMOVSS (0)(R9)(SI*1), X5
+	VMOVSS (0)(R10)(SI*1), X6
+	VMOVSS (0)(R11)(SI*1), X7
+
+	VMOVSS (0)(R12)(SI*1), X8
+
+	VFMADD231SS X8, X4, X0
+	VFMADD231SS X8, X5, X1
+	VFMADD231SS X8, X6, X2
+	VFMADD231SS X8, X7, X3
+
+	ADDQ $4, SI
+	DECQ BX
+	JNZ loop_k_scalar_4x1
+
+write_output_4x1:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 0(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X2, 0(DX)
+	VMOVSS X3, 0(DX)(R15*1)
+	RET
+
+// ============================================================================
+// Float64 Transposed Kernels
+// ============================================================================
+
+// func avx2SmallTransposedTile4x2Float64Asm(...)
+TEXT ·avx2SmallTransposedTile4x2Float64Asm(SB), NOSPLIT, $0-72
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ rCol1+40(FP), R13
+	MOVQ contractingLen+48(FP), BX
+	MOVQ outPtr+56(FP), R14
+	MOVQ outStrideBytes+64(FP), R15
+
+	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+	VXORPD Y4, Y4, Y4
+	VXORPD Y5, Y5, Y5
+	VXORPD Y6, Y6, Y6
+	VXORPD Y7, Y7, Y7
+
+	XORQ SI, SI
+
+loop_k4_f64:
+	CMPQ BX, $4
+	JL tail_k_f64
+
+	VMOVUPD (0)(R8)(SI*1), Y8
+	VMOVUPD (0)(R9)(SI*1), Y9
+	VMOVUPD (0)(R10)(SI*1), Y10
+	VMOVUPD (0)(R11)(SI*1), Y11
+
+	VMOVUPD (0)(R12)(SI*1), Y12
+	VMOVUPD (0)(R13)(SI*1), Y13
+
+	VFMADD231PD Y12, Y8, Y0
+	VFMADD231PD Y13, Y8, Y1
+	VFMADD231PD Y12, Y9, Y2
+	VFMADD231PD Y13, Y9, Y3
+	VFMADD231PD Y12, Y10, Y4
+	VFMADD231PD Y13, Y10, Y5
+	VFMADD231PD Y12, Y11, Y6
+	VFMADD231PD Y13, Y11, Y7
+
+	ADDQ $32, SI
+	SUBQ $4, BX
+	JMP loop_k4_f64
+
+tail_k_f64:
+	REDUCE_Y_F64(Y0, X0, X14, X0)
+	REDUCE_Y_F64(Y1, X1, X14, X1)
+	REDUCE_Y_F64(Y2, X2, X14, X2)
+	REDUCE_Y_F64(Y3, X3, X14, X3)
+	REDUCE_Y_F64(Y4, X4, X14, X4)
+	REDUCE_Y_F64(Y5, X5, X14, X5)
+	REDUCE_Y_F64(Y6, X6, X14, X6)
+	REDUCE_Y_F64(Y7, X7, X14, X7)
+
+	TESTQ BX, BX
+	JZ write_output_f64
+
+loop_k_scalar_f64:
+	VMOVSD (0)(R8)(SI*1), X8
+	VMOVSD (0)(R9)(SI*1), X9
+	VMOVSD (0)(R10)(SI*1), X10
+	VMOVSD (0)(R11)(SI*1), X11
+
+	VMOVSD (0)(R12)(SI*1), X12
+	VMOVSD (0)(R13)(SI*1), X13
+
+	VFMADD231SD X12, X8, X0
+	VFMADD231SD X13, X8, X1
+	VFMADD231SD X12, X9, X2
+	VFMADD231SD X13, X9, X3
+	VFMADD231SD X12, X10, X4
+	VFMADD231SD X13, X10, X5
+	VFMADD231SD X12, X11, X6
+	VFMADD231SD X13, X11, X7
+
+	ADDQ $8, SI
+	DECQ BX
+	JNZ loop_k_scalar_f64
+
+write_output_f64:
+	VMOVSD X0, 0(R14)
+	VMOVSD X1, 8(R14)
+	VMOVSD X2, 0(R14)(R15*1)
+	VMOVSD X3, 8(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSD X4, 0(DX)
+	VMOVSD X5, 8(DX)
+	VMOVSD X6, 0(DX)(R15*1)
+	VMOVSD X7, 8(DX)(R15*1)
+	RET
+
+// func avx2SmallTransposedTile4x1Float64Asm(...)
+TEXT ·avx2SmallTransposedTile4x1Float64Asm(SB), NOSPLIT, $0-64
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ outPtr+48(FP), R14
+	MOVQ outStrideBytes+56(FP), R15
+
+	VXORPD Y0, Y0, Y0
+	VXORPD Y1, Y1, Y1
+	VXORPD Y2, Y2, Y2
+	VXORPD Y3, Y3, Y3
+
+	XORQ SI, SI
+
+loop_k4_4x1_f64:
+	CMPQ BX, $4
+	JL tail_k_4x1_f64
+
+	VMOVUPD (0)(R8)(SI*1), Y4
+	VMOVUPD (0)(R9)(SI*1), Y5
+	VMOVUPD (0)(R10)(SI*1), Y6
+	VMOVUPD (0)(R11)(SI*1), Y7
+
+	VMOVUPD (0)(R12)(SI*1), Y8
+
+	VFMADD231PD Y8, Y4, Y0
+	VFMADD231PD Y8, Y5, Y1
+	VFMADD231PD Y8, Y6, Y2
+	VFMADD231PD Y8, Y7, Y3
+
+	ADDQ $32, SI
+	SUBQ $4, BX
+	JMP loop_k4_4x1_f64
+
+tail_k_4x1_f64:
+	REDUCE_Y_F64(Y0, X0, X14, X0)
+	REDUCE_Y_F64(Y1, X1, X14, X1)
+	REDUCE_Y_F64(Y2, X2, X14, X2)
+	REDUCE_Y_F64(Y3, X3, X14, X3)
+
+	TESTQ BX, BX
+	JZ write_output_4x1_f64
+
+loop_k_scalar_4x1_f64:
+	VMOVSD (0)(R8)(SI*1), X4
+	VMOVSD (0)(R9)(SI*1), X5
+	VMOVSD (0)(R10)(SI*1), X6
+	VMOVSD (0)(R11)(SI*1), X7
+
+	VMOVSD (0)(R12)(SI*1), X8
+
+	VFMADD231SD X8, X4, X0
+	VFMADD231SD X8, X5, X1
+	VFMADD231SD X8, X6, X2
+	VFMADD231SD X8, X7, X3
+
+	ADDQ $8, SI
+	DECQ BX
+	JNZ loop_k_scalar_4x1_f64
+
+write_output_4x1_f64:
+	VMOVSD X0, 0(R14)
+	VMOVSD X1, 0(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSD X2, 0(DX)
+	VMOVSD X3, 0(DX)(R15*1)
+	RET
+
+// ============================================================================
+// Float16 Transposed Kernels (F16C loads -> Float32 accumulation)
+// ============================================================================
+
+// func avx2SmallTransposedTile4x2Float16Asm(...)
+TEXT ·avx2SmallTransposedTile4x2Float16Asm(SB), NOSPLIT, $0-72
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ rCol1+40(FP), R13
+	MOVQ contractingLen+48(FP), BX
+	MOVQ outPtr+56(FP), R14
+	MOVQ outStrideBytes+64(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	XORQ SI, SI
+
+loop_k8_f16:
+	CMPQ BX, $8
+	JL tail_k_f16
+
+	VCVTPH2PS (0)(R8)(SI*1), Y8
+	VCVTPH2PS (0)(R9)(SI*1), Y9
+	VCVTPH2PS (0)(R10)(SI*1), Y10
+	VCVTPH2PS (0)(R11)(SI*1), Y11
+
+	VCVTPH2PS (0)(R12)(SI*1), Y12
+	VCVTPH2PS (0)(R13)(SI*1), Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	ADDQ $16, SI
+	SUBQ $8, BX
+	JMP loop_k8_f16
+
+tail_k_f16:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+	REDUCE_Y(Y4, X4, X14, X4)
+	REDUCE_Y(Y5, X5, X14, X5)
+	REDUCE_Y(Y6, X6, X14, X6)
+	REDUCE_Y(Y7, X7, X14, X7)
+
+	TESTQ BX, BX
+	JZ write_output_f16
+
+loop_k_scalar_f16:
+	MOVWLZX (0)(R8)(SI*1), AX; VMOVD AX, X8; VCVTPH2PS X8, X8
+	MOVWLZX (0)(R9)(SI*1), AX; VMOVD AX, X9; VCVTPH2PS X9, X9
+	MOVWLZX (0)(R10)(SI*1), AX; VMOVD AX, X10; VCVTPH2PS X10, X10
+	MOVWLZX (0)(R11)(SI*1), AX; VMOVD AX, X11; VCVTPH2PS X11, X11
+
+	MOVWLZX (0)(R12)(SI*1), AX; VMOVD AX, X12; VCVTPH2PS X12, X12
+	MOVWLZX (0)(R13)(SI*1), AX; VMOVD AX, X13; VCVTPH2PS X13, X13
+
+	VFMADD231SS X12, X8, X0
+	VFMADD231SS X13, X8, X1
+	VFMADD231SS X12, X9, X2
+	VFMADD231SS X13, X9, X3
+	VFMADD231SS X12, X10, X4
+	VFMADD231SS X13, X10, X5
+	VFMADD231SS X12, X11, X6
+	VFMADD231SS X13, X11, X7
+
+	ADDQ $2, SI
+	DECQ BX
+	JNZ loop_k_scalar_f16
+
+write_output_f16:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 4(R14)
+	VMOVSS X2, 0(R14)(R15*1)
+	VMOVSS X3, 4(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X4, 0(DX)
+	VMOVSS X5, 4(DX)
+	VMOVSS X6, 0(DX)(R15*1)
+	VMOVSS X7, 4(DX)(R15*1)
+	RET
+
+// func avx2SmallTransposedTile4x1Float16Asm(...)
+TEXT ·avx2SmallTransposedTile4x1Float16Asm(SB), NOSPLIT, $0-64
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ outPtr+48(FP), R14
+	MOVQ outStrideBytes+56(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	XORQ SI, SI
+
+loop_k8_4x1_f16:
+	CMPQ BX, $8
+	JL tail_k_4x1_f16
+
+	VCVTPH2PS (0)(R8)(SI*1), Y4
+	VCVTPH2PS (0)(R9)(SI*1), Y5
+	VCVTPH2PS (0)(R10)(SI*1), Y6
+	VCVTPH2PS (0)(R11)(SI*1), Y7
+
+	VCVTPH2PS (0)(R12)(SI*1), Y8
+
+	VFMADD231PS Y8, Y4, Y0
+	VFMADD231PS Y8, Y5, Y1
+	VFMADD231PS Y8, Y6, Y2
+	VFMADD231PS Y8, Y7, Y3
+
+	ADDQ $16, SI
+	SUBQ $8, BX
+	JMP loop_k8_4x1_f16
+
+tail_k_4x1_f16:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+
+	TESTQ BX, BX
+	JZ write_output_4x1_f16
+
+loop_k_scalar_4x1_f16:
+	MOVWLZX (0)(R8)(SI*1), AX; VMOVD AX, X4; VCVTPH2PS X4, X4
+	MOVWLZX (0)(R9)(SI*1), AX; VMOVD AX, X5; VCVTPH2PS X5, X5
+	MOVWLZX (0)(R10)(SI*1), AX; VMOVD AX, X6; VCVTPH2PS X6, X6
+	MOVWLZX (0)(R11)(SI*1), AX; VMOVD AX, X7; VCVTPH2PS X7, X7
+
+	MOVWLZX (0)(R12)(SI*1), AX; VMOVD AX, X8; VCVTPH2PS X8, X8
+
+	VFMADD231SS X8, X4, X0
+	VFMADD231SS X8, X5, X1
+	VFMADD231SS X8, X6, X2
+	VFMADD231SS X8, X7, X3
+
+	ADDQ $2, SI
+	DECQ BX
+	JNZ loop_k_scalar_4x1_f16
+
+write_output_4x1_f16:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 0(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X2, 0(DX)
+	VMOVSS X3, 0(DX)(R15*1)
+	RET
+
+// ============================================================================
+// BFloat16 Transposed Kernels (Zero-extend + shift to Float32)
+// ============================================================================
+
+// func avx2SmallTransposedTile4x2BFloat16Asm(...)
+TEXT ·avx2SmallTransposedTile4x2BFloat16Asm(SB), NOSPLIT, $0-72
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ rCol1+40(FP), R13
+	MOVQ contractingLen+48(FP), BX
+	MOVQ outPtr+56(FP), R14
+	MOVQ outStrideBytes+64(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	XORQ SI, SI
+
+loop_k8_bf16:
+	CMPQ BX, $8
+	JL tail_k_bf16
+
+	VPMOVZXWD (0)(R8)(SI*1), Y8; VPSLLD $16, Y8, Y8
+	VPMOVZXWD (0)(R9)(SI*1), Y9; VPSLLD $16, Y9, Y9
+	VPMOVZXWD (0)(R10)(SI*1), Y10; VPSLLD $16, Y10, Y10
+	VPMOVZXWD (0)(R11)(SI*1), Y11; VPSLLD $16, Y11, Y11
+
+	VPMOVZXWD (0)(R12)(SI*1), Y12; VPSLLD $16, Y12, Y12
+	VPMOVZXWD (0)(R13)(SI*1), Y13; VPSLLD $16, Y13, Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	ADDQ $16, SI
+	SUBQ $8, BX
+	JMP loop_k8_bf16
+
+tail_k_bf16:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+	REDUCE_Y(Y4, X4, X14, X4)
+	REDUCE_Y(Y5, X5, X14, X5)
+	REDUCE_Y(Y6, X6, X14, X6)
+	REDUCE_Y(Y7, X7, X14, X7)
+
+	TESTQ BX, BX
+	JZ write_output_bf16
+
+loop_k_scalar_bf16:
+	MOVWLZX (0)(R8)(SI*1), AX; SHLL $16, AX; VMOVD AX, X8
+	MOVWLZX (0)(R9)(SI*1), AX; SHLL $16, AX; VMOVD AX, X9
+	MOVWLZX (0)(R10)(SI*1), AX; SHLL $16, AX; VMOVD AX, X10
+	MOVWLZX (0)(R11)(SI*1), AX; SHLL $16, AX; VMOVD AX, X11
+
+	MOVWLZX (0)(R12)(SI*1), AX; SHLL $16, AX; VMOVD AX, X12
+	MOVWLZX (0)(R13)(SI*1), AX; SHLL $16, AX; VMOVD AX, X13
+
+	VFMADD231SS X12, X8, X0
+	VFMADD231SS X13, X8, X1
+	VFMADD231SS X12, X9, X2
+	VFMADD231SS X13, X9, X3
+	VFMADD231SS X12, X10, X4
+	VFMADD231SS X13, X10, X5
+	VFMADD231SS X12, X11, X6
+	VFMADD231SS X13, X11, X7
+
+	ADDQ $2, SI
+	DECQ BX
+	JNZ loop_k_scalar_bf16
+
+write_output_bf16:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 4(R14)
+	VMOVSS X2, 0(R14)(R15*1)
+	VMOVSS X3, 4(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X4, 0(DX)
+	VMOVSS X5, 4(DX)
+	VMOVSS X6, 0(DX)(R15*1)
+	VMOVSS X7, 4(DX)(R15*1)
+	RET
+
+// func avx2SmallTransposedTile4x1BFloat16Asm(...)
+TEXT ·avx2SmallTransposedTile4x1BFloat16Asm(SB), NOSPLIT, $0-64
+	MOVQ lRow0+0(FP), R8
+	MOVQ lRow1+8(FP), R9
+	MOVQ lRow2+16(FP), R10
+	MOVQ lRow3+24(FP), R11
+	MOVQ rCol0+32(FP), R12
+	MOVQ contractingLen+40(FP), BX
+	MOVQ outPtr+48(FP), R14
+	MOVQ outStrideBytes+56(FP), R15
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	XORQ SI, SI
+
+loop_k8_4x1_bf16:
+	CMPQ BX, $8
+	JL tail_k_4x1_bf16
+
+	VPMOVZXWD (0)(R8)(SI*1), Y4; VPSLLD $16, Y4, Y4
+	VPMOVZXWD (0)(R9)(SI*1), Y5; VPSLLD $16, Y5, Y5
+	VPMOVZXWD (0)(R10)(SI*1), Y6; VPSLLD $16, Y6, Y6
+	VPMOVZXWD (0)(R11)(SI*1), Y7; VPSLLD $16, Y7, Y7
+
+	VPMOVZXWD (0)(R12)(SI*1), Y8; VPSLLD $16, Y8, Y8
+
+	VFMADD231PS Y8, Y4, Y0
+	VFMADD231PS Y8, Y5, Y1
+	VFMADD231PS Y8, Y6, Y2
+	VFMADD231PS Y8, Y7, Y3
+
+	ADDQ $16, SI
+	SUBQ $8, BX
+	JMP loop_k8_4x1_bf16
+
+tail_k_4x1_bf16:
+	REDUCE_Y(Y0, X0, X14, X0)
+	REDUCE_Y(Y1, X1, X14, X1)
+	REDUCE_Y(Y2, X2, X14, X2)
+	REDUCE_Y(Y3, X3, X14, X3)
+
+	TESTQ BX, BX
+	JZ write_output_4x1_bf16
+
+loop_k_scalar_4x1_bf16:
+	MOVWLZX (0)(R8)(SI*1), AX; SHLL $16, AX; VMOVD AX, X4
+	MOVWLZX (0)(R9)(SI*1), AX; SHLL $16, AX; VMOVD AX, X5
+	MOVWLZX (0)(R10)(SI*1), AX; SHLL $16, AX; VMOVD AX, X6
+	MOVWLZX (0)(R11)(SI*1), AX; SHLL $16, AX; VMOVD AX, X7
+
+	MOVWLZX (0)(R12)(SI*1), AX; SHLL $16, AX; VMOVD AX, X8
+
+	VFMADD231SS X8, X4, X0
+	VFMADD231SS X8, X5, X1
+	VFMADD231SS X8, X6, X2
+	VFMADD231SS X8, X7, X3
+
+	ADDQ $2, SI
+	DECQ BX
+	JNZ loop_k_scalar_4x1_bf16
+
+write_output_4x1_bf16:
+	VMOVSS X0, 0(R14)
+	VMOVSS X1, 0(R14)(R15*1)
+	LEAQ (R14)(R15*2), DX
+	VMOVSS X2, 0(DX)
+	VMOVSS X3, 0(DX)(R15*1)
+	RET
