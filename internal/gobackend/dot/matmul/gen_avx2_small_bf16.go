@@ -21,6 +21,8 @@ import (
 // Auto-generate alternate specialized versions of AVX2 operations.
 //go:generate go run ../../../cmd/alternates_generator -base=avx2_router.go -tags=bf16,f16,f64
 //go:generate go run ../../../cmd/alternates_generator -base=avx2_small.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx2_small_transposed.go -tags=bf16,f16,f64
+//go:generate go run ../../../cmd/alternates_generator -base=avx2_small_nontransposed.go -tags=bf16,f16,f64
 //go:generate go run ../../../cmd/alternates_generator -base=avx2_large.go -tags=bf16,f16,f64
 
 // avx2SmallFloat32Parallel implements a parallelized version of the AVX2 small matrix multiplication.
@@ -105,6 +107,16 @@ func avx2SmallBFloat16( //alt:bf16
 	if batchCount == 0 || lhsCrossSize == 0 || rhsCrossSize == 0 || contractingSize == 0 {
 		return
 	}
+
+	{ //alt:f32|bf16|f16|f64
+		if AVX2UseAsm { //alt:f32|bf16|f16|f64
+			//alt:f32 avx2SmallFloat32NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			avx2SmallBFloat16NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:bf16
+			//alt:f16  avx2SmallFloat16NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:f64  avx2SmallFloat64NonTransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			return //alt:f32|bf16|f16|f64
+		} //alt:f32|bf16|f16|f64
+	} //alt:f32|bf16|f16|f64
 
 	lhsStride := lhsCrossSize * contractingSize
 	rhsStride := contractingSize * rhsCrossSize
@@ -419,6 +431,16 @@ func avx2SmallBFloat16Transposed( //alt:bf16
 	if batchCount == 0 || lhsCrossSize == 0 || rhsCrossSize == 0 || contractingSize == 0 {
 		return
 	}
+
+	{ //alt:f32|bf16|f16|f64
+		if AVX2UseAsm { //alt:f32|bf16|f16|f64
+			//alt:f32 avx2SmallFloat32TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			avx2SmallBFloat16TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:bf16
+			//alt:f16  avx2SmallFloat16TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			//alt:f64  avx2SmallFloat64TransposedAsm(lhs, rhs, batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
+			return //alt:f32|bf16|f16|f64
+		} //alt:f32|bf16|f16|f64
+	} //alt:f32|bf16|f16|f64
 
 	lhsStride := lhsCrossSize * contractingSize
 	rhsStride := contractingSize * rhsCrossSize

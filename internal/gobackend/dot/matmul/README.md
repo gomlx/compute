@@ -180,6 +180,33 @@ We resolved this with a three-tiered AVX-512 strategy:
 
 In end-to-end graph execution (`adult-demo` compliance suite), `non-transposed/[128, 69]x[69, 4]` dropped from **23.5 µs down to 8.7 µs** (a **2.7× end-to-end speedup**, with computation time dropping from 18.3 µs to 3.5 µs).
 
+### AVX2 Small MatMul Optimization (16 YMM Registers)
+
+For processors without AVX-512 (or when `GOMLX_GO_SIMD_AVX512=0`), we adapted the same algorithmic strategies to fit within the 16 256-bit YMM register budget (`Y0`–`Y15`):
+
+1. **Transposed Microkernels (`Tile4x2` and `Tile4x1`)**:
+   - `Tile4x2`: 4 LHS rows $\times$ 2 RHS cols = 8 accumulators (`Y0`–`Y7`). 4 LHS vector loads (`Y8`–`Y11`) + 2 RHS vector loads (`Y12`–`Y13`). Total 14 registers with zero spills.
+   - `Tile4x1`: 4 LHS rows $\times$ 1 RHS col = 4 accumulators (`Y0`–`Y3`).
+   - Fast 6-instruction horizontal vector reduction `REDUCE_Y` (`VEXTRACTF128` $\to$ `VADDPS` $\to$ `VPERMILPS $0xEE` $\to$ `VADDPS` $\to$ `VPERMILPS $0x01` $\to$ `VADDSS`) and `REDUCE_Y_F64` for Float64.
+   - Scalar remainder loop unrolls in $K$ directly into scalar registers `X0`–`X7` via `VFMADD231SS` / `VFMADD231SD`.
+2. **Non-Transposed Microkernels (`Tile4x16` and `Tile4x8`)**:
+   - $N=1$ zero-copy routes directly into Transposed (`Tile4x1`).
+   - Narrow $N < 8$ transposes RHS into `stackRhsT` and routes into Transposed (`Tile4x2` / `Tile4x1`).
+   - Wide $N \ge 8$ column-vectorized assembly microkernels (`Tile4x16` with 8 accumulators and `Tile4x8` with 4 accumulators).
+3. **Multi-DType Support**:
+   - Handwritten assembly kernels for `Float32`, `Float64`, `Float16` (via F16C `VCVTPH2PS`), and `BFloat16` (`VPMOVZXWD` + `VPSLLD $16`).
+
+#### AVX2 Small Benchmark Results (AMD Ryzen 9 9950X3D, `GOMLX_GO_SIMD_AVX512=0`):
+
+| Benchmark Case | Baseline (Old Fallback) | Handwritten AVX2 Assembly | Speedup |
+| :--- | :--- | :--- | :--- |
+| **`NonTransposed/[128, 69] x [69, 4]`** | 37,227 ns (1.90 GFlops/s) | **1,565 ns (45.16 GFlops/s)** | **23.8× faster** 🚀 |
+| **`NonTransposed/[49, 69] x [69, 4]`** | 12,309 ns (2.20 GFlops/s) | **917 ns (29.49 GFlops/s)** | **13.4× faster** 🚀 |
+| **`NonTransposed/[25, 69] x [69, 4]`** | 4,227 ns (3.26 GFlops/s) | **650 ns (21.23 GFlops/s)** | **6.5× faster** 🚀 |
+| **`NonTransposed/[25, 4] x [4, 1]`** | 162 ns (1.23 GFlops/s) | **49.8 ns (4.02 GFlops/s)** | **3.3× faster** 🚀 |
+| **`Transposed/[128, 69] x [4, 69]`** | 11,256 ns (6.28 GFlops/s) | **1,418 ns (49.84 GFlops/s)** | **7.9× faster** 🚀 |
+| **`Transposed/[25, 69] x [4, 69]`** | 2,197 ns (6.28 GFlops/s) | **502 ns (27.49 GFlops/s)** | **4.4× faster** 🚀 |
+
 ---
 
 ## 5. Direct Output Accumulation in L2 Cache
@@ -413,6 +440,11 @@ Because `matmul` provides high performance across multiple architectures and dat
 | `avx512_pack_amd64_*.s` | Handwritten AVX-512 fast LHS transposition and packing kernels. |
 | `avx512_pack_rhs_amd64.s` | Handwritten AVX-512 unrolled RHS strip packing kernel. |
 | `avx2_router.go` | Routes between Small and Large AVX2 kernels. |
+| `avx2_small.go` | Dispatcher for AVX2 small matrix multiplication across layouts. |
+| `avx2_small_transposed.go` | Base template for AVX2 small transposed matmul caller ($4 \times 2$ and $4 \times 1$ tiling). |
+| `avx2_small_transposed_amd64.s` | Handwritten AVX2 small transposed $4 \times 2$ and $4 \times 1$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `avx2_small_nontransposed.go` | Base template for AVX2 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
+| `avx2_small_nontransposed_amd64.s` | Handwritten AVX2 small non-transposed $4 \times 16$ and $4 \times 8$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
 | `avx2_large.go` | Base template for AVX2 large matrix multiplication (Go SIMD + Assembly caller). |
 | `avx2_large_amd64.go` | AVX2 assembly function forward declarations (`//go:noescape`). |
 | `avx2_large_amd64_*.s` | Handwritten AVX2 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
