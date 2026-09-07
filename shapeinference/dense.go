@@ -45,8 +45,18 @@ func FusedDense(x, weight, bias shapes.Shape, options compute.DenseConfig) (shap
 			"FusedDense: unsupported activation %v", options.Activation.Type)
 	}
 
+	if weight.IsDynamic() {
+		return shapes.Invalid(), errors.Errorf("FusedDense: weight must have static shape, got %s", weight)
+	}
+	if bias.Ok() && bias.IsDynamic() {
+		return shapes.Invalid(), errors.Errorf("FusedDense: bias must have static shape, got %s", bias)
+	}
+
 	inFeaturesAxisX := x.Rank() - 1
 	inFeaturesDimX := x.Dimensions[inFeaturesAxisX]
+	if inFeaturesDimX == shapes.DynamicDim {
+		return shapes.Invalid(), errors.Errorf("FusedDense: x's last dimension (in_features) cannot be dynamic")
+	}
 
 	var inFeaturesDimW int
 	var inFeaturesAxisW int
@@ -73,13 +83,7 @@ func FusedDense(x, weight, bias shapes.Shape, options compute.DenseConfig) (shap
 	}
 
 	// Check contracting dimension compatibility.
-	if inFeaturesDimX == shapes.DynamicDim && inFeaturesDimW == shapes.DynamicDim {
-		if !shapes.AxisNameEqual(x.AxisName(inFeaturesAxisX), weight.AxisName(inFeaturesAxisW)) {
-			return shapes.Invalid(), errors.Errorf(
-				"FusedDense: contracting axis has conflicting dynamic axis names for x (%q) and weight (%q)",
-				x.AxisName(inFeaturesAxisX), weight.AxisName(inFeaturesAxisW))
-		}
-	} else if inFeaturesDimX != shapes.DynamicDim && inFeaturesDimW != shapes.DynamicDim && inFeaturesDimX != inFeaturesDimW {
+	if inFeaturesDimX != inFeaturesDimW {
 		return shapes.Invalid(), errors.Errorf(
 			"FusedDense: x's contracting dimension (%d) must match weight's contracting dimension (%d)",
 			inFeaturesDimX, inFeaturesDimW)

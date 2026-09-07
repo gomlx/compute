@@ -138,6 +138,46 @@ func TestFusedDense(t *testing.T) {
 			t.Fatalf("expected error mentioning SwiGLU, got: %v", err)
 		}
 	})
+
+	t.Run("DynamicInFeaturesRejected", func(t *testing.T) {
+		x := SD(F32, []int{2, -1}, []string{"", "features"})
+		w := S(F32, 10, 20)
+		cfg := compute.DenseConfig{
+			Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
+			WeightLayout: compute.DenseLayoutInputOutputs,
+		}
+		_, err := FusedDense(x, w, shapes.Invalid(), cfg)
+		if err == nil {
+			t.Fatalf("expected error when x last dim is dynamic, got nil")
+		}
+	})
+
+	t.Run("DynamicWeightRejected", func(t *testing.T) {
+		x := S(F32, 2, 10)
+		w := SD(F32, []int{10, -1}, []string{"", "out"})
+		cfg := compute.DenseConfig{
+			Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
+			WeightLayout: compute.DenseLayoutInputOutputs,
+		}
+		_, err := FusedDense(x, w, shapes.Invalid(), cfg)
+		if err == nil {
+			t.Fatalf("expected error when weight is dynamic, got nil")
+		}
+	})
+
+	t.Run("DynamicBiasRejected", func(t *testing.T) {
+		x := S(F32, 2, 10)
+		w := S(F32, 10, 20)
+		bias := SD(F32, []int{-1}, []string{"out"})
+		cfg := compute.DenseConfig{
+			Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
+			WeightLayout: compute.DenseLayoutInputOutputs,
+		}
+		_, err := FusedDense(x, w, bias, cfg)
+		if err == nil {
+			t.Fatalf("expected error when bias is dynamic, got nil")
+		}
+	})
 }
 
 func TestFusedDenseVJP(t *testing.T) {

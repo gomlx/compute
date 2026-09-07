@@ -295,3 +295,89 @@ func TestDenseFloat16(t *testing.T) {
 		})
 	}
 }
+
+func TestDenseDynamic(t *testing.T) {
+	backend := newTestBackend(t)
+	builder := backend.Builder("test_dense_dynamic")
+	mainFn := builder.Main()
+
+	// x has dynamic batch dimension: [batchSize=-1, 3]
+	paramShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+	x, err := mainFn.Parameter("x", paramShape, nil)
+	if err != nil {
+		t.Fatalf("Parameter failed: %+v", err)
+	}
+
+	w, err := mainFn.Constant([]float32{1, 2, 3, 4, 5, 6}, 3, 2)
+	if err != nil {
+		t.Fatalf("Constant w failed: %+v", err)
+	}
+
+	bias, err := mainFn.Constant([]float32{10, 20}, 2)
+	if err != nil {
+		t.Fatalf("Constant bias failed: %+v", err)
+	}
+
+	y, err := mainFn.FusedDense(x, w, bias, compute.DenseConfig{
+		Activation:   compute.ActivationConfig{Type: compute.ActivationRelu},
+		WeightLayout: compute.DenseLayoutInputOutputs,
+	})
+	if err != nil {
+		t.Fatalf("FusedDense failed: %+v", err)
+	}
+
+	err = mainFn.Return([]compute.Value{y}, nil)
+	if err != nil {
+		t.Fatalf("Return failed: %+v", err)
+	}
+
+	exec, err := builder.Compile()
+	if err != nil {
+		t.Fatalf("Compile failed: %+v", err)
+	}
+	defer exec.Finalize()
+
+	// Execute with batch=2: [[1, 2, 3], [4, 5, 6]]
+	// x @ w = [[22, 28], [49, 64]] + bias = [[32, 48], [59, 84]]
+	inputVal2 := []float32{1, 2, 3, 4, 5, 6}
+	inputBuf2, err := backend.BufferFromFlatData(0, inputVal2, shapes.Make(dtypes.Float32, 2, 3))
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+
+	outputs2, err := exec.Execute([]compute.Buffer{inputBuf2}, []bool{false}, 0)
+	if err != nil {
+		t.Fatalf("Execute failed: %+v", err)
+	}
+	got2 := make([]float32, 4)
+	err = outputs2[0].ToFlatData(got2)
+	if err != nil {
+		t.Fatalf("ToFlatData failed: %+v", err)
+	}
+	want2 := []float32{32, 48, 59, 84}
+	if ok, diff := testutil.IsEqual(want2, got2); !ok {
+		t.Errorf("batch=2 mismatch:\n%s", diff)
+	}
+
+	// Execute with batch=1: [[1, 0, 1]]
+	// x @ w = [6, 8] + bias = [16, 28]
+	inputVal1 := []float32{1, 0, 1}
+	inputBuf1, err := backend.BufferFromFlatData(0, inputVal1, shapes.Make(dtypes.Float32, 1, 3))
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+
+	outputs1, err := exec.Execute([]compute.Buffer{inputBuf1}, []bool{false}, 0)
+	if err != nil {
+		t.Fatalf("Execute failed: %+v", err)
+	}
+	got1 := make([]float32, 2)
+	err = outputs1[0].ToFlatData(got1)
+	if err != nil {
+		t.Fatalf("ToFlatData failed: %+v", err)
+	}
+	want1 := []float32{16, 28}
+	if ok, diff := testutil.IsEqual(want1, got1); !ok {
+		t.Errorf("batch=1 mismatch:\n%s", diff)
+	}
+}

@@ -40,6 +40,21 @@ func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool 
 		d.contractingSize == o.contractingSize
 }
 
+// Recompute implements gobackend.RecomputableNodeData for nodeFusedDense.
+func (d *nodeFusedDense) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	resolvedX := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	inFeatures := resolvedX.Dimensions[resolvedX.Rank()-1]
+	newData := &nodeFusedDense{
+		options:         d.options,
+		layout:          d.layout,
+		batchSize:       d.batchSize,
+		lhsCrossSize:    resolvedX.Size() / inFeatures,
+		rhsCrossSize:    d.rhsCrossSize,
+		contractingSize: d.contractingSize,
+	}
+	return newData, nil
+}
+
 // FusedDense performs fused matrix multiplication + optional bias + optional activation:
 //
 //	y = activation(x @ W + bias)   (for DenseLayoutInputOutputs)
@@ -68,8 +83,11 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		return nil, err
 	}
 
-	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() || biasShape.IsDynamic() {
+	if wNode.Shape.IsDynamic() || biasShape.IsDynamic() {
 		return nil, compute.ErrNotImplemented
+	}
+	if xNode.Shape.Dimensions[xNode.Shape.Rank()-1] == shapes.DynamicDim {
+		return nil, errors.Errorf("FusedDense: x's last dimension (in_features) cannot be dynamic")
 	}
 
 	inFeatures := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
@@ -83,7 +101,10 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		return nil, errors.Errorf("FusedDense: unknown WeightLayout %v", options.WeightLayout)
 	}
 
-	lhsCrossSize := xNode.Shape.Size() / inFeatures
+	lhsCrossSize := 0
+	if !xNode.Shape.IsDynamic() {
+		lhsCrossSize = xNode.Shape.Size() / inFeatures
+	}
 	rhsCrossSize := wNode.Shape.Size() / inFeatures
 	contractingSize := inFeatures
 
