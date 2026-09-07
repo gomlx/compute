@@ -58,7 +58,7 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	xNode := inputs[0]
 	wNode := inputs[1]
 
-	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() {
+	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() || (len(inputs) > 2 && inputs[2].Shape.IsDynamic()) {
 		return nil, compute.ErrNotImplemented
 	}
 
@@ -111,6 +111,13 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		}
 	}
 
+	if options.Activation.Type == compute.ActivationSwiGLU {
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense does not support SwiGLU activation due to output shape change (use FusedActivation separately)")
+	}
+	if options.Activation.Type < compute.ActivationNone || options.Activation.Type > compute.ActivationSwiGLU {
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: unsupported activation %v", options.Activation.Type)
+	}
+
 	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
 	data := &nodeFusedDense{
@@ -153,7 +160,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			biasFlat = bias.Flat.([]float32)
 		}
 
-		actFn := activations.Get[float32](data.options.Activation.Type)
+		var actFn activations.InPlaceFn[float32]
+		if data.options.Activation.Type != compute.ActivationNone {
+			actFn = activations.Get[float32](data.options.Activation.Type)
+			if actFn == nil {
+				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
+			}
+		}
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasFlat,
 			Activation: actFn,
@@ -178,7 +191,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			biasFlat = bias.Flat.([]float64)
 		}
 
-		actFn := activations.Get[float64](data.options.Activation.Type)
+		var actFn activations.InPlaceFn[float64]
+		if data.options.Activation.Type != compute.ActivationNone {
+			actFn = activations.Get[float64](data.options.Activation.Type)
+			if actFn == nil {
+				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
+			}
+		}
 		epilogue := matmul.Epilogue[float64]{
 			Bias:       biasFlat,
 			Activation: actFn,
@@ -213,7 +232,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 		}
 
-		actFn := activations.Get[float32](data.options.Activation.Type)
+		var actFn activations.InPlaceFn[float32]
+		if data.options.Activation.Type != compute.ActivationNone {
+			actFn = activations.Get[float32](data.options.Activation.Type)
+			if actFn == nil {
+				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
+			}
+		}
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasF32,
 			Activation: actFn,
@@ -251,7 +276,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			}
 		}
 
-		actFn := activations.Get[float32](data.options.Activation.Type)
+		var actFn activations.InPlaceFn[float32]
+		if data.options.Activation.Type != compute.ActivationNone {
+			actFn = activations.Get[float32](data.options.Activation.Type)
+			if actFn == nil {
+				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
+			}
+		}
 		epilogue := matmul.Epilogue[float32]{
 			Bias:       biasF32,
 			Activation: actFn,

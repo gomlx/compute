@@ -219,6 +219,102 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("FusedDense BF16 mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("Float16", func(t *testing.T) {
+			f16 := float16.FromFloat32
+			xF16 := [][]float16.Float16{{f16(1), f16(2), f16(3)}, {f16(4), f16(5), f16(6)}}
+			wF16 := [][]float16.Float16{
+				{f16(1), f16(0), f16(0), f16(1)},
+				{f16(0), f16(1), f16(0), f16(1)},
+				{f16(0), f16(0), f16(1), f16(1)},
+			}
+			bF16 := []float16.Float16{f16(10), f16(20), f16(30), f16(40)}
+			got, err := testutil.Exec1(b, []any{xF16, wF16, bF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationNone}})
+			})
+			if err != nil {
+				t.Fatalf("FusedDense F16 failed: %+v", err)
+			}
+			want := [][]float16.Float16{{f16(11), f16(22), f16(33), f16(46)}, {f16(14), f16(25), f16(36), f16(55)}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("FusedDense F16 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Float64", func(t *testing.T) {
+			xF64 := [][]float64{{1, 2, 3}, {4, 5, 6}}
+			wF64 := [][]float64{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
+			bF64 := []float64{10, 20, 30, 40}
+			got, err := testutil.Exec1(b, []any{xF64, wF64, bF64}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationRelu}})
+			})
+			if err != nil {
+				t.Fatalf("FusedDense Float64 failed: %+v", err)
+			}
+			want := [][]float64{{11, 22, 33, 46}, {14, 25, 36, 55}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("FusedDense Float64 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Activations", func(t *testing.T) {
+			input1D := []float32{0, -1, 2, -3, 4, -5, 6}
+			n := len(input1D)
+			x1D := [][]float32{input1D}
+			wIdentity := make([][]float32, n)
+			for i := range wIdentity {
+				wIdentity[i] = make([]float32, n)
+				wIdentity[i][i] = 1.0
+			}
+			biasZeros := make([]float32, n)
+
+			tests := []struct {
+				name      string
+				actType   compute.ActivationType
+				want      []float32
+				tolerance float64
+			}{
+				{"None", compute.ActivationNone, []float32{0, -1, 2, -3, 4, -5, 6}, xslices.Epsilon},
+				{"Relu", compute.ActivationRelu, []float32{0, 0, 2, 0, 4, 0, 6}, xslices.Epsilon},
+				{"Sigmoid", compute.ActivationSigmoid, []float32{0.5, 0.26894143, 0.8807971, 0.047425873, 0.98201376, 0.006692851, 0.9975274}, 1e-5},
+				{"HardSigmoid", compute.ActivationHardSigmoid, []float32{0.5, 0.3, 0.9, 0.0, 1.0, 0.0, 1.0}, xslices.Epsilon},
+				{"LeakyRelu", compute.ActivationLeakyRelu, []float32{0, -0.3, 2, -0.9, 4, -1.5, 6}, xslices.Epsilon},
+				{"Selu", compute.ActivationSelu, []float32{0.0, -1.1113307, 2.101402, -1.6705687, 4.202804, -1.7462534, 6.304206}, 1e-5},
+				{"Silu", compute.ActivationSilu, []float32{0, -0.26894143, 1.7615942, -0.14227763, 3.928055, -0.03346425, 5.9851646}, 1e-5},
+				{"HardSwish", compute.ActivationHardSwish, []float32{0, -0.33333334, 1.6666666, 0, 4, 0, 6}, xslices.Epsilon},
+				{"Tanh", compute.ActivationTanh, []float32{0, -0.76159416, 0.9640276, -0.99505475, 0.9993293, -0.9999092, 0.9999877}, 1e-5},
+				{"GeluExact", compute.ActivationGelu, []float32{0, -0.15865526, 1.9544997, -4.0496886e-03, 3.9998736, -1.3411045e-06, 6}, 1e-5},
+				{"GeluApproximate", compute.ActivationGeluApproximate, []float32{0, -0.15880796, 1.9545977, -3.6375225e-03, 3.9999294, 0, 6}, 0.01},
+			}
+
+			for _, tc := range tests {
+				t.Run(tc.name, func(t *testing.T) {
+					got, err := testutil.Exec1(b, []any{x1D, wIdentity, biasZeros}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
+							Activation: compute.ActivationConfig{Type: tc.actType},
+						})
+					})
+					if err != nil {
+						t.Fatalf("FusedDense(%s) failed: %+v", tc.name, err)
+					}
+					want2D := [][]float32{tc.want}
+					if ok, diff := testutil.IsInDelta(want2D, got, tc.tolerance); !ok {
+						t.Errorf("FusedDense(%s) result mismatch:\n%s", tc.name, diff)
+					}
+				})
+			}
+		})
+
+		t.Run("SwiGLU_Rejected", func(t *testing.T) {
+			builder := b.Builder("fused_dense_swiglu_reject")
+			mainFn := builder.Main()
+			xVal, _ := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 1, 4), nil)
+			wVal, _ := mainFn.Parameter("w", shapes.Make(dtypes.Float32, 4, 4), nil)
+			_, err := mainFn.FusedDense(xVal, wVal, nil, compute.DenseConfig{Activation: compute.ActivationConfig{Type: compute.ActivationSwiGLU}})
+			if err == nil {
+				t.Errorf("FusedDense should reject SwiGLU")
+			}
+		})
 	})
 
 	t.Run("FusedScaledDotProductAttention", func(t *testing.T) {

@@ -475,6 +475,12 @@ type FusedOps interface {
 	//   or [out_features..., in_features] (if WeightLayout is DenseLayoutOutputsInput)
 	// - bias: [out_features...] (nil-able).
 	// - options: DenseConfig options (activation and weight layout).
+	//
+	// Note: ActivationSwiGLU is explicitly not supported for FusedDense because it halves the
+	// last dimension (output shape changes). This would require allocating temporary memory
+	// and complicate the matmul implementation, eliminating the cache-locality gains of epilogue
+	// fusion. Instead, use FusedDense with no activation, followed by FusedActivation with
+	// ActivationSwiGLU as a separate operation.
 	FusedDense(x, weight, bias Value, options DenseConfig) (Value, error)
 
 	// FusedScaledDotProductAttention computes multi-head scaled dot-product attention.
