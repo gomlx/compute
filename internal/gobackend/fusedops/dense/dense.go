@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -58,67 +59,33 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	xNode := inputs[0]
 	wNode := inputs[1]
 
-	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() || (len(inputs) > 2 && inputs[2].Shape.IsDynamic()) {
+	var biasShape shapes.Shape
+	if len(inputs) > 2 {
+		biasShape = inputs[2].Shape
+	}
+	outShape, err := shapeinference.FusedDense(xNode.Shape, wNode.Shape, biasShape, options)
+	if err != nil {
+		return nil, err
+	}
+
+	if xNode.Shape.IsDynamic() || wNode.Shape.IsDynamic() || biasShape.IsDynamic() {
 		return nil, compute.ErrNotImplemented
 	}
 
-	if xNode.Shape.Rank() < 1 || wNode.Shape.Rank() < 2 {
-		return nil, errors.Errorf("FusedDense: x must have rank >= 1 (got %d), weight must have rank >= 2 (got %d)",
-			xNode.Shape.Rank(), wNode.Shape.Rank())
-	}
 	inFeatures := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
-
 	var layout dot.Layout
-	var outDims []int
-	var rhsCrossSize int
-
 	switch options.WeightLayout {
 	case compute.DenseLayoutInputOutputs:
-		if inFeatures != wNode.Shape.Dimensions[0] {
-			return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's first dim (%d) for DenseLayoutInputOutputs",
-				inFeatures, wNode.Shape.Dimensions[0])
-		}
 		layout = dot.LayoutNonTransposed
-		outDims = make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
-		copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
-		copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[1:])
-		rhsCrossSize = wNode.Shape.Size() / inFeatures
-
 	case compute.DenseLayoutOutputsInput:
-		weightLastAxis := wNode.Shape.Rank() - 1
-		if inFeatures != wNode.Shape.Dimensions[weightLastAxis] {
-			return nil, errors.Errorf("FusedDense: x's last dim (%d) must match weight's last dim (%d) for DenseLayoutOutputsInput",
-				inFeatures, wNode.Shape.Dimensions[weightLastAxis])
-		}
 		layout = dot.LayoutTransposed
-		outDims = make([]int, xNode.Shape.Rank()-1+wNode.Shape.Rank()-1)
-		copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
-		copy(outDims[xNode.Shape.Rank()-1:], wNode.Shape.Dimensions[:weightLastAxis])
-		rhsCrossSize = wNode.Shape.Size() / inFeatures
-
 	default:
 		return nil, errors.Errorf("FusedDense: unknown WeightLayout %v", options.WeightLayout)
 	}
 
 	lhsCrossSize := xNode.Shape.Size() / inFeatures
+	rhsCrossSize := wNode.Shape.Size() / inFeatures
 	contractingSize := inFeatures
-
-	if len(inputs) > 2 {
-		biasNode := inputs[2]
-		if biasNode.Shape.Size() != rhsCrossSize {
-			return nil, errors.Errorf("FusedDense: bias size (%d) must match output features (%d)",
-				biasNode.Shape.Size(), rhsCrossSize)
-		}
-	}
-
-	if options.Activation.Type == compute.ActivationSwiGLU {
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense does not support SwiGLU activation due to output shape change (use FusedActivation separately)")
-	}
-	if options.Activation.Type < compute.ActivationNone || options.Activation.Type > compute.ActivationSwiGLU {
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: unsupported activation %v", options.Activation.Type)
-	}
-
-	outShape := shapes.Make(xNode.Shape.DType, outDims...)
 
 	data := &nodeFusedDense{
 		options:         options,
