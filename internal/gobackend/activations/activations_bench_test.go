@@ -230,15 +230,24 @@ func BenchmarkFlavorsComparison(b *testing.B) {
 			for i := range inBF16 {
 				inBF16[i] = bfloat16.FromFloat32(inF32[i])
 			}
+			b.Run("BFloat16_Relu/NoSIMD", func(b *testing.B) {
+				for b.Loop() {
+					activations.ReluBF16NoSIMD(inBF16, outBF16)
+				}
+			})
+			b.Run("BFloat16_Relu/PortableSIMD", func(b *testing.B) {
+				for b.Loop() {
+					activations.ReluBFloat16SIMD(inBF16, outBF16)
+				}
+			})
 			b.Run("BFloat16_Silu/NoSIMD", func(b *testing.B) {
 				for b.Loop() {
 					activations.SiluBF16NoSIMD(inBF16, outBF16)
 				}
 			})
-			bf16Simd := activations.MakeBF16KernelFromF32(activations.SiluFloat32SIMD)
 			b.Run("BFloat16_Silu/PortableSIMD", func(b *testing.B) {
 				for b.Loop() {
-					bf16Simd(inBF16, outBF16)
+					activations.SiluBFloat16SIMD(inBF16, outBF16)
 				}
 			})
 
@@ -247,15 +256,24 @@ func BenchmarkFlavorsComparison(b *testing.B) {
 			for i := range inF16 {
 				inF16[i] = float16.FromFloat32(inF32[i])
 			}
+			b.Run("Float16_Relu/NoSIMD", func(b *testing.B) {
+				for b.Loop() {
+					activations.ReluF16NoSIMD(inF16, outF16)
+				}
+			})
+			b.Run("Float16_Relu/PortableSIMD", func(b *testing.B) {
+				for b.Loop() {
+					activations.ReluFloat16SIMD(inF16, outF16)
+				}
+			})
 			b.Run("Float16_Silu/NoSIMD", func(b *testing.B) {
 				for b.Loop() {
 					activations.SiluF16NoSIMD(inF16, outF16)
 				}
 			})
-			f16Simd := activations.MakeF16KernelFromF32(activations.SiluFloat32SIMD)
 			b.Run("Float16_Silu/PortableSIMD", func(b *testing.B) {
 				for b.Loop() {
-					f16Simd(inF16, outF16)
+					activations.SiluFloat16SIMD(inF16, outF16)
 				}
 			})
 

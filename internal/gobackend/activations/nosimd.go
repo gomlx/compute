@@ -43,7 +43,7 @@ func registerNoSIMD() {
 	RegisterKernel[float64]("nosimd:geluapprox", compute.ActivationGeluApproximate, GeluApproxNoSIMD[float64], PriorityNoSIMD)
 
 	// BFloat16
-	RegisterKernel[bfloat16.BFloat16]("nosimd:relu", compute.ActivationRelu, reluBF16NoSIMD, PriorityNoSIMD)
+	RegisterKernel[bfloat16.BFloat16]("nosimd:relu", compute.ActivationRelu, ReluBF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[bfloat16.BFloat16]("nosimd:sigmoid", compute.ActivationSigmoid, sigmoidBF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[bfloat16.BFloat16]("nosimd:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidBF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[bfloat16.BFloat16]("nosimd:leakyrelu", compute.ActivationLeakyRelu, leakyReluBF16NoSIMD, PriorityNoSIMD)
@@ -55,7 +55,7 @@ func registerNoSIMD() {
 	RegisterKernel[bfloat16.BFloat16]("nosimd:geluapprox", compute.ActivationGeluApproximate, geluApproxBF16NoSIMD, PriorityNoSIMD)
 
 	// Float16
-	RegisterKernel[float16.Float16]("nosimd:relu", compute.ActivationRelu, reluF16NoSIMD, PriorityNoSIMD)
+	RegisterKernel[float16.Float16]("nosimd:relu", compute.ActivationRelu, ReluF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[float16.Float16]("nosimd:sigmoid", compute.ActivationSigmoid, sigmoidF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[float16.Float16]("nosimd:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidF16NoSIMD, PriorityNoSIMD)
 	RegisterKernel[float16.Float16]("nosimd:leakyrelu", compute.ActivationLeakyRelu, leakyReluF16NoSIMD, PriorityNoSIMD)
@@ -236,7 +236,7 @@ func swigluNoSIMD[T float32 | float64](in, out []T, numRows, hiddenDim int) {
 
 // BFloat16 implementations:
 
-func reluBF16NoSIMD(in, out []bfloat16.BFloat16) {
+func ReluBF16NoSIMD(in, out []bfloat16.BFloat16) {
 	for i, v := range in {
 		if v.Float32() < 0 {
 			out[i] = bfloat16.BFloat16(0)
@@ -345,7 +345,7 @@ func swigluBF16NoSIMD(in, out []bfloat16.BFloat16, numRows, hiddenDim int) {
 
 // Float16 implementations:
 
-func reluF16NoSIMD(in, out []float16.Float16) {
+func ReluF16NoSIMD(in, out []float16.Float16) {
 	for i, v := range in {
 		if v.Float32() < 0 {
 			out[i] = float16.Float16(0)
