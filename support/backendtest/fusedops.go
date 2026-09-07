@@ -209,6 +209,50 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("FusedDense Relu mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("OutputsInput", func(t *testing.T) {
+			// w transposed: [4, 3]
+			wT := [][]float32{
+				{1, 0, 0},
+				{0, 1, 0},
+				{0, 0, 1},
+				{1, 1, 1},
+			}
+			got, err := testutil.Exec1(b, []any{x, wT, bias}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
+					Activation:   compute.ActivationNone,
+					WeightLayout: compute.DenseLayoutOutputsInput,
+				})
+			})
+			if err != nil {
+				t.Fatalf("FusedDense failed: %+v", err)
+			}
+			want := [][]float32{{11, 22, 33, 46}, {14, 25, 36, 55}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("FusedDense OutputsInput mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BFloat16", func(t *testing.T) {
+			bf16 := bfloat16.FromFloat32
+			xBF16 := [][]bfloat16.BFloat16{{bf16(1), bf16(2), bf16(3)}, {bf16(4), bf16(5), bf16(6)}}
+			wBF16 := [][]bfloat16.BFloat16{
+				{bf16(1), bf16(0), bf16(0), bf16(1)},
+				{bf16(0), bf16(1), bf16(0), bf16(1)},
+				{bf16(0), bf16(0), bf16(1), bf16(1)},
+			}
+			bBF16 := []bfloat16.BFloat16{bf16(10), bf16(20), bf16(30), bf16(40)}
+			got, err := testutil.Exec1(b, []any{xBF16, wBF16, bBF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationNone})
+			})
+			if err != nil {
+				t.Fatalf("FusedDense failed: %+v", err)
+			}
+			want := [][]bfloat16.BFloat16{{bf16(11), bf16(22), bf16(33), bf16(46)}, {bf16(14), bf16(25), bf16(36), bf16(55)}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("FusedDense BF16 mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("FusedScaledDotProductAttention", func(t *testing.T) {

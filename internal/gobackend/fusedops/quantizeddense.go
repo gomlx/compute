@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -413,7 +414,7 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unknown quantization scheme %d", data.scheme)
 	}
 
-	fusedDenseApplyActivation[float32](backend, output, data.activation)
+	activations.Apply(backend, data.activation, output.Flat.([]float32))
 	return output, nil
 }
 

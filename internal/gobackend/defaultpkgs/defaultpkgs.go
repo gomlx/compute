@@ -9,7 +9,13 @@ import (
 	// Operations implementations:
 	_ "github.com/gomlx/compute/internal/gobackend/dot"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops"
+	_ "github.com/gomlx/compute/internal/gobackend/fusedops/dense"
 	_ "github.com/gomlx/compute/internal/gobackend/ops"
+
+	// Activations implementations:
+	_ "github.com/gomlx/compute/internal/gobackend/activations"
+	_ "github.com/gomlx/compute/internal/gobackend/activations/avx2"
+	_ "github.com/gomlx/compute/internal/gobackend/activations/avx512"
 
 	// Optimization passes:
 	_ "github.com/gomlx/compute/internal/gobackend/passes"
