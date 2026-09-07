@@ -272,6 +272,36 @@ The following benchmarks were recorded on the **AMD Ryzen 9 9950X3D** with SIMD 
 | **`NoBatch-Large-2` ($1024 \times 1920 \times 1536$)** | 98.4 GFlops/s (61.6 ms) | **108.0 GFlops/s** (56.1 ms) | **+9.8%** |
 | **`NoBatch-Large-3` ($2048 \times 2048 \times 2048$)** | 99.5 GFlops/s (172.6 ms) | **110.6 GFlops/s** (155.3 ms) | **+11.2%** |
 
+#### No-SIMD Small Matrix Multiplication Optimizations
+
+For small tensor shapes (such as MLP layers and classification heads in `adult-demo`), the No-SIMD kernels translate the key algorithmic insights from the AVX-512 and AVX2 implementations into pure, architecture-agnostic Go:
+
+1. **Zero-Copy GEMV Direct Layout Routing ($N=1$)**:
+   - In non-transposed layout with $N=1$, matrix $B[K, 1]$ in memory is a contiguous 1D slice of length $K$, layout-identical to $B^T[1, K]$.
+   - Routing $N=1$ directly to the transposed kernel eliminates all strided index arithmetic and transforms column access into a sequential stream.
+2. **Dedicated 4-Row GEMV Path**:
+   - For $N=1$, accumulates 4 rows of LHS simultaneously (`c0..c3`) using 4 registers, with $K$ unrolled by 2. This cuts RHS memory loads by 75% and achieves **1.8x to 2.2x speedup** on vector multiplications.
+3. **Stack-Buffered Transposition for Narrow $N$ ($N \le 16, K \times N \le 2048$)**:
+   - In non-transposed small matmul, $B[K, N]$ column access has non-unit stride $N$, causing CPU cache thrashing.
+   - Transposing $B[K, N] \to B^T[N, K]$ into a small stack buffer (`[2048]I` = 8 KB for float32, resident in L1 cache) takes negligible time (~15 ns) and converts strided memory access into contiguous streaming reads.
+4. **$2 \times 4$ Register-Tiled Transposed Kernel with $K$ Unrolled by 2**:
+   - Tiles 2 rows of LHS and 4 columns of RHS, maintaining 8 accumulators (`c00..c13`) in hardware registers without spills on both x86-64 and ARM64.
+   - Unrolling $K$ by 2 exposes independent FMAs to the Go compiler, hiding instruction pipeline latency.
+
+##### Small MatMul Performance (`GOEXPERIMENT=""` on AMD 9950X3D):
+
+| Shape ($M \times K \times N$) | Baseline (Pure Go) | Optimized (Pure Go) | Speedup |
+| :--- | :--- | :--- | :--- |
+| **Transposed $[128, 4] \times [1, 4]$** | 329.0 ns (3.11 GFlops/s) | **180.4 ns** (5.68 GFlops/s) | **1.82× faster** 🚀 |
+| **Transposed $[128, 69] \times [4, 69]$** | 11,596 ns (6.09 GFlops/s) | **9,084 ns** (7.78 GFlops/s) | **1.28× faster** 🚀 |
+| **Transposed $[25, 4] \times [1, 4]$** | 86.1 ns (2.32 GFlops/s) | **55.9 ns** (3.58 GFlops/s) | **1.54× faster** 🚀 |
+| **Transposed $[25, 69] \times [4, 69]$** | 2,324 ns (5.94 GFlops/s) | **1,828 ns** (7.55 GFlops/s) | **1.27× faster** 🚀 |
+| **NonTransposed $[128, 4] \times [4, 1]$** | 242.5 ns (4.22 GFlops/s) | **183.4 ns** (5.58 GFlops/s) | **1.32× faster** 🚀 |
+| **NonTransposed $[128, 69] \times [69, 4]$** | 16,127 ns (4.38 GFlops/s) | **9,232 ns** (7.65 GFlops/s) | **1.75× faster** 🚀 |
+| **NonTransposed $[25, 4] \times [4, 1]$** | 64.9 ns (3.08 GFlops/s) | **55.2 ns** (3.62 GFlops/s) | **1.17× faster** 🚀 |
+| **NonTransposed $[25, 69] \times [69, 4]$** | 3,157 ns (4.37 GFlops/s) | **1,955 ns** (7.06 GFlops/s) | **1.61× faster** 🚀 |
+| **End-to-End Adult-Demo $[128, 69] \times [69, 4]$** | 22.34 µs (3.16 GFlops/s) | **17.04 µs** (4.15 GFlops/s) | **+31.1% faster** 🚀 |
+
 #### Key Architectural Decisions & Insights for Pure Go:
 
 1. **Register Budget & Zero Stack Spills ($2 \times 4$ vs. $4 \times 4$)**:

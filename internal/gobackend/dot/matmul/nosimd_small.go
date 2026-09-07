@@ -75,6 +75,37 @@ func smallNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		return
 	}
 
+	if rhsCrossSize == 1 {
+		smallNoSIMDGenericTransposed( //alt:generic
+			//alt:half smallNoSIMDHalfPrecisionTransposed(
+			lhs, rhs,
+			batchStart, batchCount, lhsCrossSize, rhsCrossSize, contractingSize,
+			output)
+		return
+	}
+
+	if rhsCrossSize <= 16 && contractingSize*rhsCrossSize <= 2048 {
+		var buf [2048]I
+		rhsTransposed := buf[:contractingSize*rhsCrossSize]
+		for b := batchStart; b < batchStart+batchCount; b++ {
+			rhsBatch := rhs[b*rhsStride : (b+1)*rhsStride]
+			for col := range rhsCrossSize {
+				dstRow := rhsTransposed[col*contractingSize : (col+1)*contractingSize]
+				srcIdx := col
+				for k := range contractingSize {
+					dstRow[k] = rhsBatch[srcIdx]
+					srcIdx += rhsCrossSize
+				}
+			}
+			smallNoSIMDGenericTransposed( //alt:generic
+				//alt:half smallNoSIMDHalfPrecisionTransposed(
+				lhs[b*lhsStride:(b+1)*lhsStride], rhsTransposed,
+				0, 1, lhsCrossSize, rhsCrossSize, contractingSize,
+				output[b*outputStride:(b+1)*outputStride])
+		}
+		return
+	}
+
 	var iZero I
 	iSize := unsafe.Sizeof(iZero)
 	var oZero O

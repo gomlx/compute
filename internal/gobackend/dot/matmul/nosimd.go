@@ -366,3 +366,9 @@ func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
 		}
 	}
 }
+
+// TestNoSIMDRouterFloat32 exposes noSIMDRouter for testing and benchmarking.
+func TestNoSIMDRouterFloat32(backend *gobackend.Backend, layout dot.Layout, lhs, rhs []float32, batchSize, lhsCrossSize, rhsCrossSize, contractingSize int, output []float32) {
+	noSIMDRouter[float32, float32](backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+}
+
