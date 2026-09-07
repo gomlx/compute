@@ -29,11 +29,7 @@ func FusedActivation(x shapes.Shape, cfg compute.ActivationConfig) (shapes.Shape
 		}
 		lastDim := x.Dimensions[rank-1]
 		if lastDim == shapes.DynamicDim {
-			outShape := x.Clone()
-			outShape.Dimensions[rank-1] = shapes.DynamicDim
-			// SwiGLU halving creates a modified dynamic axis dimension.
-			outShape.AxisNames[rank-1] = shapes.AnonymousAxis
-			return outShape, nil
+			return shapes.Invalid(), errors.Errorf("FusedActivation: SwiGLU requires static last dimension, got dynamic")
 		}
 		if lastDim%2 != 0 {
 			return shapes.Invalid(), errors.Errorf("FusedActivation: SwiGLU requires even last dimension, got %d", lastDim)
@@ -83,7 +79,10 @@ func FusedActivationVJP(y, x, dOutput shapes.Shape, cfg compute.ActivationConfig
 			return shapes.Invalid(), errors.Errorf("FusedActivationVJP: SwiGLU requires rank >= 1, got %d", rank)
 		}
 		lastDim := x.Dimensions[rank-1]
-		if lastDim != shapes.DynamicDim && lastDim%2 != 0 {
+		if lastDim == shapes.DynamicDim {
+			return shapes.Invalid(), errors.Errorf("FusedActivationVJP: SwiGLU requires static last dimension, got dynamic")
+		}
+		if lastDim%2 != 0 {
 			return shapes.Invalid(), errors.Errorf("FusedActivationVJP: SwiGLU requires even last dimension, got %d", lastDim)
 		}
 		if dOutput.Rank() != rank {
@@ -95,11 +94,9 @@ func FusedActivationVJP(y, x, dOutput shapes.Shape, cfg compute.ActivationConfig
 					i, dOutput.Dimensions[i], x.Dimensions[i])
 			}
 		}
-		if lastDim != shapes.DynamicDim && dOutput.Dimensions[rank-1] != shapes.DynamicDim {
-			if dOutput.Dimensions[rank-1] != lastDim/2 {
-				return shapes.Invalid(), errors.Errorf("FusedActivationVJP: SwiGLU dOutput last dim %d must be half of x last dim %d",
-					dOutput.Dimensions[rank-1], lastDim)
-			}
+		if dOutput.Dimensions[rank-1] != lastDim/2 {
+			return shapes.Invalid(), errors.Errorf("FusedActivationVJP: SwiGLU dOutput last dim %d must be half of x last dim %d",
+				dOutput.Dimensions[rank-1], lastDim)
 		}
 		return x.Clone(), nil
 	}

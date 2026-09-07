@@ -67,6 +67,27 @@ func TestFusedActivation(t *testing.T) {
 			t.Fatalf("expected error for scalar SwiGLU, got nil")
 		}
 	})
+	t.Run("SwiGLUStaticLastDimDynamicBatch", func(t *testing.T) {
+		x := SD(F32, []int{-1, 8}, []string{"batch", ""})
+		cfg := compute.ActivationConfig{Type: compute.ActivationSwiGLU}
+		out, err := FusedActivation(x, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		expected := SD(F32, []int{-1, 4}, []string{"batch", ""})
+		if !out.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, out)
+		}
+	})
+
+	t.Run("SwiGLUDynamicLastDimRejected", func(t *testing.T) {
+		x := SD(F32, []int{2, -1}, []string{"", "features"})
+		cfg := compute.ActivationConfig{Type: compute.ActivationSwiGLU}
+		_, err := FusedActivation(x, cfg)
+		if err == nil {
+			t.Fatalf("expected error when SwiGLU last dim is dynamic, got nil")
+		}
+	})
 }
 
 func TestFusedActivationVJP(t *testing.T) {
@@ -81,6 +102,20 @@ func TestFusedActivationVJP(t *testing.T) {
 		}
 		if !out.Equal(dOutput) {
 			t.Fatalf("expected %s, got %s", dOutput, out)
+		}
+	})
+
+	t.Run("DynamicStandardVJP", func(t *testing.T) {
+		x := SD(F32, []int{-1, 4}, []string{"batch", ""})
+		dOutput := SD(F32, []int{-1, 4}, []string{"batch", ""})
+		cfg := compute.ActivationConfig{Type: compute.ActivationRelu}
+
+		out, err := FusedActivationVJP(shapes.Invalid(), x, dOutput, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		if !out.Equal(x) {
+			t.Fatalf("expected %s, got %s", x, out)
 		}
 	})
 
@@ -116,6 +151,31 @@ func TestFusedActivationVJP(t *testing.T) {
 		}
 		if !out.Equal(x) {
 			t.Fatalf("expected %s, got %s", x, out)
+		}
+	})
+
+	t.Run("SwiGLUVJPDynamicBatch", func(t *testing.T) {
+		x := SD(F32, []int{-1, 8}, []string{"batch", ""})
+		dOutput := SD(F32, []int{-1, 4}, []string{"batch", ""})
+		cfg := compute.ActivationConfig{Type: compute.ActivationSwiGLU}
+
+		out, err := FusedActivationVJP(shapes.Invalid(), x, dOutput, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		if !out.Equal(x) {
+			t.Fatalf("expected %s, got %s", x, out)
+		}
+	})
+
+	t.Run("SwiGLUVJPDynamicLastDimRejected", func(t *testing.T) {
+		x := SD(F32, []int{2, -1}, []string{"", "features"})
+		dOutput := SD(F32, []int{2, 4}, []string{"", "features"})
+		cfg := compute.ActivationConfig{Type: compute.ActivationSwiGLU}
+
+		_, err := FusedActivationVJP(shapes.Invalid(), x, dOutput, cfg)
+		if err == nil {
+			t.Fatalf("expected error when SwiGLU VJP x has dynamic last dim, got nil")
 		}
 	})
 
