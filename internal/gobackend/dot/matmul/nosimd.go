@@ -28,9 +28,8 @@ var (
 	// These values are somewhat arbitrary, assuming "standard" modern cache sizes.
 	// They are parameterized so they can be tuned or determined dynamically later.
 	NoSIMDParams = CacheParams{
-		// Do not change these 2 values: they are hard-coded by the allocated registers in basicSymmetricMicroKernel8x8.
-		LHSL1KernelRows: 2, // Mr: Rows of LHS in local registers.
-		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers.
+		LHSL1KernelRows: 2, // Mr: Rows of LHS in local registers (2).
+		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers (4).
 
 		PanelContractingSize: 512, // Kc: L1 Block contracting "depth".
 		LHSPanelCrossSize:    2,   // Mc: Block Height fitting L2/L3 cache.
@@ -53,6 +52,15 @@ func init() {
 	if !envutil.MustReadBool(EnabledEnv, true) {
 		klog.Info("dot/nontransposed MatMul implementations disabled")
 		return
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_KC, 0); v > 0 {
+		NoSIMDParams.PanelContractingSize = v
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_MC, 0); v > 0 {
+		NoSIMDParams.LHSPanelCrossSize = v
+	}
+	if v := envutil.MustReadInt(envutil.GoBackendNoSIMD_NC, 0); v > 0 {
+		NoSIMDParams.RHSPanelCrossSize = v
 	}
 	registerNoSIMD(false)
 }
@@ -182,7 +190,7 @@ func choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 
 	minCol := max(1, params.RHSL1KernelCols)
 	minRow := max(1, params.LHSL1KernelRows)
-	targetRow := max(minRow, params.LHSPanelCrossSize)
+	targetRow := minRow
 	targetCol := max(minCol, params.RHSPanelCrossSize)
 
 	bestNumM := targetWorkers

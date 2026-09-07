@@ -325,6 +325,11 @@ func avx2LargeMatrixSliceFloat64( //alt:f64
 			// Copy accumulated results from L2 cache to outputMatrix in a single pass.
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+				if (contractingSize <= params.PanelContractingSize) &&
+					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
+					(rhsPanelWidth%params.RHSL1KernelCols == 0) {
+					continue
+				}
 				accumOffset := mIdx * panelSize
 				accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
 				//alt:f32|bf16|f16 avx2ApplyPackedOutputFloat32(

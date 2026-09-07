@@ -85,6 +85,13 @@ Transposing rows into column vectors is a performance-critical step:
 - Stores each row of 32 elements sequentially.
 - This allows the microkernel to load RHS rows directly into 2 full 512-bit vector registers (`2 × 16 = 32` floats) using unaligned vector loads (`VMOVDQU32`).
 
+### Portable Pure-Go Packing (`unsafePackRHS` & `unsafePackLHS`)
+For architectures without SIMD support (or when building with pure Go portability):
+- **`unsafePackRHS` (Fixed-Array Pointer Loads/Stores)**: For $N_r = 4$, rather than looping over columns individually, each 4-element row chunk is copied in a single operation via pointer cast to a fixed array (`*(*[4]T)(unsafe.Pointer(dstPtr)) = *(*[4]T)(unsafe.Pointer(pSrcRow))`). On modern 64-bit architectures (x86-64, ARM64), the compiler translates this into a single 128-bit load/store instruction pair.
+  - **Result**: `PackRHS` latency dropped from **2.30 ms to 371.6 µs** on Float32 (**6.1× speedup**) and from **2.00 ms to 323.6 µs** on BFloat16 (**6.2× speedup**).
+- **`unsafePackLHS` (Contiguous Pointers)**: For $M_r = 2$ and $M_r = 4$, the destination pointer advances contiguously through packed memory while unrolling row loads, eliminating index multiplications and bounds checks.
+  - **Result**: `PackLHS` latency dropped from **1.86 ms to 869.3 µs** on Float32 (**2.14× speedup**).
+
 ---
 
 ## 4. AVX-512 GEMM Microkernel Design
@@ -154,6 +161,11 @@ We introduced an `accumulate bool` parameter directly into all microkernels:
 - **For subsequent contracting steps ($K > 0$)**: The microkernel executes with `accumulate = true`. It loads the existing partial sum from L2 into the accumulators using `VADDPS (DX), Z, Z` before storing back.
 - **Final writeback**: Main memory `outputMatrix` is **never touched during the contracting loop**. After all $K$ steps finish, a single sequential copy transfers the finished sum from L2 cache to main memory.
 
+### Zero-Copy Direct Output Bypass (`canDirectOutput`)
+When $K \le K_c$ (single contracting panel) and the sub-panel dimensions align with the kernel tile dimensions ($M_{\text{chunk}} \pmod{M_r} == 0$ and $N_{\text{chunk}} \pmod{N_r} == 0$), intermediate buffer allocation and the final copyback phase can be bypassed completely:
+- The microkernel writes its finished results directly into the destination `outputMatrix` using the matrix's native row stride (`rhsCrossSize`).
+- This eliminates both the buffer allocation and the final $O(M \times N)$ memory transfer pass, delivering immediate latency improvements especially on smaller matrices and single-panel contractions.
+
 ---
 
 ## 6. Optimization History & Benchmark Gains
@@ -182,6 +194,34 @@ The following benchmarks were recorded on the **AMD Ryzen 9 9950X3D** (AVX-512 d
 | **NoBatch-Large-3** | $2048 \times 2048 \times 2048$ | 766.2 GFlops/s (22.40 ms) | **1,332 GFlops/s** (12.90 ms) | **+73.8%** 🚀 |
 | **Batched-Large-1** | $16 \times 1536 \times 1920 \times 1024$ | 843.6 GFlops/s (114.6 ms) | **1,433 GFlops/s** (67.40 ms) | **+69.9%** 🚀 |
 | **Batched-Large-2** | $16 \times 1024 \times 1920 \times 1536$ | 822.1 GFlops/s (117.6 ms) | **1,381 GFlops/s** (70.00 ms) | **+68.0%** 🚀 |
+
+### No-SIMD (Portable Pure-Go) Optimization Milestone Results
+
+The No-SIMD implementation provides an architecture-agnostic, pure Go fallback that runs on all platforms without assembly or compiler intrinsics (e.g. ARM64, RISC-V, WebAssembly, or standard x86-64 without SIMD experiments enabled).
+
+The following benchmarks were recorded on the **AMD Ryzen 9 9950X3D** with SIMD completely disabled (`GOEXPERIMENT="" nice -n -20`):
+
+| Component / Benchmark | Baseline (Pure Go) | Optimized (Pure Go) | Improvement |
+| :--- | :--- | :--- | :--- |
+| **`PackRHS` (Float32, $N_r = 4$)** | 2.30 ms (434 ops/s) | **371.6 µs** (2,691 ops/s) | **6.1× faster** 🚀 |
+| **`PackRHS` (BFloat16, $N_r = 4$)** | 2.00 ms (499 ops/s) | **323.6 µs** (3,090 ops/s) | **6.2× faster** 🚀 |
+| **`PackLHS` (Float32, $M_r = 2$)** | 1.86 ms (537 ops/s) | **869.3 µs** (1,150 ops/s) | **2.14× faster** 🚀 |
+| **`NoBatch-Large-1` ($1536 \times 1920 \times 1024$)** | 101.7 GFlops/s (59.6 ms) | **114.8 GFlops/s** (52.8 ms) | **+13.0%** |
+| **`NoBatch-Large-2` ($1024 \times 1920 \times 1536$)** | 98.4 GFlops/s (61.6 ms) | **108.0 GFlops/s** (56.1 ms) | **+9.8%** |
+| **`NoBatch-Large-3` ($2048 \times 2048 \times 2048$)** | 99.5 GFlops/s (172.6 ms) | **110.6 GFlops/s** (155.3 ms) | **+11.2%** |
+
+#### Key Architectural Decisions & Insights for Pure Go:
+
+1. **Register Budget & Zero Stack Spills ($2 \times 4$ vs. $4 \times 4$)**:
+   - On x86-64, the Go compiler allocates from 15 general-purpose scalar floating-point / XMM registers (`X0`–`X14`).
+   - An experimental $4 \times 4$ microkernel required 16 accumulators + 4 LHS inputs + 4 RHS inputs + temporary calculation registers (>24 FP variables). This forced the Go compiler into heavy register spills (**1,341 `MOVSS ... (SP)` spill instructions**), dropping performance to ~60 GFlops/s.
+   - The $2 \times 4$ geometry requires exactly **8 accumulators + 2 LHS + 4 RHS = 14 FP variables $\le 15$**. This fits 100% inside hardware registers with **zero stack spills** on x86-64, while ARM64 (32 vector/FP registers) accommodates it effortlessly.
+2. **Constant-Offset 8-Step Unrolling**:
+   - Inside the microkernel, the contracting loop is unrolled by 8 iterations using fixed constant offsets (`packedLHS[idxLhs+0..15]`, `packedRHS[idxRhs+0..31]`).
+   - The base slice pointers are checked once before the loop (hoisting bounds checks), and indices advance once every 8 steps (`idxLhs += 16`, `idxRhs += 32`). This eliminated 8 pointer arithmetic instructions per iteration.
+3. **Decoupled 2D Worker Partitioning (`choose2DSplit`)**:
+   - In `choose2DSplit`, `targetRow` was previously bound to `LHSPanelCrossSize` ($M_c$). For No-SIMD, decoupling `targetRow := minRow` allows the scheduler to split work along rows across 32 or 64 worker threads even when $M_c$ is small ($M_c = 2$).
+   - This prevents workers from unnecessarily splitting columns of the same row, completely eliminating multi-core cache-line false sharing during output accumulation.
 
 ---
 
@@ -304,12 +344,18 @@ $N_c$ controls the column tile size of RHS kept in the shared L3 cache:
 * **Analysis**: $N_c = 512$ is **$\sim 16\%$ faster** on large batched matrices (40.9 ms vs 47.7 ms), while keeping the aggregate 32-thread RHS panel footprint well within the 96 MB L3 cache of the AMD 9950X3D.
 
 ### Standardized Cache Parameters
-| Data Type | $M_r$ (Rows) | $N_r$ (Cols) | $K_c$ (L1 Contracting) | $M_c$ (L2 Rows) | $N_c$ (L3 Cols) |
+| Data Type / Engine | $M_r$ (Rows) | $N_r$ (Cols) | $K_c$ (L1 Contracting) | $M_c$ (L2 Rows) | $N_c$ (L3 Cols) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Float32** | 8 | 32 | 192 | 32 | 512 |
-| **Float16** | 8 | 32 | 128 | 32 | 768 |
-| **BFloat16** | 8 | 32 | 128 | 32 | 768 |
-| **Float64** | 8 | 16 | 64 | 16 | 256 |
+| **Float32 (AVX-512)** | 8 | 32 | 192 | 32 | 512 |
+| **Float16 (AVX-512)** | 8 | 32 | 128 | 32 | 768 |
+| **BFloat16 (AVX-512)** | 8 | 32 | 128 | 32 | 768 |
+| **Float64 (AVX-512)** | 8 | 16 | 64 | 16 | 256 |
+| **Float32 (AVX2)** | 4 | 16 | 192 | 32 | 512 |
+| **Portable Pure-Go (No-SIMD)** | 2 | 4 | 512 | 2 | 512 |
+
+Cache parameters can be tuned or overridden via environment variables:
+- AVX-512 / AVX2: `GOMLX_GO_SIMD_KC`, `GOMLX_GO_SIMD_MC`, `GOMLX_GO_SIMD_NC`
+- No-SIMD: `GOMLX_GO_NOSIMD_KC`, `GOMLX_GO_NOSIMD_MC`, `GOMLX_GO_NOSIMD_NC`
 
 ---
 
@@ -333,8 +379,9 @@ Because `matmul` provides high performance across multiple architectures and dat
 | `avx2_pack_amd64_*.s` | Handwritten AVX2 fast LHS transposition and packing kernels. |
 | `avx2_pack_rhs_amd64.s` | Handwritten AVX2 unrolled RHS strip packing kernel. |
 | `avx2_*.go` | AVX2 (256-bit SIMD) router, small kernels, large kernels, and transpositions. |
-| `nosimd_*.go` | Architecture-agnostic portable Go fallback with scalar loop blocking. |
-| `gen_*` | **Auto-generated files** created by `alternates_generator` for alternative dtypes (`f16`, `bf16`, `f64`). |
+| `nosimd.go` | Architecture-agnostic portable Go fallback router and 2D partitioner. |
+| `nosimd_large.go` | Base template for No-SIMD large matrix multiplication (zero-copy direct output bypass, 8-step unrolled $2 \times 4$ microkernel). |
+| `gen_*` | **Auto-generated files** created by `alternates_generator` for alternative dtypes (`f16`, `bf16`, `f64`, `half`). |
 
 ### Regenerating Alternates
 When modifying any of the base template files (e.g. `avx512_large.go`, `avx2_large.go`, `nosimd_large.go`), regenerate the type-specific files:
@@ -361,6 +408,9 @@ go test -run none -bench BenchmarkCompliance/DotGeneral/Large ./gobackend
 # Disable AVX512, so AVX2 is used instead:
 $ GOMLX_GO_SIMD_AVX512=0 go test -run none -bench Compliance/DotGeneral ./gobackend
 
+# Test strictly without SIMD (portable pure Go):
+$ GOEXPERIMENT="" nice -n -20 go test -v ./internal/gobackend/dot/matmul -run TestNoSIMD
+$ GOEXPERIMENT="" nice -n -20 go test -v -run TestCompliance ./gobackend
 ```
 
 ---

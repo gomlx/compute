@@ -239,8 +239,13 @@ func runApplyPackedOutputTests[T gotype.NumericNotComplex](t *testing.T, applyFn
 
 func TestUnsafe(t *testing.T) {
 	for _, kernelRows := range []int{2, 4, 16, 32} {
-		t.Run(fmt.Sprintf("Pack_kernelRows=%d", kernelRows), func(t *testing.T) {
+		t.Run(fmt.Sprintf("PackLHS_kernelRows=%d", kernelRows), func(t *testing.T) {
 			runPackLHSTests(t, unsafePackLHS[float32], kernelRows)
+		})
+	}
+	for _, kernelCols := range []int{4, 8, 16} {
+		t.Run(fmt.Sprintf("PackRHS_kernelCols=%d", kernelCols), func(t *testing.T) {
+			runPackRHSTests(t, unsafePackRHS[float32], kernelCols)
 		})
 	}
 }
@@ -290,6 +295,51 @@ func runBenchmarkPackLHS[T gotype.ScalarNotComplex](b *testing.B, name string, p
 	})
 }
 
+func runBenchmarkPackRHSGeneric[T gotype.ScalarNotComplex](b *testing.B, name string, packFn PackRHSFn[T], totalRows, totalCols, panelRows, panelCols, kernelCols int) {
+	src := make([]T, totalRows*totalCols)
+	for i := range src {
+		src[i] = T(i)
+	}
+	maxStrips := (panelCols + kernelCols - 1) / kernelCols
+	dstSize := maxStrips * panelRows * kernelCols
+	dst := make([]T, dstSize)
+
+	b.Run(name, func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			for rowStart := 0; rowStart < totalRows; rowStart += panelRows {
+				contractingRows := panelRows
+				if rowStart+contractingRows > totalRows {
+					contractingRows = totalRows - rowStart
+				}
+				for colStart := 0; colStart < totalCols; colStart += panelCols {
+					rhsCols := panelCols
+					if colStart+rhsCols > totalCols {
+						rhsCols = totalCols - colStart
+					}
+					packFn(src, dst, rowStart, colStart, totalCols, contractingRows, rhsCols, kernelCols)
+				}
+			}
+		}
+		elapsed := b.Elapsed()
+		if elapsed > 0 && b.N > 0 {
+			durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
+			durStr := humanize.Duration(durationPerOp)
+			splitIdx := strings.IndexFunc(durStr, func(r rune) bool {
+				return !unicode.IsDigit(r) && r != '.' && r != '-'
+			})
+			if splitIdx > 0 {
+				valStr := durStr[:splitIdx]
+				unitStr := durStr[splitIdx:]
+				if strings.ContainsAny(unitStr, "0123456789") {
+					b.ReportMetric(durationPerOp.Seconds(), "s/op")
+				} else if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+					b.ReportMetric(val, unitStr+"/op")
+				}
+			}
+		}
+	})
+}
+
 func BenchmarkNoSIMD(b *testing.B) {
 	const totalRows, totalCols = 1536, 1920
 	const panelRows, panelCols = 24, 128
@@ -314,5 +364,13 @@ func BenchmarkNoSIMD(b *testing.B) {
 		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
 		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
 		runBenchmarkPackLHS[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+	})
+
+	b.Run("PackRHS/kernelCols=4", func(b *testing.B) {
+		kernelCols := 4
+		runBenchmarkPackRHSGeneric[float32](b, "standard/float32", packRHS, totalRows, totalCols, panelRows, panelCols, kernelCols)
+		runBenchmarkPackRHSGeneric[float32](b, "unsafe/float32", unsafePackRHS, totalRows, totalCols, panelRows, panelCols, kernelCols)
+		runBenchmarkPackRHSGeneric[bfloat16.BFloat16](b, "standard/bfloat16", packRHS, totalRows, totalCols, panelRows, panelCols, kernelCols)
+		runBenchmarkPackRHSGeneric[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackRHS, totalRows, totalCols, panelRows, panelCols, kernelCols)
 	})
 }

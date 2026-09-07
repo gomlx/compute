@@ -54,6 +54,81 @@ func packRHS[T gotype.ScalarNotComplex](src, dst []T, srcRowStart, srcColStart, 
 	}
 }
 
+// unsafePackRHS is an optimized version of packRHS that eliminates bounds checks and slice overhead
+// using unsafe pointers. For the common case where RHSL1KernelCols == 4, it performs direct 4-element
+// loads and stores (which the Go compiler lowers to 128-bit vector moves or paired loads/stores).
+func unsafePackRHS[T gotype.ScalarNotComplex](
+	src, dst []T,
+	srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+	if contractingRows == 0 || rhsCols == 0 {
+		return
+	}
+
+	srcPtr := uintptr(unsafe.Pointer(&src[0]))
+	dstPtr := uintptr(unsafe.Pointer(&dst[0]))
+	elemSize := unsafe.Sizeof(T(0))
+	srcStrideBytes := uintptr(srcStrideCol) * elemSize
+	kernelColsBytes := uintptr(RHSL1KernelCols) * elemSize
+
+	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
+		validCols := min(RHSL1KernelCols, rhsCols-stripColIdx)
+		srcIdxBase := (srcRowStart * srcStrideCol) + srcColStart + stripColIdx
+		pSrcRow := srcPtr + uintptr(srcIdxBase)*elemSize
+
+		if validCols == RHSL1KernelCols {
+			switch RHSL1KernelCols {
+			case 4:
+				for range contractingRows {
+					*(*[4]T)(unsafe.Pointer(dstPtr)) = *(*[4]T)(unsafe.Pointer(pSrcRow))
+					dstPtr += 4 * elemSize
+					pSrcRow += srcStrideBytes
+				}
+			case 8:
+				for range contractingRows {
+					*(*[8]T)(unsafe.Pointer(dstPtr)) = *(*[8]T)(unsafe.Pointer(pSrcRow))
+					dstPtr += 8 * elemSize
+					pSrcRow += srcStrideBytes
+				}
+			case 16:
+				for range contractingRows {
+					*(*[16]T)(unsafe.Pointer(dstPtr)) = *(*[16]T)(unsafe.Pointer(pSrcRow))
+					dstPtr += 16 * elemSize
+					pSrcRow += srcStrideBytes
+				}
+			default:
+				for range contractingRows {
+					pSrc := pSrcRow
+					pDst := dstPtr
+					for range RHSL1KernelCols {
+						*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
+						pSrc += elemSize
+						pDst += elemSize
+					}
+					dstPtr += kernelColsBytes
+					pSrcRow += srcStrideBytes
+				}
+			}
+		} else {
+			// Fringe strip with partial valid columns and zero-padding
+			for range contractingRows {
+				pSrc := pSrcRow
+				pDst := dstPtr
+				for range validCols {
+					*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
+					pSrc += elemSize
+					pDst += elemSize
+				}
+				for range RHSL1KernelCols - validCols {
+					*(*T)(unsafe.Pointer(pDst)) = T(0)
+					pDst += elemSize
+				}
+				dstPtr += kernelColsBytes
+				pSrcRow += srcStrideBytes
+			}
+		}
+	}
+}
+
 // packLHS packs a block of size [copyRows, contractingCols] from the lhs matrix into a panel.
 // The panel is structured as [ceil(copyRows/kernelRows), contractingCols, kernelRows].
 // It rearranges data into horizontal strips of height kernelRows.
@@ -143,61 +218,81 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
 			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-			pDstBase := panelPtr
 
 			pSrc0 := pSrcBase
 			pSrc1 := pSrcBase + lhsColsBytes
-			pDst0 := pDstBase
-			pDst1 := pDstBase + elemSize
+			pDst := panelPtr
 
-			for range contractingCols {
-				*(*T)(unsafe.Pointer(pDst0)) = *(*T)(unsafe.Pointer(pSrc0))
-				*(*T)(unsafe.Pointer(pDst1)) = *(*T)(unsafe.Pointer(pSrc1))
+			col := 0
+			for ; col+1 < contractingCols; col += 2 {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				*(*[2]T)(unsafe.Pointer(pDst)) = [2]T{v0, v1}
+
+				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
+				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
+				*(*[2]T)(unsafe.Pointer(pDst + 2*elemSize)) = [2]T{v0_1, v1_1}
+
+				pSrc0 += 2 * elemSize
+				pSrc1 += 2 * elemSize
+				pDst += 4 * elemSize
+			}
+			for ; col < contractingCols; col++ {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				*(*[2]T)(unsafe.Pointer(pDst)) = [2]T{v0, v1}
 
 				pSrc0 += elemSize
 				pSrc1 += elemSize
-
-				pDst0 += kernelRowsBytes
-				pDst1 += kernelRowsBytes
+				pDst += 2 * elemSize
 			}
-			pSrcBase += lhsColsBytes4
-			pDstBase += 2 * elemSize
 			panelPtr += stripSizeBytes
 		}
 	case kernelRows == 4:
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
 			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-			pDstBase := panelPtr
 
 			pSrc0 := pSrcBase
 			pSrc1 := pSrc0 + lhsColsBytes
 			pSrc2 := pSrc1 + lhsColsBytes
 			pSrc3 := pSrc2 + lhsColsBytes
 
-			pDst0 := pDstBase
-			pDst1 := pDst0 + elemSize
-			pDst2 := pDst1 + elemSize
-			pDst3 := pDst2 + elemSize
+			pDst := panelPtr
 
-			for range contractingCols {
-				*(*T)(unsafe.Pointer(pDst0)) = *(*T)(unsafe.Pointer(pSrc0))
-				*(*T)(unsafe.Pointer(pDst1)) = *(*T)(unsafe.Pointer(pSrc1))
-				*(*T)(unsafe.Pointer(pDst2)) = *(*T)(unsafe.Pointer(pSrc2))
-				*(*T)(unsafe.Pointer(pDst3)) = *(*T)(unsafe.Pointer(pSrc3))
+			col := 0
+			for ; col+1 < contractingCols; col += 2 {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				v2 := *(*T)(unsafe.Pointer(pSrc2))
+				v3 := *(*T)(unsafe.Pointer(pSrc3))
+				*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
+
+				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
+				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
+				v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
+				v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
+				*(*[4]T)(unsafe.Pointer(pDst + 4*elemSize)) = [4]T{v0_1, v1_1, v2_1, v3_1}
+
+				pSrc0 += 2 * elemSize
+				pSrc1 += 2 * elemSize
+				pSrc2 += 2 * elemSize
+				pSrc3 += 2 * elemSize
+				pDst += 8 * elemSize
+			}
+			for ; col < contractingCols; col++ {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				v2 := *(*T)(unsafe.Pointer(pSrc2))
+				v3 := *(*T)(unsafe.Pointer(pSrc3))
+				*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
 
 				pSrc0 += elemSize
 				pSrc1 += elemSize
 				pSrc2 += elemSize
 				pSrc3 += elemSize
-
-				pDst0 += kernelRowsBytes
-				pDst1 += kernelRowsBytes
-				pDst2 += kernelRowsBytes
-				pDst3 += kernelRowsBytes
+				pDst += 4 * elemSize
 			}
-			pSrcBase += lhsColsBytes4
-			pDstBase += elemSize4
 			panelPtr += stripSizeBytes
 		}
 
