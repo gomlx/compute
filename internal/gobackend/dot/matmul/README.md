@@ -26,8 +26,8 @@ To address these constraints across varied platforms and problem sizes, `matmul`
    |          |          |                       |          |          |
 NoSIMD      AVX2      AVX-512                 NoSIMD      AVX2      AVX-512
                                                             |          |
-                                                         Go SIMD    Assembly
-                                                                    (Microkernel + Pack)
+                                                         Assembly   Assembly
+                                                   (Microkernel + Pack)
 ```
 
 ### Supported Data Types & Accumulation Rules
@@ -167,9 +167,21 @@ The following benchmarks were recorded on an **AMD Ryzen 9 9950X3D** (16 cores /
 | **Round 2: Fast Assembly PackLHS** | **2,380 GFlops/s** (+4.5%) | ~2.52 ms | Hardware `VUNPCK` transpositions for F32/F64/F16/BF16 |
 | **Round 3: Direct L2 Accumulation** | **2,677 - 2,946 GFlops/s** (+17.6%) | **2.26 ms** | Direct in-place L2 accumulation (`accumulate bool`), bypassing intermediate `packedOutput` |
 
-### Overall Impact
+### Overall Impact (AVX-512)
 - **Total Throughput Gain**: **+44.7% to +59.2%** (from 1,850 GFlops/s up to **~2.95 TFlops/s**).
 - **Compute Efficiency**: The CPU profile shows compute math (`avx512LargeKernelFloat32Asm`) now accounts for **81.4%** of all CPU cycles, with output writeback reduced to just 4.3% (a single sequential memory write).
+
+### AVX2 Optimization Milestone Results
+
+The following benchmarks were recorded on the **AMD Ryzen 9 9950X3D** (AVX-512 disabled via `GOMLX_GO_SIMD_AVX512=0`, CPU pinned at 3500 MHz, `nice -n -20`):
+
+| Benchmark Case | Matrix Dimensions ($M \times K \times N$) | Baseline (Pure Go SIMD) | Optimized (AVX2 Assembly) | Speedup |
+| :--- | :--- | :--- | :--- | :--- |
+| **NoBatch-Large-1** | $1536 \times 1920 \times 1024$ | 704.6 GFlops/s (8.60 ms) | **1,221 GFlops/s** (4.90 ms) | **+73.3%** 🚀 |
+| **NoBatch-Large-2** | $1024 \times 1920 \times 1536$ | 720.9 GFlops/s (8.40 ms) | **1,234 GFlops/s** (4.90 ms) | **+71.2%** 🚀 |
+| **NoBatch-Large-3** | $2048 \times 2048 \times 2048$ | 766.2 GFlops/s (22.40 ms) | **1,332 GFlops/s** (12.90 ms) | **+73.8%** 🚀 |
+| **Batched-Large-1** | $16 \times 1536 \times 1920 \times 1024$ | 843.6 GFlops/s (114.6 ms) | **1,433 GFlops/s** (67.40 ms) | **+69.9%** 🚀 |
+| **Batched-Large-2** | $16 \times 1024 \times 1920 \times 1536$ | 822.1 GFlops/s (117.6 ms) | **1,381 GFlops/s** (70.00 ms) | **+68.0%** 🚀 |
 
 ---
 
@@ -314,6 +326,12 @@ Because `matmul` provides high performance across multiple architectures and dat
 | `avx512_large_amd64_*.s` | Handwritten AVX-512 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
 | `avx512_pack_amd64_*.s` | Handwritten AVX-512 fast LHS transposition and packing kernels. |
 | `avx512_pack_rhs_amd64.s` | Handwritten AVX-512 unrolled RHS strip packing kernel. |
+| `avx2_router.go` | Routes between Small and Large AVX2 kernels. |
+| `avx2_large.go` | Base template for AVX2 large matrix multiplication (Go SIMD + Assembly caller). |
+| `avx2_large_amd64.go` | AVX2 assembly function forward declarations (`//go:noescape`). |
+| `avx2_large_amd64_*.s` | Handwritten AVX2 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `avx2_pack_amd64_*.s` | Handwritten AVX2 fast LHS transposition and packing kernels. |
+| `avx2_pack_rhs_amd64.s` | Handwritten AVX2 unrolled RHS strip packing kernel. |
 | `avx2_*.go` | AVX2 (256-bit SIMD) router, small kernels, large kernels, and transpositions. |
 | `nosimd_*.go` | Architecture-agnostic portable Go fallback with scalar loop blocking. |
 | `gen_*` | **Auto-generated files** created by `alternates_generator` for alternative dtypes (`f16`, `bf16`, `f64`). |

@@ -223,31 +223,84 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 
 				isFirstContractingPanel := contractingPanelIdx == 0
 				accumulate := !isFirstContractingPanel
+				canDirectOutput := (contractingSize <= params.PanelContractingSize) && (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 
-				if useAccum {
+				if canDirectOutput {
+					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
+					outSlice := outputMatrix[outOffset : outOffset+(lhsPanelHeight-1)*rhsCrossSize+rhsPanelWidth]
+					if AVX2UseAsm { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32Asm( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16Asm(
+							//alt:f16 avx2LargeKernelFloat16Asm(
+							//alt:f64 avx2LargeKernelFloat64Asm(
+							packedLHS, packedRHS, outSlice,
+							params.LHSPanelCrossSize, rhsCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						)
+					} else { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16(
+							//alt:f16 avx2LargeKernelFloat16(
+							//alt:f64 avx2LargeKernelFloat64(
+							packedLHS, packedRHS, outSlice,
+							params.LHSPanelCrossSize, rhsCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						) //alt:bf16|f16|f64
+					} //alt:f32|bf16|f16|f64
+				} else if useAccum {
 					accumOffset := mIdx * panelSize
 					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
-					avx2LargeKernelFloat32( //alt:f32
-						//alt:bf16 avx2LargeKernelBFloat16(
-						//alt:f16 avx2LargeKernelFloat16(
-						//alt:f64 avx2LargeKernelFloat64(
-						packedLHS, packedRHS, accumSlice,
-						params.LHSPanelCrossSize, accumPanelStride,
-						contractingPanelWidth,
-						lhsPanelHeight, rhsPanelWidth,
-						accumulate,
-					)
+					if AVX2UseAsm { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32Asm( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16Asm(
+							//alt:f16 avx2LargeKernelFloat16Asm(
+							//alt:f64 avx2LargeKernelFloat64Asm(
+							packedLHS, packedRHS, accumSlice,
+							params.LHSPanelCrossSize, accumPanelStride,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						)
+					} else { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16(
+							//alt:f16 avx2LargeKernelFloat16(
+							//alt:f64 avx2LargeKernelFloat64(
+							packedLHS, packedRHS, accumSlice,
+							params.LHSPanelCrossSize, accumPanelStride,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							accumulate,
+						) //alt:bf16|f16|f64
+					} //alt:f32|bf16|f16|f64
 				} else {
-					avx2LargeKernelFloat32( //alt:f32
-						//alt:bf16 avx2LargeKernelBFloat16(
-						//alt:f16 avx2LargeKernelFloat16(
-						//alt:f64 avx2LargeKernelFloat64(
-						packedLHS, packedRHS, packedOutput,
-						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
-						contractingPanelWidth,
-						lhsPanelHeight, rhsPanelWidth,
-						false,
-					)
+					if AVX2UseAsm { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32Asm( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16Asm(
+							//alt:f16 avx2LargeKernelFloat16Asm(
+							//alt:f64 avx2LargeKernelFloat64Asm(
+							packedLHS, packedRHS, packedOutput,
+							params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							false,
+						)
+					} else { //alt:f32|bf16|f16|f64
+						avx2LargeKernelFloat32( //alt:f32
+							//alt:bf16 avx2LargeKernelBFloat16(
+							//alt:f16 avx2LargeKernelFloat16(
+							//alt:f64 avx2LargeKernelFloat64(
+							packedLHS, packedRHS, packedOutput,
+							params.LHSPanelCrossSize, params.RHSPanelCrossSize,
+							contractingPanelWidth,
+							lhsPanelHeight, rhsPanelWidth,
+							false,
+						) //alt:bf16|f16|f64
+					} //alt:f32|bf16|f16|f64
 
 					// Accumulate (or write) packedOutput to outputMatrix.
 					avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16

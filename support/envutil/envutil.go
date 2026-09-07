@@ -27,6 +27,10 @@ const (
 	GoBackendAVX512_KC   = "GOMLX_GO_AVX512_KC"
 	GoBackendAVX512_MC   = "GOMLX_GO_AVX512_MC"
 	GoBackendAVX512_NC   = "GOMLX_GO_AVX512_NC"
+	GoBackendAVX2_ASM    = "GOMLX_GO_AVX2_ASM"
+	GoBackendAVX2_KC     = "GOMLX_GO_AVX2_KC"
+	GoBackendAVX2_MC     = "GOMLX_GO_AVX2_MC"
+	GoBackendAVX2_NC     = "GOMLX_GO_AVX2_NC"
 )
 
 // ReadBool reads the boolean value of the environment variable with the given name.
