@@ -86,42 +86,8 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 		})
 	})
 
-	t.Run("FusedGelu", func(t *testing.T) {
-		testutil.SkipIfMissing(t, b, compute.OpTypeFusedGelu)
-		input := []float32{-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0}
-		got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-			return f.FusedGelu(params[0], true)
-		})
-		if err != nil {
-			t.Fatalf("FusedGelu failed: %+v", err)
-		}
-		want := []float32{-0.04550028, -0.15865526, -0.15426877, 0.0, 0.34573123, 0.84134474, 1.9544997}
-		if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
-			t.Errorf("Gelu result mismatch:\n%s", diff)
-		}
-
-		t.Run("Approximate", func(t *testing.T) {
-			gotApprox, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-				return f.FusedGelu(params[0], false)
-			})
-			if err != nil {
-				t.Fatalf("FusedGelu failed: %+v", err)
-			}
-			// Differ count check
-			exactGot := got.([]float32)
-			approxGot := gotApprox.([]float32)
-			differ := false
-			for i := range approxGot {
-				if math.Abs(float64(approxGot[i]-exactGot[i])) > 1e-7 {
-					differ = true
-					break
-				}
-			}
-			if !differ {
-				t.Errorf("approximate and exact GELU should differ for non-zero inputs")
-			}
-		})
-	})
+	t.Run("FusedActivation", func(t *testing.T) { testFusedActivation(t, b) })
+	t.Run("FusedActivationVJP", func(t *testing.T) { testFusedActivationVJP(t, b) })
 
 	t.Run("FusedLayerNorm", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeFusedLayerNorm)

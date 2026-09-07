@@ -281,7 +281,7 @@ func BenchmarkGelu(b *testing.B, backend compute.Backend) {
 		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
 			fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
 				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedGelu(params[0], true)
+					return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationGelu})
 				})
 			if err != nil {
 				if errors.Is(err, compute.ErrNotImplemented) {
