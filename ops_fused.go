@@ -2,6 +2,161 @@
 
 package compute
 
+// ActivationType specifies the activation function for fused operations.
+type ActivationType int
+
+//go:generate go tool enumer -type ActivationType -trimprefix=Activation -output=gen_activationtype_enumer.go ops_fused.go
+
+const (
+	// ActivationNone specifies the identity function: y = x.
+	ActivationNone ActivationType = iota
+
+	// ActivationRelu is the Rectified Linear Unit activation:
+	//
+	//	y = max(x, 0)
+	//
+	// Introduced in "Rectified Linear Units Improve Restricted Boltzmann Machines"
+	// (Vinod Nair, Geoffrey E. Hinton, ICML 2010), https://icml.cc/Conferences/2010/papers/432.pdf.
+	ActivationRelu
+
+	// ActivationSigmoid is the standard logistic sigmoid activation:
+	//
+	//	y = 1 / (1 + exp(-x))
+	ActivationSigmoid
+
+	// ActivationHardSigmoid is a piecewise linear approximation of the sigmoid function:
+	//
+	//	y = max(0, min(1, 0.2*x + 0.5))
+	//
+	// It is computationally cheaper on hardware without fast transcendental functions.
+	ActivationHardSigmoid
+
+	// ActivationLeakyRelu allows a small gradient when the unit is not active (x < 0):
+	//
+	//	y = x if x >= 0; 0.3*x if x < 0
+	//
+	// Here the negative slope alpha is fixed at 0.3.
+	//
+	// Introduced in "Rectifier Nonlinearities Improve Neural Network Acoustic Models"
+	// (Andrew L. Maas, Awni Y. Hannun, Andrew Y. Ng, ICML 2013).
+	ActivationLeakyRelu
+
+	// ActivationSelu stands for Scaled Exponential Linear Unit:
+	//
+	//	y = scale * x if x > 0; scale * alpha * (exp(x) - 1) if x <= 0
+	//
+	// with fixed constants alpha ≈ 1.67326324 and scale ≈ 1.05070098.
+	//
+	// Self-normalizing neural networks induce self-normalizing properties such as
+	// variance stabilization.
+	//
+	// Introduced in "Self-Normalizing Neural Networks"
+	// (Günter Klambauer, Thomas Unterthiner, Andreas Mayr, Sepp Hochreiter, NeurIPS 2017),
+	// https://arxiv.org/abs/1706.02515.
+	ActivationSelu
+
+	// ActivationSilu (also known as Swish) is the Sigmoid-Weighted Linear Unit:
+	//
+	//	y = x * sigmoid(x)
+	//
+	// Introduced in "Gaussian Error Linear Units (GELUs)"
+	// (Dan Hendrycks, Kevin Gimpel, 2016), https://arxiv.org/abs/1606.08415 and
+	// "Sigmoid-Weighted Linear Units for Neural Network Function Approximation in
+	// Reinforcement Learning" (Stefan Elfwing, Eiji Uchibe, Kenji Doya, 2017),
+	// https://arxiv.org/abs/1702.03118, and independently discovered (and called Swish)
+	// in "Searching for Activation Functions"
+	// (Prajit Ramachandran, Barret Zoph, Quoc V. Le, 2017), https://arxiv.org/abs/1710.05941.
+	ActivationSilu
+
+	// ActivationHardSwish is a piecewise linear approximation of Swish:
+	//
+	//	y = x * ReLU6(x + 3) / 6 = x * max(0, min(1, x/6 + 0.5))
+	//
+	// Introduced in "Searching for MobileNetV3"
+	// (Andrew Howard et al., ICCV 2019), https://arxiv.org/abs/1905.02244.
+	ActivationHardSwish
+
+	// ActivationTanh is the hyperbolic tangent activation:
+	//
+	//	y = tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))
+	ActivationTanh
+
+	// ActivationGelu computes the Gaussian Error Linear Unit activation using the exact erf formulation:
+	//
+	//	y = x * Φ(x) = x * 0.5 * (1 + erf(x / √2))
+	//
+	// Introduced in "Gaussian Error Linear Units (GELUs)"
+	// (Dan Hendrycks, Kevin Gimpel, 2016), https://arxiv.org/abs/1606.08415.
+	ActivationGelu
+
+	// ActivationGeluApproximate computes the GELU activation using the tanh approximation:
+	//
+	//	y = 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x^3)))
+	//
+	// Introduced in "Gaussian Error Linear Units (GELUs)"
+	// (Dan Hendrycks, Kevin Gimpel, 2016), https://arxiv.org/abs/1606.08415.
+	ActivationGeluApproximate
+
+	// ActivationSwiGLU applies the Swish-Gated Linear Unit activation to a pre-projected
+	// tensor of shape [..., 2*hiddenDim], splitting the last dimension in half into gate
+	// and value components:
+	//
+	//	SwiGLU(x) = Swish(x_gate) * x_value
+	//
+	// Output has shape [..., hiddenDim].
+	//
+	// Introduced in "GLU Variants Improve Transformer"
+	// (Noam Shazeer, 2020), https://arxiv.org/abs/2002.05202.
+	ActivationSwiGLU
+)
+
+// ActivationSwish is an alias for ActivationSilu.
+const ActivationSwish = ActivationSilu
+
+// VJPRequiresInput indicates whether the VJP of the activation requires the forward input `x`
+// when the forward output `y` is already available.
+//
+// This indicates whether FusedDense+FusedDenseVJP can fuse the activation into a single
+// kernel during training:
+//   - If false: the VJP can be calculated solely from `y` and `dOutput` (i.e. `x` does not need
+//     to be preserved during the forward pass). In this case, MatMul + Bias + Activation can be
+//     fully fused during training.
+//   - If true: the VJP requires the pre-activation input `x` (output of MatMul+Bias). In this
+//     case, the activation cannot be fully fused with the dense layer during training, and
+//     MatMul+Bias should be fused while leaving Activation as a separate node.
+//
+// Derivations when y is given:
+//   - ActivationNone: dy/dx = 1 (no inputs needed).
+//   - ActivationRelu: dy/dx = 1 if y > 0 else 0 (since y > 0 <=> x > 0).
+//   - ActivationSigmoid: dy/dx = y * (1 - y).
+//   - ActivationHardSigmoid: dy/dx = 0.2 if 0 < y < 1 else 0.
+//   - ActivationLeakyRelu: dy/dx = 1 if y >= 0 else 0.3 (since alpha=0.3 > 0 preserves sign).
+//   - ActivationSelu: dy/dx = scale if y > 0 else y + scale*alpha.
+//   - ActivationTanh: dy/dx = 1 - y^2.
+//   - ActivationSilu, ActivationHardSwish, ActivationGelu, ActivationGeluApproximate, ActivationSwiGLU:
+//     require x for the derivative computation.
+func (a ActivationType) VJPRequiresInput() bool {
+	switch a {
+	case ActivationNone,
+		ActivationRelu,
+		ActivationSigmoid,
+		ActivationHardSigmoid,
+		ActivationLeakyRelu,
+		ActivationSelu,
+		ActivationTanh:
+		return false
+	default:
+		return true
+	}
+}
+
+// ActivationConfig holds the configuration for activation functions.
+// The Type is obligatory, other fields are optional and specific for activations.
+type ActivationConfig struct {
+	// Type of activation, see ActivationType.
+	Type ActivationType
+}
+
 // AttentionAxesLayout specifies the ordering of axes in 4D attention tensors.
 type AttentionAxesLayout int
 
@@ -276,38 +431,6 @@ type ScaledDotProductAttentionConfig struct {
 	Mask Value
 }
 
-// ActivationType specifies the activation function for fused operations.
-type ActivationType int
-
-const (
-	ActivationNone ActivationType = iota
-	ActivationGelu
-	ActivationRelu
-	ActivationSilu
-	ActivationHardSwish
-	ActivationTanh
-)
-
-// String returns the name of the activation type.
-func (a ActivationType) String() string {
-	switch a {
-	case ActivationNone:
-		return "none"
-	case ActivationGelu:
-		return "gelu"
-	case ActivationRelu:
-		return "relu"
-	case ActivationSilu:
-		return "silu"
-	case ActivationHardSwish:
-		return "hard_swish"
-	case ActivationTanh:
-		return "tanh"
-	default:
-		return "unknown"
-	}
-}
-
 // FusedOps defines optional fused operations. Backends may implement these for
 // better performance; the graph layer falls back to decomposed operations when
 // unavailable.
@@ -315,6 +438,19 @@ func (a ActivationType) String() string {
 // Like with standard ops, if the backend doesn't implement the fused op, return
 // ErrNotImplemented (wrapped with a stack).
 type FusedOps interface {
+	// FusedActivation applies the configured activation function.
+	// cfg.Type is obligatory, other fields are optional and specific for activations.
+	FusedActivation(x Value, cfg ActivationConfig) (Value, error)
+
+	// FusedActivationVJP computes the vector-jacobian product of the configured activation:
+	// dx = dOutput * f'(x) (or dOutput * f'(y)).
+	//
+	// Parameters:
+	//   - y: output of the activation, calculated presumably by FusedActivation.
+	//   - x: input to the activation. If cfg.Type.VJPRequiresInput() is false, x can be nil if y is provided.
+	//   - dOutput: the incoming adjoint gradient (the "V" in "VJP"), with the same shape as y.
+	//   - cfg: the activation configuration.
+	FusedActivationVJP(y, x, dOutput Value, cfg ActivationConfig) (Value, error)
 
 	// FusedSoftmax computes softmax along the specified axis.
 	//
@@ -322,11 +458,6 @@ type FusedOps interface {
 	// softmax only accepts one axis. The axis must be non-negative (the caller
 	// normalizes negative indices before calling).
 	FusedSoftmax(x Value, axis int) (Value, error)
-
-	// FusedGelu computes Gaussian Error Linear Unit activation.
-	// If exact is true, the exact GELU (using erf) is computed;
-	// otherwise the tanh approximation is used.
-	FusedGelu(x Value, exact bool) (Value, error)
 
 	// FusedLayerNorm applies layer normalization over specified axes.
 	// gamma and beta can be nil if no learned scale/offset.
