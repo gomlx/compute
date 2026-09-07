@@ -107,7 +107,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		}
 		defer ReleaseBuffer(accumOutputRef)
 		for item := range workChan {
-			for batchIdx := item.batchStart; batchIdx < item.batchEnd; batchIdx++ {
+			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				batchRHS := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
@@ -116,7 +116,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 					layout,
 					batchLHS, batchRHS, batchOutput,
 					lhsCrossSize, rhsCrossSize, contractingSize,
-					item.lhsRowStart, item.lhsRowEnd, item.rhsColStart, item.rhsColEnd,
+					item.LHSRowStart, item.LHSRowEnd, item.RHSColStart, item.RHSColEnd,
 					params,
 					packedLHS, packedRHS, packedOutput,
 					accumOutput,

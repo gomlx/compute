@@ -373,3 +373,30 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 		panelPtr += uintptr(contractingCols) * kernelRowsBytes
 	}
 }
+
+// PackLHS packs a block of size [copyRows, contractingCols] from the lhs matrix into a panel.
+func PackLHS[T gotype.ScalarNotComplex](
+	lhs, panel []T,
+	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
+	packLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
+}
+
+// PackRHS packs a slice of size [contractingRows, rhsCols] block from RHS into the panel.
+func PackRHS[T gotype.ScalarNotComplex](
+	src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+	packRHS(src, dst, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols)
+}
+
+// UnsafePackLHS is identical to PackLHS but eliminates boundary checks by using unsafe pointers.
+func UnsafePackLHS[T gotype.ScalarNotComplex](
+	lhs, panel []T,
+	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
+	unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
+}
+
+// UnsafePackRHS is an optimized version of PackRHS that eliminates bounds checks and slice overhead.
+func UnsafePackRHS[T gotype.ScalarNotComplex](
+	src, dst []T, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols int) {
+	unsafePackRHS(src, dst, srcRowStart, srcColStart, srcStrideCol, contractingRows, rhsCols, RHSL1KernelCols)
+}
+

@@ -451,52 +451,72 @@ Cache parameters can be tuned or overridden via environment variables:
 
 ---
 
-## 10. File Map & Code Generation
+## 10. File Map & Directory Structure
 
-Because `matmul` provides high performance across multiple architectures and data types, Go template generation is used to maintain symmetry:
+To keep the codebase modular, clean, and easily navigable, the AVX-512 and AVX2 implementations are separated into dedicated subdirectories (`avx512/` and `avx2/`), each with their own package namespace registering into `dot`:
+
+### `matmul/` (Core & Pure-Go / No-SIMD)
 
 | File | Purpose |
 | :--- | :--- |
-| `matmul.go` | Cache parameters, priority constants, and feature flags. |
-| `avx512_router.go` | Routes between Small and Large AVX-512 kernels. |
-| `avx512_small.go` | Dispatcher for AVX-512 small matrix multiplication across layouts. |
-| `avx512_small_transposed.go` | Base template for AVX-512 small transposed matmul caller ($4 \times 4$ tiling). |
-| `avx512_small_transposed_amd64.s` | Handwritten AVX-512 small transposed $4 \times 4$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx512_small_nontransposed.go` | Base template for AVX-512 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
-| `avx512_small_nontransposed_amd64.s` | Handwritten AVX-512 small non-transposed $4 \times 64$ and $4 \times 16$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx512_large.go` | Base template for AVX-512 large matrix multiplication (Go SIMD + Assembly caller). |
-| `avx512_large_amd64.go` | Assembly function forward declarations (`//go:noescape`). |
-| `avx512_large_amd64_*.s` | Handwritten AVX-512 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx512_pack_amd64_*.s` | Handwritten AVX-512 fast LHS transposition and packing kernels. |
-| `avx512_pack_rhs_amd64.s` | Handwritten AVX-512 unrolled RHS strip packing kernel. |
-| `avx2_router.go` | Routes between Small and Large AVX2 kernels. |
-| `avx2_small.go` | Dispatcher for AVX2 small matrix multiplication across layouts. |
-| `avx2_small_transposed.go` | Base template for AVX2 small transposed matmul caller ($4 \times 2$ and $4 \times 1$ tiling). |
-| `avx2_small_transposed_amd64.s` | Handwritten AVX2 small transposed $4 \times 2$ and $4 \times 1$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx2_small_nontransposed.go` | Base template for AVX2 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
-| `avx2_small_nontransposed_amd64.s` | Handwritten AVX2 small non-transposed $4 \times 16$ and $4 \times 8$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx2_large.go` | Base template for AVX2 large matrix multiplication (Go SIMD + Assembly caller). |
-| `avx2_large_amd64.go` | AVX2 assembly function forward declarations (`//go:noescape`). |
-| `avx2_large_amd64_*.s` | Handwritten AVX2 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
-| `avx2_pack_amd64_*.s` | Handwritten AVX2 fast LHS transposition and packing kernels. |
-| `avx2_pack_rhs_amd64.s` | Handwritten AVX2 unrolled RHS strip packing kernel. |
-| `avx2_*.go` | AVX2 (256-bit SIMD) router, small kernels, large kernels, and transpositions. |
-| `nosimd.go` | Architecture-agnostic portable Go fallback router and 2D partitioner. |
+| `matmul.go` | Cache parameters (`CacheParams`), priority constants, and feature flags. |
+| `nosimd.go` | Architecture-agnostic portable Go fallback router, 2D partitioner (`Choose2DSplit`), `FeedWorkItems`, and buffer utilities. |
 | `nosimd_large.go` | Base template for No-SIMD large matrix multiplication (zero-copy direct output bypass, 8-step unrolled $2 \times 4$ microkernel). |
-| `gen_*` | **Auto-generated files** created by `alternates_generator` for alternative dtypes (`f16`, `bf16`, `f64`, `half`). |
+| `nosimd_small.go` | Base template for No-SIMD small matrix multiplication. |
+| `nosimd_small_transposed.go` | Base template for No-SIMD small transposed matrix multiplication ($4 \times 4$ scalar registers). |
+| `nosimd_small_safe.go` | Safe bounds-checked fallback for small matrix multiplication. |
+| `packing.go` | Portable Go and unsafe implementations of LHS/RHS packing (`PackLHS`, `PackRHS`, `UnsafePackLHS`, `UnsafePackRHS`). |
+| `matmultest/` | Dedicated testing package with generic test runners for packing and output accumulation. |
+
+### `matmul/avx512/` (AVX-512 Acceleration)
+
+| File | Purpose |
+| :--- | :--- |
+| `avx512.go` | AVX-512 cache parameters, registration into `dot`, and horizontal vector reductions. |
+| `router.go` | Routes between Small and Large AVX-512 kernels. |
+| `small.go` | Dispatcher for AVX-512 small matrix multiplication across layouts. |
+| `small_transposed.go` | Base template for AVX-512 small transposed matmul caller ($4 \times 4$ tiling). |
+| `small_transposed_amd64.s` | Handwritten AVX-512 small transposed $4 \times 4$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `small_nontransposed.go` | Base template for AVX-512 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
+| `small_nontransposed_amd64.s` | Handwritten AVX-512 small non-transposed $4 \times 64$ and $4 \times 16$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `large.go` | Base template for AVX-512 large matrix multiplication (Go SIMD + Assembly caller). |
+| `large_amd64.go` | Assembly function forward declarations (`//go:noescape`). |
+| `large_amd64_*.s` | Handwritten AVX-512 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `pack_amd64_*.s` | Handwritten AVX-512 fast LHS transposition and packing kernels. |
+| `pack_rhs_amd64.s` | Handwritten AVX-512 unrolled RHS strip packing kernel. |
+| `transpose.go` | Fast in-register matrix transposition kernels for packing. |
+
+### `matmul/avx2/` (AVX2 Acceleration)
+
+| File | Purpose |
+| :--- | :--- |
+| `avx2.go` | AVX2 cache parameters, registration into `dot`, and horizontal vector reductions. |
+| `router.go` | Routes between Small and Large AVX2 kernels. |
+| `small.go` | Dispatcher for AVX2 small matrix multiplication across layouts. |
+| `small_transposed.go` | Base template for AVX2 small transposed matmul caller ($4 \times 2$ and $4 \times 1$ tiling). |
+| `small_transposed_amd64.s` | Handwritten AVX2 small transposed $4 \times 2$ and $4 \times 1$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `small_nontransposed.go` | Base template for AVX2 small non-transposed matmul caller (GEMV direct, stack transposition, column tiling). |
+| `small_nontransposed_amd64.s` | Handwritten AVX2 small non-transposed $4 \times 16$ and $4 \times 8$ assembly kernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `large.go` | Base template for AVX2 large matrix multiplication (Go SIMD + Assembly caller). |
+| `large_amd64.go` | AVX2 assembly function forward declarations (`//go:noescape`). |
+| `large_amd64_*.s` | Handwritten AVX2 GEMM microkernels (`float32`, `float64`, `float16`, `bfloat16`). |
+| `pack_amd64_*.s` | Handwritten AVX2 fast LHS transposition and packing kernels. |
+| `pack_rhs_amd64.s` | Handwritten AVX2 unrolled RHS strip packing kernel. |
+| `transpose.go` | Fast in-register matrix transposition kernels for packing. |
 
 ### Regenerating Alternates
-When modifying any of the base template files (e.g. `avx512_large.go`, `avx2_large.go`, `nosimd_large.go`), regenerate the type-specific files:
+When modifying any of the base template files, regenerate the type-specific alternates:
 
 ```bash
-go generate ./internal/gobackend/dot/matmul
+# Regenerate all alternates across matmul and SIMD subpackages:
+go generate ./internal/gobackend/dot/matmul/...
 ```
 
 ### Running Tests & Benchmarks
 
 ```bash
-# Run all matmul internal tests:
-go test -v ./internal/gobackend/dot/matmul
+# Run all matmul internal tests (including avx512 and avx2):
+go test -v ./internal/gobackend/dot/matmul/...
 
 # Run backend compliance tests:
 go test -v -run TestCompliance ./gobackend
@@ -511,7 +531,7 @@ go test -run none -bench BenchmarkCompliance/DotGeneral/Large ./gobackend
 $ GOMLX_GO_SIMD_AVX512=0 go test -run none -bench Compliance/DotGeneral ./gobackend
 
 # Test strictly without SIMD (portable pure Go):
-$ GOEXPERIMENT="" nice -n -20 go test -v ./internal/gobackend/dot/matmul -run TestNoSIMD
+$ GOEXPERIMENT="" nice -n -20 go test -v ./internal/gobackend/dot/matmul/...
 $ GOEXPERIMENT="" nice -n -20 go test -v -run TestCompliance ./gobackend
 ```
 

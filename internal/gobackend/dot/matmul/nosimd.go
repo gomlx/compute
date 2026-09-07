@@ -36,16 +36,18 @@ var (
 		RHSPanelCrossSize:    512, // Nc: Block Width fitting L2/L3 cache.
 	}
 
-	// Threshold in byte size for switching to the small matrix multiplication kernel.
+	// SmallMatMulSizeThreshold is the threshold in byte size for switching to the small matrix multiplication kernel.
 	// If the total number of operations is below this threshold, the small
 	// matrix multiplication kernel is used instead of the tiled implementation.
 	// This is a heuristic and may need to be tuned for different architectures.
 	// Expressed in number of bytes.
-	noSIMDSmallMatMulSizeThreshold = 4 * 1024 * 1024
+	SmallMatMulSizeThreshold = 4 * 1024 * 1024
+	noSIMDSmallMatMulSizeThreshold = SmallMatMulSizeThreshold
 
-	// Minimum number of flops per worker: above this number, if possible we should
+	// MinMatMulFlopsPerWorker is the minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	noSIMDMinMatMulFlopsPerWorker = 32 * 1024
+	MinMatMulFlopsPerWorker = 32 * 1024
+	noSIMDMinMatMulFlopsPerWorker = MinMatMulFlopsPerWorker
 )
 
 func init() {
@@ -175,15 +177,17 @@ func ReleaseBuffer(ref *gobackend.Buffer) {
 	ref.Backend().(*gobackend.Backend).PutBuffer(ref)
 }
 
-// workItem is used when parallelizing the DotGeneral: it allows spliting the work into batch/lhs/rhs slices.
-type workItem struct {
-	batchStart, batchEnd,
-	lhsRowStart, lhsRowEnd,
-	rhsColStart, rhsColEnd int
+// WorkItem is used when parallelizing the DotGeneral: it allows splitting the work into batch/lhs/rhs slices.
+type WorkItem struct {
+	BatchStart, BatchEnd,
+	LHSRowStart, LHSRowEnd,
+	RHSColStart, RHSColEnd int
 }
 
-// choose2DSplit determines the 2D grid (numM, numN) of workers to divide an M x N matrix multiplication.
-func choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int) {
+type workItem = WorkItem
+
+// Choose2DSplit determines the 2D grid (numM, numN) of workers to divide an M x N matrix multiplication.
+func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int) {
 	if targetWorkers <= 1 {
 		return 1, 1
 	}
@@ -256,23 +260,25 @@ func choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 	return bestNumM, bestNumN
 }
 
-// feedWorkItems split the matrix-multiplication tasks into "workItems" optimized
+var choose2DSplit = Choose2DSplit
+
+// FeedWorkItems splits the matrix-multiplication tasks into "WorkItem"s optimized
 // for maxWorkers (>=1).
 // It closes workChan on exit.
 //
-// feedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
-func feedWorkItems(
+// FeedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
+func FeedWorkItems(
 	batchSize, lhsCrossSize, rhsCrossSize int,
 	params *CacheParams,
 	maxWorkers int,
-	workChan chan<- workItem) {
+	workChan chan<- WorkItem) {
 	defer func() {
 		// Invariant: it closes the channel on exit.
 		close(workChan)
 	}()
 
 	if maxWorkers <= 1 {
-		workChan <- workItem{
+		workChan <- WorkItem{
 			0, batchSize,
 			0, lhsCrossSize,
 			0, rhsCrossSize,
@@ -284,7 +290,7 @@ func feedWorkItems(
 		// Split the work on the batch dimension only.
 		batchStep := (batchSize + maxWorkers - 1) / maxWorkers
 		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
-			workChan <- workItem{
+			workChan <- WorkItem{
 				batchIdx, min(batchSize, batchIdx+batchStep),
 				0, lhsCrossSize,
 				0, rhsCrossSize,
@@ -296,7 +302,7 @@ func feedWorkItems(
 	if batchSize >= maxWorkers {
 		// Plenty of batch items: each worker gets whole batch items dynamically.
 		for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
-			workChan <- workItem{
+			workChan <- WorkItem{
 				batchIdx, batchIdx + 1,
 				0, lhsCrossSize,
 				0, rhsCrossSize,
@@ -325,7 +331,7 @@ func feedWorkItems(
 		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
 			colEnd := min(rhsCrossSize, rhsColIdx+rhsSplitSize)
 			for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
-				workChan <- workItem{
+				workChan <- WorkItem{
 					batchIdx, batchIdx + 1,
 					lhsRowIdx, rowEnd,
 					rhsColIdx, colEnd,
@@ -334,6 +340,8 @@ func feedWorkItems(
 		}
 	}
 }
+
+var feedWorkItems = FeedWorkItems
 
 // applyPackedOutput applies the computed packedOutput to the final output.
 func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
@@ -365,6 +373,18 @@ func noSIMDApplyPackedOutput[T gotype.ScalarNotComplex](
 			outputRowIdx += outputRowStride
 		}
 	}
+}
+
+// ApplyPackedOutput applies the computed packedOutput to the final output.
+func ApplyPackedOutput[T gotype.ScalarNotComplex](
+	packedOutput, output []T,
+	isFirstContractingPanel bool,
+	packedOutputRowStride int,
+	lhsRowOffset, rhsColOffset int, // Global output offsets
+	outputRowStride int,
+	height, width int, // actual amount of data to copy
+) {
+	noSIMDApplyPackedOutput(packedOutput, output, isFirstContractingPanel, packedOutputRowStride, lhsRowOffset, rhsColOffset, outputRowStride, height, width)
 }
 
 // TestNoSIMDRouterFloat32 exposes noSIMDRouter for testing and benchmarking.
