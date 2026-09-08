@@ -659,12 +659,20 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 	default:
 		// Single output node:
-		executor := nodeExecutors[node.OpType]
-		if executor == nil {
+		executors := nodeExecutors[node.OpType]
+		if len(executors) == 0 {
 			return errors.Errorf("no executor for op %s", node.OpType)
 		}
 
-		result, err := executor(backend, node, inputBuffers, inputsOwned)
+		var result *Buffer
+		var err error
+		for _, entry := range executors {
+			result, err = entry.executor(backend, node, inputBuffers, inputsOwned)
+			if err == ErrNotImplemented {
+				continue
+			}
+			break
+		}
 		if err != nil {
 			return errors.WithMessagef(err, "executing %s", node.OpType)
 		}

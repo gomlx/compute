@@ -3,6 +3,7 @@
 package gobackend
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/gomlx/compute"
@@ -58,8 +59,7 @@ func (e *Executable) Inputs() (names []string, inputShapes []shapes.Shape) {
 	names = make([]string, numInputs)
 	inputShapes = make([]shapes.Shape, numInputs)
 	for ii, node := range params {
-		parameter := node.Data.(*NodeParameter)
-		names[ii] = parameter.Name
+		names[ii] = node.Data.(*NodeParameter).Name
 		inputShapes[ii] = node.Shape
 	}
 	return
@@ -90,13 +90,19 @@ func newExecutable(builder *Builder, mainFn *FunctionExecutable) *Executable {
 	}
 }
 
-// NodeExecutor for the given operation type.
+// NodeExecutor defines the signature of a node execution function.
 //
-// It is given the buffers for its inputs, and a reserved buffer where to store its output, already
-// with the shape pre-calculated.
+// node is the node being executed.
+// inputs are the input buffers to the node. If the node owns the input buffer (inputsOwned[i] is true),
+// the executor may donate/reuse the buffer for the output, and MUST set inputs[i] to nil to signal ownership
+// transfer.
+//
+// If the executor does not implement the operation for the given input combination (e.g. unsupported DType or
+// broadcast pattern), it should return ErrNotImplemented without modifying inputs or inputsOwned, allowing
+// the backend to fall back to the next registered executor.
 type NodeExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) (*Buffer, error)
 
-// nodeMultiOutputExecutor is a version of a node executor when it returns multiple outputs.
+// nodeMultiOutputExecutor is an executor for operations that produce multiple outputs (e.g. RNGBitGenerator).
 type nodeMultiOutputExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool) ([]*Buffer, error)
 
 // ClosureInputs holds the captured inputs and their ownership for a single closure.
@@ -115,14 +121,18 @@ type ClosureInputs struct {
 // closureInputs is a slice with one entry per closure the operation uses.
 type nodeClosureExecutor func(backend *Backend, node *Node, inputs []*Buffer, inputsOwned []bool, closureInputs []ClosureInputs) ([]*Buffer, error)
 
+type executorEntry struct {
+	priority RegisterPriority
+	executor NodeExecutor
+}
+
+// ErrNotImplemented is returned by a NodeExecutor when it does not support the given input combination
+// (e.g. data type or broadcast pattern), signaling the execution engine to fall back to the next registered executor.
+var ErrNotImplemented = errors.New("node executor not implemented for input combination")
+
 var (
-	// nodeExecutors should be populated during initialization (`init` functions) for the ops implemented.
-	// For the nodes not implemented, leave it as nil, and it will return an error.
-	//
-	// nodeExecutors should be populated with a priority (see setNodeExecutor), which can conctorl whether
-	// to overwrite a nodeExecutors configuration independent of the order of settting.
-	nodeExecutors         [compute.OpTypeLast]NodeExecutor
-	nodeExecutorsPriority [compute.OpTypeLast]RegisterPriority
+	// nodeExecutors maps OpType to registered executors sorted in descending order of priority.
+	nodeExecutors [compute.OpTypeLast][]executorEntry
 
 	// MultiOutputsNodeExecutors should be populated during initialization for the multi-output ops
 	// implemented. E.g.: RNGBitGenerator.
@@ -146,14 +156,18 @@ const (
 )
 
 // SetNodeExecutor sets the node executor for the given operation type with the specified priority.
-// If the priority is lower than the current priority for the operation type, the executor is ignored.
+// Executors are stored in descending order of priority so higher-priority implementations are tried first.
 func SetNodeExecutor(opType compute.OpType, priority RegisterPriority, executor NodeExecutor) {
-	if priority < nodeExecutorsPriority[opType] {
-		// We have something registered with higher priority, ignore.
+	if priority < 0 || executor == nil {
 		return
 	}
-	nodeExecutorsPriority[opType] = priority
-	nodeExecutors[opType] = executor
+	entries := nodeExecutors[opType]
+	newEntry := executorEntry{priority: priority, executor: executor}
+	idx := 0
+	for idx < len(entries) && entries[idx].priority >= priority {
+		idx++
+	}
+	nodeExecutors[opType] = slices.Insert(entries, idx, newEntry)
 }
 
 type OpsExecutionType int
