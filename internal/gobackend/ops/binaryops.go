@@ -191,7 +191,11 @@ func GetBroadcastConfig(node *gobackend.Node, lhs, rhs, output *gobackend.Buffer
 			return *cfg
 		}
 	}
-	return gobackend.DetermineBroadcastConfig(lhs.RawShape, rhs.RawShape, output.RawShape)
+	tgtShape := node.Shape
+	if output != nil {
+		tgtShape = output.RawShape
+	}
+	return gobackend.DetermineBroadcastConfig(lhs.RawShape, rhs.RawShape, tgtShape)
 }
 
 // binaryOperandsAndOutputForExecution is a convenience function to get the inputs and output -- which may be the reuse of the input.

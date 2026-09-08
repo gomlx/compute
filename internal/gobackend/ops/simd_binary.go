@@ -5,6 +5,7 @@
 package ops
 
 import (
+	"slices"
 	"simd"
 
 	"github.com/gomlx/compute"
@@ -21,6 +22,8 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeSub, PrioritySIMD, execSubSIMD)
 	gobackend.SetNodeExecutor(compute.OpTypeMul, PrioritySIMD, execMulSIMD)
 	gobackend.SetNodeExecutor(compute.OpTypeDiv, PrioritySIMD, execDivSIMD)
+	gobackend.SetNodeExecutor(compute.OpTypeMax, PrioritySIMD, execMaxSIMD)
+	gobackend.SetNodeExecutor(compute.OpTypeMin, PrioritySIMD, execMinSIMD)
 }
 
 // -----------------------------------------------------------------------------
@@ -924,8 +927,670 @@ func simdDivSVFloat16(c float16.Float16, rhs []float16.Float16, out []float16.Fl
 }
 
 // -----------------------------------------------------------------------------
-// Pattern Dispatch Helper
+// Pattern Dispatch Helper and Broadcast Fast-Paths
 // -----------------------------------------------------------------------------
+
+func canExecuteBinarySIMD(node *gobackend.Node, lhs, rhs *gobackend.Buffer, supportedDTypes []dtypes.DType) bool {
+	dtype := lhs.RawShape.DType
+	if !slices.Contains(supportedDTypes, dtype) {
+		return false
+	}
+	if lhs.RawShape.Size() == 1 || rhs.RawShape.Size() == 1 {
+		return true
+	}
+	cfg := GetBroadcastConfig(node, lhs, rhs, nil)
+	return cfg.Pattern != gobackend.BroadcastGeneral
+}
+
+func simdV2V1AddFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Add(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Add(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Add(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Add(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2AddFloat32(lhs, rhs, out []float32, A, B int) {
+	simdV2V1AddFloat32(rhs, lhs, out, A, B)
+}
+
+func simdV2V1MulFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Mul(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Mul(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Mul(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Mul(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2MulFloat32(lhs, rhs, out []float32, A, B int) {
+	simdV2V1MulFloat32(rhs, lhs, out, A, B)
+}
+
+func simdV2V1SubFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Sub(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Sub(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Sub(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Sub(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2SubFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vL := simd.LoadFloat32s(lhs)
+		for a := range A {
+			off := a * B
+			vL.Sub(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Sub(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Sub(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		rRow := rhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lhs[i:])
+			vR, _ := simd.LoadFloat32sPart(rRow[i:])
+			vL.Sub(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV2V1DivFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Div(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Div(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Div(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Div(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Div(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2DivFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vL := simd.LoadFloat32s(lhs)
+		for a := range A {
+			off := a * B
+			vL.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Div(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		rRow := rhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lhs[i:])
+			vR, _ := simd.LoadFloat32sPart(rRow[i:])
+			vL.Div(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV2V1MaxFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Max(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Max(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Max(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Max(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2MaxFloat32(lhs, rhs, out []float32, A, B int) {
+	simdV2V1MaxFloat32(rhs, lhs, out, A, B)
+}
+
+func simdV2V1MinFloat32(lhs, rhs, out []float32, A, B int) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	if B == vLen {
+		vR := simd.LoadFloat32s(rhs)
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Min(vR).Store(out[off:])
+		}
+		return
+	}
+	if B == 2*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Min(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Min(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	for a := range A {
+		off := a * B
+		lRow := lhs[off : off+B]
+		oRow := out[off : off+B]
+		i := 0
+		for ; i+vLen <= B; i += vLen {
+			simd.LoadFloat32s(lRow[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+		}
+		if i < B {
+			vL, _ := simd.LoadFloat32sPart(lRow[i:])
+			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL.Min(vR).StorePart(oRow[i:])
+		}
+	}
+}
+
+func simdV1V2MinFloat32(lhs, rhs, out []float32, A, B int) {
+	simdV2V1MinFloat32(rhs, lhs, out, A, B)
+}
+
+// -----------------------------------------------------------------------------
+// Max and Min Primitives
+// -----------------------------------------------------------------------------
+
+// Float32
+func simdMaxVVFloat32(lhs, rhs, out []float32) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(lhs[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL.Max(vR).StorePart(out[i:])
+	}
+}
+
+func simdMaxVSFloat32(lhs []float32, c float32, out []float32) {
+	vC := simd.BroadcastFloat32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(lhs[i:]).Max(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL.Max(vC).StorePart(out[i:])
+	}
+}
+
+func simdMinVVFloat32(lhs, rhs, out []float32) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(lhs[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL.Min(vR).StorePart(out[i:])
+	}
+}
+
+func simdMinVSFloat32(lhs []float32, c float32, out []float32) {
+	vC := simd.BroadcastFloat32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(lhs[i:]).Min(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL.Min(vC).StorePart(out[i:])
+	}
+}
+
+// Float64
+func simdMaxVVFloat64(lhs, rhs, out []float64) {
+	vLen := simd.BroadcastFloat64s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(lhs[i:]).Max(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL.Max(vR).StorePart(out[i:])
+	}
+}
+
+func simdMaxVSFloat64(lhs []float64, c float64, out []float64) {
+	vC := simd.BroadcastFloat64s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(lhs[i:]).Max(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL.Max(vC).StorePart(out[i:])
+	}
+}
+
+func simdMinVVFloat64(lhs, rhs, out []float64) {
+	vLen := simd.BroadcastFloat64s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(lhs[i:]).Min(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL.Min(vR).StorePart(out[i:])
+	}
+}
+
+func simdMinVSFloat64(lhs []float64, c float64, out []float64) {
+	vC := simd.BroadcastFloat64s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(lhs[i:]).Min(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL.Min(vC).StorePart(out[i:])
+	}
+}
+
+// Int32
+func simdMaxVVInt32(lhs, rhs, out []int32) {
+	vLen := simd.BroadcastInt32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadInt32s(lhs[i:]).Max(simd.LoadInt32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL.Max(vR).StorePart(out[i:])
+	}
+}
+
+func simdMaxVSInt32(lhs []int32, c int32, out []int32) {
+	vC := simd.BroadcastInt32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadInt32s(lhs[i:]).Max(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL.Max(vC).StorePart(out[i:])
+	}
+}
+
+func simdMinVVInt32(lhs, rhs, out []int32) {
+	vLen := simd.BroadcastInt32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadInt32s(lhs[i:]).Min(simd.LoadInt32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL.Min(vR).StorePart(out[i:])
+	}
+}
+
+func simdMinVSInt32(lhs []int32, c int32, out []int32) {
+	vC := simd.BroadcastInt32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadInt32s(lhs[i:]).Min(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL.Min(vC).StorePart(out[i:])
+	}
+}
+
+// Uint32
+func simdMaxVVUint32(lhs, rhs, out []uint32) {
+	vLen := simd.BroadcastUint32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadUint32s(lhs[i:]).Max(simd.LoadUint32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL.Max(vR).StorePart(out[i:])
+	}
+}
+
+func simdMaxVSUint32(lhs []uint32, c uint32, out []uint32) {
+	vC := simd.BroadcastUint32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadUint32s(lhs[i:]).Max(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL.Max(vC).StorePart(out[i:])
+	}
+}
+
+func simdMinVVUint32(lhs, rhs, out []uint32) {
+	vLen := simd.BroadcastUint32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadUint32s(lhs[i:]).Min(simd.LoadUint32s(rhs[i:])).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL.Min(vR).StorePart(out[i:])
+	}
+}
+
+func simdMinVSUint32(lhs []uint32, c uint32, out []uint32) {
+	vC := simd.BroadcastUint32s(c)
+	vLen := vC.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadUint32s(lhs[i:]).Min(vC).Store(out[i:])
+	}
+	if i < len(out) {
+		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL.Min(vC).StorePart(out[i:])
+	}
+}
+
+// BFloat16
+func simdMaxVVBFloat16(lhs, rhs, out []bfloat16.BFloat16) {
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(lhs[i : i+vLen]))
+		eR, oR := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(rhs[i : i+vLen]))
+		bfloat16.StoreBFloat16s(bfloat16.FromFloat32SIMD(eL.Max(eR), oL.Max(oR)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := bfloat16.LoadBFloat16sPart(lhs[i:])
+		vR, _ := bfloat16.LoadBFloat16sPart(rhs[i:])
+		eL, oL := bfloat16.ToFloat32SIMD(vL)
+		eR, oR := bfloat16.ToFloat32SIMD(vR)
+		bfloat16.StoreBFloat16sPart(bfloat16.FromFloat32SIMD(eL.Max(eR), oL.Max(oR)), out[i:])
+	}
+}
+
+func simdMaxVSBFloat16(lhs []bfloat16.BFloat16, c bfloat16.BFloat16, out []bfloat16.BFloat16) {
+	vC := simd.BroadcastFloat32s(c.Float32())
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(lhs[i : i+vLen]))
+		bfloat16.StoreBFloat16s(bfloat16.FromFloat32SIMD(eL.Max(vC), oL.Max(vC)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := bfloat16.LoadBFloat16sPart(lhs[i:])
+		eL, oL := bfloat16.ToFloat32SIMD(vL)
+		bfloat16.StoreBFloat16sPart(bfloat16.FromFloat32SIMD(eL.Max(vC), oL.Max(vC)), out[i:])
+	}
+}
+
+func simdMinVVBFloat16(lhs, rhs, out []bfloat16.BFloat16) {
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(lhs[i : i+vLen]))
+		eR, oR := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(rhs[i : i+vLen]))
+		bfloat16.StoreBFloat16s(bfloat16.FromFloat32SIMD(eL.Min(eR), oL.Min(oR)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := bfloat16.LoadBFloat16sPart(lhs[i:])
+		vR, _ := bfloat16.LoadBFloat16sPart(rhs[i:])
+		eL, oL := bfloat16.ToFloat32SIMD(vL)
+		eR, oR := bfloat16.ToFloat32SIMD(vR)
+		bfloat16.StoreBFloat16sPart(bfloat16.FromFloat32SIMD(eL.Min(eR), oL.Min(oR)), out[i:])
+	}
+}
+
+func simdMinVSBFloat16(lhs []bfloat16.BFloat16, c bfloat16.BFloat16, out []bfloat16.BFloat16) {
+	vC := simd.BroadcastFloat32s(c.Float32())
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := bfloat16.ToFloat32SIMD(bfloat16.LoadBFloat16s(lhs[i : i+vLen]))
+		bfloat16.StoreBFloat16s(bfloat16.FromFloat32SIMD(eL.Min(vC), oL.Min(vC)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := bfloat16.LoadBFloat16sPart(lhs[i:])
+		eL, oL := bfloat16.ToFloat32SIMD(vL)
+		bfloat16.StoreBFloat16sPart(bfloat16.FromFloat32SIMD(eL.Min(vC), oL.Min(vC)), out[i:])
+	}
+}
+
+// Float16
+func simdMaxVVFloat16(lhs, rhs, out []float16.Float16) {
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := float16.ToFloat32SIMD(float16.LoadFloat16s(lhs[i : i+vLen]))
+		eR, oR := float16.ToFloat32SIMD(float16.LoadFloat16s(rhs[i : i+vLen]))
+		float16.StoreFloat16s(float16.FromFloat32SIMD(eL.Max(eR), oL.Max(oR)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := float16.LoadFloat16sPart(lhs[i:])
+		vR, _ := float16.LoadFloat16sPart(rhs[i:])
+		eL, oL := float16.ToFloat32SIMD(vL)
+		eR, oR := float16.ToFloat32SIMD(vR)
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(eL.Max(eR), oL.Max(oR)), out[i:])
+	}
+}
+
+func simdMaxVSFloat16(lhs []float16.Float16, c float16.Float16, out []float16.Float16) {
+	vC := simd.BroadcastFloat32s(c.Float32())
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := float16.ToFloat32SIMD(float16.LoadFloat16s(lhs[i : i+vLen]))
+		float16.StoreFloat16s(float16.FromFloat32SIMD(eL.Max(vC), oL.Max(vC)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := float16.LoadFloat16sPart(lhs[i:])
+		eL, oL := float16.ToFloat32SIMD(vL)
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(eL.Max(vC), oL.Max(vC)), out[i:])
+	}
+}
+
+func simdMinVVFloat16(lhs, rhs, out []float16.Float16) {
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := float16.ToFloat32SIMD(float16.LoadFloat16s(lhs[i : i+vLen]))
+		eR, oR := float16.ToFloat32SIMD(float16.LoadFloat16s(rhs[i : i+vLen]))
+		float16.StoreFloat16s(float16.FromFloat32SIMD(eL.Min(eR), oL.Min(oR)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := float16.LoadFloat16sPart(lhs[i:])
+		vR, _ := float16.LoadFloat16sPart(rhs[i:])
+		eL, oL := float16.ToFloat32SIMD(vL)
+		eR, oR := float16.ToFloat32SIMD(vR)
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(eL.Min(eR), oL.Min(oR)), out[i:])
+	}
+}
+
+func simdMinVSFloat16(lhs []float16.Float16, c float16.Float16, out []float16.Float16) {
+	vC := simd.BroadcastFloat32s(c.Float32())
+	vLen := simd.BroadcastUint16s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		eL, oL := float16.ToFloat32SIMD(float16.LoadFloat16s(lhs[i : i+vLen]))
+		float16.StoreFloat16s(float16.FromFloat32SIMD(eL.Min(vC), oL.Min(vC)), out[i:i+vLen])
+	}
+	if i < len(out) {
+		vL, _ := float16.LoadFloat16sPart(lhs[i:])
+		eL, oL := float16.ToFloat32SIMD(vL)
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(eL.Min(vC), oL.Min(vC)), out[i:])
+	}
+}
 
 func dispatchBinarySIMD[T any](
 	lhs, rhs, output []T,
@@ -933,7 +1598,9 @@ func dispatchBinarySIMD[T any](
 	vv func(lhs, rhs, out []T),
 	vs func(lhs []T, c T, out []T),
 	sv func(c T, rhs []T, out []T),
-) {
+	v2v1 func(lhs, rhs, out []T, A, B int),
+	v1v2 func(lhs, rhs, out []T, A, B int),
+) error {
 	switch {
 	case len(rhs) == 1:
 		vs(lhs, rhs[0], output)
@@ -943,15 +1610,23 @@ func dispatchBinarySIMD[T any](
 		vv(lhs, rhs, output)
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			vv(lhs[offset:offset+B], rhs[:B], output[offset:offset+B])
+		if v2v1 != nil {
+			v2v1(lhs, rhs, output, A, B)
+		} else {
+			for a := range A {
+				offset := a * B
+				vv(lhs[offset:offset+B], rhs[:B], output[offset:offset+B])
+			}
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			vv(lhs[:B], rhs[offset:offset+B], output[offset:offset+B])
+		if v1v2 != nil {
+			v1v2(lhs, rhs, output, A, B)
+		} else {
+			for a := range A {
+				offset := a * B
+				vv(lhs[:B], rhs[offset:offset+B], output[offset:offset+B])
+			}
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
@@ -978,28 +1653,31 @@ func dispatchBinarySIMD[T any](
 			vs(lhs[:B], rhs[a], output[offset:offset+B])
 		}
 	default:
-		// BroadcastGeneral: fallback to general iterator.
-		zipIter := bcastCfg.ZipIter
-		if zipIter == nil {
-			panic("missing zipIter for BroadcastGeneral")
-		}
-		for idx := range zipIter.IterFlatIndices() {
-			var singleOut [1]T
-			var singleL [1]T
-			var singleR [1]T
-			singleL[0] = lhs[idx.LHSFlatIdx]
-			singleR[0] = rhs[idx.RHSFlatIdx]
-			vv(singleL[:], singleR[:], singleOut[:])
-			output[idx.TgtFlatIdx] = singleOut[0]
-		}
+		return gobackend.ErrNotImplemented
 	}
+	return nil
 }
 
 // -----------------------------------------------------------------------------
 // Node Executors
 // -----------------------------------------------------------------------------
 
+var supportedAddSubDTypes = []dtypes.DType{
+	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Uint32, dtypes.Int64, dtypes.Uint64,
+}
+
+var supportedMulMaxMinDTypes = []dtypes.DType{
+	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Uint32,
+}
+
+var supportedDivDTypes = []dtypes.DType{
+	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16,
+}
+
 func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
@@ -1009,76 +1687,100 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
 
+	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
-			simdAddVVFloat32, simdAddVSFloat32, func(c float32, r []float32, out []float32) { simdAddVSFloat32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdAddVVFloat32, simdAddVSFloat32, func(c float32, r []float32, out []float32) { simdAddVSFloat32(r, c, out) },
+			simdV2V1AddFloat32, simdV1V2AddFloat32)
 	case dtypes.Float64:
-		dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
-			simdAddVVFloat64, simdAddVSFloat64, func(c float64, r []float64, out []float64) { simdAddVSFloat64(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdAddVVFloat64, simdAddVSFloat64, func(c float64, r []float64, out []float64) { simdAddVSFloat64(r, c, out) },
+			nil, nil)
 	case dtypes.BFloat16:
-		dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdAddVVBFloat16, simdAddVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdAddVSBFloat16(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdAddVVBFloat16, simdAddVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdAddVSBFloat16(r, c, out) },
+			nil, nil)
 	case dtypes.Float16:
-		dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
-			simdAddVVFloat16, simdAddVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdAddVSFloat16(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdAddVVFloat16, simdAddVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdAddVSFloat16(r, c, out) },
+			nil, nil)
 	case dtypes.Int32:
-		dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
-			simdAddVVInt32, simdAddVSInt32, func(c int32, r []int32, out []int32) { simdAddVSInt32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+			simdAddVVInt32, simdAddVSInt32, func(c int32, r []int32, out []int32) { simdAddVSInt32(r, c, out) },
+			nil, nil)
 	case dtypes.Uint32:
-		dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
-			simdAddVVUint32, simdAddVSUint32, func(c uint32, r []uint32, out []uint32) { simdAddVSUint32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+			simdAddVVUint32, simdAddVSUint32, func(c uint32, r []uint32, out []uint32) { simdAddVSUint32(r, c, out) },
+			nil, nil)
 	case dtypes.Int64:
-		dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
-			simdAddVVInt64, simdAddVSInt64, func(c int64, r []int64, out []int64) { simdAddVSInt64(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
+			simdAddVVInt64, simdAddVSInt64, func(c int64, r []int64, out []int64) { simdAddVSInt64(r, c, out) },
+			nil, nil)
 	case dtypes.Uint64:
-		dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
-			simdAddVVUint64, simdAddVSUint64, func(c uint64, r []uint64, out []uint64) { simdAddVSUint64(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
+			simdAddVVUint64, simdAddVSUint64, func(c uint64, r []uint64, out []uint64) { simdAddVSUint64(r, c, out) },
+			nil, nil)
 	default:
-		return execAdd(backend, node, inputs, inputsOwned)
+		return nil, gobackend.ErrNotImplemented
 	}
-	return output, nil
+	return output, err
 }
 
 func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if backend.NoOps {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
 
+	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
-			simdSubVVFloat32, simdSubVSFloat32, simdSubSVFloat32)
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdSubVVFloat32, simdSubVSFloat32, simdSubSVFloat32,
+			simdV2V1SubFloat32, simdV1V2SubFloat32)
 	case dtypes.Float64:
-		dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
-			simdSubVVFloat64, simdSubVSFloat64, simdSubSVFloat64)
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdSubVVFloat64, simdSubVSFloat64, simdSubSVFloat64,
+			nil, nil)
 	case dtypes.BFloat16:
-		dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdSubVVBFloat16, simdSubVSBFloat16, simdSubSVBFloat16)
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdSubVVBFloat16, simdSubVSBFloat16, simdSubSVBFloat16,
+			nil, nil)
 	case dtypes.Float16:
-		dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
-			simdSubVVFloat16, simdSubVSFloat16, simdSubSVFloat16)
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdSubVVFloat16, simdSubVSFloat16, simdSubSVFloat16,
+			nil, nil)
 	case dtypes.Int32:
-		dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
-			simdSubVVInt32, simdSubVSInt32, simdSubSVInt32)
+		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+			simdSubVVInt32, simdSubVSInt32, simdSubSVInt32,
+			nil, nil)
 	case dtypes.Uint32:
-		dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
-			simdSubVVUint32, simdSubVSUint32, simdSubSVUint32)
+		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+			simdSubVVUint32, simdSubVSUint32, simdSubSVUint32,
+			nil, nil)
 	case dtypes.Int64:
-		dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
-			simdSubVVInt64, simdSubVSInt64, simdSubSVInt64)
+		err = dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
+			simdSubVVInt64, simdSubVSInt64, simdSubSVInt64,
+			nil, nil)
 	case dtypes.Uint64:
-		dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
-			simdSubVVUint64, simdSubVSUint64, simdSubSVUint64)
+		err = dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
+			simdSubVVUint64, simdSubVSUint64, simdSubSVUint64,
+			nil, nil)
 	default:
-		return execSub(backend, node, inputs, inputsOwned)
+		return nil, gobackend.ErrNotImplemented
 	}
-	return output, nil
+	return output, err
 }
 
 func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
@@ -1088,53 +1790,158 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
 
+	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
-			simdMulVVFloat32, simdMulVSFloat32, func(c float32, r []float32, out []float32) { simdMulVSFloat32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdMulVVFloat32, simdMulVSFloat32, func(c float32, r []float32, out []float32) { simdMulVSFloat32(r, c, out) },
+			simdV2V1MulFloat32, simdV1V2MulFloat32)
 	case dtypes.Float64:
-		dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
-			simdMulVVFloat64, simdMulVSFloat64, func(c float64, r []float64, out []float64) { simdMulVSFloat64(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdMulVVFloat64, simdMulVSFloat64, func(c float64, r []float64, out []float64) { simdMulVSFloat64(r, c, out) },
+			nil, nil)
 	case dtypes.BFloat16:
-		dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdMulVVBFloat16, simdMulVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMulVSBFloat16(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdMulVVBFloat16, simdMulVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMulVSBFloat16(r, c, out) },
+			nil, nil)
 	case dtypes.Float16:
-		dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
-			simdMulVVFloat16, simdMulVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMulVSFloat16(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdMulVVFloat16, simdMulVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMulVSFloat16(r, c, out) },
+			nil, nil)
 	case dtypes.Int32:
-		dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
-			simdMulVVInt32, simdMulVSInt32, func(c int32, r []int32, out []int32) { simdMulVSInt32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+			simdMulVVInt32, simdMulVSInt32, func(c int32, r []int32, out []int32) { simdMulVSInt32(r, c, out) },
+			nil, nil)
 	case dtypes.Uint32:
-		dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
-			simdMulVVUint32, simdMulVSUint32, func(c uint32, r []uint32, out []uint32) { simdMulVSUint32(r, c, out) })
+		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+			simdMulVVUint32, simdMulVSUint32, func(c uint32, r []uint32, out []uint32) { simdMulVSUint32(r, c, out) },
+			nil, nil)
 	default:
-		return execMul(backend, node, inputs, inputsOwned)
+		return nil, gobackend.ErrNotImplemented
 	}
-	return output, nil
+	return output, err
 }
 
 func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedDivDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if backend.NoOps {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
 
+	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
-			simdDivVVFloat32, simdDivVSFloat32, simdDivSVFloat32)
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdDivVVFloat32, simdDivVSFloat32, simdDivSVFloat32,
+			simdV2V1DivFloat32, simdV1V2DivFloat32)
 	case dtypes.Float64:
-		dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
-			simdDivVVFloat64, simdDivVSFloat64, simdDivSVFloat64)
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdDivVVFloat64, simdDivVSFloat64, simdDivSVFloat64,
+			nil, nil)
 	case dtypes.BFloat16:
-		dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdDivVVBFloat16, simdDivVSBFloat16, simdDivSVBFloat16)
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdDivVVBFloat16, simdDivVSBFloat16, simdDivSVBFloat16,
+			nil, nil)
 	case dtypes.Float16:
-		dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
-			simdDivVVFloat16, simdDivVSFloat16, simdDivSVFloat16)
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdDivVVFloat16, simdDivVSFloat16, simdDivSVFloat16,
+			nil, nil)
 	default:
-		return execDiv(backend, node, inputs, inputsOwned)
+		return nil, gobackend.ErrNotImplemented
 	}
-	return output, nil
+	return output, err
+}
+
+func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
+	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
+		lhs, rhs = rhs, lhs
+	}
+	if backend.NoOps {
+		return output, nil
+	}
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
+	var err error
+	switch lhs.RawShape.DType {
+	case dtypes.Float32:
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdMaxVVFloat32, simdMaxVSFloat32, func(c float32, r []float32, out []float32) { simdMaxVSFloat32(r, c, out) },
+			simdV2V1MaxFloat32, simdV1V2MaxFloat32)
+	case dtypes.Float64:
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdMaxVVFloat64, simdMaxVSFloat64, func(c float64, r []float64, out []float64) { simdMaxVSFloat64(r, c, out) },
+			nil, nil)
+	case dtypes.BFloat16:
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdMaxVVBFloat16, simdMaxVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMaxVSBFloat16(r, c, out) },
+			nil, nil)
+	case dtypes.Float16:
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdMaxVVFloat16, simdMaxVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMaxVSFloat16(r, c, out) },
+			nil, nil)
+	case dtypes.Int32:
+		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+			simdMaxVVInt32, simdMaxVSInt32, func(c int32, r []int32, out []int32) { simdMaxVSInt32(r, c, out) },
+			nil, nil)
+	case dtypes.Uint32:
+		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+			simdMaxVVUint32, simdMaxVSUint32, func(c uint32, r []uint32, out []uint32) { simdMaxVSUint32(r, c, out) },
+			nil, nil)
+	default:
+		return nil, gobackend.ErrNotImplemented
+	}
+	return output, err
+}
+
+func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
+	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrNotImplemented
+	}
+	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
+	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
+		lhs, rhs = rhs, lhs
+	}
+	if backend.NoOps {
+		return output, nil
+	}
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
+	var err error
+	switch lhs.RawShape.DType {
+	case dtypes.Float32:
+		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+			simdMinVVFloat32, simdMinVSFloat32, func(c float32, r []float32, out []float32) { simdMinVSFloat32(r, c, out) },
+			simdV2V1MinFloat32, simdV1V2MinFloat32)
+	case dtypes.Float64:
+		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+			simdMinVVFloat64, simdMinVSFloat64, func(c float64, r []float64, out []float64) { simdMinVSFloat64(r, c, out) },
+			nil, nil)
+	case dtypes.BFloat16:
+		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+			simdMinVVBFloat16, simdMinVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMinVSBFloat16(r, c, out) },
+			nil, nil)
+	case dtypes.Float16:
+		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+			simdMinVVFloat16, simdMinVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMinVSFloat16(r, c, out) },
+			nil, nil)
+	case dtypes.Int32:
+		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+			simdMinVVInt32, simdMinVSInt32, func(c int32, r []int32, out []int32) { simdMinVSInt32(r, c, out) },
+			nil, nil)
+	case dtypes.Uint32:
+		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+			simdMinVVUint32, simdMinVSUint32, func(c uint32, r []uint32, out []uint32) { simdMinVSUint32(r, c, out) },
+			nil, nil)
+	default:
+		return nil, gobackend.ErrNotImplemented
+	}
+	return output, err
 }

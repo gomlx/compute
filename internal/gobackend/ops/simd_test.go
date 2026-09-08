@@ -240,6 +240,122 @@ func TestSIMDBinaryOps(t *testing.T) {
 	t.Run("Mul_Float16", func(t *testing.T) {
 		runBinaryTestGeneric(t, "Mul_Float16", ops.Mul, s19F16, lhsF16, s19F16, rhsF16, expectedF16)
 	})
+
+	// Max and Min Float32
+	t.Run("Max_Float32", func(t *testing.T) {
+		expected := make([]float32, n)
+		for i := range n {
+			expected[i] = max(lhsF32[i], rhsF32[i])
+		}
+		runBinaryTestGeneric(t, "Max_Float32", ops.Max, s19, lhsF32, s19, rhsF32, expected)
+	})
+
+	t.Run("Min_Float32", func(t *testing.T) {
+		expected := make([]float32, n)
+		for i := range n {
+			expected[i] = min(lhsF32[i], rhsF32[i])
+		}
+		runBinaryTestGeneric(t, "Min_Float32", ops.Min, s19, lhsF32, s19, rhsF32, expected)
+	})
+
+	// V2V1 Broadcast: [4, 16] op [1, 16]
+	{
+		A, B := 4, 16
+		shapeAB := shapes.Make(dtypes.Float32, A, B)
+		shape1B := shapes.Make(dtypes.Float32, 1, B)
+		lhsAB := make([]float32, A*B)
+		rhs1B := make([]float32, B)
+		for i := range A * B {
+			lhsAB[i] = float32(i + 1)
+		}
+		for i := range B {
+			rhs1B[i] = float32((i + 1) * 2)
+		}
+
+		t.Run("V2V1_Add_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = lhsAB[a*B+b] + rhs1B[b]
+				}
+			}
+			runBinaryTestGeneric(t, "V2V1_Add_Float32", ops.Add, shapeAB, lhsAB, shape1B, rhs1B, expected)
+		})
+
+		t.Run("V2V1_Sub_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = lhsAB[a*B+b] - rhs1B[b]
+				}
+			}
+			runBinaryTestGeneric(t, "V2V1_Sub_Float32", ops.Sub, shapeAB, lhsAB, shape1B, rhs1B, expected)
+		})
+
+		t.Run("V1V2_Sub_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = rhs1B[b] - lhsAB[a*B+b]
+				}
+			}
+			runBinaryTestGeneric(t, "V1V2_Sub_Float32", ops.Sub, shape1B, rhs1B, shapeAB, lhsAB, expected)
+		})
+
+		t.Run("V2V1_Mul_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = lhsAB[a*B+b] * rhs1B[b]
+				}
+			}
+			runBinaryTestGeneric(t, "V2V1_Mul_Float32", ops.Mul, shapeAB, lhsAB, shape1B, rhs1B, expected)
+		})
+
+		t.Run("V2V1_Div_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = lhsAB[a*B+b] / rhs1B[b]
+				}
+			}
+			runBinaryTestGeneric(t, "V2V1_Div_Float32", ops.Div, shapeAB, lhsAB, shape1B, rhs1B, expected)
+		})
+
+		t.Run("V1V2_Div_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = rhs1B[b] / lhsAB[a*B+b]
+				}
+			}
+			runBinaryTestGeneric(t, "V1V2_Div_Float32", ops.Div, shape1B, rhs1B, shapeAB, lhsAB, expected)
+		})
+
+		t.Run("V2V1_Max_Float32", func(t *testing.T) {
+			expected := make([]float32, A*B)
+			for a := range A {
+				for b := range B {
+					expected[a*B+b] = max(lhsAB[a*B+b], rhs1B[b])
+				}
+			}
+			runBinaryTestGeneric(t, "V2V1_Max_Float32", ops.Max, shapeAB, lhsAB, shape1B, rhs1B, expected)
+		})
+	}
+
+	// Fallback test: Int8 is not supported by SIMD, so it must fall back to generic
+	t.Run("Fallback_Add_Int8", func(t *testing.T) {
+		s19I8 := shapes.Make(dtypes.Int8, n)
+		lhsI8 := make([]int8, n)
+		rhsI8 := make([]int8, n)
+		expected := make([]int8, n)
+		for i := range n {
+			lhsI8[i] = int8(i)
+			rhsI8[i] = int8(i * 2)
+			expected[i] = lhsI8[i] + rhsI8[i]
+		}
+		runBinaryTestGeneric(t, "Fallback_Add_Int8", ops.Add, s19I8, lhsI8, s19I8, rhsI8, expected)
+	})
 }
 
 func TestSIMDUnaryOps(t *testing.T) {
@@ -341,5 +457,54 @@ func TestSIMDUnaryOps(t *testing.T) {
 			expected[i] = -inI32[i]
 		}
 		runUnaryTestGeneric(t, "Neg_Int32", ops.Neg, s19I32, inI32, expected)
+	})
+
+	t.Run("Sign_Float32", func(t *testing.T) {
+		expected := make([]float32, n)
+		for i := range n {
+			switch {
+			case inF32[i] < 0:
+				expected[i] = -1
+			case inF32[i] > 0:
+				expected[i] = 1
+			default:
+				expected[i] = 0
+			}
+		}
+		runUnaryTestGeneric(t, "Sign_Float32", ops.Sign, s19, inF32, expected)
+	})
+
+	t.Run("Sign_Int32", func(t *testing.T) {
+		expected := make([]int32, n)
+		for i := range n {
+			switch {
+			case inI32[i] < 0:
+				expected[i] = -1
+			case inI32[i] > 0:
+				expected[i] = 1
+			default:
+				expected[i] = 0
+			}
+		}
+		runUnaryTestGeneric(t, "Sign_Int32", ops.Sign, s19I32, inI32, expected)
+	})
+
+	// Fallback test: Int8 is not supported by SIMD, so it must fall back to generic
+	t.Run("Fallback_Sign_Int8", func(t *testing.T) {
+		s19I8 := shapes.Make(dtypes.Int8, n)
+		inI8 := make([]int8, n)
+		expected := make([]int8, n)
+		for i := range n {
+			inI8[i] = int8(i - 10)
+			switch {
+			case inI8[i] < 0:
+				expected[i] = -1
+			case inI8[i] > 0:
+				expected[i] = 1
+			default:
+				expected[i] = 0
+			}
+		}
+		runUnaryTestGeneric(t, "Fallback_Sign_Int8", ops.Sign, s19I8, inI8, expected)
 	})
 }
