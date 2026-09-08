@@ -150,8 +150,8 @@ some of the example models to benchmark your backend against some of the others.
     One can install PJRTs built for NVIDIA GPUs (there is an installation script for that), there is also one for ROCm (not tested by the author),
     for TPU (Google Cloud) and reports of PJRTs being built for even newer accelerators (e.g.: [TensTorrent XLA](https://github.com/tenstorrent/tt-xla)).
 - For the native Go backend:
-  - `GOMLX_GO_SIMD_AVX512`: set to `0` or `false` to disable AVX512 SIMD implementation in the native Go backend. The default is enabled if AVX512 is present.
-  - `GOMLX_GO_SIMD_AVX2`: set to `0` or `false` to disable AVX2 SIMD implementation in the native Go backend. The default is enabled if AVX2 is present.
+  - `GOMLX_GO_SIMD_AVX512`: set to `0` or `false` to disable AVX512-specific SIMD implementations in the native Go backend (e.g. optimized matmul and activation kernels). Note: this only controls AVX512-specific code; generic portable SIMD operations will still use hardware vector features if available. The default is enabled if AVX512 is present.
+  - `GOMLX_GO_SIMD_AVX2`: set to `0` or `false` to disable AVX2-specific SIMD implementations in the native Go backend (e.g. optimized matmul and activation kernels). Note: this only controls AVX2-specific code; generic portable SIMD operations will still use hardware vector features if available. The default is enabled if AVX2 is present.
   - `GOMLX_GO_AVX512_ASM`: set to `0` or `false` to disable the assembly microkernel for Float32 and use the Go SIMD kernel instead.
   - `GOMLX_GO_AVX512_KC`, `GOMLX_GO_AVX512_MC`, `GOMLX_GO_AVX512_NC`: cache blocking tuning parameters for AVX512 matrix multiplication.
   - `GOMLX_GO_DOT_MATMUL`: set to `0` or `false` to disable the default matrix multiplication implementation in the native Go backend. The default is enabled.
