@@ -5,15 +5,140 @@
 package activations_test
 
 import (
+	"cmp"
+	"math"
 	"math/rand/v2"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/activations"
-	"github.com/gomlx/compute/internal/gobackend/activations/avx2"
-	"github.com/gomlx/compute/internal/gobackend/activations/avx512"
+	"github.com/gomlx/compute/support/testutil"
 )
+
+const (
+	PriorityNoSIMD       = 0
+	PriorityPortableSIMD = 10
+	PriorityAVX2         = 20
+	PriorityAVX512       = 30
+)
+
+type flavorEntry[T any] struct {
+	name     string
+	priority int
+	fn       func(in, out []T)
+}
+
+type flavorRegistry[T any] struct {
+	ops     []string
+	flavors map[string][]flavorEntry[T]
+}
+
+func newFlavorRegistry[T any]() *flavorRegistry[T] {
+	return &flavorRegistry[T]{
+		flavors: make(map[string][]flavorEntry[T]),
+	}
+}
+
+func (r *flavorRegistry[T]) Register(op, flavor string, priority int, fn func(in, out []T)) {
+	if _, exists := r.flavors[op]; !exists {
+		r.ops = append(r.ops, op)
+	}
+	r.flavors[op] = append(r.flavors[op], flavorEntry[T]{name: flavor, priority: priority, fn: fn})
+	slices.SortFunc(r.flavors[op], func(a, b flavorEntry[T]) int {
+		return cmp.Compare(a.priority, b.priority)
+	})
+}
+
+func (r *flavorRegistry[T]) RegisterInPlace(op, flavor string, priority int, fn func(data []T)) {
+	r.Register(op, flavor, priority, func(in, out []T) {
+		copy(out, in)
+		fn(out)
+	})
+}
+
+var (
+	f32Registry  = newFlavorRegistry[float32]()
+	bf16Registry = newFlavorRegistry[bfloat16.BFloat16]()
+	f16Registry  = newFlavorRegistry[float16.Float16]()
+	f64Registry  = newFlavorRegistry[float64]()
+
+	baselineOnce sync.Once
+)
+
+func registerBaseline() {
+	baselineOnce.Do(func() {
+		// Float32
+		f32Registry.Register("Relu", "NoSIMD", PriorityNoSIMD, activations.ReluNoSIMD[float32])
+		f32Registry.Register("Relu", "PortableSIMD", PriorityPortableSIMD, activations.ReluFloat32SIMD)
+
+		f32Registry.Register("Silu", "NoSIMD", PriorityNoSIMD, activations.SiluNoSIMD[float32])
+		f32Registry.Register("Silu", "PortableSIMD", PriorityPortableSIMD, activations.SiluFloat32SIMD)
+
+		f32Registry.Register("Tanh", "NoSIMD", PriorityNoSIMD, activations.TanhNoSIMD[float32])
+		f32Registry.Register("Tanh", "PortableSIMD", PriorityPortableSIMD, activations.TanhFloat32SIMD)
+
+		f32Registry.Register("GeluApprox", "NoSIMD", PriorityNoSIMD, activations.GeluApproxNoSIMD[float32])
+		f32Registry.Register("GeluApprox", "PortableSIMD", PriorityPortableSIMD, activations.GeluApproxFloat32SIMD)
+
+		f32Registry.Register("Sigmoid", "NoSIMD", PriorityNoSIMD, activations.SigmoidNoSIMD[float32])
+		f32Registry.Register("Sigmoid", "PortableSIMD", PriorityPortableSIMD, activations.SigmoidFloat32SIMD)
+
+		f32Registry.Register("HardSigmoid", "NoSIMD", PriorityNoSIMD, activations.HardSigmoidNoSIMD[float32])
+		f32Registry.Register("HardSigmoid", "PortableSIMD", PriorityPortableSIMD, activations.HardSigmoidFloat32SIMD)
+
+		f32Registry.Register("HardSwish", "NoSIMD", PriorityNoSIMD, activations.HardSwishNoSIMD[float32])
+		f32Registry.Register("HardSwish", "PortableSIMD", PriorityPortableSIMD, activations.HardSwishFloat32SIMD)
+
+		f32Registry.Register("LeakyRelu", "NoSIMD", PriorityNoSIMD, activations.LeakyReluNoSIMD[float32])
+		f32Registry.Register("LeakyRelu", "PortableSIMD", PriorityPortableSIMD, activations.LeakyReluFloat32SIMD)
+
+		f32Registry.Register("Selu", "NoSIMD", PriorityNoSIMD, activations.SeluNoSIMD[float32])
+		f32Registry.Register("Selu", "PortableSIMD", PriorityPortableSIMD, activations.SeluFloat32SIMD)
+
+		// BFloat16
+		bf16Registry.Register("BFloat16_Relu", "NoSIMD", PriorityNoSIMD, activations.ReluBF16NoSIMD)
+		bf16Registry.Register("BFloat16_Relu", "PortableSIMD", PriorityPortableSIMD, activations.ReluBFloat16SIMD)
+		bf16Registry.Register("BFloat16_Silu", "NoSIMD", PriorityNoSIMD, activations.SiluBF16NoSIMD)
+		bf16Registry.Register("BFloat16_Silu", "PortableSIMD", PriorityPortableSIMD, activations.SiluBFloat16SIMD)
+
+		// Float16
+		f16Registry.Register("Float16_Relu", "NoSIMD", PriorityNoSIMD, activations.ReluF16NoSIMD)
+		f16Registry.Register("Float16_Relu", "PortableSIMD", PriorityPortableSIMD, activations.ReluFloat16SIMD)
+		f16Registry.Register("Float16_Silu", "NoSIMD", PriorityNoSIMD, activations.SiluF16NoSIMD)
+		f16Registry.Register("Float16_Silu", "PortableSIMD", PriorityPortableSIMD, activations.SiluFloat16SIMD)
+
+		// Float64
+		f64Registry.Register("Float64_Relu", "NoSIMD", PriorityNoSIMD, activations.ReluNoSIMD[float64])
+		f64Registry.Register("Float64_Relu", "PortableSIMD", PriorityPortableSIMD, activations.ReluFloat64SIMD)
+		f64Registry.Register("Float64_Silu", "NoSIMD", PriorityNoSIMD, activations.SiluNoSIMD[float64])
+		f64Registry.Register("Float64_Silu", "PortableSIMD", PriorityPortableSIMD, activations.SiluFloat64SIMD)
+		f64Registry.Register("Float64_Sigmoid", "NoSIMD", PriorityNoSIMD, activations.SigmoidNoSIMD[float64])
+		f64Registry.Register("Float64_Sigmoid", "PortableSIMD", PriorityPortableSIMD, activations.SigmoidFloat64SIMD)
+		f64Registry.Register("Float64_Tanh", "NoSIMD", PriorityNoSIMD, activations.TanhNoSIMD[float64])
+		f64Registry.Register("Float64_Tanh", "PortableSIMD", PriorityPortableSIMD, activations.TanhFloat64SIMD)
+		f64Registry.Register("Float64_GeluApprox", "NoSIMD", PriorityNoSIMD, activations.GeluApproxNoSIMD[float64])
+		f64Registry.Register("Float64_GeluApprox", "PortableSIMD", PriorityPortableSIMD, activations.GeluApproxFloat64SIMD)
+	})
+}
+
+func init() {
+	registerBaseline()
+}
+
+func runRegistryBenchmarks[T any](b *testing.B, r *flavorRegistry[T], in, out []T) {
+	for _, op := range r.ops {
+		for _, flavor := range r.flavors[op] {
+			b.Run(op+"/"+flavor.name, func(b *testing.B) {
+				for b.Loop() {
+					flavor.fn(in, out)
+				}
+			})
+		}
+	}
+}
 
 func BenchmarkFlavorsComparison(b *testing.B) {
 	sizes := []struct {
@@ -31,308 +156,61 @@ func BenchmarkFlavorsComparison(b *testing.B) {
 			for i := range inF32 {
 				inF32[i] = rand.Float32()*4 - 2
 			}
+			runRegistryBenchmarks(b, f32Registry, inF32, outF32)
 
-			// 1. RELU
-			b.Run("Relu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("Relu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("Relu/AVX2_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx2.ReluAVX2(outF32)
-				}
-			})
-			b.Run("Relu/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.ReluAVX512(outF32)
-				}
-			})
-
-			// 2. SILU
-			b.Run("Silu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("Silu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("Silu/AVX2_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx2.SiluAVX2(outF32)
-				}
-			})
-			b.Run("Silu/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.SiluAVX512(outF32)
-				}
-			})
-
-			// 3. TANH
-			b.Run("Tanh/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.TanhNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("Tanh/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.TanhFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("Tanh/AVX2_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx2.TanhAVX2(outF32)
-				}
-			})
-			b.Run("Tanh/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.TanhAVX512(outF32)
-				}
-			})
-
-			// 4. GeluApproximate
-			b.Run("GeluApprox/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.GeluApproxNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("GeluApprox/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.GeluApproxFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("GeluApprox/AVX2_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx2.GeluAVX2(outF32)
-				}
-			})
-			b.Run("GeluApprox/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.GeluAVX512(outF32)
-				}
-			})
-
-			// 5. Sigmoid
-			b.Run("Sigmoid/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SigmoidNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("Sigmoid/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SigmoidFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("Sigmoid/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.SigmoidAVX512(outF32)
-				}
-			})
-
-			// 6. HardSigmoid
-			b.Run("HardSigmoid/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.HardSigmoidNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("HardSigmoid/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.HardSigmoidFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("HardSigmoid/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.HardSigmoidAVX512(outF32)
-				}
-			})
-
-			// 7. HardSwish
-			b.Run("HardSwish/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.HardSwishNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("HardSwish/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.HardSwishFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("HardSwish/AVX2_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx2.HardSwishAVX2(outF32)
-				}
-			})
-			b.Run("HardSwish/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.HardSwishAVX512(outF32)
-				}
-			})
-
-			// 8. LeakyRelu
-			b.Run("LeakyRelu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.LeakyReluNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("LeakyRelu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.LeakyReluFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("LeakyRelu/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.LeakyReluAVX512(outF32)
-				}
-			})
-
-			// 9. Selu
-			b.Run("Selu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SeluNoSIMD(inF32, outF32)
-				}
-			})
-			b.Run("Selu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SeluFloat32SIMD(inF32, outF32)
-				}
-			})
-			b.Run("Selu/AVX512_ArchSIMD", func(b *testing.B) {
-				for b.Loop() {
-					copy(outF32, inF32)
-					avx512.SeluAVX512(outF32)
-				}
-			})
-
-			// 10. BFloat16 & Float16
 			inBF16 := make([]bfloat16.BFloat16, sz.n)
 			outBF16 := make([]bfloat16.BFloat16, sz.n)
 			for i := range inBF16 {
 				inBF16[i] = bfloat16.FromFloat32(inF32[i])
 			}
-			b.Run("BFloat16_Relu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluBF16NoSIMD(inBF16, outBF16)
-				}
-			})
-			b.Run("BFloat16_Relu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluBFloat16SIMD(inBF16, outBF16)
-				}
-			})
-			b.Run("BFloat16_Silu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluBF16NoSIMD(inBF16, outBF16)
-				}
-			})
-			b.Run("BFloat16_Silu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluBFloat16SIMD(inBF16, outBF16)
-				}
-			})
+			runRegistryBenchmarks(b, bf16Registry, inBF16, outBF16)
 
 			inF16 := make([]float16.Float16, sz.n)
 			outF16 := make([]float16.Float16, sz.n)
 			for i := range inF16 {
 				inF16[i] = float16.FromFloat32(inF32[i])
 			}
-			b.Run("Float16_Relu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluF16NoSIMD(inF16, outF16)
-				}
-			})
-			b.Run("Float16_Relu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluFloat16SIMD(inF16, outF16)
-				}
-			})
-			b.Run("Float16_Silu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluF16NoSIMD(inF16, outF16)
-				}
-			})
-			b.Run("Float16_Silu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluFloat16SIMD(inF16, outF16)
-				}
-			})
+			runRegistryBenchmarks(b, f16Registry, inF16, outF16)
 
-			// 11. Float64
 			inF64 := make([]float64, sz.n)
 			outF64 := make([]float64, sz.n)
 			for i := range inF64 {
 				inF64[i] = float64(inF32[i])
 			}
-			b.Run("Float64_Relu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluNoSIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Relu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.ReluFloat64SIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Silu/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluNoSIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Silu/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SiluFloat64SIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Sigmoid/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SigmoidNoSIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Sigmoid/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.SigmoidFloat64SIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Tanh/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.TanhNoSIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_Tanh/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.TanhFloat64SIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_GeluApprox/NoSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.GeluApproxNoSIMD(inF64, outF64)
-				}
-			})
-			b.Run("Float64_GeluApprox/PortableSIMD", func(b *testing.B) {
-				for b.Loop() {
-					activations.GeluApproxFloat64SIMD(inF64, outF64)
-				}
-			})
+			runRegistryBenchmarks(b, f64Registry, inF64, outF64)
 		})
+	}
+}
+
+func TestAllAvailableSIMDs(t *testing.T) {
+	sizes := []int{1, 7, 8, 15, 16, 31, 32, 65, 512}
+	for _, sz := range sizes {
+		inF32 := make([]float32, sz)
+		for i := range inF32 {
+			inF32[i] = float32(i-sz/2) * 0.1
+		}
+
+		for _, op := range f32Registry.ops {
+			flavors := f32Registry.flavors[op]
+			if len(flavors) <= 1 {
+				continue
+			}
+			baseline := make([]float32, sz)
+			flavors[0].fn(inF32, baseline)
+
+			for _, flavor := range flavors[1:] {
+				t.Run(op+"/"+flavor.name, func(t *testing.T) {
+					got := make([]float32, sz)
+					flavor.fn(inF32, got)
+					for i := range got {
+						if ok, diff := testutil.IsInRelativeDelta(baseline[i], got[i], 1e-3); !ok {
+							if math.Abs(float64(baseline[i]-got[i])) > 1e-4 {
+								t.Fatalf("[%d] got %f, want %f, diff=%s", i, got[i], baseline[i], diff)
+							}
+						}
+					}
+				})
+			}
+		}
 	}
 }
