@@ -38,9 +38,6 @@ type FunctionExecutable struct {
 	// OutputNodes are the nodes that produce the function's outputs.
 	OutputNodes []*Node
 
-	// isLarge marks statically whether each node is large enough to warrant parallel execution.
-	isLarge []bool
-
 	// MaxInputs is the maximum number of inputs any node has.
 	MaxInputs int
 
@@ -71,12 +68,10 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		NumNodesToProcess: numNodesToProcess,
 		NumUses:           make([]int, numNodesToProcess),
 		Dependents:        make([][]int, numNodesToProcess),
-		isLarge:           make([]bool, numNodesToProcess),
 	}
 
 	// Find max inputs (the maximum number of inputs any single node has),
 	// including for captured inputs, and count uses/dependents
-	threshold := f.RawBuilder.Backend.ParallelThresholdOps
 	for nodeIdx := range numNodesToProcess {
 		node := f.Nodes[nodeIdx]
 		// Total inputs = regular inputs + all captured inputs across closures
@@ -86,7 +81,6 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		}
 		totalInputs := len(node.Inputs) + totalCaptured
 		fe.MaxInputs = max(fe.MaxInputs, totalInputs)
-		fe.isLarge[nodeIdx] = node.IsLarge(threshold, nil)
 	}
 
 	// Recursively count uses for each node starting from outputs.
@@ -97,16 +91,13 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 	// Initialize execution buffers pool
 	fe.ExecutionBuffersPool = sync.Pool{
 		New: func() any {
-			b := &funcExecBuffers{
+			return &funcExecBuffers{
 				results:       make([]*Buffer, numNodesToProcess),
 				numUsed:       make([]atomic.Int32, numNodesToProcess),
 				owned:         make([]bool, numNodesToProcess),
 				remainingDeps: make([]int, numNodesToProcess),
-				readyLarge:    make([]int, 0, numNodesToProcess),
-				readySmall:    make([]int, 0, numNodesToProcess),
+				readyQueue:    make(chan int, numNodesToProcess+10),
 			}
-			b.cond = sync.NewCond(&b.mu)
-			return b
 		},
 	}
 
@@ -170,11 +161,9 @@ type funcExecBuffers struct {
 	opInputBuffers []*Buffer
 	opInputsOwned  []bool
 
-	// Parallel execution only: protects shared state and ready queues.
+	// Parallel execution only: protects shared state and dependency tracking.
 	mu         sync.Mutex
-	cond       *sync.Cond
-	readyLarge []int
-	readySmall []int
+	readyQueue chan int
 }
 
 // Execute runs the compiled function with the given inputs.
@@ -210,8 +199,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 
 	// Get execution buffers from pool and reset
 	execBuf := fe.ExecutionBuffersPool.Get().(*funcExecBuffers)
-	execBuf.readyLarge = execBuf.readyLarge[:0]
-	execBuf.readySmall = execBuf.readySmall[:0]
+	execBuf.readyQueue = make(chan int, fe.NumNodesToProcess+10)
 	for i := range fe.NumNodesToProcess {
 		execBuf.numUsed[i].Store(0)
 		execBuf.owned[i] = false
@@ -329,35 +317,25 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 	return nil
 }
 
-// isNodeLarge returns whether the node should be scheduled concurrently across workers.
-func (fe *FunctionExecutable) isNodeLarge(nodeIdx int, spec *ShapeSpecialization) bool {
-	if spec != nil {
-		return spec.resolvedNodes[nodeIdx].IsLarge(fe.Backend.ParallelThresholdOps, spec)
-	}
-	return fe.isLarge[nodeIdx]
-}
-
-// pushReadyNode enqueues a ready node to either readyLarge or readySmall.
-// Must be called with execBuf.mu held.
-func (fe *FunctionExecutable) pushReadyNode(execBuf *funcExecBuffers, nodeIdx int, spec *ShapeSpecialization) {
-	if fe.isNodeLarge(nodeIdx, spec) {
-		execBuf.readyLarge = append(execBuf.readyLarge, nodeIdx)
-	} else {
-		execBuf.readySmall = append(execBuf.readySmall, nodeIdx)
-	}
-}
-
 // nodeCompleted records completion of nodeIdx and its sub-outputs (for multi-output ops),
-// updates dependencies of dependent nodes, enqueues newly ready nodes, and signals waiters.
+// updates dependencies of dependent nodes, enqueues newly ready nodes, and checks if execution is done.
+// If exactly one dependent node becomes ready and localContinuation is not nil and currently -1,
+// it sets *localContinuation to that node so the caller executor can immediately continue executing it.
 // Must be called with execBuf.mu held.
 func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecBuffers, nodeIdx int,
-	completed *int, spec *ShapeSpecialization) {
+	completed *int, expected int, stopExecutionFn func(), localContinuation *int, spec *ShapeSpecialization) {
 	node := fe.Function.Nodes[nodeIdx]
 	if spec != nil {
 		node = spec.resolvedNodes[nodeIdx]
 	}
 
 	*completed++
+	if *completed == expected {
+		stopExecutionFn()
+		return
+	}
+
+	var newReady []int
 	if node.IsMultiOutputs() {
 		// Handle multi-output nodes: update dependents of each output.
 		for _, outputNode := range node.MultiOutputsNodes {
@@ -366,10 +344,14 @@ func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecB
 				continue
 			}
 			*completed++
+			if *completed == expected {
+				stopExecutionFn()
+				return
+			}
 			for _, depIdx := range fe.Dependents[outputIdx] {
 				execBuf.remainingDeps[depIdx]--
 				if execBuf.remainingDeps[depIdx] == 0 {
-					fe.pushReadyNode(execBuf, depIdx, spec)
+					newReady = append(newReady, depIdx)
 				}
 			}
 		}
@@ -378,138 +360,143 @@ func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecB
 		for _, depIdx := range fe.Dependents[nodeIdx] {
 			execBuf.remainingDeps[depIdx]--
 			if execBuf.remainingDeps[depIdx] == 0 {
-				fe.pushReadyNode(execBuf, depIdx, spec)
+				newReady = append(newReady, depIdx)
 			}
 		}
 	}
-	execBuf.cond.Signal()
+
+	for _, depIdx := range newReady {
+		if localContinuation != nil && *localContinuation == -1 {
+			*localContinuation = depIdx
+		} else {
+			execBuf.readyQueue <- depIdx
+		}
+	}
 }
 
-// executeParallelNode executes a single node in a background worker, handles error reporting,
-// updates dependents upon completion, and decrements the waitgroup.
-func (fe *FunctionExecutable) executeParallelNode(backend *Backend, execBuf *funcExecBuffers, nodeIdx int,
-	spec *ShapeSpecialization, completed *int, collectErrors *[]error, wg *sync.WaitGroup) {
-	defer wg.Done()
+// runExecutor loops executing nodes until the readyQueue is closed or an error occurs.
+// When executing a node unlocks another node, it preferentially continues executing it
+// locally without routing through the channel.
+func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization,
+	completed *int, expected int, stopExecutionFn func(), appendErrorFn func(error)) {
+	currNode := -1
 
-	node := fe.Function.Nodes[nodeIdx]
-	if spec != nil {
-		node = spec.resolvedNodes[nodeIdx]
+	for {
+		if currNode == -1 {
+			var ok bool
+			currNode, ok = <-execBuf.readyQueue
+			if !ok {
+				// readyQueue closed: computation completed or errored out.
+				return
+			}
+		}
+
+		nodeIdx := currNode
+		currNode = -1
+
+		node := fe.Function.Nodes[nodeIdx]
+		if spec != nil {
+			node = spec.resolvedNodes[nodeIdx]
+		}
+
+		var execErr error
+		if execBuf.results[nodeIdx] == nil && fe.NumUses[nodeIdx] > 0 {
+			execErr = fe.executeNode(backend, node, execBuf, spec)
+		}
+
+		execBuf.mu.Lock()
+		if execErr != nil {
+			execBuf.mu.Unlock()
+			appendErrorFn(execErr)
+			return
+		}
+
+		// Update dependents. If currNode is still -1, nodeCompleted will set it if a dependent is ready.
+		fe.nodeCompleted(backend, execBuf, nodeIdx, completed, expected, stopExecutionFn, &currNode, spec)
+		execBuf.mu.Unlock()
 	}
-
-	var execErr error
-	if execBuf.results[nodeIdx] == nil && fe.NumUses[nodeIdx] > 0 {
-		execErr = fe.executeNode(backend, node, execBuf, spec)
-	}
-
-	execBuf.mu.Lock()
-	defer execBuf.mu.Unlock()
-
-	if execErr != nil {
-		*collectErrors = append(*collectErrors, execErr)
-	}
-	fe.nodeCompleted(backend, execBuf, nodeIdx, completed, spec)
 }
 
-// executeParallel executes nodes concurrently based on the dependency graph.
-// Nodes above ParallelThresholdOps are dispatched to worker goroutines, while small nodes
-// are executed inline sequentially on the caller goroutine.
+// executeParallel executes nodes concurrently across a fixed pool of persistent worker executors.
+// When an executor finishes a node and only one dependent becomes ready, it continues executing it
+// directly on the same goroutine (preserving CPU cache locality), only pushing to the ready channel
+// when branching causes multiple nodes to become ready simultaneously.
 func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization) error {
 	var (
-		collectErrors []error
-		wg            sync.WaitGroup
-		expected      int
-		completed     int
+		collectErrors   []error
+		errMu           sync.Mutex
+		wg              sync.WaitGroup
+		expected        int
+		completed       int
+		stopExecutionFn func()
 	)
 
-	// Count expected nodes and initialize dependencies
-	// Dependencies include both regular inputs and captured inputs
-	execBuf.mu.Lock()
+	stopExecutionFn = sync.OnceFunc(func() {
+		close(execBuf.readyQueue)
+	})
+
+	appendErrorFn := func(err error) {
+		errMu.Lock()
+		collectErrors = append(collectErrors, err)
+		errMu.Unlock()
+		stopExecutionFn()
+	}
+
+	// Count expected nodes and initialize dependencies.
+	// Dependencies include both regular inputs and captured inputs.
+	var initialReady []int
 	for _, nodeIdx := range fe.Schedule {
 		if fe.NumUses[nodeIdx] > 0 {
 			expected++
 			node := fe.Function.Nodes[nodeIdx]
-			// Total dependencies = regular inputs + all captured inputs across closures
 			totalCaptured := 0
 			for _, closureCaptures := range node.CapturedInputs {
 				totalCaptured += len(closureCaptures)
 			}
 			execBuf.remainingDeps[nodeIdx] = len(node.Inputs) + totalCaptured
 			if execBuf.remainingDeps[nodeIdx] == 0 {
-				fe.pushReadyNode(execBuf, nodeIdx, spec)
+				initialReady = append(initialReady, nodeIdx)
 			}
 		}
 	}
 
-	for completed < expected && len(collectErrors) == 0 {
-		// 1. Dispatch large nodes to worker pool if available.
-		if len(execBuf.readyLarge) > 0 {
-			for len(execBuf.readyLarge) > 0 {
-				largeIdx := execBuf.readyLarge[len(execBuf.readyLarge)-1]
-				wg.Add(1)
-				started := backend.Workers.StartIfAvailable(func() {
-					fe.executeParallelNode(backend, execBuf, largeIdx, spec, &completed, &collectErrors, &wg)
-				})
-				if started {
-					execBuf.readyLarge = execBuf.readyLarge[:len(execBuf.readyLarge)-1]
-				} else {
-					// No worker immediately available; roll back wg.Add and stop launching large for now.
-					wg.Done()
-					break
-				}
-			}
-		}
+	if expected == 0 {
+		return nil
+	}
 
-		// 2. If small nodes are ready, execute one inline.
-		if len(execBuf.readySmall) > 0 {
-			smallIdx := execBuf.readySmall[len(execBuf.readySmall)-1]
-			execBuf.readySmall = execBuf.readySmall[:len(execBuf.readySmall)-1]
+	// Determine number of executor goroutines to launch:
+	// Use backend.NumExecutors, but cap it at maxParallelism and at least 1.
+	numExecutors := backend.NumExecutors
+	if numExecutors <= 0 {
+		numExecutors = DefaultNumExecutors
+	}
+	if maxP := backend.Workers.MaxParallelism(); maxP > 0 {
+		numExecutors = min(numExecutors, maxP)
+	}
 
-			// Unlock while executing node inline to allow workers to progress and complete.
-			execBuf.mu.Unlock()
+	// Enqueue initial ready nodes.
+	for _, nodeIdx := range initialReady {
+		execBuf.readyQueue <- nodeIdx
+	}
 
-			node := fe.Function.Nodes[smallIdx]
-			if spec != nil {
-				node = spec.resolvedNodes[smallIdx]
-			}
-
-			var execErr error
-			if execBuf.results[smallIdx] == nil && fe.NumUses[smallIdx] > 0 {
-				execErr = fe.executeNode(backend, node, execBuf, spec)
-			}
-
-			execBuf.mu.Lock()
-			if execErr != nil {
-				collectErrors = append(collectErrors, execErr)
-				break
-			}
-			fe.nodeCompleted(backend, execBuf, smallIdx, &completed, spec)
-			continue
-		}
-
-		// 3. No small nodes ready. If large nodes remain, wait for a worker to become available
-		// to launch one.
-		if len(execBuf.readyLarge) > 0 {
-			largeIdx := execBuf.readyLarge[len(execBuf.readyLarge)-1]
-			execBuf.readyLarge = execBuf.readyLarge[:len(execBuf.readyLarge)-1]
-
-			wg.Add(1)
-			// WaitToStart may block, so unlock execBuf.mu while waiting.
-			execBuf.mu.Unlock()
-			backend.Workers.WaitToStart(func() {
-				fe.executeParallelNode(backend, execBuf, largeIdx, spec, &completed, &collectErrors, &wg)
-			})
-			execBuf.mu.Lock()
-			continue
-		}
-
-		// 4. Nothing ready right now: wait for running workers to complete and produce results.
-		if completed < expected && len(collectErrors) == 0 {
-			execBuf.cond.Wait()
+	// Launch background executors via backend.Workers (numExecutors - 1 workers).
+	// The current caller goroutine serves as one of the executors.
+	for range numExecutors - 1 {
+		wg.Add(1)
+		started := backend.Workers.StartIfAvailable(func() {
+			defer wg.Done()
+			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn)
+		})
+		if !started {
+			wg.Done()
+			break
 		}
 	}
-	execBuf.mu.Unlock()
 
-	// Wait for all background workers to finish before returning.
+	// Run the current caller goroutine as an executor as well.
+	fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn)
+
+	// Wait for all background executors to finish.
 	wg.Wait()
 
 	if len(collectErrors) > 0 {
