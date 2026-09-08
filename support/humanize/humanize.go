@@ -4,7 +4,10 @@ package humanize
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // EraseToEndOfLine is the ANSI control sequence to erase the current line from the cursor to the end.
@@ -139,4 +142,27 @@ func Duration(d time.Duration) string {
 		res = res[:len(res)-2]
 	}
 	return res + suffix
+}
+
+// DurationPerOp returns the duration per operation split into a float value and unit string (e.g. 12.3 and "µs/op"),
+// suitable for reporting metrics in benchmarks via b.ReportMetric(humanize.DurationPerOp(elapsed, b.N)).
+func DurationPerOp(elapsed time.Duration, runs int) (value float64, unit string) {
+	if runs <= 0 || elapsed <= 0 {
+		return 0, "ns/op"
+	}
+	durationPerOp := time.Duration(float64(elapsed) / float64(runs))
+	durStr := Duration(durationPerOp)
+	splitIdx := strings.IndexFunc(durStr, func(r rune) bool {
+		return !unicode.IsDigit(r) && r != '.' && r != '-'
+	})
+	if splitIdx > 0 {
+		valStr := durStr[:splitIdx]
+		unitStr := durStr[splitIdx:]
+		if strings.ContainsAny(unitStr, "0123456789") {
+			return durationPerOp.Seconds(), "s/op"
+		} else if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+			return val, unitStr + "/op"
+		}
+	}
+	return float64(durationPerOp.Nanoseconds()), "ns/op"
 }

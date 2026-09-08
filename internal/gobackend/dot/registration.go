@@ -43,6 +43,16 @@ type ImplementationRegistration struct {
 	priority gobackend.RegisterPriority
 }
 
+// ImplFn returns the registered implementation function.
+func (r *ImplementationRegistration) ImplFn() any {
+	return r.implFn
+}
+
+// Name returns the name of the registered implementation.
+func (r *ImplementationRegistration) Name() string {
+	return r.name
+}
+
 var (
 	registeredImplementations = make(map[ImplementationKey]*ImplementationRegistration)
 

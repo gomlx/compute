@@ -90,6 +90,173 @@ func ReduceLogicalXor(f *gobackend.Function, operand compute.Value, axis ...int)
 	return reduceImpls(f, compute.OpTypeReduceLogicalXor, operand, axis...)
 }
 
+// ReducePattern classifies the geometric shape of the reduction for fast-path execution.
+type ReducePattern int
+
+const (
+	// ReduceAll indicates all axes of the tensor are being reduced, yielding a scalar or size-1 output.
+	ReduceAll ReducePattern = iota
+
+	// ReduceTrailing indicates a contiguous suffix of axes is reduced: operand [A, B] -> output [A].
+	ReduceTrailing
+
+	// ReduceLeading indicates a contiguous prefix of axes is reduced: operand [A, B] -> output [B].
+	ReduceLeading
+
+	// ReduceMiddle indicates a contiguous middle segment of axes is reduced: operand [A, B, C] -> output [A, C].
+	ReduceMiddle
+
+	// ReduceGeneral indicates arbitrary non-contiguous axes requiring index calculation.
+	ReduceGeneral
+)
+
+// ReduceConfig contains pre-computed metadata for reduction operations.
+type ReduceConfig struct {
+	Axes    []int
+	Pattern ReducePattern
+	A, B, C int
+}
+
+var (
+	_ gobackend.NodeDataComparable   = (*ReduceConfig)(nil)
+	_ gobackend.RecomputableNodeData = (*ReduceConfig)(nil)
+)
+
+// EqualNodeData implements gobackend.NodeDataComparable.
+func (c *ReduceConfig) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	if c == nil && other == nil {
+		return true
+	}
+	if c == nil || other == nil {
+		return false
+	}
+	otherC, ok := other.(*ReduceConfig)
+	if !ok {
+		return false
+	}
+	return c.Pattern == otherC.Pattern &&
+		c.A == otherC.A &&
+		c.B == otherC.B &&
+		c.C == otherC.C &&
+		slices.Equal(c.Axes, otherC.Axes)
+}
+
+// Recompute implements gobackend.RecomputableNodeData.
+func (c *ReduceConfig) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+	operand := resolvedNodes[originalNode.Inputs[0].Index]
+	cfg := DetermineReduceConfig(operand.Shape, c.Axes)
+	return &cfg, nil
+}
+
+// DetermineReduceConfig classifies the reduction pattern for a given operand shape and reduce axes.
+func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
+	rank := shape.Rank()
+	if rank == 0 {
+		return ReduceConfig{Pattern: ReduceAll}
+	}
+
+	// Normalize and sort axes.
+	sortedAxes := slices.Clone(axes)
+	if len(sortedAxes) == 0 {
+		sortedAxes = make([]int, rank)
+		for i := range rank {
+			sortedAxes[i] = i
+		}
+	}
+	slices.Sort(sortedAxes)
+	sortedAxes = slices.Compact(sortedAxes)
+
+	cfg := ReduceConfig{
+		Axes:    sortedAxes,
+		Pattern: ReduceGeneral,
+	}
+
+	if shape.IsDynamic() {
+		return cfg
+	}
+
+	if len(sortedAxes) == rank {
+		cfg.Pattern = ReduceAll
+		return cfg
+	}
+
+	// Check if sortedAxes form a contiguous range [k1, k2).
+	isContiguous := true
+	for i := 1; i < len(sortedAxes); i++ {
+		if sortedAxes[i] != sortedAxes[i-1]+1 {
+			isContiguous = false
+			break
+		}
+	}
+
+	if !isContiguous {
+		return cfg
+	}
+
+	k1 := sortedAxes[0]
+	k2 := sortedAxes[len(sortedAxes)-1] + 1
+
+	if k1 == 0 && k2 == rank {
+		cfg.Pattern = ReduceAll
+		return cfg
+	}
+
+	if k1 == 0 && k2 < rank {
+		// ReduceLeading: prefix [0, k2) is reduced, suffix [k2, rank) is output.
+		a := 1
+		for axis := 0; axis < k2; axis++ {
+			a *= shape.Dimensions[axis]
+		}
+		b := 1
+		for axis := k2; axis < rank; axis++ {
+			b *= shape.Dimensions[axis]
+		}
+		cfg.Pattern = ReduceLeading
+		cfg.A = a
+		cfg.B = b
+		return cfg
+	}
+
+	if k1 > 0 && k2 == rank {
+		// ReduceTrailing: prefix [0, k1) is output, suffix [k1, rank) is reduced.
+		a := 1
+		for axis := 0; axis < k1; axis++ {
+			a *= shape.Dimensions[axis]
+		}
+		b := 1
+		for axis := k1; axis < rank; axis++ {
+			b *= shape.Dimensions[axis]
+		}
+		cfg.Pattern = ReduceTrailing
+		cfg.A = a
+		cfg.B = b
+		return cfg
+	}
+
+	if k1 > 0 && k2 < rank {
+		// ReduceMiddle: prefix [0, k1) is output, middle [k1, k2) is reduced, suffix [k2, rank) is output.
+		a := 1
+		for axis := 0; axis < k1; axis++ {
+			a *= shape.Dimensions[axis]
+		}
+		b := 1
+		for axis := k1; axis < k2; axis++ {
+			b *= shape.Dimensions[axis]
+		}
+		c := 1
+		for axis := k2; axis < rank; axis++ {
+			c *= shape.Dimensions[axis]
+		}
+		cfg.Pattern = ReduceMiddle
+		cfg.A = a
+		cfg.B = b
+		cfg.C = c
+		return cfg
+	}
+
+	return cfg
+}
+
 func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operandValue compute.Value, axes ...int) (*gobackend.Node, error) {
 	inputs, err := f.VerifyAndCastValues(reduceOpType.String(), operandValue)
 	if err != nil {
@@ -107,18 +274,45 @@ func reduceImpls(f *gobackend.Function, reduceOpType compute.OpType, operandValu
 		return nil, err
 	}
 	outputShape.DType = operand.Shape.DType
-	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, inputs, axes)
+
+	var data any
+	if !operand.Shape.IsDynamic() && !outputShape.IsDynamic() {
+		cfg := DetermineReduceConfig(operand.Shape, axes)
+		data = &cfg
+	} else {
+		cfg := ReduceConfig{Axes: slices.Clone(axes), Pattern: ReduceGeneral}
+		data = &cfg
+	}
+	node, _ := f.GetOrCreateNode(reduceOpType, outputShape, inputs, data)
 	return node, nil
 }
 
 func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
-	reduceAxes := node.Data.([]int)
+	var reduceAxes []int
+	var cfg ReduceConfig
+	if node != nil && node.Data != nil {
+		switch d := node.Data.(type) {
+		case *ReduceConfig:
+			cfg = *d
+			reduceAxes = cfg.Axes
+		case ReduceConfig:
+			cfg = d
+			reduceAxes = cfg.Axes
+		case []int:
+			reduceAxes = d
+			cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
+		}
+	} else {
+		cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
+		reduceAxes = cfg.Axes
+	}
 	if len(reduceAxes) == 0 && operand.RawShape.Rank() > 0 {
 		// Reduce all axes.
 		for axis := range operand.RawShape.Rank() {
 			reduceAxes = append(reduceAxes, axis)
 		}
+		cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
 	}
 	if len(reduceAxes) == 0 {
 		// Identity.
@@ -141,12 +335,23 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 			}
 		}
 		outputShape = concreteShape
+		cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
 	}
 	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}
-	it := NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
+	if backend.NoOps {
+		return output, nil
+	}
+
+	var it *ReduceOutputIterator
+	if (node.OpType == compute.OpTypeReduceSum || node.OpType == compute.OpTypeReduceMax || node.OpType == compute.OpTypeReduceMin) && cfg.Pattern != ReduceGeneral {
+		it = &ReduceOutputIterator{Config: cfg}
+	} else {
+		it = NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
+		it.Config = cfg
+	}
 	dtype := output.RawShape.DType
 
 	var reduceFn GenericReduceFn
@@ -213,6 +418,8 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 // for the corresponding flat index on the input operand, assuming the operand flat index is moving
 // incrementally.
 type ReduceOutputIterator struct {
+	Config ReduceConfig
+
 	flatIdx int // On the output tensor.
 
 	perAxisIdx    []int // On the operand tensor.
@@ -313,17 +520,96 @@ func init() {
 type GenericReduceFn = func(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error
 
 func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.LowestValue().(T)
 	outputFlat := output.Flat.([]T)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]T)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		outputFlat[outputIdx] = max(outputFlat[outputIdx], value)
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		if len(operandFlat) == 0 {
+			outputFlat[0] = dtype.LowestValue().(T)
+			return nil
+		}
+		m := operandFlat[0]
+		for _, v := range operandFlat[1:] {
+			m = max(m, v)
+		}
+		outputFlat[0] = m
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			lowest := dtype.LowestValue().(T)
+			for a := range A {
+				outputFlat[a] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0]
+			for _, v := range row[1:] {
+				m = max(m, v)
+			}
+			outputFlat[a] = m
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			lowest := dtype.LowestValue().(T)
+			for b := range B {
+				outputFlat[b] = lowest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				outputFlat[b] = max(outputFlat[b], v)
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			lowest := dtype.LowestValue().(T)
+			for i := range outputFlat {
+				outputFlat[i] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					outSlice[c] = max(outSlice[c], v)
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.LowestValue().(T)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			outputFlat[outputIdx] = max(outputFlat[outputIdx], value)
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceMaxBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
@@ -357,17 +643,96 @@ func execReduceMaxFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIte
 }
 
 func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.HighestValue().(T)
 	outputFlat := output.Flat.([]T)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]T)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		outputFlat[outputIdx] = min(outputFlat[outputIdx], value)
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		if len(operandFlat) == 0 {
+			outputFlat[0] = dtype.HighestValue().(T)
+			return nil
+		}
+		m := operandFlat[0]
+		for _, v := range operandFlat[1:] {
+			m = min(m, v)
+		}
+		outputFlat[0] = m
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			highest := dtype.HighestValue().(T)
+			for a := range A {
+				outputFlat[a] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0]
+			for _, v := range row[1:] {
+				m = min(m, v)
+			}
+			outputFlat[a] = m
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			highest := dtype.HighestValue().(T)
+			for b := range B {
+				outputFlat[b] = highest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				outputFlat[b] = min(outputFlat[b], v)
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			highest := dtype.HighestValue().(T)
+			for i := range outputFlat {
+				outputFlat[i] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					outSlice[c] = min(outSlice[c], v)
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.HighestValue().(T)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			outputFlat[outputIdx] = min(outputFlat[outputIdx], value)
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceMinBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
@@ -402,61 +767,299 @@ func execReduceMinFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIte
 
 func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]T)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = T(0)
-	}
 	operandFlat := operand.Flat.([]T)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		outputFlat[outputIdx] += value
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		var sum T
+		for _, v := range operandFlat {
+			sum += v
+		}
+		outputFlat[0] = sum
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			var sum T
+			for _, v := range row {
+				sum += v
+			}
+			outputFlat[a] = sum
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				outputFlat[b] += v
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					outSlice[c] += v
+				}
+			}
+		}
+		return nil
+
+	default:
+		clear(outputFlat)
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			outputFlat[outputIdx] += value
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceSumBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	backend := output.RawBackend
-	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
-	if err != nil {
-		return err
-	}
-	defer backend.PutBuffer(tempBuf)
-	accumulator := tempBuf.Flat.([]float32)
-	for i := range accumulator {
-		accumulator[i] = 0.0
-	}
 	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		accumulator[outputIdx] += value.Float32()
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		var sum float32
+		for _, v := range operandFlat {
+			sum += v.Float32()
+		}
+		outputFlat[0] = bfloat16.FromFloat32(sum)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			var sum float32
+			for _, v := range row {
+				sum += v.Float32()
+			}
+			outputFlat[a] = bfloat16.FromFloat32(sum)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, B))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		for b := range B {
+			accumulator[b] = operandFlat[b].Float32()
+		}
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				accumulator[b] += v.Float32()
+			}
+		}
+		for b, val := range accumulator {
+			outputFlat[b] = bfloat16.FromFloat32(val)
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, C))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		for a := range A {
+			outOffset := a * C
+			inOffset0 := a * B * C
+			for c := range C {
+				accumulator[c] = operandFlat[inOffset0+c].Float32()
+			}
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				sliceB := operandFlat[inOffset : inOffset+C]
+				for c, v := range sliceB {
+					accumulator[c] += v.Float32()
+				}
+			}
+			for c, val := range accumulator {
+				outputFlat[outOffset+c] = bfloat16.FromFloat32(val)
+			}
+		}
+		return nil
+
+	default:
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		clear(accumulator)
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			accumulator[outputIdx] += value.Float32()
+		}
+		for i, val := range accumulator {
+			outputFlat[i] = bfloat16.FromFloat32(val)
+		}
+		return nil
 	}
-	for i, val := range accumulator {
-		outputFlat[i] = bfloat16.FromFloat32(val)
-	}
-	return nil
 }
 
 func execReduceSumFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {
 	outputFlat := output.Flat.([]float16.Float16)
-	backend := output.RawBackend
-	tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
-	if err != nil {
-		return err
-	}
-	defer backend.PutBuffer(tempBuf)
-	accumulator := tempBuf.Flat.([]float32)
-	for i := range accumulator {
-		accumulator[i] = 0.0
-	}
 	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		accumulator[outputIdx] += value.Float32()
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		var sum float32
+		for _, v := range operandFlat {
+			sum += v.Float32()
+		}
+		outputFlat[0] = float16.FromFloat32(sum)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			var sum float32
+			for _, v := range row {
+				sum += v.Float32()
+			}
+			outputFlat[a] = float16.FromFloat32(sum)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, B))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		for b := range B {
+			accumulator[b] = operandFlat[b].Float32()
+		}
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				accumulator[b] += v.Float32()
+			}
+		}
+		for b, val := range accumulator {
+			outputFlat[b] = float16.FromFloat32(val)
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, C))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		for a := range A {
+			outOffset := a * C
+			inOffset0 := a * B * C
+			for c := range C {
+				accumulator[c] = operandFlat[inOffset0+c].Float32()
+			}
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				sliceB := operandFlat[inOffset : inOffset+C]
+				for c, v := range sliceB {
+					accumulator[c] += v.Float32()
+				}
+			}
+			for c, val := range accumulator {
+				outputFlat[outOffset+c] = float16.FromFloat32(val)
+			}
+		}
+		return nil
+
+	default:
+		backend := output.RawBackend
+		tempBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(outputFlat)))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tempBuf)
+		accumulator := tempBuf.Flat.([]float32)
+		clear(accumulator)
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			accumulator[outputIdx] += value.Float32()
+		}
+		for i, val := range accumulator {
+			outputFlat[i] = float16.FromFloat32(val)
+		}
+		return nil
 	}
-	for i, val := range accumulator {
-		outputFlat[i] = float16.FromFloat32(val)
-	}
-	return nil
 }
 
 func execReduceProductGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {

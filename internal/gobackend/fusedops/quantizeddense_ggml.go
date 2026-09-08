@@ -47,6 +47,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +89,7 @@ func execFusedQuantizedDenseGGML(backend *gobackend.Backend, node *gobackend.Nod
 		return nil, err
 	}
 
-	fusedDenseApplyActivation[float32](backend, output, data.activation)
+	activations.Apply(backend, data.activation, output.Flat.([]float32))
 	return output, nil
 }
 

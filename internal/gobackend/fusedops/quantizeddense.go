@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -413,7 +414,7 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unknown quantization scheme %d", data.scheme)
 	}
 
-	fusedDenseApplyActivation[float32](backend, output, data.activation)
+	activations.Apply(backend, data.activation, output.Flat.([]float32))
 	return output, nil
 }
 
@@ -523,17 +524,19 @@ func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buf
 	return outBuf, true, nil
 }
 
+const quantizedDenseMinParallelizeChunk = 4096
+
 // quantizedDenseParallelTileCount returns the number of parallel work units that
 // quantizedDenseParallel will dispatch for the given dimensions.
 func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) int {
 	totalWork := M * K * N
-	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= geluMinParallelizeChunk {
+	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
 		return M
 	}
 	if M > 1 {
 		return M
 	}
-	tileSize := max(geluMinParallelizeChunk/K, 1)
+	tileSize := max(quantizedDenseMinParallelizeChunk/K, 1)
 	return (N + tileSize - 1) / tileSize
 }
 
@@ -541,7 +544,7 @@ func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) in
 // workerIdx is a dense index in [0, quantizedDenseParallelTileCount) identifying the work unit.
 func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
 	totalWork := M * K * N
-	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= geluMinParallelizeChunk {
+	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
 		for m := range M {
 			rowFn(m, m, 0, N)
 		}
@@ -561,7 +564,7 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 		wg.Wait()
 	} else {
 		// M=1: tile over N columns for single-token inference.
-		tileSize := max(geluMinParallelizeChunk/K, 1)
+		tileSize := max(quantizedDenseMinParallelizeChunk/K, 1)
 		var wg sync.WaitGroup
 		workerIdx := 0
 		for nStart := 0; nStart < N; nStart += tileSize {

@@ -72,6 +72,12 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 {{- end }}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType {  //nolint:exhaustive
 {{- range .Versions}}
 {{- $version := .Name }}
@@ -82,7 +88,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 
 	case dtypes.{{.DType}}:
 		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -92,7 +98,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 
 	case dtypes.{{.DType}}:
 		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -101,7 +107,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 
 	case dtypes.{{.DType}}:
 		exec{{$name}}{{$version}}{{.DType}}(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]
-	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+	{{- if $is_comparison }} bool {{- else }} {{.GoType}} {{- end }} ), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -110,7 +116,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 {{- range $.BooleanTypes}}
 	case dtypes.{{.DType}}:
 		exec{{$name}}{{$version}}Generic(lhs.Flat.([]{{.GoType}}), rhs.Flat.([]{{.GoType}}), output.Flat.([]{{.GoType}}),
-			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 {{- end}}
 {{- end}}
 
@@ -129,7 +135,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 {{- if or .Numeric .Integer .Float .Boolean }}
 
 func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](lhs, rhs []T, output []{{if $is_comparison}}bool{{else}}T{{end}},
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -147,15 +153,76 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](lh
 		}
 		return
 {{- end}}
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = {{ CallOp .Format "input" "rhs[ii]" }}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "lhs[offset+b]" "rhs[b]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "lhs[b]" "rhs[offset+b]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "lhs[offset+b]" "c" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "c" "rhs[offset+b]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "c" "rhs[b]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = {{ CallOp .Format "lhs[b]" "c" }}
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = {{ CallOp .Format "lhs[indices.LHSFlatIdx]" "rhs[indices.RHSFlatIdx]" }}
 		}
@@ -170,7 +237,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](lh
 {{- $outer := . -}}
 {{- range $half := $.HalfTypes}}
 func exec{{$name}}{{$version}}{{$half.DType}}(lhs, rhs []{{$half.GoType}}, output []{{if $is_comparison}}bool{{else}}{{$half.GoType}}{{end}},
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -198,7 +265,7 @@ func exec{{$name}}{{$version}}{{$half.DType}}(lhs, rhs []{{$half.GoType}}, outpu
 		}
 		return
 {{- end}}
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -210,9 +277,102 @@ func exec{{$name}}{{$version}}{{$half.DType}}(lhs, rhs []{{$half.GoType}}, outpu
 		{{- end }}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+			{{- if $is_comparison }}
+				output[offset+b] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[offset+b] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()

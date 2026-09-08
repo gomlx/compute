@@ -118,6 +118,9 @@ func broadcastToShape(backend *gobackend.Backend, targetShape shapes.Shape, broa
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	var iter *gobackend.BroadcastIterator
 

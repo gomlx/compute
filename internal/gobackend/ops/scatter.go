@@ -6,6 +6,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -170,6 +171,9 @@ func execScatter(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		}
 	}
 	output.RawShape = node.Shape // Output shape is the same as operand shape.
+	if backend.NoOps {
+		return output, nil
+	}
 
 	// Dispatch to a type-specific scatter loop based on the operation type.
 	dtype := output.RawShape.DType
@@ -251,17 +255,68 @@ func execScatterGeneric[T gobackend.SupportedTypesConstraints](opType compute.Op
 	if scatterParams.indexVectorAxis == indicesShape.Rank() {
 		numBatchAxes++
 	}
-	updatesBatchAxes := make([]int, 0, numBatchAxes)
-	updatesWindowAxesSet := sets.MakeWith(scatterParams.updateWindowAxes...)
-	for axis := range updatesShape.Rank() {
-		if !updatesWindowAxesSet.Has(axis) {
-			updatesBatchAxes = append(updatesBatchAxes, axis)
+	// Precompute mapping from updates window axes to operand/output axes.
+	insertedWindowAxesSet := sets.MakeWith(scatterParams.insertedWindowAxes...)
+	operandUpdatedWindowAxes := make([]int, 0, outputShape.Rank()-len(scatterParams.insertedWindowAxes))
+	for axis := range outputShape.Rank() {
+		if !insertedWindowAxesSet.Has(axis) {
+			operandUpdatedWindowAxes = append(operandUpdatedWindowAxes, axis)
 		}
 	}
-	innerUpdatesIt := newSubIndicesIterator(updatesShape, updatesBatchAxes...)
+	numWinAxes := len(scatterParams.updateWindowAxes)
+	winDims := make([]int, numWinAxes)
+	updWinStrides := make([]int, numWinAxes)
+	outWinStrides := make([]int, numWinAxes)
+	outputStrides := outputShape.Strides()
+	updatesStrides := updatesShape.Strides()
+	for i, uAxis := range scatterParams.updateWindowAxes {
+		oAxis := operandUpdatedWindowAxes[i]
+		winDims[i] = updatesShape.Dimensions[uAxis]
+		updWinStrides[i] = updatesStrides[uAxis]
+		outWinStrides[i] = outputStrides[oAxis]
+	}
+	winCoords := make([]int, numWinAxes)
 
-	// Initialize an inner iterator over the output:
-	innerOutputIt := newSubIndicesIterator(outputShape, scatterParams.insertedWindowAxes...)
+	type combineSliceFnT = func(out, upd []T)
+	var combineSliceFn combineSliceFnT
+	switch opType { //nolint:exhaustive
+	case compute.OpTypeScatterMax:
+		if tmpAny, tmpErr := combineSliceMaxDTypeMap.Get(dtype); tmpErr == nil {
+			combineSliceFn = tmpAny.(combineSliceFnT)
+		}
+	case compute.OpTypeScatterMin:
+		if tmpAny, tmpErr := combineSliceMinDTypeMap.Get(dtype); tmpErr == nil {
+			combineSliceFn = tmpAny.(combineSliceFnT)
+		}
+	case compute.OpTypeScatterSum:
+		if tmpAny, tmpErr := combineSliceSumDTypeMap.Get(dtype); tmpErr == nil {
+			combineSliceFn = tmpAny.(combineSliceFnT)
+		}
+	}
+
+	// Determine largest contiguous chunk of elements along trailing window axes.
+	chunkElements := 1
+	var leadingWinAxes []int
+	for axis := numWinAxes - 1; axis >= 0; axis-- {
+		if winDims[axis] == 1 {
+			continue
+		}
+		if updWinStrides[axis] == chunkElements && outWinStrides[axis] == chunkElements {
+			chunkElements *= winDims[axis]
+		} else {
+			for a := 0; a <= axis; a++ {
+				if winDims[a] > 1 {
+					leadingWinAxes = append(leadingWinAxes, a)
+				}
+			}
+			break
+		}
+	}
+	numWinElements := 1
+	for _, dim := range winDims {
+		numWinElements *= dim
+	}
+	numChunks := numWinElements / chunkElements
 
 	// Outer-loop: range over the pointed indices
 	for {
@@ -272,36 +327,76 @@ func execScatterGeneric[T gobackend.SupportedTypesConstraints](opType compute.Op
 			flatIndirectIndex += indexVectorStride
 		}
 		deferenceIndicesFn(indicesFlat, indirectScatterIndices, elemIndices)
-		// fmt.Printf("\tindices%v = indices.flat[%d] = %v\n", indicesIt.PerAxisIdx, indicesIt.FlatIdx, elemIndices)
 
-		// Prepare innerOutputIt to start from the position set indices.
-		for axis := range innerOutputIt.PerAxisIdx {
-			innerOutputIt.PerAxisIdx[axis] = 0
-		}
-		innerOutputIt.FlatIdx = 0
+		// Base offset in output:
+		outputBaseIdx := 0
 		for scatterAxis, idx := range elemIndices {
 			outputAxis := scatterParams.scatterAxesToOperandAxes[scatterAxis]
-			innerOutputIt.PerAxisIdx[outputAxis] = idx
-			innerOutputIt.FlatIdx += idx * innerOutputIt.PerAxisStride[outputAxis]
+			outputBaseIdx += idx * outputStrides[outputAxis]
 		}
 
-		// Prepare innerUpdatesIt to start from the indices in the updatesIt.
-		innerUpdatesIt.FlatIdx = updatesIt.FlatIdx
-		copy(innerUpdatesIt.PerAxisIdx, updatesIt.PerAxisIdx)
-
 		// Inner-loop: combine slice (window) of update into output.
-		for {
-			outputIdx := innerOutputIt.FlatIdx
-			updatesIdx := innerUpdatesIt.FlatIdx
-			// fmt.Println("\t\tCombine:")
-			// fmt.Printf("\t\t- updates%v (updatesFlat[%d])=%v\n", innerUpdatesIt.PerAxisIdx, updatesIdx, updatesFlat[updatesIdx])
-			// fmt.Printf("\t\t-  output%v (outputFlat[%d])=%v\n", innerOutputIt.PerAxisIdx, outputIdx, outputFlat[outputIdx])
-			outputFlat[outputIdx] = combineFn(outputFlat[outputIdx], updatesFlat[updatesIdx])
-			// fmt.Printf("\t\t- result=%v\n", outputFlat[outputIdx])
-			if !innerUpdatesIt.Increment() {
-				break
+		if numWinAxes == 0 {
+			outputFlat[outputBaseIdx] = combineFn(outputFlat[outputBaseIdx], updatesFlat[updatesIt.FlatIdx])
+		} else if combineSliceFn != nil && chunkElements > 1 {
+			if numChunks == 1 {
+				combineSliceFn(
+					outputFlat[outputBaseIdx:outputBaseIdx+chunkElements],
+					updatesFlat[updatesIt.FlatIdx:updatesIt.FlatIdx+chunkElements],
+				)
+			} else {
+				for i := range winCoords {
+					winCoords[i] = 0
+				}
+				outOffset := 0
+				updOffset := 0
+				for range numChunks {
+					combineSliceFn(
+						outputFlat[outputBaseIdx+outOffset:outputBaseIdx+outOffset+chunkElements],
+						updatesFlat[updatesIt.FlatIdx+updOffset:updatesIt.FlatIdx+updOffset+chunkElements],
+					)
+					for i := len(leadingWinAxes) - 1; i >= 0; i-- {
+						axis := leadingWinAxes[i]
+						winCoords[axis]++
+						outOffset += outWinStrides[axis]
+						updOffset += updWinStrides[axis]
+						if winCoords[axis] < winDims[axis] {
+							break
+						}
+						winCoords[axis] = 0
+						outOffset -= outWinStrides[axis] * winDims[axis]
+						updOffset -= updWinStrides[axis] * winDims[axis]
+					}
+				}
 			}
-			innerOutputIt.Increment()
+		} else {
+			for i := range winCoords {
+				winCoords[i] = 0
+			}
+			outOffset := 0
+			updOffset := 0
+			for {
+				outputIdx := outputBaseIdx + outOffset
+				updatesIdx := updatesIt.FlatIdx + updOffset
+				outputFlat[outputIdx] = combineFn(outputFlat[outputIdx], updatesFlat[updatesIdx])
+
+				// Step window coordinates:
+				axis := numWinAxes - 1
+				for ; axis >= 0; axis-- {
+					winCoords[axis]++
+					outOffset += outWinStrides[axis]
+					updOffset += updWinStrides[axis]
+					if winCoords[axis] < winDims[axis] {
+						break
+					}
+					winCoords[axis] = 0
+					outOffset -= outWinStrides[axis] * winDims[axis]
+					updOffset -= updWinStrides[axis] * winDims[axis]
+				}
+				if axis < 0 {
+					break
+				}
+			}
 		}
 
 		// Next in indices:
@@ -361,7 +456,7 @@ func (it *subIndicesIterator) Increment() bool {
 			break
 		}
 		it.PerAxisIdx[axis] = 0
-		it.FlatIdx -= it.PerAxisStride[axis-1] // Rewind FlatIdx to start of the current axis.
+		it.FlatIdx -= it.PerAxisStride[axis] * it.PerAxisSize[axis] // Rewind FlatIdx to start of the current axis.
 	}
 
 	// Reached end.
@@ -386,12 +481,31 @@ var (
 	combineMinDTypeMap = gobackend.NewDTypeMap("Min(a, b) for ScatterMin")
 	//gobackend:dtypemap combineForScatterSumGeneric ints,uints,floats
 	combineSumDTypeMap = gobackend.NewDTypeMap("Sum(a, b) for ScatterSum")
+
+	// combineSliceMaxDTypeMap maps DType to func(out, upd []T).
+	combineSliceMaxDTypeMap = gobackend.NewDTypeMap("Slice Max(out, upd) for ScatterMax")
+	// combineSliceMinDTypeMap maps DType to func(out, upd []T).
+	combineSliceMinDTypeMap = gobackend.NewDTypeMap("Slice Min(out, upd) for ScatterMin")
+	// combineSliceSumDTypeMap maps DType to func(out, upd []T).
+	combineSliceSumDTypeMap = gobackend.NewDTypeMap("Slice Sum(out, upd) for ScatterSum")
 )
 
 func init() {
 	combineMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, combineForScatterMaxBFloat16)
 	combineMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, combineForScatterMinBFloat16)
 	combineSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityTyped, combineForScatterSumBFloat16)
+
+	combineMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, combineForScatterMaxFloat16)
+	combineMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, combineForScatterMinFloat16)
+	combineSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityTyped, combineForScatterSumFloat16)
+
+	combineSliceMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, combineSliceForScatterMaxBFloat16)
+	combineSliceMinDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, combineSliceForScatterMinBFloat16)
+	combineSliceSumDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, combineSliceForScatterSumBFloat16)
+
+	combineSliceMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, combineSliceForScatterMaxFloat16)
+	combineSliceMinDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, combineSliceForScatterMinFloat16)
+	combineSliceSumDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, combineSliceForScatterSumFloat16)
 }
 
 func combineForScatterMaxGeneric[T gobackend.PODNumericConstraints](a, b T) T {
@@ -402,6 +516,10 @@ func combineForScatterMaxBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 	return bfloat16.FromFloat32(max(a.Float32(), b.Float32()))
 }
 
+func combineForScatterMaxFloat16(a, b float16.Float16) float16.Float16 {
+	return float16.FromFloat32(max(a.Float32(), b.Float32()))
+}
+
 func combineForScatterMinGeneric[T gobackend.PODNumericConstraints](a, b T) T {
 	return min(a, b)
 }
@@ -410,10 +528,91 @@ func combineForScatterMinBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 	return bfloat16.FromFloat32(min(a.Float32(), b.Float32()))
 }
 
+func combineForScatterMinFloat16(a, b float16.Float16) float16.Float16 {
+	return float16.FromFloat32(min(a.Float32(), b.Float32()))
+}
+
 func combineForScatterSumGeneric[T gobackend.PODNumericConstraints](a, b T) T {
 	return a + b
 }
 
 func combineForScatterSumBFloat16(a, b bfloat16.BFloat16) bfloat16.BFloat16 {
 	return bfloat16.FromFloat32(a.Float32() + b.Float32())
+}
+
+func combineForScatterSumFloat16(a, b float16.Float16) float16.Float16 {
+	return float16.FromFloat32(a.Float32() + b.Float32())
+}
+
+func combineSliceForScatterMaxGeneric[T gobackend.PODNumericConstraints](out, upd []T) {
+	for i, v := range upd {
+		out[i] = max(out[i], v)
+	}
+}
+
+func combineSliceForScatterMaxBFloat16(out, upd []bfloat16.BFloat16) {
+	for i, v := range upd {
+		out[i] = bfloat16.FromFloat32(max(out[i].Float32(), v.Float32()))
+	}
+}
+
+func combineSliceForScatterMaxFloat16(out, upd []float16.Float16) {
+	for i, v := range upd {
+		out[i] = float16.FromFloat32(max(out[i].Float32(), v.Float32()))
+	}
+}
+
+func combineSliceForScatterMinGeneric[T gobackend.PODNumericConstraints](out, upd []T) {
+	for i, v := range upd {
+		out[i] = min(out[i], v)
+	}
+}
+
+func combineSliceForScatterMinBFloat16(out, upd []bfloat16.BFloat16) {
+	for i, v := range upd {
+		out[i] = bfloat16.FromFloat32(min(out[i].Float32(), v.Float32()))
+	}
+}
+
+func combineSliceForScatterMinFloat16(out, upd []float16.Float16) {
+	for i, v := range upd {
+		out[i] = float16.FromFloat32(min(out[i].Float32(), v.Float32()))
+	}
+}
+
+func combineSliceForScatterSumGeneric[T gobackend.PODNumericConstraints](out, upd []T) {
+	for i, v := range upd {
+		out[i] += v
+	}
+}
+
+func combineSliceForScatterSumBFloat16(out, upd []bfloat16.BFloat16) {
+	for i, v := range upd {
+		out[i] = bfloat16.FromFloat32(out[i].Float32() + v.Float32())
+	}
+}
+
+func combineSliceForScatterSumFloat16(out, upd []float16.Float16) {
+	for i, v := range upd {
+		out[i] = float16.FromFloat32(out[i].Float32() + v.Float32())
+	}
+}
+
+func registerGenericCombineSlice[T gobackend.PODNumericConstraints](dtype dtypes.DType) {
+	combineSliceMaxDTypeMap.Register(dtype, gobackend.PriorityGeneric, combineSliceForScatterMaxGeneric[T])
+	combineSliceMinDTypeMap.Register(dtype, gobackend.PriorityGeneric, combineSliceForScatterMinGeneric[T])
+	combineSliceSumDTypeMap.Register(dtype, gobackend.PriorityGeneric, combineSliceForScatterSumGeneric[T])
+}
+
+func init() {
+	registerGenericCombineSlice[float32](dtypes.Float32)
+	registerGenericCombineSlice[float64](dtypes.Float64)
+	registerGenericCombineSlice[int8](dtypes.Int8)
+	registerGenericCombineSlice[int16](dtypes.Int16)
+	registerGenericCombineSlice[int32](dtypes.Int32)
+	registerGenericCombineSlice[int64](dtypes.Int64)
+	registerGenericCombineSlice[uint8](dtypes.Uint8)
+	registerGenericCombineSlice[uint16](dtypes.Uint16)
+	registerGenericCombineSlice[uint32](dtypes.Uint32)
+	registerGenericCombineSlice[uint64](dtypes.Uint64)
 }

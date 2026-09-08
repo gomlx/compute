@@ -151,10 +151,13 @@ const (
 	// If supported (declared in Capabilities.Operations), GoMLX uses the
 	// native implementation; otherwise it decomposes into primitives.
 
+	OpTypeFusedActivation
+	OpTypeFusedActivationVJP
 	OpTypeFusedSoftmax
 	OpTypeFusedLayerNorm
 	OpTypeFusedGelu
 	OpTypeFusedDense
+	OpTypeFusedDenseVJP
 	OpTypeFusedScaledDotProductAttention
 	OpTypeFusedScaledDotProductAttentionVJP
 	OpTypeFusedAttentionQKVProjection

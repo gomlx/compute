@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"unsafe"
@@ -30,6 +31,10 @@ var _ compute.DataInterface = (*Backend)(nil)
 type Buffer struct {
 	RawBackend *Backend
 	RawShape   shapes.Shape
+
+	// ShapeDimensionsBuffer provides inline storage for dimensions up to rank 8,
+	// avoiding heap allocation on shape cloning during buffer acquisition.
+	ShapeDimensionsBuffer [8]int
 
 	// InUse is set to false when the buffer is finalized and moved back to the pool.
 	InUse bool
@@ -134,7 +139,14 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	buf.RawBackend = b
 	buf.InUse = true
 	buf.isUserFed = false
-	buf.RawShape = shape.Clone()
+	buf.RawShape = shape
+	rank := len(shape.Dimensions)
+	if rank <= len(buf.ShapeDimensionsBuffer) {
+		buf.RawShape.Dimensions = buf.ShapeDimensionsBuffer[:rank]
+	} else {
+		buf.RawShape.Dimensions = make([]int, rank)
+	}
+	copy(buf.RawShape.Dimensions, shape.Dimensions)
 	buf.recast(dtype, length)
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
@@ -182,6 +194,13 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 // shallowClone returns a new Buffer struct pointing to the same data.
 func (buffer *Buffer) shallowClone() *Buffer {
 	newBuf := *buffer
+	rank := len(newBuf.RawShape.Dimensions)
+	if rank <= len(newBuf.ShapeDimensionsBuffer) {
+		newBuf.RawShape.Dimensions = newBuf.ShapeDimensionsBuffer[:rank]
+		copy(newBuf.RawShape.Dimensions, buffer.RawShape.Dimensions)
+	} else {
+		newBuf.RawShape.Dimensions = slices.Clone(buffer.RawShape.Dimensions)
+	}
 	return &newBuf
 }
 
@@ -363,7 +382,7 @@ func (buffer *Buffer) Finalize() error {
 // BufferShape returns the shape for the buffer.
 // Shape returns the shape for the buffer.
 func (buffer *Buffer) Shape() (shapes.Shape, error) {
-	return buffer.RawShape, nil
+	return buffer.RawShape.Clone(), nil
 }
 
 // BufferDeviceNum returns the deviceNum for the buffer.

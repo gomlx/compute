@@ -345,6 +345,22 @@ func (f *Function) Floor(x compute.Value) (compute.Value, error) {
 	return RegisterFloor.Fn(f, x)
 }
 
+func (f *Function) FusedActivation(x compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
+	if RegisterFusedActivation.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedActivation(x, cfg)
+	}
+	return RegisterFusedActivation.Fn(f, x, cfg)
+}
+
+func (f *Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
+	if RegisterFusedActivationVJP.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedActivationVJP(y, x, dOutput, cfg)
+	}
+	return RegisterFusedActivationVJP.Fn(f, y, x, dOutput, cfg)
+}
+
 func (f *Function) FusedAttentionQKVProjection(x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error) {
 	if RegisterFusedAttentionQKVProjection.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -361,12 +377,12 @@ func (f *Function) FusedDense(x compute.Value, weight compute.Value, bias comput
 	return RegisterFusedDense.Fn(f, x, weight, bias, options)
 }
 
-func (f *Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error) {
-	if RegisterFusedGelu.Fn == nil {
+func (f *Function) FusedDenseVJP(x compute.Value, weight compute.Value, bias compute.Value, y compute.Value, dOutput compute.Value, options compute.DenseConfig) (dx compute.Value, dWeight compute.Value, dBias compute.Value, err error) {
+	if RegisterFusedDenseVJP.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.FusedGelu(x, exact)
+		return f.Function.FusedDenseVJP(x, weight, bias, y, dOutput, options)
 	}
-	return RegisterFusedGelu.Fn(f, x, exact)
+	return RegisterFusedDenseVJP.Fn(f, x, weight, bias, y, dOutput, options)
 }
 
 func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error) {
@@ -1089,14 +1105,20 @@ var (
 	RegisterFloor = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Floor",
 	}
+	RegisterFusedActivation = OpHandlerRegistration[func(f *Function, x compute.Value, cfg compute.ActivationConfig) (compute.Value, error)]{
+		Method: "FusedActivation",
+	}
+	RegisterFusedActivationVJP = OpHandlerRegistration[func(f *Function, y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error)]{
+		Method: "FusedActivationVJP",
+	}
 	RegisterFusedAttentionQKVProjection = OpHandlerRegistration[func(f *Function, x compute.Value, wQKV compute.Value, biasQ compute.Value, biasK compute.Value, biasV compute.Value, queryDim int, keyValueDim int) (query compute.Value, key compute.Value, value compute.Value, err error)]{
 		Method: "FusedAttentionQKVProjection",
 	}
 	RegisterFusedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error)]{
 		Method: "FusedDense",
 	}
-	RegisterFusedGelu = OpHandlerRegistration[func(f *Function, x compute.Value, exact bool) (compute.Value, error)]{
-		Method: "FusedGelu",
+	RegisterFusedDenseVJP = OpHandlerRegistration[func(f *Function, x compute.Value, weight compute.Value, bias compute.Value, y compute.Value, dOutput compute.Value, options compute.DenseConfig) (dx compute.Value, dWeight compute.Value, dBias compute.Value, err error)]{
+		Method: "FusedDenseVJP",
 	}
 	RegisterFusedLayerNorm = OpHandlerRegistration[func(f *Function, x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error)]{
 		Method: "FusedLayerNorm",

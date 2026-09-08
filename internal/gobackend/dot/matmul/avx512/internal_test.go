@@ -9,7 +9,6 @@ import (
 	"simd/archsimd"
 	"strings"
 	"testing"
-	"time"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -846,13 +845,7 @@ func runBenchmarkPackRHS(b *testing.B, name string, packFn matmultest.PackRHSFn[
 			}
 		}
 	}
-	elapsed := b.Elapsed()
-	if elapsed > 0 && b.N > 0 {
-		durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
-		durStr := humanize.Duration(durationPerOp)
-		b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
-		_ = durStr
-	}
+	b.ReportMetric(humanize.DurationPerOp(b.Elapsed(), b.N))
 }
 func TestChoose2DSplit(t *testing.T) {
 	params := AVX512ParamsFloat32
@@ -895,6 +888,7 @@ func BenchmarkMicrokernels(b *testing.B) {
 			if elapsed > 0 && b.N > 0 {
 				gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
 				b.ReportMetric(gflops, "GFlops/s")
+				b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 			}
 		})
 	}
@@ -947,9 +941,8 @@ func BenchmarkSmallMatMul(b *testing.B) {
 			elapsed := b.Elapsed()
 			if elapsed > 0 && b.N > 0 {
 				gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-				durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 				b.ReportMetric(gflops, "GFlops/s")
-				b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+				b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 			}
 		})
 
@@ -965,9 +958,8 @@ func BenchmarkSmallMatMul(b *testing.B) {
 				elapsed := b.Elapsed()
 				if elapsed > 0 && b.N > 0 {
 					gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-					durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 					b.ReportMetric(gflops, "GFlops/s")
-					b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+					b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 				}
 			})
 			b.Run(tc.name+"/AsmNonTransposed", func(b *testing.B) {
@@ -978,9 +970,8 @@ func BenchmarkSmallMatMul(b *testing.B) {
 				elapsed := b.Elapsed()
 				if elapsed > 0 && b.N > 0 {
 					gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-					durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 					b.ReportMetric(gflops, "GFlops/s")
-					b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+					b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 				}
 			})
 		}
@@ -997,9 +988,8 @@ func BenchmarkSmallMatMul(b *testing.B) {
 				elapsed := b.Elapsed()
 				if elapsed > 0 && b.N > 0 {
 					gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-					durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 					b.ReportMetric(gflops, "GFlops/s")
-					b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+					b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 				}
 			})
 			b.Run(tc.name+"/AsmTransposed", func(b *testing.B) {
@@ -1010,9 +1000,8 @@ func BenchmarkSmallMatMul(b *testing.B) {
 				elapsed := b.Elapsed()
 				if elapsed > 0 && b.N > 0 {
 					gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-					durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 					b.ReportMetric(gflops, "GFlops/s")
-					b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+					b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 				}
 			})
 		}

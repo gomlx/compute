@@ -130,3 +130,7 @@ func (f Function) FusedScaledDotProductAttention(query, key, value compute.Value
 func (f Function) FusedScaledDotProductAttentionVJP(query, key, value compute.Value, axesLayout compute.AttentionAxesLayout, options *compute.ScaledDotProductAttentionConfig, output compute.Value, statesForVJP []compute.Value, dOutput compute.Value) (dQuery, dKey, dValue compute.Value, err error) {
 	return nil, nil, nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttentionVJP not implemented by this backend")
 }
+
+func (f Function) FusedDenseVJP(x, weight, bias, y, dOutput compute.Value, options compute.DenseConfig) (dx, dWeight, dBias compute.Value, err error) {
+	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedDenseVJP)
+}

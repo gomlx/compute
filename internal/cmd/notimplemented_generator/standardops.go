@@ -96,6 +96,8 @@ func GenerateStandardOpsInterface(methods []backendparser.Method) {
 				pi.Type = "...compute.DynamicDimensionSpec"
 			case "ActivationType":
 				pi.Type = "compute.ActivationType"
+			case "ActivationConfig":
+				pi.Type = "compute.ActivationConfig"
 			case "DenseConfig":
 				pi.Type = "compute.DenseConfig"
 			case "DenseLayout":

@@ -385,6 +385,24 @@ func (f Function) Floor(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFloor)
 }
 
+// FusedActivation applies the configured activation function.
+// cfg.Type is obligatory, other fields are optional and specific for activations.
+func (f Function) FusedActivation(x compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedActivation)
+}
+
+// FusedActivationVJP computes the vector-jacobian product of the configured activation:
+// dx = dOutput * f'(x) (or dOutput * f'(y)).
+//
+// Parameters:
+//   - y: output of the activation, calculated presumably by FusedActivation.
+//   - x: input to the activation. If cfg.Type.VJPRequiresInput() is false, x can be nil if y is provided.
+//   - dOutput: the incoming adjoint gradient (the "V" in "VJP"), with the same shape as y.
+//   - cfg: the activation configuration.
+func (f Function) FusedActivationVJP(y compute.Value, x compute.Value, dOutput compute.Value, cfg compute.ActivationConfig) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeFusedActivationVJP)
+}
+
 // FusedDense performs fused matmul + optional bias + optional activation.
 //
 // It does y = activation(x @ W + bias) for DenseLayoutInputOutputs, or
@@ -396,15 +414,14 @@ func (f Function) Floor(x compute.Value) (compute.Value, error) {
 //     or [out_features..., in_features] (if WeightLayout is DenseLayoutOutputsInput)
 //   - bias: [out_features...] (nil-able).
 //   - options: DenseConfig options (activation and weight layout).
+//
+// Note: ActivationSwiGLU is explicitly not supported for FusedDense because it halves the
+// last dimension (output shape changes). This would require allocating temporary memory
+// and complicate the matmul implementation, eliminating the cache-locality gains of epilogue
+// fusion. Instead, use FusedDense with no activation, followed by FusedActivation with
+// ActivationSwiGLU as a separate operation.
 func (f Function) FusedDense(x compute.Value, weight compute.Value, bias compute.Value, options compute.DenseConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedDense)
-}
-
-// FusedGelu computes Gaussian Error Linear Unit activation.
-// If exact is true, the exact GELU (using erf) is computed;
-// otherwise the tanh approximation is used.
-func (f Function) FusedGelu(x compute.Value, exact bool) (compute.Value, error) {
-	return nil, f.baseErrFn(compute.OpTypeFusedGelu)
 }
 
 // FusedLayerNorm applies layer normalization over specified axes.

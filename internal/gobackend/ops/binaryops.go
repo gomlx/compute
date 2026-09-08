@@ -153,7 +153,12 @@ func addBinaryOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp comp
 		return nil, err
 	}
 
-	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, nil)
+	var data any
+	if !lhs.Shape.IsDynamic() && !rhs.Shape.IsDynamic() && !shape.IsDynamic() {
+		cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
+		data = &cfg
+	}
+	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, data)
 	return node, nil
 }
 
@@ -168,10 +173,29 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 	if err != nil {
 		return nil, err
 	}
-	// Note: it's not worth pre-calculating the ZippedBroadcastIterator here, since it's so fast and it's better
-	// to have it created in the stack than accessing a pre-created one, it seems.
-	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, nil)
+
+	var data any
+	if !lhs.Shape.IsDynamic() && !rhs.Shape.IsDynamic() && !shape.IsDynamic() {
+		cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
+		data = &cfg
+	}
+	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, data)
 	return node, nil
+}
+
+// GetBroadcastConfig returns the BroadcastConfig for the binary node, either from its cached Data
+// or computed dynamically.
+func GetBroadcastConfig(node *gobackend.Node, lhs, rhs, output *gobackend.Buffer) gobackend.BroadcastConfig {
+	if node != nil && node.Data != nil {
+		if cfg, ok := node.Data.(*gobackend.BroadcastConfig); ok {
+			return *cfg
+		}
+	}
+	tgtShape := node.Shape
+	if output != nil {
+		tgtShape = output.RawShape
+	}
+	return gobackend.DetermineBroadcastConfig(lhs.RawShape, rhs.RawShape, tgtShape)
 }
 
 // binaryOperandsAndOutputForExecution is a convenience function to get the inputs and output -- which may be the reuse of the input.

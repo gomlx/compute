@@ -75,6 +75,9 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 	outputBytes, err := output.MutableBytes()
 	if err != nil {
 		return nil, err

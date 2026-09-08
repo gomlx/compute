@@ -115,3 +115,27 @@ func TestDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestDurationPerOp(t *testing.T) {
+	tests := []struct {
+		elapsed  time.Duration
+		runs     int
+		wantVal  float64
+		wantUnit string
+	}{
+		{50 * time.Nanosecond, 1, 50, "ns/op"},
+		{12300 * time.Nanosecond, 1, 12.3, "µs/op"},
+		{123500 * time.Microsecond, 1, 123.5, "ms/op"},
+		{5678 * time.Millisecond, 1, 5.7, "s/op"},
+		{10 * time.Second, 2, 5, "s/op"},
+		{0, 10, 0, "ns/op"},
+		{10 * time.Second, 0, 0, "ns/op"},
+	}
+
+	for _, tt := range tests {
+		val, unit := DurationPerOp(tt.elapsed, tt.runs)
+		if val != tt.wantVal || unit != tt.wantUnit {
+			t.Errorf("DurationPerOp(%v, %d) = (%v, %q), want (%v, %q)", tt.elapsed, tt.runs, val, unit, tt.wantVal, tt.wantUnit)
+		}
+	}
+}

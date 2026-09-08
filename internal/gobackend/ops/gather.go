@@ -228,6 +228,33 @@ func execGatherGeneric[T gobackend.PODIntegerConstraints](
 	operandRank := len(sliceSizes)
 	startIndexMap := gatherParams.startIndexMap
 
+	// Determine the largest contiguous block of bytes in the slice window.
+	chunkBytes := dataSize
+	chunkElements := 1
+	var leadingSliceAxes []int
+	for axis := operandRank - 1; axis >= 0; axis-- {
+		if sliceSizes[axis] == 1 {
+			continue
+		}
+		// An axis is contiguous with the preceding accumulated chunk if:
+		// 1) operandByteStrides[axis] == chunkBytes
+		// 2) sliceOutputBytesStride[axis] == chunkBytes
+		if operandByteStrides[axis] == chunkBytes && sliceOutputBytesStride[axis] == chunkBytes {
+			chunkBytes *= sliceSizes[axis]
+			chunkElements *= sliceSizes[axis]
+		} else {
+			// Found an axis that is not contiguous with the inner chunk.
+			// All remaining axes must be stepped in the loop.
+			for a := 0; a <= axis; a++ {
+				if sliceSizes[a] > 1 {
+					leadingSliceAxes = append(leadingSliceAxes, a)
+				}
+			}
+			break
+		}
+	}
+	numChunks := slicesSize / chunkElements
+
 	// Outer-loop: loop over the start indices and outputBytesIdx to gather from.
 	var operandBytesIdx, outputBytesIdx int
 	sliceIndices := make([]int, operandRank)
@@ -247,33 +274,30 @@ func execGatherGeneric[T gobackend.PODIntegerConstraints](
 		for axis, idx := range operandStartIndices {
 			operandBytesIdx += operandByteStrides[axis] * idx
 		}
-		// fmt.Printf("\toperand: start=%v, idx(bytes)=%d\n", operandStartIndices, operandBytesIdx)
-		// fmt.Printf("\toutput: idx(bytes)=%d\n", outputBytesIdx)
 
-		// Traverse sliceSizes in the operand copying over the result.
+		if numChunks == 1 {
+			copy(outputBytes[outputBytesIdx:outputBytesIdx+chunkBytes],
+				operandBytes[operandBytesIdx:operandBytesIdx+chunkBytes])
+			continue
+		}
+
+		// Traverse remaining slice axes copying chunks.
 		for ii := range sliceIndices {
 			sliceIndices[ii] = 0
 		}
-		for range slicesSize {
-			// TODO: copy more than one element (dataSize) at a time, when possible.
-			copy(outputBytes[outputBytesIdx:outputBytesIdx+dataSize],
-				operandBytes[operandBytesIdx:operandBytesIdx+dataSize])
+		for range numChunks {
+			copy(outputBytes[outputBytesIdx:outputBytesIdx+chunkBytes],
+				operandBytes[operandBytesIdx:operandBytesIdx+chunkBytes])
 
-			// Increment index in the operand.
-			for axis := operandRank - 1; axis >= 0; axis-- {
-				if sliceSizes[axis] == 1 {
-					// We don't iterate over sliceSizes of 1.
-					continue
-				}
+			// Increment index across non-contiguous leading axes:
+			for i := len(leadingSliceAxes) - 1; i >= 0; i-- {
+				axis := leadingSliceAxes[i]
 				sliceIndices[axis]++
 				operandBytesIdx += operandByteStrides[axis]
 				outputBytesIdx += sliceOutputBytesStride[axis]
 				if sliceIndices[axis] != sliceSizes[axis] {
-					// Finished incrementing.
 					break
 				}
-
-				// Rewind the current axis before trying to increment next.
 				sliceIndices[axis] = 0
 				operandBytesIdx -= operandByteStrides[axis] * sliceSizes[axis]
 				outputBytesIdx -= sliceOutputBytesStride[axis] * sliceSizes[axis]

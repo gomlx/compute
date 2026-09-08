@@ -148,6 +148,8 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.DynamicDimensionSpec"
 			case "ActivationType":
 				param.Type = "compute.ActivationType"
+			case "ActivationConfig":
+				param.Type = "compute.ActivationConfig"
 			case "DenseConfig":
 				param.Type = "compute.DenseConfig"
 			case "DenseLayout":
