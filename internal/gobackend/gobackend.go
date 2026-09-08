@@ -87,13 +87,20 @@ func New(config string) (compute.Backend, error) {
 			b.SchedulingStrategy = CreationOrderSchedule
 		case "no_ops":
 			b.NoOps = true
+		case "parallel_threshold_ops":
+			vInt, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, errors.Wrapf(err,
+					"invalid value for %q in Go backend config: needs an int, got %q", key, value)
+			}
+			b.ParallelThresholdOps = vInt
 		case "":
 			// No-op, just skip.
 		default:
 			setter, ok := KnownOptionsSetters[key]
 			if !ok {
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, %s; see code for documentation",
+					"parallelism=#workers, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, parallel_threshold_ops=#ops, %s; see code for documentation",
 					key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
 			}
 			err := setter(b, key)
@@ -105,8 +112,15 @@ func New(config string) (compute.Backend, error) {
 	return b, nil
 }
 
+// DefaultParallelThresholdOps is the minimum estimated operations (workload size)
+// required for a node to be scheduled concurrently across backend workers.
+// Nodes with estimated work below this threshold are executed inline sequentially.
+const DefaultParallelThresholdOps = 16_384
+
 func newDefaultBackend() *Backend {
-	b := &Backend{}
+	b := &Backend{
+		ParallelThresholdOps: DefaultParallelThresholdOps,
+	}
 	b.Workers = workerspool.New()
 	return b
 }
@@ -131,6 +145,9 @@ type Backend struct {
 
 	// NoOps disables the actual calculation in operations when true.
 	NoOps bool
+
+	// ParallelThresholdOps is the minimum estimated work for an op to be executed in parallel.
+	ParallelThresholdOps int
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.

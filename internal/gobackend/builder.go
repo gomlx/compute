@@ -208,6 +208,105 @@ func (n *Node) IsMultiOutputs() bool {
 	return len(n.MultiOutputsShapes) > 0
 }
 
+// IsLarge estimates whether executing this node involves enough operations/workload
+// to be worth scheduling across worker threads in parallel, compared against threshold.
+// For static shapes, spec can be nil. For dynamic shapes, spec provides the resolved shapes.
+func (n *Node) IsLarge(threshold int, spec *ShapeSpecialization) bool {
+	if threshold <= 0 {
+		return true
+	}
+	node := n
+	if spec != nil {
+		node = spec.resolvedNodes[n.Index]
+	}
+
+	// If shapes are dynamic and cannot be statically evaluated, defer to execution time
+	// or assume false at graph compilation time when spec == nil.
+	if node.Shape.IsDynamic() {
+		return false
+	}
+
+	switch node.OpType {
+	case compute.OpTypeConstant, compute.OpTypeParameter, compute.OpTypeCapturedValue:
+		// Constants and parameters do virtually zero execution work.
+		return false
+
+	case compute.OpTypeIf, compute.OpTypeWhile, compute.OpTypeSort:
+		// Closures (control flow) are typically large or contain complex graphs.
+		return true
+
+	case compute.OpTypeDotGeneral, compute.OpTypeFusedDense:
+		// DotGeneral / FusedDense FLOP estimation: 2 * batch * M * N * K
+		if len(node.Inputs) >= 2 {
+			lhs := node.Inputs[0]
+			rhs := node.Inputs[1]
+			if spec != nil {
+				lhs = spec.resolvedNodes[lhs.Index]
+				rhs = spec.resolvedNodes[rhs.Index]
+			}
+			if lhs.Shape.IsDynamic() || rhs.Shape.IsDynamic() {
+				return false
+			}
+			lhsSize := lhs.Shape.Size()
+			rhsSize := rhs.Shape.Size()
+			outSize := node.Shape.Size()
+			if outSize > 0 && lhsSize > 0 && rhsSize > 0 {
+				// flops ~ 2 * outSize * contractingDim.
+				// As an approximation: (lhsSize * rhsSize) / outSize.
+				contractingEst := (lhsSize * rhsSize) / max(outSize, 1)
+				estFlops := 2 * outSize * max(contractingEst, 1)
+				return estFlops >= threshold
+			}
+		}
+
+	case compute.OpTypeConvGeneral:
+		// ConvGeneral: compute output size * kernel size
+		if len(node.Inputs) >= 2 {
+			kernel := node.Inputs[1]
+			if spec != nil {
+				kernel = spec.resolvedNodes[kernel.Index]
+			}
+			if kernel.Shape.IsDynamic() {
+				return false
+			}
+			estFlops := 2 * node.Shape.Size() * max(kernel.Shape.Size(), 1)
+			return estFlops >= threshold
+		}
+
+	case compute.OpTypeReduceBitwiseAnd, compute.OpTypeReduceBitwiseOr, compute.OpTypeReduceBitwiseXor,
+		compute.OpTypeReduceLogicalAnd, compute.OpTypeReduceLogicalOr, compute.OpTypeReduceLogicalXor,
+		compute.OpTypeReduceMax, compute.OpTypeReduceMin, compute.OpTypeReduceProduct, compute.OpTypeReduceSum,
+		compute.OpTypeReduceWindow:
+		// Reduce: work is proportional to input size
+		if len(node.Inputs) >= 1 {
+			in := node.Inputs[0]
+			if spec != nil {
+				in = spec.resolvedNodes[in.Index]
+			}
+			if in.Shape.IsDynamic() {
+				return false
+			}
+			return in.Shape.Size() >= threshold
+		}
+
+	default:
+		// Multi-output nodes: sum of output sizes
+		if node.IsMultiOutputs() {
+			total := 0
+			for _, s := range node.MultiOutputsShapes {
+				if s.IsDynamic() {
+					return false
+				}
+				total += s.Size()
+			}
+			return total >= threshold
+		}
+	}
+
+	// Default for elementwise unary, binary, slice, etc.: output size
+	return node.Shape.Size() >= threshold
+}
+
 // checkValues validates that the values are from the Go backend and from this builder.
 // It also checks whether the Builder is not yet compiled.
 func (b *Builder) checkValues(opType string, values ...compute.Value) ([]*Node, error) {
