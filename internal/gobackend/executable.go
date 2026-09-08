@@ -95,7 +95,7 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 				results:       make([]*Buffer, numNodesToProcess),
 				numUsed:       make([]atomic.Int32, numNodesToProcess),
 				owned:         make([]bool, numNodesToProcess),
-				remainingDeps: make([]int, numNodesToProcess),
+				remainingDeps: make([]atomic.Int32, numNodesToProcess),
 				readyQueue:    make(chan int, numNodesToProcess+10),
 			}
 		},
@@ -152,7 +152,8 @@ type funcExecBuffers struct {
 	owned []bool
 
 	// remainingDeps is the number of remaining dependencies for each node.
-	remainingDeps []int
+	// Uses atomic.Int32 to allow lock-free concurrent decrements in parallel execution.
+	remainingDeps []atomic.Int32
 
 	// opsExecutionType can be sequential or parallel.
 	opsExecutionType OpsExecutionType
@@ -161,8 +162,24 @@ type funcExecBuffers struct {
 	opInputBuffers []*Buffer
 	opInputsOwned  []bool
 
-	// Parallel execution only: protects shared state and dependency tracking.
-	mu         sync.Mutex
+	// Parallel execution only.
+	//
+	// readyQueue delivers node indices whose remainingDeps have reached zero
+	// to executor goroutines. It is closed by stopExecutionFn to signal
+	// termination (either normal completion or error).
+	//
+	// Invariants:
+	//   - Exactly-once dispatch: each node index is sent at most once, because
+	//     atomic.Int32.Add(-1) on remainingDeps returns 0 for exactly one
+	//     goroutine.
+	//   - No send-after-close: nodeCompleted dispatches ready nodes (phase 2)
+	//     BEFORE incrementing the completion counter (phase 3). A dispatched
+	//     node is not yet completed, so at least 2 completion units are
+	//     outstanding (this node's increment + the dispatched node's future
+	//     increment), guaranteeing completed < expected and the channel is
+	//     still open at dispatch time.
+	//   - Capacity: sized to NumNodesToProcess+10, which exceeds the maximum
+	//     number of concurrently ready nodes, so sends never block.
 	readyQueue chan int
 }
 
@@ -204,7 +221,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 		execBuf.numUsed[i].Store(0)
 		execBuf.owned[i] = false
 		execBuf.results[i] = nil
-		execBuf.remainingDeps[i] = 0
+		execBuf.remainingDeps[i].Store(0)
 	}
 
 	// Set up parameters from inputs using idx directly
@@ -321,20 +338,26 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 // updates dependencies of dependent nodes, enqueues newly ready nodes, and checks if execution is done.
 // If exactly one dependent node becomes ready and localContinuation is not nil and currently -1,
 // it sets *localContinuation to that node so the caller executor can immediately continue executing it.
-// Must be called with execBuf.mu held.
-func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecBuffers, nodeIdx int,
-	completed *int, expected int, stopExecutionFn func(), localContinuation *int, spec *ShapeSpecialization) {
+//
+// This function is fully lock-free. It operates in three phases:
+//  1. Atomic dependency decrements — uses atomic.Int32.Add(-1) on remainingDeps to determine
+//     which dependent nodes have all their inputs satisfied (newReady).
+//  2. Dispatch ready nodes — sends newly-ready nodes to readyQueue or sets localContinuation.
+//     This MUST happen before phase 3, which may close the channel.
+//  3. Atomic completion count — increments the completed counter atomically. If the total
+//     reaches expected, calls stopExecutionFn to close readyQueue and signal termination.
+//
+// Memory ordering: the atomic Add on remainingDeps provides happens-before edges that guarantee
+// result writes from producer goroutines are visible to consumer goroutines (per Go's memory model).
+func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx int,
+	completed *atomic.Int32, expected int32, stopExecutionFn func(), localContinuation *int, spec *ShapeSpecialization) {
 	node := fe.Function.Nodes[nodeIdx]
 	if spec != nil {
 		node = spec.resolvedNodes[nodeIdx]
 	}
 
-	*completed++
-	if *completed == expected {
-		stopExecutionFn()
-		return
-	}
-
+	// Phase 1: Lock-free dependency tracking using atomic decrements.
+	// Collect dependent nodes whose remaining dependency count has reached zero.
 	var newReady []int
 	if node.IsMultiOutputs() {
 		// Handle multi-output nodes: update dependents of each output.
@@ -343,14 +366,8 @@ func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecB
 			if outputIdx >= fe.NumNodesToProcess || fe.NumUses[outputIdx] == 0 {
 				continue
 			}
-			*completed++
-			if *completed == expected {
-				stopExecutionFn()
-				return
-			}
 			for _, depIdx := range fe.Dependents[outputIdx] {
-				execBuf.remainingDeps[depIdx]--
-				if execBuf.remainingDeps[depIdx] == 0 {
+				if execBuf.remainingDeps[depIdx].Add(-1) == 0 {
 					newReady = append(newReady, depIdx)
 				}
 			}
@@ -358,13 +375,17 @@ func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecB
 	} else {
 		// Single output node.
 		for _, depIdx := range fe.Dependents[nodeIdx] {
-			execBuf.remainingDeps[depIdx]--
-			if execBuf.remainingDeps[depIdx] == 0 {
+			if execBuf.remainingDeps[depIdx].Add(-1) == 0 {
 				newReady = append(newReady, depIdx)
 			}
 		}
 	}
 
+	// Phase 2: Dispatch ready nodes.
+	// This must happen BEFORE phase 3 which may close the channel.
+	// Safety proof: at dispatch time, at least 2 completion units are outstanding
+	// (this node's increment and the dispatched node's future increment), so
+	// completed < expected and the channel is guaranteed to still be open.
 	for _, depIdx := range newReady {
 		if localContinuation != nil && *localContinuation == -1 {
 			*localContinuation = depIdx
@@ -372,13 +393,28 @@ func (fe *FunctionExecutable) nodeCompleted(backend *Backend, execBuf *funcExecB
 			execBuf.readyQueue <- depIdx
 		}
 	}
+
+	// Phase 3: Atomic completion tracking.
+	// Compute total increment: 1 for the executed node itself, plus 1 for each
+	// active multi-output sub-node (which are "completed" by their parent).
+	increment := int32(1)
+	if node.IsMultiOutputs() {
+		for _, outputNode := range node.MultiOutputsNodes {
+			if outputNode.Index < fe.NumNodesToProcess && fe.NumUses[outputNode.Index] > 0 {
+				increment++
+			}
+		}
+	}
+	if completed.Add(increment) >= expected {
+		stopExecutionFn()
+	}
 }
 
 // runExecutor loops executing nodes until the readyQueue is closed or an error occurs.
 // When executing a node unlocks another node, it preferentially continues executing it
 // locally without routing through the channel.
 func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization,
-	completed *int, expected int, stopExecutionFn func(), appendErrorFn func(error)) {
+	completed *atomic.Int32, expected int32, stopExecutionFn func(), appendErrorFn func(error)) {
 	currNode := -1
 
 	for {
@@ -404,16 +440,13 @@ func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuf
 			execErr = fe.executeNode(backend, node, execBuf, spec)
 		}
 
-		execBuf.mu.Lock()
 		if execErr != nil {
-			execBuf.mu.Unlock()
 			appendErrorFn(execErr)
 			return
 		}
 
 		// Update dependents. If currNode is still -1, nodeCompleted will set it if a dependent is ready.
-		fe.nodeCompleted(backend, execBuf, nodeIdx, completed, expected, stopExecutionFn, &currNode, spec)
-		execBuf.mu.Unlock()
+		fe.nodeCompleted(execBuf, nodeIdx, completed, expected, stopExecutionFn, &currNode, spec)
 	}
 }
 
@@ -426,8 +459,8 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		collectErrors   []error
 		errMu           sync.Mutex
 		wg              sync.WaitGroup
-		expected        int
-		completed       int
+		expected        int32
+		completed       atomic.Int32
 		stopExecutionFn func()
 	)
 
@@ -453,8 +486,9 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 			for _, closureCaptures := range node.CapturedInputs {
 				totalCaptured += len(closureCaptures)
 			}
-			execBuf.remainingDeps[nodeIdx] = len(node.Inputs) + totalCaptured
-			if execBuf.remainingDeps[nodeIdx] == 0 {
+			depCount := int32(len(node.Inputs) + totalCaptured)
+			execBuf.remainingDeps[nodeIdx].Store(depCount)
+			if depCount == 0 {
 				initialReady = append(initialReady, nodeIdx)
 			}
 		}
@@ -553,15 +587,6 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			fe.NumUses[inputIdx]-int(execBuf.numUsed[inputIdx].Load()) == 1
 	}
 
-	// lockIfNeededFn should be called before the execBuf slices are updated.
-	// It's refactored here is a closure so the code doens't need to be duplicated in the
-	// switch clause below.
-	lockIfNeededFn := func() {
-		if execBuf.opsExecutionType == OpsExecutionParallel {
-			execBuf.mu.Lock()
-		}
-	}
-
 	// Check for closure executor first (If, While, Sort).
 	// Closure executors receive captured inputs separately with explicit ownership tracking.
 	closureExecutor := NodeClosureExecutors[node.OpType]
@@ -611,7 +636,6 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 		// Write outputs to execBuf (closure ops are always multi-output style), or free those no longer
 		// needed.
-		lockIfNeededFn()
 		for outputIdx, outputBuf := range outputBuffers {
 			outputNode := node.MultiOutputsNodes[outputIdx]
 			outputNodeIdx := outputNode.Index
@@ -644,7 +668,6 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 		// Write outputs to execBuf (multi-output ops are always multi-output style), or free those no longer
 		// needed.
-		lockIfNeededFn()
 		for outputIdx, outputBuf := range outputBuffers {
 			outputNode := node.MultiOutputsNodes[outputIdx]
 			outputNodeIdx := outputNode.Index
@@ -683,27 +706,32 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		}
 
 		// Write result to execBuf (single output node), or free it if not needed.
-		lockIfNeededFn()
 		execBuf.results[nodeIdx] = result
 		execBuf.owned[nodeIdx] = true
 	}
-	// At the exit of the switch statement, lockIfNeededFn() must have been called,
-	// so we can write further updates to execBuf
 
 	// Update usage counts and free unused buffers.
+	// In parallel mode, this is safe without locks:
+	//   - numUsed is atomic; only the goroutine whose Add() returns NumUses will free the buffer.
+	//   - results[inputIdx] is set to nil only by the last consumer, after all readers have
+	//     already copied the pointer into their local inputBuffers.
 	for i, input := range node.Inputs {
 		inputIdx := input.Index
-		newCount := execBuf.numUsed[inputIdx].Add(1) // Mark this input as used.
 		if inputBuffers[i] == nil {
 			// Input buffer is nil, means it has been consumed by the operation.
-			// Mark that the associated results is no longer available.
+			// Mark this input as used and indicate the result is no longer available.
+			execBuf.numUsed[inputIdx].Add(1)
 			execBuf.results[inputIdx] = nil
 			continue
 		}
 		if !inputBuffers[i].InUse {
+			// Sanity check: must be done BEFORE numUsed.Add below. After the Add,
+			// another goroutine could become the last consumer and PutBuffer (setting
+			// InUse=false), causing a data race on this field.
 			return errors.Errorf("input #%d for node %s has been released, but not marked as consumed!?",
 				i, node.OpType)
 		}
+		newCount := execBuf.numUsed[inputIdx].Add(1) // Mark this input as used.
 		if int(newCount) == fe.NumUses[inputIdx] && execBuf.owned[inputIdx] {
 			// Check if it is reused as one of the outputs -- common for in-place operations, like in exec_binary.go.
 			// The contract is that if the input is reused, the operator must set the input buffer to nil in the input slice.
@@ -741,12 +769,9 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			}
 		}
 	}
-	if execBuf.opsExecutionType == OpsExecutionParallel {
-		// Unlock if it's a parallel execution.
-		execBuf.mu.Unlock()
-	} else {
+	if execBuf.opsExecutionType == OpsExecutionSequential {
 		// For sequential execution, we store the input buffers and ownership slices
-		// to save an allocation for these slices in the next time it is executed.
+		// to save an allocation for these slices the next time it is executed.
 		execBuf.opInputBuffers = inputBuffers
 		execBuf.opInputsOwned = inputsOwned
 	}
