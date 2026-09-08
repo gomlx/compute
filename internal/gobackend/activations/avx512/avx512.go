@@ -13,14 +13,12 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/activations"
-	"github.com/gomlx/compute/support/envutil"
 )
 
 const PriorityAVX512 = gobackend.PriorityArch + 1
 
 func init() {
-	allowed := envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true)
-	if allowed && archsimd.X86.AVX512() {
+	if gobackend.IsAVX512Allowed() {
 		registerAVX512()
 	}
 }

@@ -457,6 +457,9 @@ func NewReduceOutputIterator(dimensions []int, reduceAxes []int) *ReduceOutputIt
 
 // Next returns the next flat index in the output.
 func (it *ReduceOutputIterator) Next() int {
+	if len(it.perAxisIdx) == 0 {
+		panic("ReduceOutputIterator.Next called on uninitialized iterator")
+	}
 	returnIdx := it.flatIdx
 	// Move pointer.
 	for axis := len(it.perAxisIdx) - 1; axis >= 0; axis-- {
@@ -613,33 +616,187 @@ func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *go
 }
 
 func execReduceMaxBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.LowestValue().(bfloat16.BFloat16)
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = bfloat16.FromFloat32(max(a, b))
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		m := operandFlat[0].Float32()
+		for _, v := range operandFlat[1:] {
+			m = max(m, v.Float32())
+		}
+		outputFlat[0] = bfloat16.FromFloat32(m)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			lowest := dtype.LowestValue().(bfloat16.BFloat16)
+			for a := range A {
+				outputFlat[a] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0].Float32()
+			for _, v := range row[1:] {
+				m = max(m, v.Float32())
+			}
+			outputFlat[a] = bfloat16.FromFloat32(m)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			lowest := dtype.LowestValue().(bfloat16.BFloat16)
+			for b := range B {
+				outputFlat[b] = lowest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				aF, bF := outputFlat[b].Float32(), v.Float32()
+				outputFlat[b] = bfloat16.FromFloat32(max(aF, bF))
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			lowest := dtype.LowestValue().(bfloat16.BFloat16)
+			for i := range outputFlat {
+				outputFlat[i] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					aF, bF := outSlice[c].Float32(), v.Float32()
+					outSlice[c] = bfloat16.FromFloat32(max(aF, bF))
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.LowestValue().(bfloat16.BFloat16)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			a, b := outputFlat[outputIdx].Float32(), value.Float32()
+			outputFlat[outputIdx] = bfloat16.FromFloat32(max(a, b))
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceMaxFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.LowestValue().(float16.Float16)
 	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(max(a, b))
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		m := operandFlat[0].Float32()
+		for _, v := range operandFlat[1:] {
+			m = max(m, v.Float32())
+		}
+		outputFlat[0] = float16.FromFloat32(m)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			lowest := dtype.LowestValue().(float16.Float16)
+			for a := range A {
+				outputFlat[a] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0].Float32()
+			for _, v := range row[1:] {
+				m = max(m, v.Float32())
+			}
+			outputFlat[a] = float16.FromFloat32(m)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			lowest := dtype.LowestValue().(float16.Float16)
+			for b := range B {
+				outputFlat[b] = lowest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				aF, bF := outputFlat[b].Float32(), v.Float32()
+				outputFlat[b] = float16.FromFloat32(max(aF, bF))
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			lowest := dtype.LowestValue().(float16.Float16)
+			for i := range outputFlat {
+				outputFlat[i] = lowest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					aF, bF := outSlice[c].Float32(), v.Float32()
+					outSlice[c] = float16.FromFloat32(max(aF, bF))
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.LowestValue().(float16.Float16)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			a, b := outputFlat[outputIdx].Float32(), value.Float32()
+			outputFlat[outputIdx] = float16.FromFloat32(max(a, b))
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
@@ -736,33 +893,187 @@ func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *go
 }
 
 func execReduceMinBFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.HighestValue().(bfloat16.BFloat16)
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]bfloat16.BFloat16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = bfloat16.FromFloat32(min(a, b))
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		m := operandFlat[0].Float32()
+		for _, v := range operandFlat[1:] {
+			m = min(m, v.Float32())
+		}
+		outputFlat[0] = bfloat16.FromFloat32(m)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			highest := dtype.HighestValue().(bfloat16.BFloat16)
+			for a := range A {
+				outputFlat[a] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0].Float32()
+			for _, v := range row[1:] {
+				m = min(m, v.Float32())
+			}
+			outputFlat[a] = bfloat16.FromFloat32(m)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			highest := dtype.HighestValue().(bfloat16.BFloat16)
+			for b := range B {
+				outputFlat[b] = highest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				aF, bF := outputFlat[b].Float32(), v.Float32()
+				outputFlat[b] = bfloat16.FromFloat32(min(aF, bF))
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			highest := dtype.HighestValue().(bfloat16.BFloat16)
+			for i := range outputFlat {
+				outputFlat[i] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					aF, bF := outSlice[c].Float32(), v.Float32()
+					outSlice[c] = bfloat16.FromFloat32(min(aF, bF))
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.HighestValue().(bfloat16.BFloat16)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			a, b := outputFlat[outputIdx].Float32(), value.Float32()
+			outputFlat[outputIdx] = bfloat16.FromFloat32(min(a, b))
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceMinFloat16(operand, output *gobackend.Buffer, it *ReduceOutputIterator, dtype dtypes.DType) error {
-	initialValue := dtype.HighestValue().(float16.Float16)
 	outputFlat := output.Flat.([]float16.Float16)
-	for outputIdx := range outputFlat {
-		outputFlat[outputIdx] = initialValue
-	}
 	operandFlat := operand.Flat.([]float16.Float16)
-	for _, value := range operandFlat {
-		outputIdx := it.Next()
-		a, b := outputFlat[outputIdx].Float32(), value.Float32()
-		outputFlat[outputIdx] = float16.FromFloat32(min(a, b))
+
+	switch it.Config.Pattern {
+	case ReduceAll:
+		m := operandFlat[0].Float32()
+		for _, v := range operandFlat[1:] {
+			m = min(m, v.Float32())
+		}
+		outputFlat[0] = float16.FromFloat32(m)
+		return nil
+
+	case ReduceTrailing:
+		A, B := it.Config.A, it.Config.B
+		if B == 0 {
+			highest := dtype.HighestValue().(float16.Float16)
+			for a := range A {
+				outputFlat[a] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			offset := a * B
+			row := operandFlat[offset : offset+B]
+			m := row[0].Float32()
+			for _, v := range row[1:] {
+				m = min(m, v.Float32())
+			}
+			outputFlat[a] = float16.FromFloat32(m)
+		}
+		return nil
+
+	case ReduceLeading:
+		A, B := it.Config.A, it.Config.B
+		if A == 0 || B == 0 {
+			highest := dtype.HighestValue().(float16.Float16)
+			for b := range B {
+				outputFlat[b] = highest
+			}
+			return nil
+		}
+		copy(outputFlat, operandFlat[:B])
+		for a := 1; a < A; a++ {
+			offset := a * B
+			sliceA := operandFlat[offset : offset+B]
+			for b, v := range sliceA {
+				aF, bF := outputFlat[b].Float32(), v.Float32()
+				outputFlat[b] = float16.FromFloat32(min(aF, bF))
+			}
+		}
+		return nil
+
+	case ReduceMiddle:
+		A, B, C := it.Config.A, it.Config.B, it.Config.C
+		if A == 0 || B == 0 || C == 0 {
+			highest := dtype.HighestValue().(float16.Float16)
+			for i := range outputFlat {
+				outputFlat[i] = highest
+			}
+			return nil
+		}
+		for a := range A {
+			outOffset := a * C
+			outSlice := outputFlat[outOffset : outOffset+C]
+			inOffset0 := a * B * C
+			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+			for b := 1; b < B; b++ {
+				inOffset := inOffset0 + b*C
+				inSlice := operandFlat[inOffset : inOffset+C]
+				for c, v := range inSlice {
+					aF, bF := outSlice[c].Float32(), v.Float32()
+					outSlice[c] = float16.FromFloat32(min(aF, bF))
+				}
+			}
+		}
+		return nil
+
+	default:
+		initialValue := dtype.HighestValue().(float16.Float16)
+		for outputIdx := range outputFlat {
+			outputFlat[outputIdx] = initialValue
+		}
+		for _, value := range operandFlat {
+			outputIdx := it.Next()
+			a, b := outputFlat[outputIdx].Float32(), value.Float32()
+			outputFlat[outputIdx] = float16.FromFloat32(min(a, b))
+		}
+		return nil
 	}
-	return nil
 }
 
 func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *gobackend.Buffer, it *ReduceOutputIterator, _ dtypes.DType) error {

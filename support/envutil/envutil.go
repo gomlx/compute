@@ -18,6 +18,8 @@ var (
 
 // Environment variables used by the Go backend: mostly SIMD instructions and optimizations.
 // By default it uses whatever the CPU supports, but this allows one to disable them in case of issues.
+// Note that GOMLX_GO_SIMD_AVX512 and GOMLX_GO_SIMD_AVX2 only control AVX512/AVX2-specific implementations
+// (e.g. specialized matmul and activations), while generic portable SIMD code will still use available vector instructions.
 const (
 	GoBackendSIMD_AVX512 = "GOMLX_GO_SIMD_AVX512"
 	GoBackendSIMD_AVX2   = "GOMLX_GO_SIMD_AVX2"

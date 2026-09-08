@@ -97,8 +97,7 @@ func init() {
 		return
 	}
 
-	allowed := envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true)
-	if allowed && archsimd.X86.AVX512() {
+	if gobackend.IsAVX512Allowed() {
 		registerAVX512(false)
 	}
 }
