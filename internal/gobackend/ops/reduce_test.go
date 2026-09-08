@@ -145,4 +145,44 @@ func TestReduceFastPaths(t *testing.T) {
 		expected := []float16.Float16{float16.FromFloat32(6), float16.FromFloat32(15)}
 		runReduceTest(t, "ReduceTrailing_Float16_Sum", ops.ReduceSum, s2x3_f16, data_f16, []int{1}, expected)
 	})
+
+	t.Run("ReduceTrailing_BFloat16_Max", func(t *testing.T) {
+		s2x3_bf16 := shapes.Make(dtypes.BFloat16, 2, 3)
+		data_bf16 := make([]bfloat16.BFloat16, 6)
+		for i, v := range data2x3 {
+			data_bf16[i] = bfloat16.FromFloat32(v)
+		}
+		expected := []bfloat16.BFloat16{bfloat16.FromFloat32(3), bfloat16.FromFloat32(6)}
+		runReduceTest(t, "ReduceTrailing_BFloat16_Max", ops.ReduceMax, s2x3_bf16, data_bf16, []int{1}, expected)
+	})
+
+	t.Run("ReduceTrailing_Float16_Max", func(t *testing.T) {
+		s2x3_f16 := shapes.Make(dtypes.Float16, 2, 3)
+		data_f16 := make([]float16.Float16, 6)
+		for i, v := range data2x3 {
+			data_f16[i] = float16.FromFloat32(v)
+		}
+		expected := []float16.Float16{float16.FromFloat32(3), float16.FromFloat32(6)}
+		runReduceTest(t, "ReduceTrailing_Float16_Max", ops.ReduceMax, s2x3_f16, data_f16, []int{1}, expected)
+	})
+
+	t.Run("ReduceLeading_BFloat16_Min", func(t *testing.T) {
+		s2x3_bf16 := shapes.Make(dtypes.BFloat16, 2, 3)
+		data_bf16 := make([]bfloat16.BFloat16, 6)
+		for i, v := range data2x3 {
+			data_bf16[i] = bfloat16.FromFloat32(v)
+		}
+		expected := []bfloat16.BFloat16{bfloat16.FromFloat32(1), bfloat16.FromFloat32(2), bfloat16.FromFloat32(3)}
+		runReduceTest(t, "ReduceLeading_BFloat16_Min", ops.ReduceMin, s2x3_bf16, data_bf16, []int{0}, expected)
+	})
+
+	t.Run("ReduceLeading_Float16_Min", func(t *testing.T) {
+		s2x3_f16 := shapes.Make(dtypes.Float16, 2, 3)
+		data_f16 := make([]float16.Float16, 6)
+		for i, v := range data2x3 {
+			data_f16[i] = float16.FromFloat32(v)
+		}
+		expected := []float16.Float16{float16.FromFloat32(1), float16.FromFloat32(2), float16.FromFloat32(3)}
+		runReduceTest(t, "ReduceLeading_Float16_Min", ops.ReduceMin, s2x3_f16, data_f16, []int{0}, expected)
+	})
 }
