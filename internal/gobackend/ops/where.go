@@ -47,6 +47,9 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 			return nil, err
 		}
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 	tmpAny, tmpErr := whereDTypeMap.Get(outputShape.DType)
 	if tmpErr != nil {
 		panic(tmpErr)

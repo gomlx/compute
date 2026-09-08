@@ -47,6 +47,10 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -186,6 +190,10 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -320,6 +328,10 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
@@ -479,6 +491,10 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -636,6 +652,10 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
@@ -828,6 +848,10 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -1019,6 +1043,10 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Float32:
@@ -1155,6 +1183,10 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
+	}
+
+	if backend.NoOps {
+		return output, nil
 	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1296,6 +1328,10 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -1431,6 +1467,10 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -1500,6 +1540,10 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
@@ -1571,6 +1615,10 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -1641,6 +1689,10 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
@@ -1691,6 +1743,10 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
@@ -1740,6 +1796,10 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
@@ -1798,6 +1858,10 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		lhs, rhs = rhs, lhs
 		// if lhsIsScalarOr1 and/or rhsIsScalarOr1 variables should stay "alive", then uncomment the line below.
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
+	}
+
+	if backend.NoOps {
+		return output, nil
 	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
@@ -1944,6 +2008,10 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -2083,6 +2151,10 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
@@ -2247,6 +2319,10 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -2410,6 +2486,10 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
@@ -2572,6 +2652,10 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
+
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch lhs.RawShape.DType { //nolint:exhaustive
 

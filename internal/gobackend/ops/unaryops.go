@@ -92,6 +92,9 @@ func unaryOperandAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buffe
 	if err != nil {
 		return input, nil, err // as output is nil
 	}
+	if backend.NoOps {
+		return input, output, nil
+	}
 	return input, output, nil
 }
 
@@ -1062,6 +1065,9 @@ func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
+	}
+	if backend.NoOps {
+		return output, nil
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:

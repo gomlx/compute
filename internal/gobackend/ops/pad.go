@@ -184,6 +184,9 @@ func padWithConcreteConfig(backend *gobackend.Backend, operand, fillValue *gobac
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	operandBytes, err := operand.MutableBytes()
 	if err != nil {

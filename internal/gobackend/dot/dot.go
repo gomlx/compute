@@ -420,6 +420,10 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			params.Layout, params.InputDType, params.OutputDType)
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	// Use registered implementation.
 	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
 	return output, nil

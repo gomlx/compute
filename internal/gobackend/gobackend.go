@@ -85,13 +85,15 @@ func New(config string) (compute.Backend, error) {
 			b.SchedulingStrategy = DependencyOrderSchedule
 		case "creation_order":
 			b.SchedulingStrategy = CreationOrderSchedule
+		case "no_ops":
+			b.NoOps = true
 		case "":
 			// No-op, just skip.
 		default:
 			setter, ok := KnownOptionsSetters[key]
 			if !ok {
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, ops_sequential, ops_parallel, dependency_order, creation_order, %s; see code for documentation",
+					"parallelism=#workers, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, %s; see code for documentation",
 					key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
 			}
 			err := setter(b, key)
@@ -126,6 +128,9 @@ type Backend struct {
 
 	// SchedulingStrategy
 	SchedulingStrategy ScheduleStrategy
+
+	// NoOps disables the actual calculation in operations when true.
+	NoOps bool
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.

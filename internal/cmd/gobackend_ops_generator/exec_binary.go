@@ -72,6 +72,10 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 {{- end }}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch lhs.RawShape.DType {  //nolint:exhaustive
 {{- range .Versions}}
 {{- $version := .Name }}

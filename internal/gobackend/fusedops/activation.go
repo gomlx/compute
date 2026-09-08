@@ -55,6 +55,9 @@ func execFusedActivation(backend *gobackend.Backend, node *gobackend.Node, input
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	act := data.cfg.Type
 	if act == compute.ActivationSwiGLU {
@@ -167,6 +170,9 @@ func execFusedActivationVJP(backend *gobackend.Backend, node *gobackend.Node, in
 	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
+	}
+	if backend.NoOps {
+		return output, nil
 	}
 
 	act := data.cfg.Type

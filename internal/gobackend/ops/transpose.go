@@ -60,6 +60,9 @@ func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 	it := NewTransposeIterator(operand.RawShape, permutations)
 	dtype := node.Shape.DType
 	tmpAny, tmpErr := TransposeDTypeMap.Get(dtype)

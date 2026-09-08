@@ -76,6 +76,9 @@ func ExecuteWithEpilogue[I, O interface {
 	output []O,
 	epilogue Epilogue[O],
 ) error {
+	if backend.NoOps {
+		return nil
+	}
 	inDType := dtypes.FromGenericsType[I]()
 	outDType := dtypes.FromGenericsType[O]()
 	reg := dot.FindRegisteredImplementation(layout, inDType, outDType)

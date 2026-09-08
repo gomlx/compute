@@ -146,6 +146,9 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 	it := NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
 	dtype := output.RawShape.DType
 

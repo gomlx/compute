@@ -107,6 +107,9 @@ func execDynamicIota(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	iotaSize := targetShape.Dimensions[iotaAxis]
 	batchSize := 1
@@ -133,6 +136,9 @@ func execIota(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	output, err := backend.GetBuffer(node.Shape)
 	if err != nil {
 		return nil, err
+	}
+	if backend.NoOps {
+		return output, nil
 	}
 	iotaAxis := node.Data.(int)
 	iotaSize := node.Shape.Dimensions[iotaAxis]

@@ -145,8 +145,7 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	if err != nil {
 		return nil, err
 	}
-	if output.RawShape.Size() == 0 {
-		// Simplest case, where the slice is of 0 elements, just return the empty buffer with the correct shape.
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 

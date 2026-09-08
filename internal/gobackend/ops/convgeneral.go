@@ -221,6 +221,9 @@ func execConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 	output.Zeros()
 
 	// TODO(optimizations):

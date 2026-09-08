@@ -170,6 +170,9 @@ func execScatter(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		}
 	}
 	output.RawShape = node.Shape // Output shape is the same as operand shape.
+	if backend.NoOps {
+		return output, nil
+	}
 
 	// Dispatch to a type-specific scatter loop based on the operation type.
 	dtype := output.RawShape.DType

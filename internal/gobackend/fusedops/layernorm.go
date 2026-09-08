@@ -77,6 +77,9 @@ func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	// Determine gamma/beta. inputs[0]=x, inputs[1]=gamma (optional), inputs[2]=beta (optional).
 	var gamma, beta *gobackend.Buffer

@@ -72,7 +72,9 @@ func reshapeToShape(backend *gobackend.Backend, targetShape shapes.Shape, inputs
 		if err != nil {
 			return nil, err
 		}
-		gobackend.CopyFlat(output.Flat, operand.Flat)
+		if !backend.NoOps {
+			gobackend.CopyFlat(output.Flat, operand.Flat)
+		}
 	}
 	return output, nil
 }

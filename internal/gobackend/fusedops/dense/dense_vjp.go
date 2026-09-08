@@ -177,6 +177,13 @@ func execFusedDenseVJP(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		}
 	}
 
+	if backend.NoOps {
+		if data.hasBias {
+			return []*gobackend.Buffer{dxBuf, dwBuf, dbBuf}, nil
+		}
+		return []*gobackend.Buffer{dxBuf, dwBuf}, nil
+	}
+
 	switch dOutput.RawShape.DType {
 	case dtypes.Float32:
 		err = execFusedDenseVJPGeneric[float32](backend, data, x, weight, y, dOutput, dxBuf, dwBuf, dbBuf)

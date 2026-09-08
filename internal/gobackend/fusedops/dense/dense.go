@@ -137,6 +137,10 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return nil, err
 	}
 
+	if backend.NoOps {
+		return output, nil
+	}
+
 	switch output.RawShape.DType {
 	case dtypes.Float32:
 		xFlat := x.Flat.([]float32)
