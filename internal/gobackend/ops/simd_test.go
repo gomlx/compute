@@ -657,3 +657,167 @@ func TestSIMDReduceOps(t *testing.T) {
 		runReduceTest(t, "ReduceProduct_All_Float32", ops.ReduceProduct, sIn, in, []int{0}, []float32{720})
 	})
 }
+
+func runScatterTest[T any](t *testing.T, opName string,
+	scatterFn func(f *gobackend.Function, operand, indices, updates compute.Value, indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int, indicesAreSorted, uniqueIndices bool) (compute.Value, error),
+	operandShape, indicesShape, updatesShape shapes.Shape,
+	operandData []T, indicesData []int32, updatesData []T,
+	indexVectorAxis int, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes []int,
+	expected []T) {
+	t.Helper()
+	builder := backend.Builder(opName).(*gobackend.Builder)
+	main := builder.Main().(*gobackend.Function)
+
+	opNode, err := main.Parameter("operand", operandShape, nil)
+	if err != nil {
+		t.Fatalf("Failed creating operand param: %+v", err)
+	}
+	idxNode, err := main.Parameter("indices", indicesShape, nil)
+	if err != nil {
+		t.Fatalf("Failed creating indices param: %+v", err)
+	}
+	updNode, err := main.Parameter("updates", updatesShape, nil)
+	if err != nil {
+		t.Fatalf("Failed creating updates param: %+v", err)
+	}
+
+	outNode, err := scatterFn(main, opNode, idxNode, updNode, indexVectorAxis, updateWindowAxes, insertedWindowAxes, scatterAxesToOperandAxes, false, false)
+	if err != nil {
+		t.Fatalf("Scatter op failed: %+v", err)
+	}
+
+	err = main.Return([]compute.Value{outNode}, nil)
+	if err != nil {
+		t.Fatalf("Return failed: %+v", err)
+	}
+
+	exec, err := builder.Compile()
+	if err != nil {
+		t.Fatalf("Compile failed: %+v", err)
+	}
+
+	opBuf, err := backend.BufferFromFlatData(0, operandData, operandShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData operand failed: %+v", err)
+	}
+	idxBuf, err := backend.BufferFromFlatData(0, indicesData, indicesShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData indices failed: %+v", err)
+	}
+	updBuf, err := backend.BufferFromFlatData(0, updatesData, updatesShape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData updates failed: %+v", err)
+	}
+
+	outputs, err := exec.Execute([]compute.Buffer{opBuf, idxBuf, updBuf}, nil, 0)
+	if err != nil {
+		t.Fatalf("Execute failed: %+v", err)
+	}
+
+	outFlat := outputs[0].(*gobackend.Buffer).Flat.([]T)
+
+	if ok, diff := testutil.IsEqual(expected, outFlat); !ok {
+		t.Errorf("Mismatch in %s:\n%s", opName, diff)
+	}
+}
+
+func TestSIMDScatterOps(t *testing.T) {
+	// Contiguous window slice: operand is [4, 8], indices is [2, 1], updates is [2, 8].
+	// Scatter along axis 0, window axis is 1.
+	operandShape := shapes.Make(dtypes.Float32, 4, 8)
+	indicesShape := shapes.Make(dtypes.Int32, 2, 1)
+	updatesShape := shapes.Make(dtypes.Float32, 2, 8)
+
+	indicesData := []int32{1, 3}
+
+	t.Run("ScatterSum_Float32", func(t *testing.T) {
+		opData := make([]float32, 32)
+		for i := range opData {
+			opData[i] = 1.0
+		}
+		updData := make([]float32, 16)
+		for i := range updData {
+			updData[i] = float32(i + 10)
+		}
+		expected := make([]float32, 32)
+		copy(expected, opData)
+		// row 1 gets updData[0:8], row 3 gets updData[8:16]
+		for j := 0; j < 8; j++ {
+			expected[1*8+j] += updData[j]
+			expected[3*8+j] += updData[8+j]
+		}
+		runScatterTest(t, "ScatterSum_Float32", ops.ScatterSum,
+			operandShape, indicesShape, updatesShape,
+			opData, indicesData, updData,
+			1, []int{1}, []int{0}, []int{0},
+			expected)
+	})
+
+	t.Run("ScatterMax_Float32", func(t *testing.T) {
+		opData := make([]float32, 32)
+		for i := range opData {
+			opData[i] = 15.0
+		}
+		updData := make([]float32, 16)
+		for i := range updData {
+			updData[i] = float32(i + 10)
+		}
+		expected := make([]float32, 32)
+		copy(expected, opData)
+		for j := 0; j < 8; j++ {
+			expected[1*8+j] = max(expected[1*8+j], updData[j])
+			expected[3*8+j] = max(expected[3*8+j], updData[8+j])
+		}
+		runScatterTest(t, "ScatterMax_Float32", ops.ScatterMax,
+			operandShape, indicesShape, updatesShape,
+			opData, indicesData, updData,
+			1, []int{1}, []int{0}, []int{0},
+			expected)
+	})
+
+	t.Run("ScatterMin_Float32", func(t *testing.T) {
+		opData := make([]float32, 32)
+		for i := range opData {
+			opData[i] = 15.0
+		}
+		updData := make([]float32, 16)
+		for i := range updData {
+			updData[i] = float32(i + 10)
+		}
+		expected := make([]float32, 32)
+		copy(expected, opData)
+		for j := 0; j < 8; j++ {
+			expected[1*8+j] = min(expected[1*8+j], updData[j])
+			expected[3*8+j] = min(expected[3*8+j], updData[8+j])
+		}
+		runScatterTest(t, "ScatterMin_Float32", ops.ScatterMin,
+			operandShape, indicesShape, updatesShape,
+			opData, indicesData, updData,
+			1, []int{1}, []int{0}, []int{0},
+			expected)
+	})
+
+	t.Run("ScatterSum_BFloat16", func(t *testing.T) {
+		opShapeBF16 := shapes.Make(dtypes.BFloat16, 4, 8)
+		updShapeBF16 := shapes.Make(dtypes.BFloat16, 2, 8)
+		opData := make([]bfloat16.BFloat16, 32)
+		for i := range opData {
+			opData[i] = bfloat16.FromFloat32(1.0)
+		}
+		updData := make([]bfloat16.BFloat16, 16)
+		for i := range updData {
+			updData[i] = bfloat16.FromFloat32(float32(i + 10))
+		}
+		expected := make([]bfloat16.BFloat16, 32)
+		copy(expected, opData)
+		for j := 0; j < 8; j++ {
+			expected[1*8+j] = bfloat16.FromFloat32(expected[1*8+j].Float32() + updData[j].Float32())
+			expected[3*8+j] = bfloat16.FromFloat32(expected[3*8+j].Float32() + updData[8+j].Float32())
+		}
+		runScatterTest(t, "ScatterSum_BFloat16", ops.ScatterSum,
+			opShapeBF16, indicesShape, updShapeBF16,
+			opData, indicesData, updData,
+			1, []int{1}, []int{0}, []int{0},
+			expected)
+	})
+}
