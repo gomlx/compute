@@ -508,3 +508,152 @@ func TestSIMDUnaryOps(t *testing.T) {
 		runUnaryTestGeneric(t, "Fallback_Sign_Int8", ops.Sign, s19I8, inI8, expected)
 	})
 }
+
+
+func TestSIMDReduceOps(t *testing.T) {
+	// Shapes for testing:
+	// Leading: [4, 16] -> reduce axis 0 -> [16]
+	// Trailing: [4, 16] -> reduce axis 1 -> [4]
+	// All: [64] -> reduce axis 0 -> [1]
+
+	t.Run("ReduceLeading_Float32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float32, 4, 16)
+		in := make([]float32, 64)
+		for i := range 64 {
+			in[i] = float32(i + 1)
+		}
+		expectedSum := make([]float32, 16)
+		expectedMax := make([]float32, 16)
+		for a := range 4 {
+			for b := range 16 {
+				expectedSum[b] += in[a*16+b]
+				if a == 0 || in[a*16+b] > expectedMax[b] {
+					expectedMax[b] = in[a*16+b]
+				}
+			}
+		}
+		runReduceTest(t, "ReduceSum_Leading_Float32", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+		runReduceTest(t, "ReduceMax_Leading_Float32", ops.ReduceMax, sIn, in, []int{0}, expectedMax)
+	})
+
+	t.Run("ReduceTrailing_Float32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float32, 4, 16)
+		in := make([]float32, 64)
+		for i := range 64 {
+			in[i] = float32(i + 1)
+		}
+		expectedSum := make([]float32, 4)
+		for a := range 4 {
+			for b := range 16 {
+				expectedSum[a] += in[a*16+b]
+			}
+		}
+		runReduceTest(t, "ReduceSum_Trailing_Float32", ops.ReduceSum, sIn, in, []int{1}, expectedSum)
+	})
+
+	t.Run("ReduceAll_Float32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float32, 64)
+		in := make([]float32, 64)
+		var expectedSum float32
+		for i := range 64 {
+			in[i] = float32(i + 1)
+			expectedSum += in[i]
+		}
+		runReduceTest(t, "ReduceSum_All_Float32", ops.ReduceSum, sIn, in, []int{0}, []float32{expectedSum})
+	})
+
+	t.Run("ReduceLeading_Float64", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float64, 4, 16)
+		in := make([]float64, 64)
+		for i := range 64 {
+			in[i] = float64(i + 1)
+		}
+		expectedSum := make([]float64, 16)
+		for a := range 4 {
+			for b := range 16 {
+				expectedSum[b] += in[a*16+b]
+			}
+		}
+		runReduceTest(t, "ReduceSum_Leading_Float64", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+	})
+
+	t.Run("ReduceLeading_Int32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Int32, 4, 16)
+		in := make([]int32, 64)
+		for i := range 64 {
+			in[i] = int32(i + 1)
+		}
+		expectedSum := make([]int32, 16)
+		for a := range 4 {
+			for b := range 16 {
+				expectedSum[b] += in[a*16+b]
+			}
+		}
+		runReduceTest(t, "ReduceSum_Leading_Int32", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+	})
+
+	t.Run("ReduceLeading_Int8", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Int8, 4, 16)
+		in := make([]int8, 64)
+		for i := range 64 {
+			in[i] = int8(i % 10)
+		}
+		expectedSum := make([]int8, 16)
+		for a := range 4 {
+			for b := range 16 {
+				expectedSum[b] += in[a*16+b]
+			}
+		}
+		runReduceTest(t, "ReduceSum_Leading_Int8", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+	})
+
+	t.Run("ReduceLeading_BFloat16", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.BFloat16, 4, 16)
+		in := make([]bfloat16.BFloat16, 64)
+		for i := range 64 {
+			in[i] = bfloat16.FromFloat32(float32(i + 1))
+		}
+		expectedSum := make([]bfloat16.BFloat16, 16)
+		for b := range 16 {
+			var sum float32
+			for a := range 4 {
+				sum += in[a*16+b].Float32()
+			}
+			expectedSum[b] = bfloat16.FromFloat32(sum)
+		}
+		runReduceTest(t, "ReduceSum_Leading_BFloat16", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+	})
+
+	t.Run("ReduceLeading_Float16", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float16, 4, 16)
+		in := make([]float16.Float16, 64)
+		for i := range 64 {
+			in[i] = float16.FromFloat32(float32(i + 1))
+		}
+		expectedSum := make([]float16.Float16, 16)
+		for b := range 16 {
+			var sum float32
+			for a := range 4 {
+				sum += in[a*16+b].Float32()
+			}
+			expectedSum[b] = float16.FromFloat32(sum)
+		}
+		runReduceTest(t, "ReduceSum_Leading_Float16", ops.ReduceSum, sIn, in, []int{0}, expectedSum)
+	})
+
+	t.Run("ReduceMin_All_Float32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float32, 64)
+		in := make([]float32, 64)
+		for i := range 64 {
+			in[i] = float32(i + 5)
+		}
+		in[37] = -12.0
+		runReduceTest(t, "ReduceMin_All_Float32", ops.ReduceMin, sIn, in, []int{0}, []float32{-12.0})
+	})
+
+	t.Run("ReduceProduct_All_Float32", func(t *testing.T) {
+		sIn := shapes.Make(dtypes.Float32, 6)
+		in := []float32{1, 2, 3, 4, 5, 6}
+		runReduceTest(t, "ReduceProduct_All_Float32", ops.ReduceProduct, sIn, in, []int{0}, []float32{720})
+	})
+}
