@@ -51,43 +51,45 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execAddNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execAddNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execAddNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execAddNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execAddNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execAddNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execAddNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execAddNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execAddNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAddNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAddNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAddNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAddNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -96,7 +98,7 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -105,15 +107,76 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = input + c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input + rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] + rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] + rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] + c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c + rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c + rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] + c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] + rhs[indices.RHSFlatIdx]
 		}
@@ -121,7 +184,7 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -131,7 +194,7 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(a + c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -139,9 +202,78 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(a + b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -151,7 +283,7 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -161,7 +293,7 @@ func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(a + c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -169,9 +301,78 @@ func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(a + b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -194,43 +395,45 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMulNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMulNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMulNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMulNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMulNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMulNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMulNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMulNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMulNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMulNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMulNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMulNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMulNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -239,7 +442,7 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -248,15 +451,76 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = input * c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input * rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] * rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] * rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] * c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c * rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c * rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] * c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] * rhs[indices.RHSFlatIdx]
 		}
@@ -264,7 +528,7 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -274,7 +538,7 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(a * c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -282,9 +546,78 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(a * b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -294,7 +627,7 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -304,7 +637,7 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(a * c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -312,9 +645,78 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(a * b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -333,43 +735,45 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execSubNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execSubNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execSubNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execSubNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execSubNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execSubNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execSubNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execSubNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execSubNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execSubNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execSubNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execSubNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execSubNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -378,7 +782,7 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -394,15 +798,76 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = c - input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input - rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] - rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] - rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] - c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c - rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c - rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] - c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] - rhs[indices.RHSFlatIdx]
 		}
@@ -410,7 +875,7 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -428,7 +893,7 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(c - a)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -436,9 +901,78 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(a - b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -448,7 +982,7 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -466,7 +1000,7 @@ func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(c - a)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -474,9 +1008,78 @@ func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(a - b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -495,43 +1098,45 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execDivNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execDivNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execDivNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execDivNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execDivNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execDivNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execDivNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execDivNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execDivNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execDivNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execDivNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execDivNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execDivNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -540,7 +1145,7 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -556,15 +1161,76 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = c / input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input / rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] / rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] / rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] / c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c / rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c / rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] / c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] / rhs[indices.RHSFlatIdx]
 		}
@@ -572,7 +1238,7 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -590,7 +1256,7 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(c / a)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -598,9 +1264,78 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(a / b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -610,7 +1345,7 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -628,7 +1363,7 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(c / a)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -636,9 +1371,78 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(a / b)
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -657,43 +1461,45 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execRemIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execRemIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execRemIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execRemIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execRemIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execRemIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execRemIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execRemIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execRemFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execRemFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execRemFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execRemFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execRemFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -702,7 +1508,7 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -718,15 +1524,76 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 			output[ii] = c % input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input % rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] % rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] % rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] % c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c % rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c % rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] % c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] % rhs[indices.RHSFlatIdx]
 		}
@@ -735,7 +1602,7 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 }
 
 func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -751,15 +1618,76 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 			output[ii] = T(math.Mod(float64(c), float64(input)))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = T(math.Mod(float64(input), float64(rhs[ii])))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(lhs[offset+b]), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(lhs[b]), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(lhs[offset+b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(c), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(c), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Mod(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Mod(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
@@ -767,7 +1695,7 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 	}
 }
 func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -785,7 +1713,7 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			output[ii] = bfloat16.FromFloat32(float32(math.Mod(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -793,9 +1721,78 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			output[outputIdx] = bfloat16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -805,7 +1802,7 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 	}
 }
 func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -823,7 +1820,7 @@ func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(float32(math.Mod(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -831,9 +1828,78 @@ func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(float32(math.Mod(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -852,43 +1918,45 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execPowIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execPowIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execPowIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execPowIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execPowIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execPowIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execPowIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execPowIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execPowFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execPowFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execPowFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execPowFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execPowFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -897,7 +1965,7 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -913,15 +1981,76 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 			output[ii] = execScalarPowIntGeneric(c, input)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = execScalarPowIntGeneric(input, rhs[ii])
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(lhs[offset+b], rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(lhs[b], rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(lhs[offset+b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(c, rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(c, rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = execScalarPowIntGeneric(lhs[b], c)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = execScalarPowIntGeneric(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
@@ -930,7 +2059,7 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 }
 
 func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -946,15 +2075,76 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 			output[ii] = T(math.Pow(float64(c), float64(input)))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = T(math.Pow(float64(input), float64(rhs[ii])))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(lhs[offset+b]), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(lhs[b]), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(lhs[offset+b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(c), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(c), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Pow(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Pow(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
@@ -962,7 +2152,7 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 	}
 }
 func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -980,7 +2170,7 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			output[ii] = bfloat16.FromFloat32(float32(math.Pow(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -988,9 +2178,78 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			output[outputIdx] = bfloat16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1000,7 +2259,7 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 	}
 }
 func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1018,7 +2277,7 @@ func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(float32(math.Pow(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1026,9 +2285,78 @@ func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(float32(math.Pow(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1047,19 +2375,21 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Float32:
-		execAtan2FloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAtan2FloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAtan2FloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAtan2FloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1068,7 +2398,7 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 }
 
 func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1084,15 +2414,76 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 			output[ii] = T(math.Atan2(float64(c), float64(input)))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = T(math.Atan2(float64(input), float64(rhs[ii])))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(lhs[offset+b]), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(lhs[b]), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(lhs[offset+b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(c), float64(rhs[offset+b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(c), float64(rhs[b])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = T(math.Atan2(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = T(math.Atan2(float64(lhs[indices.LHSFlatIdx]), float64(rhs[indices.RHSFlatIdx])))
 		}
@@ -1100,7 +2491,7 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 	}
 }
 func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1118,7 +2509,7 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(float32(math.Atan2(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1126,9 +2517,78 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1138,7 +2598,7 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1156,7 +2616,7 @@ func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(float32(math.Atan2(float64(c), float64(a))))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1164,9 +2624,78 @@ func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(float32(math.Atan2(float64(a), float64(b))))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1189,43 +2718,45 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMaxNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMaxNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMaxNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMaxNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMaxNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMaxNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMaxNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMaxNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMaxNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMaxNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMaxNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMaxNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMaxNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1234,7 +2765,7 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1243,15 +2774,76 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = max(input, c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = max(input, rhs[ii])
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = max(lhs[offset+b], rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = max(lhs[b], rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = max(lhs[offset+b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = max(c, rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = max(c, rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = max(lhs[b], c)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = max(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
@@ -1259,7 +2851,7 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1269,7 +2861,7 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(max(a, c))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1277,9 +2869,78 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(max(a, b))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1289,7 +2950,7 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1299,7 +2960,7 @@ func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(max(a, c))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1307,9 +2968,78 @@ func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(max(a, b))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1332,43 +3062,45 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMinNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMinNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMinNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMinNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMinNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMinNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMinNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMinNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMinNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMinNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMinNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMinNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execMinNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1377,7 +3109,7 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 }
 
 func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1386,15 +3118,76 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 			output[ii] = min(input, c)
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = min(input, rhs[ii])
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = min(lhs[offset+b], rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = min(lhs[b], rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = min(lhs[offset+b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = min(c, rhs[offset+b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = min(c, rhs[b])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = min(lhs[b], c)
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = min(lhs[indices.LHSFlatIdx], rhs[indices.RHSFlatIdx])
 		}
@@ -1402,7 +3195,7 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	}
 }
 func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1412,7 +3205,7 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[ii] = bfloat16.FromFloat32(min(a, c))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1420,9 +3213,78 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			output[outputIdx] = bfloat16.FromFloat32(min(a, b))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1432,7 +3294,7 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 	}
 }
 func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1442,7 +3304,7 @@ func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[ii] = float16.FromFloat32(min(a, c))
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1450,9 +3312,78 @@ func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			output[outputIdx] = float16.FromFloat32(min(a, b))
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1471,31 +3402,33 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1504,7 +3437,7 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 }
 
 func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1520,15 +3453,76 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 			output[ii] = c & input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input & rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] & rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] & rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] & c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c & rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c & rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] & c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] & rhs[indices.RHSFlatIdx]
 		}
@@ -1545,31 +3539,33 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1578,7 +3574,7 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 }
 
 func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1594,15 +3590,76 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 			output[ii] = c | input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input | rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] | rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] | rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] | c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c | rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c | rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] | c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] | rhs[indices.RHSFlatIdx]
 		}
@@ -1619,31 +3676,33 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1652,7 +3711,7 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 }
 
 func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1668,15 +3727,76 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 			output[ii] = c ^ input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input ^ rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] ^ rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] ^ rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] ^ c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c ^ rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c ^ rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] ^ c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] ^ rhs[indices.RHSFlatIdx]
 		}
@@ -1693,11 +3813,13 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
 		execLogicalAndBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
-			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1706,7 +3828,7 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 }
 
 func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1722,15 +3844,76 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 			output[ii] = c && input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input && rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] && rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] && rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] && c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c && rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c && rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] && c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] && rhs[indices.RHSFlatIdx]
 		}
@@ -1747,11 +3930,13 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
 		execLogicalOrBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
-			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1760,7 +3945,7 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 }
 
 func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1776,15 +3961,76 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 			output[ii] = c || input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input || rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] || rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] || rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] || c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c || rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c || rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] || c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] || rhs[indices.RHSFlatIdx]
 		}
@@ -1801,11 +4047,13 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
 		execLogicalXorBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
-			lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1814,7 +4062,7 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 }
 
 func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1830,15 +4078,76 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 			output[ii] = c != input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input != rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] != rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] != rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] != c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c != rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c != rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] != c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
@@ -1864,43 +4173,45 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1909,7 +4220,7 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 }
 
 func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -1918,15 +4229,76 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 			output[ii] = input == c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input == rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] == rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] == rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] == c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c == rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c == rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] == c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] == rhs[indices.RHSFlatIdx]
 		}
@@ -1934,7 +4306,7 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 	}
 }
 func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1944,7 +4316,7 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[ii] = a == c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1952,9 +4324,78 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[outputIdx] = a == b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -1964,7 +4405,7 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 	}
 }
 func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1974,7 +4415,7 @@ func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = a == c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -1982,9 +4423,78 @@ func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a == b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2012,43 +4522,45 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execNotEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execNotEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execNotEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execNotEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execNotEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execNotEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execNotEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execNotEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2057,7 +4569,7 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 }
 
 func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -2066,15 +4578,76 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 			output[ii] = input != c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input != rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] != rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] != rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] != c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c != rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c != rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] != c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] != rhs[indices.RHSFlatIdx]
 		}
@@ -2082,7 +4655,7 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 	}
 }
 func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2092,7 +4665,7 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[ii] = a != c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2100,9 +4673,78 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[outputIdx] = a != b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2112,7 +4754,7 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 	}
 }
 func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2122,7 +4764,7 @@ func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = a != c
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2130,9 +4772,78 @@ func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a != b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2156,43 +4867,45 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2201,7 +4914,7 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 }
 
 func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -2217,15 +4930,76 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 			output[ii] = c >= input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input >= rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] >= rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] >= rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] >= c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c >= rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c >= rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] >= c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] >= rhs[indices.RHSFlatIdx]
 		}
@@ -2233,7 +5007,7 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 	}
 }
 func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2251,7 +5025,7 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 			output[ii] = c >= a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2259,9 +5033,78 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 			output[outputIdx] = a >= b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2271,7 +5114,7 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 	}
 }
 func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2289,7 +5132,7 @@ func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = c >= a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2297,9 +5140,78 @@ func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a >= b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2323,43 +5235,45 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2368,7 +5282,7 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 }
 
 func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -2384,15 +5298,76 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 			output[ii] = c > input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input > rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] > rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] > rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] > c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c > rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c > rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] > c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] > rhs[indices.RHSFlatIdx]
 		}
@@ -2400,7 +5375,7 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 	}
 }
 func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2418,7 +5393,7 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[ii] = c > a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2426,9 +5401,78 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[outputIdx] = a > b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2438,7 +5482,7 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 	}
 }
 func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2456,7 +5500,7 @@ func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = c > a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2464,9 +5508,78 @@ func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a > b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2490,43 +5603,45 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2535,7 +5650,7 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 }
 
 func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -2551,15 +5666,76 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 			output[ii] = c <= input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input <= rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] <= rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] <= rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] <= c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c <= rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c <= rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] <= c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] <= rhs[indices.RHSFlatIdx]
 		}
@@ -2567,7 +5743,7 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 	}
 }
 func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2585,7 +5761,7 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[ii] = c <= a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2593,9 +5769,78 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[outputIdx] = a <= b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2605,7 +5850,7 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 	}
 }
 func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2623,7 +5868,7 @@ func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = c <= a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2631,9 +5876,78 @@ func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a <= b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2657,43 +5971,45 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		return output, nil
 	}
 
+	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2702,7 +6018,7 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 }
 
 func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
@@ -2718,15 +6034,76 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 			output[ii] = c < input
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for ii, input := range lhs {
 			output[ii] = input < rhs[ii]
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[offset+b] < rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				output[offset+b] = lhs[b] < rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[offset+b] < c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c < rhs[offset+b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := lhs[a]
+			for b := range B {
+				output[offset+b] = c < rhs[b]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			c := rhs[a]
+			for b := range B {
+				output[offset+b] = lhs[b] < c
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			output[indices.TgtFlatIdx] = lhs[indices.LHSFlatIdx] < rhs[indices.RHSFlatIdx]
 		}
@@ -2734,7 +6111,7 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 	}
 }
 func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2752,7 +6129,7 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[ii] = c < a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2760,9 +6137,78 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			output[outputIdx] = a < b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
@@ -2772,7 +6218,7 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 	}
 }
 func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
-	lhsShape, rhsShape, outputShape shapes.Shape) {
+	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2790,7 +6236,7 @@ func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[ii] = c < a
 		}
 		return
-	case lhsShape.Equal(rhsShape):
+	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		for outputIdx := range output {
 			a := lhs[outputIdx].Float32()
@@ -2798,9 +6244,78 @@ func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			output[outputIdx] = a < b
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[offset+b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			aF32 := lhs[a].Float32()
+			for b := range B {
+				bF32 := rhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRow:
+		A, B := bcastCfg.A, bcastCfg.B
+		for a := range A {
+			offset := a * B
+			bF32 := rhs[a].Float32()
+			for b := range B {
+				aF32 := lhs[b].Float32()
+				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
 	default:
-		// Case 3: with broadcasting non-scalar tensors:
-		zipIter := gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		// Case 3: with general broadcasting non-scalar tensors:
+		zipIter := bcastCfg.ZipIter
+		if zipIter == nil {
+			zipIter = gobackend.NewZippedBroadcastIterator(lhsShape, rhsShape, outputShape)
+		}
 		for indices := range zipIter.IterFlatIndices() {
 			a := lhs[indices.LHSFlatIdx].Float32()
 			b := rhs[indices.RHSFlatIdx].Float32()
