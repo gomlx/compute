@@ -6,11 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
-	"strconv"
-	"strings"
 	"testing"
-	"time"
-	"unicode"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -96,23 +92,7 @@ func (be *benchExec) run(b *testing.B) {
 			}
 		}
 	}
-	elapsed := b.Elapsed()
-	if elapsed > 0 && b.N > 0 {
-		durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
-		durStr := humanize.Duration(durationPerOp)
-		splitIdx := strings.IndexFunc(durStr, func(r rune) bool {
-			return !unicode.IsDigit(r) && r != '.' && r != '-'
-		})
-		if splitIdx > 0 {
-			valStr := durStr[:splitIdx]
-			unitStr := durStr[splitIdx:]
-			if strings.ContainsAny(unitStr, "0123456789") {
-				b.ReportMetric(durationPerOp.Seconds(), "s/op")
-			} else if val, err := strconv.ParseFloat(valStr, 64); err == nil {
-				b.ReportMetric(val, unitStr+"/op")
-			}
-		}
-	}
+	b.ReportMetric(humanize.DurationPerOp(b.Elapsed(), b.N))
 }
 
 // newBenchExec builds, compiles, and prepares inputs for a benchmark.

@@ -2,12 +2,12 @@ package matmul_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/gomlx/compute/support/backendtest"
+	"github.com/gomlx/compute/support/humanize"
 )
 
 func TestNoSIMD(t *testing.T) {
@@ -84,9 +84,8 @@ func BenchmarkSmallNoSIMD(b *testing.B) {
 			elapsed := b.Elapsed()
 			if elapsed > 0 && b.N > 0 {
 				gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
-				durationPerOp := time.Duration(float64(elapsed) / float64(b.N))
 				b.ReportMetric(gflops, "GFlops/s")
-				b.ReportMetric(durationPerOp.Seconds()*1e6, "µs/op")
+				b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
 			}
 		})
 	}
