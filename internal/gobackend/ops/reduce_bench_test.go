@@ -280,8 +280,8 @@ func TestFindReduceThresholds(t *testing.T) {
 
 				cfg := ReduceConfig{
 					Pattern: ReduceAll,
-					A:       n,
-					B:       1,
+					A:       1,
+					B:       n,
 					Axes:    []int{0},
 				}
 

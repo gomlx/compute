@@ -220,6 +220,62 @@ func TestReduceFastPaths(t *testing.T) {
 		expected := []float32{42}
 		runReduceTest(t, "ReduceDimension1_All", ops.ReduceSum, s1, data1, []int{0}, expected)
 	})
+
+	t.Run("ReduceAll_Float16_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Float16, n)
+		data := make([]float16.Float16, n)
+		var expectedSum float32
+		for i := range n {
+			val := float32(i%7 - 3)
+			data[i] = float16.FromFloat32(val)
+			expectedSum += val
+		}
+		expected := []float16.Float16{float16.FromFloat32(expectedSum)}
+		runReduceTest(t, "ReduceAll_Float16_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_BFloat16_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.BFloat16, n)
+		data := make([]bfloat16.BFloat16, n)
+		var expectedSum float32
+		for i := range n {
+			val := float32(i%7 - 3)
+			data[i] = bfloat16.FromFloat32(val)
+			expectedSum += val
+		}
+		expected := []bfloat16.BFloat16{bfloat16.FromFloat32(expectedSum)}
+		runReduceTest(t, "ReduceAll_BFloat16_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_Int8_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Int8, n)
+		data := make([]int8, n)
+		var expectedSum int8
+		for i := range n {
+			val := int8(i%5 - 2)
+			data[i] = val
+			expectedSum += val
+		}
+		expected := []int8{expectedSum}
+		runReduceTest(t, "ReduceAll_Int8_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_Int32_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Int32, n)
+		data := make([]int32, n)
+		var expectedSum int32
+		for i := range n {
+			val := int32(i + 1)
+			data[i] = val
+			expectedSum += val
+		}
+		expected := []int32{expectedSum}
+		runReduceTest(t, "ReduceAll_Int32_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
 }
 
 func TestReduceThresholdFallback(t *testing.T) {

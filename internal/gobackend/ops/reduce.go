@@ -152,7 +152,7 @@ func (c *ReduceConfig) Recompute(backend *gobackend.Backend, resolvedNodes []*go
 func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 	rank := shape.Rank()
 	if rank == 0 {
-		return ReduceConfig{Pattern: ReduceAll}
+		return ReduceConfig{Pattern: ReduceAll, A: 1, B: 1}
 	}
 
 	// Normalize and sort axes.
@@ -177,6 +177,8 @@ func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 
 	if len(sortedAxes) == rank {
 		cfg.Pattern = ReduceAll
+		cfg.A = 1
+		cfg.B = shape.Size()
 		return cfg
 	}
 
@@ -198,6 +200,8 @@ func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 
 	if k1 == 0 && k2 == rank {
 		cfg.Pattern = ReduceAll
+		cfg.A = 1
+		cfg.B = shape.Size()
 		return cfg
 	}
 
