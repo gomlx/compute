@@ -30,8 +30,7 @@ But there are many relatively "low-hanging fruits" for optimization, a few obvio
   loop over the data many times, each time applying the unary function.
 * Fuse binary/unary ops: perform unary functions while traversing the data for binary functions. Again to save
   memory accesses.
-* Parallelization: in-operation, and across operations.
-  * Only DotGeneral has been parallelized so far: it is usually the one that consumes most of the time.
+* Further in-operation parallelization: only DotGeneral has been parallelized so far: it is usually the one that consumes most of the time.
 * Use intrinsics/SIMD on platforms that allow it. It was announced as experimental in Go 1.25.
 * ~~Eliminate common sub-expressions.~~
 
