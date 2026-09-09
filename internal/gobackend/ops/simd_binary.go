@@ -1674,6 +1674,17 @@ var supportedDivDTypes = []dtypes.DType{
 	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16,
 }
 
+func tryBinaryTrailingArch(op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) bool {
+	if bcastCfg.Pattern != gobackend.BroadcastTrailingRHS && bcastCfg.Pattern != gobackend.BroadcastTrailingLHS {
+		return false
+	}
+	if archFn := gobackend.GetBinaryTrailingArchDispatcher(); archFn != nil {
+		isLHS := bcastCfg.Pattern == gobackend.BroadcastTrailingLHS
+		return archFn(op, isLHS, lhs, rhs, output, bcastCfg.A, bcastCfg.B, lhs.RawShape.DType)
+	}
+	return false
+}
+
 func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
 		return nil, gobackend.ErrFallback
@@ -1686,6 +1697,9 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeAdd, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1738,6 +1752,9 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeSub, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1791,6 +1808,9 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMul, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1835,6 +1855,9 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeDiv, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1872,6 +1895,9 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1919,6 +1945,9 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
