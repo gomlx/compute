@@ -23,10 +23,12 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeReduceProduct, PrioritySIMD, execReduceProductSIMD)
 }
 
+
 var supportedReduceDTypes = []dtypes.DType{
 	dtypes.Float32, dtypes.Float64,
 	dtypes.Float16, dtypes.BFloat16,
 	dtypes.Int32, dtypes.Uint32,
+	dtypes.Int64, dtypes.Uint64,
 	dtypes.Int8, dtypes.Uint8,
 	dtypes.Int16, dtypes.Uint16,
 }
@@ -37,18 +39,27 @@ func canExecuteReduceSIMD(cfg ReduceConfig, dtype dtypes.DType, supported []dtyp
 	}
 	switch cfg.Pattern {
 	case ReduceTrailing:
+		if cfg.B <= 1 {
+			return false
+		}
 		minB := reduceThresholds.TrailingMinB[dtype]
 		if minB == ThresholdAlwaysFallBack || (minB > 0 && cfg.B < minB) {
 			return false
 		}
 		return true
 	case ReduceLeading:
+		if cfg.A <= 1 {
+			return false
+		}
 		minB := reduceThresholds.LeadingMinB[dtype]
 		if minB == ThresholdAlwaysFallBack || (minB > 0 && cfg.B < minB) {
 			return false
 		}
 		return true
 	case ReduceAll:
+		if (cfg.A * cfg.B) <= 1 {
+			return false
+		}
 		minN := reduceThresholds.AllMinN[dtype]
 		if minN == ThresholdAlwaysFallBack || (minN > 0 && (cfg.A*cfg.B) < minN) {
 			return false
@@ -59,7 +70,8 @@ func canExecuteReduceSIMD(cfg ReduceConfig, dtype dtypes.DType, supported []dtyp
 	}
 }
 
-func prepareReduceBuffers(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer) (*gobackend.Buffer, *gobackend.Buffer, ReduceConfig, error) {
+// PrepareReduceBuffers validates shapes, allocates the output buffer, and resolves ReduceConfig.
+func PrepareReduceBuffers(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer) (*gobackend.Buffer, *gobackend.Buffer, ReduceConfig, error) {
 	operand := inputs[0]
 	var reduceAxes []int
 	var cfg ReduceConfig
@@ -2056,6 +2068,280 @@ func simdReduceAllSumUint32(in []uint32, out []uint32, dtype dtypes.DType) {
 	out[0] = res
 }
 
+func simdReduceLeadingSumInt64(in, out []int64, A, B int) {
+	if A == 0 || B == 0 {
+		return
+	}
+	copy(out[:B], in[:B])
+	vDummy := simd.BroadcastInt64s(0)
+	vLen := vDummy.Len()
+	if B == vLen {
+		vAcc := simd.LoadInt64s(out[:B])
+		for a := 1; a < A; a++ {
+			row := in[a*B : (a+1)*B]
+			vAcc = vAcc.Add(simd.LoadInt64s(row))
+		}
+		vAcc.Store(out[:B])
+		return
+	}
+	for a := 1; a < A; a++ {
+		row := in[a*B : (a+1)*B]
+		b := 0
+		for ; b+vLen <= B; b += vLen {
+			vOut := simd.LoadInt64s(out[b:])
+			vIn := simd.LoadInt64s(row[b:])
+			vOut.Add(vIn).Store(out[b:])
+		}
+		for ; b < B; b++ {
+			out[b] += row[b]
+		}
+	}
+}
+
+func simdReduceTrailingSumInt64(in, out []int64, A, B int, dtype dtypes.DType) {
+	if B == 0 {
+		for a := range A {
+			out[a] = int64(0)
+		}
+		return
+	}
+	vDummy := simd.BroadcastInt64s(0)
+	vLen := vDummy.Len()
+	var tmpBuf [64]int64
+	var tmp []int64
+	if vLen <= len(tmpBuf) {
+		tmp = tmpBuf[:vLen]
+	} else {
+		tmp = make([]int64, vLen)
+	}
+	for a := range A {
+		row := in[a*B : (a+1)*B]
+		if B <= 4 {
+			res := row[0]
+			for _, v := range row[1:] {
+				res += v
+			}
+			out[a] = res
+			continue
+		}
+		if B < vLen {
+			v, _ := simd.LoadInt64sPart(row)
+			v.Store(tmp)
+			res := tmp[0]
+			for _, val := range tmp[1:B] {
+				res += val
+			}
+			out[a] = res
+			continue
+		}
+		vAcc := simd.LoadInt64s(row[:vLen])
+		i := vLen
+		for ; i+vLen <= B; i += vLen {
+			vAcc = vAcc.Add(simd.LoadInt64s(row[i:]))
+		}
+		vAcc.Store(tmp)
+		res := tmp[0]
+		for _, v := range tmp[1:vLen] {
+			res += v
+		}
+		for ; i < B; i++ {
+			v := row[i]
+			res += v
+		}
+		out[a] = res
+	}
+}
+
+func simdReduceAllSumInt64(in []int64, out []int64, dtype dtypes.DType) {
+	n := len(in)
+	if n == 0 {
+		out[0] = 0
+		return
+	}
+	vDummy := simd.BroadcastInt64s(0)
+	vLen := vDummy.Len()
+	if n <= 4 || n < vLen {
+		res := in[0]
+		for _, v := range in[1:] {
+			res += v
+		}
+		out[0] = res
+		return
+	}
+	var tmpBuf [64]int64
+	var tmp []int64
+	if vLen <= len(tmpBuf) {
+		tmp = tmpBuf[:vLen]
+	} else {
+		tmp = make([]int64, vLen)
+	}
+	vAcc0 := simd.LoadInt64s(in[:vLen])
+	i := vLen
+	if i+3*vLen <= n {
+		vAcc1 := simd.LoadInt64s(in[i : i+vLen])
+		vAcc2 := simd.LoadInt64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadInt64s(in[i+2*vLen : i+3*vLen])
+		i += 3 * vLen
+		for ; i+4*vLen <= n; i += 4 * vLen {
+			vAcc0 = vAcc0.Add(simd.LoadInt64s(in[i:]))
+			vAcc1 = vAcc1.Add(simd.LoadInt64s(in[i+vLen:]))
+			vAcc2 = vAcc2.Add(simd.LoadInt64s(in[i+2*vLen:]))
+			vAcc3 = vAcc3.Add(simd.LoadInt64s(in[i+3*vLen:]))
+		}
+		vAcc0 = vAcc0.Add(vAcc1).Add(vAcc2.Add(vAcc3))
+	}
+	for ; i+vLen <= n; i += vLen {
+		vAcc0 = vAcc0.Add(simd.LoadInt64s(in[i:]))
+	}
+	vAcc0.Store(tmp)
+	res := tmp[0]
+	for _, v := range tmp[1:vLen] {
+		res += v
+	}
+	for ; i < n; i++ {
+		v := in[i]
+		res += v
+	}
+	out[0] = res
+}
+
+func simdReduceLeadingSumUint64(in, out []uint64, A, B int) {
+	if A == 0 || B == 0 {
+		return
+	}
+	copy(out[:B], in[:B])
+	vDummy := simd.BroadcastUint64s(0)
+	vLen := vDummy.Len()
+	if B == vLen {
+		vAcc := simd.LoadUint64s(out[:B])
+		for a := 1; a < A; a++ {
+			row := in[a*B : (a+1)*B]
+			vAcc = vAcc.Add(simd.LoadUint64s(row))
+		}
+		vAcc.Store(out[:B])
+		return
+	}
+	for a := 1; a < A; a++ {
+		row := in[a*B : (a+1)*B]
+		b := 0
+		for ; b+vLen <= B; b += vLen {
+			vOut := simd.LoadUint64s(out[b:])
+			vIn := simd.LoadUint64s(row[b:])
+			vOut.Add(vIn).Store(out[b:])
+		}
+		for ; b < B; b++ {
+			out[b] += row[b]
+		}
+	}
+}
+
+func simdReduceTrailingSumUint64(in, out []uint64, A, B int, dtype dtypes.DType) {
+	if B == 0 {
+		for a := range A {
+			out[a] = uint64(0)
+		}
+		return
+	}
+	vDummy := simd.BroadcastUint64s(0)
+	vLen := vDummy.Len()
+	var tmpBuf [64]uint64
+	var tmp []uint64
+	if vLen <= len(tmpBuf) {
+		tmp = tmpBuf[:vLen]
+	} else {
+		tmp = make([]uint64, vLen)
+	}
+	for a := range A {
+		row := in[a*B : (a+1)*B]
+		if B <= 4 {
+			res := row[0]
+			for _, v := range row[1:] {
+				res += v
+			}
+			out[a] = res
+			continue
+		}
+		if B < vLen {
+			v, _ := simd.LoadUint64sPart(row)
+			v.Store(tmp)
+			res := tmp[0]
+			for _, val := range tmp[1:B] {
+				res += val
+			}
+			out[a] = res
+			continue
+		}
+		vAcc := simd.LoadUint64s(row[:vLen])
+		i := vLen
+		for ; i+vLen <= B; i += vLen {
+			vAcc = vAcc.Add(simd.LoadUint64s(row[i:]))
+		}
+		vAcc.Store(tmp)
+		res := tmp[0]
+		for _, v := range tmp[1:vLen] {
+			res += v
+		}
+		for ; i < B; i++ {
+			v := row[i]
+			res += v
+		}
+		out[a] = res
+	}
+}
+
+func simdReduceAllSumUint64(in []uint64, out []uint64, dtype dtypes.DType) {
+	n := len(in)
+	if n == 0 {
+		out[0] = 0
+		return
+	}
+	vDummy := simd.BroadcastUint64s(0)
+	vLen := vDummy.Len()
+	if n <= 4 || n < vLen {
+		res := in[0]
+		for _, v := range in[1:] {
+			res += v
+		}
+		out[0] = res
+		return
+	}
+	var tmpBuf [64]uint64
+	var tmp []uint64
+	if vLen <= len(tmpBuf) {
+		tmp = tmpBuf[:vLen]
+	} else {
+		tmp = make([]uint64, vLen)
+	}
+	vAcc0 := simd.LoadUint64s(in[:vLen])
+	i := vLen
+	if i+3*vLen <= n {
+		vAcc1 := simd.LoadUint64s(in[i : i+vLen])
+		vAcc2 := simd.LoadUint64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadUint64s(in[i+2*vLen : i+3*vLen])
+		i += 3 * vLen
+		for ; i+4*vLen <= n; i += 4 * vLen {
+			vAcc0 = vAcc0.Add(simd.LoadUint64s(in[i:]))
+			vAcc1 = vAcc1.Add(simd.LoadUint64s(in[i+vLen:]))
+			vAcc2 = vAcc2.Add(simd.LoadUint64s(in[i+2*vLen:]))
+			vAcc3 = vAcc3.Add(simd.LoadUint64s(in[i+3*vLen:]))
+		}
+		vAcc0 = vAcc0.Add(vAcc1).Add(vAcc2.Add(vAcc3))
+	}
+	for ; i+vLen <= n; i += vLen {
+		vAcc0 = vAcc0.Add(simd.LoadUint64s(in[i:]))
+	}
+	vAcc0.Store(tmp)
+	res := tmp[0]
+	for _, v := range tmp[1:vLen] {
+		res += v
+	}
+	for ; i < n; i++ {
+		v := in[i]
+		res += v
+	}
+	out[0] = res
+}
+
 func simdReduceLeadingMaxUint32(in, out []uint32, A, B int) {
 	if A == 0 || B == 0 {
 		return
@@ -3777,8 +4063,18 @@ func simdReduceAllProductUint16(in []uint16, out []uint16, dtype dtypes.DType) {
 	}
 	out[0] = uint16(res)
 }
-
 func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, dtype dtypes.DType) error {
+	if cfg.Pattern == ReduceTrailing {
+		if cfg.B <= 1 {
+			gobackend.CopyFlat(output.Flat, operand.Flat)
+			return nil
+		}
+		if archFn := gobackend.GetReduceTrailingSumArchDispatcher(); archFn != nil {
+			if archFn(operand, output, cfg.A, cfg.B, dtype) {
+				return nil
+			}
+		}
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)
@@ -3829,6 +4125,32 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceLeadingSumUint32(in, out, cfg.A, cfg.B)
 		case ReduceTrailing:
 			simdReduceTrailingSumUint32(in, out, cfg.A, cfg.B, dtype)
+		default:
+			return gobackend.ErrFallback
+		}
+	case dtypes.Int64:
+		in := operand.Flat.([]int64)
+		out := output.Flat.([]int64)
+		switch cfg.Pattern {
+		case ReduceAll:
+			simdReduceAllSumInt64(in, out, dtype)
+		case ReduceLeading:
+			simdReduceLeadingSumInt64(in, out, cfg.A, cfg.B)
+		case ReduceTrailing:
+			simdReduceTrailingSumInt64(in, out, cfg.A, cfg.B, dtype)
+		default:
+			return gobackend.ErrFallback
+		}
+	case dtypes.Uint64:
+		in := operand.Flat.([]uint64)
+		out := output.Flat.([]uint64)
+		switch cfg.Pattern {
+		case ReduceAll:
+			simdReduceAllSumUint64(in, out, dtype)
+		case ReduceLeading:
+			simdReduceLeadingSumUint64(in, out, cfg.A, cfg.B)
+		case ReduceTrailing:
+			simdReduceTrailingSumUint64(in, out, cfg.A, cfg.B, dtype)
 		default:
 			return gobackend.ErrFallback
 		}
@@ -3938,7 +4260,7 @@ func execReduceSumSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
-	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
+	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -4112,7 +4434,7 @@ func execReduceMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
-	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
+	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -4286,7 +4608,7 @@ func execReduceMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
-	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
+	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -4460,7 +4782,7 @@ func execReduceProductSIMD(backend *gobackend.Backend, node *gobackend.Node, inp
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
-	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
+	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
 	if err != nil {
 		return nil, err
 	}

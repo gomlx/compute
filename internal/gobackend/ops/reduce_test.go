@@ -185,6 +185,41 @@ func TestReduceFastPaths(t *testing.T) {
 		expected := []float16.Float16{float16.FromFloat32(1), float16.FromFloat32(2), float16.FromFloat32(3)}
 		runReduceTest(t, "ReduceLeading_Float16_Min", ops.ReduceMin, s2x3_f16, data_f16, []int{0}, expected)
 	})
+
+	t.Run("ReduceTrailing_Int64_Sum", func(t *testing.T) {
+		s2x3_i64 := shapes.Make(dtypes.Int64, 2, 3)
+		data_i64 := []int64{1, 2, 3, 4, 5, 6}
+		expected := []int64{6, 15}
+		runReduceTest(t, "ReduceTrailing_Int64_Sum", ops.ReduceSum, s2x3_i64, data_i64, []int{1}, expected)
+	})
+
+	t.Run("ReduceTrailing_Uint64_Sum", func(t *testing.T) {
+		s2x3_u64 := shapes.Make(dtypes.Uint64, 2, 3)
+		data_u64 := []uint64{1, 2, 3, 4, 5, 6}
+		expected := []uint64{6, 15}
+		runReduceTest(t, "ReduceTrailing_Uint64_Sum", ops.ReduceSum, s2x3_u64, data_u64, []int{1}, expected)
+	})
+
+	t.Run("ReduceDimension1_Trailing", func(t *testing.T) {
+		s3x1 := shapes.Make(dtypes.Float32, 3, 1)
+		data3x1 := []float32{10, 20, 30}
+		expected := []float32{10, 20, 30}
+		runReduceTest(t, "ReduceDimension1_Trailing", ops.ReduceSum, s3x1, data3x1, []int{1}, expected)
+	})
+
+	t.Run("ReduceDimension1_Leading", func(t *testing.T) {
+		s1x4 := shapes.Make(dtypes.Float32, 1, 4)
+		data1x4 := []float32{10, 20, 30, 40}
+		expected := []float32{10, 20, 30, 40}
+		runReduceTest(t, "ReduceDimension1_Leading", ops.ReduceSum, s1x4, data1x4, []int{0}, expected)
+	})
+
+	t.Run("ReduceDimension1_All", func(t *testing.T) {
+		s1 := shapes.Make(dtypes.Float32, 1)
+		data1 := []float32{42}
+		expected := []float32{42}
+		runReduceTest(t, "ReduceDimension1_All", ops.ReduceSum, s1, data1, []int{0}, expected)
+	})
 }
 
 func TestReduceThresholdFallback(t *testing.T) {

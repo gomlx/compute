@@ -11,6 +11,8 @@ import (
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/dense"
 	_ "github.com/gomlx/compute/internal/gobackend/ops"
+	_ "github.com/gomlx/compute/internal/gobackend/ops/avx2"
+	_ "github.com/gomlx/compute/internal/gobackend/ops/avx512"
 
 	// Activations implementations:
 	_ "github.com/gomlx/compute/internal/gobackend/activations"

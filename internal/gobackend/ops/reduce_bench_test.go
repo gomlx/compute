@@ -13,12 +13,14 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	_ "github.com/gomlx/compute/internal/gobackend/ops/avx2"
+	_ "github.com/gomlx/compute/internal/gobackend/ops/avx512"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 	"github.com/pkg/errors"
 )
 
-var flagRepeatThresholdTest = flag.Int("repeat_threshold_test", 3, "Number of times to repeat threshold benchmark, taking the minimum value")
+var flagRepeatThresholdTest = flag.Int("repeat_threshold_test", 0, "Number of times to repeat threshold benchmark, taking the minimum value")
 
 type benchResult struct {
 	scalarMin time.Duration
@@ -129,6 +131,9 @@ func formatThreshold(val int) string {
 // TestFindReduceThresholds benchmarks Reduce operations across dimensions, comparing
 // Generic (scalar) vs SIMD medians using testutil.DurationSampler.
 func TestFindReduceThresholds(t *testing.T) {
+	if *flagRepeatThresholdTest < 1 {
+		t.Skip("Run with -repeat_threshold_test=<n> to benchmark, repeating <n> times, with n > 1")
+	}
 	backendGeneric, err := gobackend.New("")
 	if err != nil {
 		t.Fatalf("failed to create backend: %+v", err)
@@ -141,6 +146,8 @@ func TestFindReduceThresholds(t *testing.T) {
 		dtypes.Float64,
 		dtypes.Int32,
 		dtypes.Uint32,
+		dtypes.Int64,
+		dtypes.Uint64,
 		dtypes.Int16,
 		dtypes.Uint16,
 		dtypes.Int8,
@@ -163,7 +170,7 @@ func TestFindReduceThresholds(t *testing.T) {
 		b  int
 	}
 	minTrailing := make(map[trailingKey]benchResult)
-	bValuesTrailing := []int{1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024}
+	bValuesTrailing := []int{2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024}
 	aTrailing := 100
 
 	for range repeats {

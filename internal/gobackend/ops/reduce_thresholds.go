@@ -17,14 +17,14 @@ const (
 	ThresholdAlwaysFallBack = gobackend.ThresholdAlwaysFallBack
 )
 
-// reduceThresholdsConfig specifies the minimum dimension thresholds below which
+// ReduceThresholdsConfig specifies the minimum dimension thresholds below which
 // SIMD reduction falls back to generic (scalar) execution because the scalar loop
 // is faster than the vector setup and horizontal reduction overhead.
 // Threshold values can be:
 // - A positive integer: minimum dimension for SIMD; smaller dimensions fall back to scalar.
 // - ThresholdNone: SIMD is always as fast or faster (or ties); no fallback threshold.
 // - ThresholdAlwaysFallBack: Scalar is always faster (or SIMD unsupported); always fall back to scalar.
-type reduceThresholdsConfig struct {
+type ReduceThresholdsConfig struct {
 	// TrailingMinB is the minimum inner dimension B for ReduceTrailing [A, B] -> [A].
 	// If B < TrailingMinB[dtype], SIMD falls back to scalar.
 	TrailingMinB map[dtypes.DType]int
@@ -38,14 +38,21 @@ type reduceThresholdsConfig struct {
 	AllMinN map[dtypes.DType]int
 }
 
+// GetReduceThresholds returns the current active reduce thresholds configuration.
+func GetReduceThresholds() ReduceThresholdsConfig {
+	return reduceThresholds
+}
+
 // reduceThresholds stores the active thresholds. Initialized to defaults (e.g. ARM64 NEON),
 // and overwritten on amd64 in reduce_thresholds_amd64.go depending on runtime CPU features.
-var reduceThresholds = reduceThresholdsConfig{
+var reduceThresholds = ReduceThresholdsConfig{
 	TrailingMinB: map[dtypes.DType]int{
 		dtypes.Float32:  16,
 		dtypes.Float64:  16,
 		dtypes.Int32:    8,
 		dtypes.Uint32:   8,
+		dtypes.Int64:    8,
+		dtypes.Uint64:   8,
 		dtypes.Int16:    16,
 		dtypes.Uint16:   16,
 		dtypes.Int8:     16,
@@ -58,6 +65,8 @@ var reduceThresholds = reduceThresholdsConfig{
 		dtypes.Float64:  8,
 		dtypes.Int32:    8,
 		dtypes.Uint32:   8,
+		dtypes.Int64:    8,
+		dtypes.Uint64:   8,
 		dtypes.Int16:    8,
 		dtypes.Uint16:   8,
 		dtypes.Int8:     8,
@@ -70,6 +79,8 @@ var reduceThresholds = reduceThresholdsConfig{
 		dtypes.Float64:  8,
 		dtypes.Int32:    8,
 		dtypes.Uint32:   8,
+		dtypes.Int64:    8,
+		dtypes.Uint64:   8,
 		dtypes.Int16:    8,
 		dtypes.Uint16:   8,
 		dtypes.Int8:     8,
