@@ -7,6 +7,7 @@ package fusedops
 import (
 	"math"
 	"simd"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -31,20 +32,23 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	rank := len(dims)
 	axes := data.axes
 
-	// Check if normalization axes are contiguous trailing axes.
 	normSize := 1
 	for _, a := range axes {
 		normSize *= dims[a]
 	}
-	isTrailingAxes := true
-	for i, a := range axes {
-		if a != rank-len(axes)+i {
-			isTrailingAxes = false
-			break
+
+	if !node.IsExecutorCached() {
+		// Check if normalization axes are contiguous trailing axes.
+		isTrailingAxes := true
+		for i, a := range axes {
+			if a != rank-len(axes)+i {
+				isTrailingAxes = false
+				break
+			}
 		}
-	}
-	if !isTrailingAxes || normSize <= 0 {
-		return nil, gobackend.ErrFallback
+		if !isTrailingAxes || normSize <= 0 {
+			return nil, gobackend.ErrFallback
+		}
 	}
 
 	output, err := backend.GetBuffer(node.Shape)
@@ -61,6 +65,20 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	}
 	if len(inputs) > 2 {
 		beta = inputs[2]
+	}
+
+	outerSize := input.RawShape.Size() / normSize
+	if archFn := gobackend.GetLayerNormTrailingArchDispatcher(); archFn != nil {
+		var gPtr, bPtr unsafe.Pointer
+		if gamma != nil {
+			gPtr = gamma.UnsafePointer()
+		}
+		if beta != nil {
+			bPtr = beta.UnsafePointer()
+		}
+		if archFn(input.UnsafePointer(), output.UnsafePointer(), gPtr, bPtr, outerSize, normSize, data.epsilon, dtype) {
+			return output, nil
+		}
 	}
 
 	switch dtype {
@@ -98,9 +116,31 @@ func simdLayerNormTrailingAxesFloat32(
 	normSize int,
 	epsilon float64,
 ) {
+	if len(inData) == 0 || normSize == 0 {
+		return
+	}
+	outerSize := len(inData) / normSize
+	if archFn := gobackend.GetLayerNormTrailingArchDispatcher(); archFn != nil {
+		var gPtr, bPtr unsafe.Pointer
+		if len(gammaData) > 0 {
+			gPtr = unsafe.Pointer(&gammaData[0])
+		}
+		if len(betaData) > 0 {
+			bPtr = unsafe.Pointer(&betaData[0])
+		}
+		if archFn(
+			unsafe.Pointer(&inData[0]),
+			unsafe.Pointer(&outData[0]),
+			gPtr,
+			bPtr,
+			outerSize, normSize, epsilon, dtypes.Float32,
+		) {
+			return
+		}
+	}
+
 	normSizeF := float32(normSize)
 	invNormSizeF := 1.0 / normSizeF
-	outerSize := len(inData) / normSize
 
 	vDummy := simd.BroadcastFloat32s(0)
 	vLen := vDummy.Len()
@@ -328,9 +368,31 @@ func simdLayerNormTrailingAxesFloat64(
 	normSize int,
 	epsilon float64,
 ) {
+	if len(inData) == 0 || normSize == 0 {
+		return
+	}
+	outerSize := len(inData) / normSize
+	if archFn := gobackend.GetLayerNormTrailingArchDispatcher(); archFn != nil {
+		var gPtr, bPtr unsafe.Pointer
+		if len(gammaData) > 0 {
+			gPtr = unsafe.Pointer(&gammaData[0])
+		}
+		if len(betaData) > 0 {
+			bPtr = unsafe.Pointer(&betaData[0])
+		}
+		if archFn(
+			unsafe.Pointer(&inData[0]),
+			unsafe.Pointer(&outData[0]),
+			gPtr,
+			bPtr,
+			outerSize, normSize, epsilon, dtypes.Float64,
+		) {
+			return
+		}
+	}
+
 	normSizeF := float64(normSize)
 	invNormSizeF := 1.0 / normSizeF
-	outerSize := len(inData) / normSize
 
 	vDummy := simd.BroadcastFloat64s(0)
 	vLen := vDummy.Len()
