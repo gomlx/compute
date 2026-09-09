@@ -4087,6 +4087,17 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			}
 		}
 	}
+	if cfg.Pattern == ReduceLeading {
+		if cfg.A <= 1 {
+			gobackend.CopyFlat(output.Flat, operand.Flat)
+			return nil
+		}
+		if archFn := gobackend.GetReduceLeadingSumArchDispatcher(); archFn != nil {
+			if archFn(operand, output, cfg.A, cfg.B, dtype) {
+				return nil
+			}
+		}
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)

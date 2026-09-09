@@ -26,6 +26,14 @@ func registerAVX2() {
 		}
 		return DispatchTrailingSumAVX2(inPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetReduceLeadingSumArchDispatcher(gobackend.PriorityArch, func(operand, output *gobackend.Buffer, A, B int, dtype dtypes.DType) bool {
+		inPtr := operand.UnsafePointer()
+		outPtr := output.UnsafePointer()
+		if inPtr == nil || outPtr == nil {
+			return false
+		}
+		return DispatchLeadingSumAVX2(inPtr, outPtr, A, B, dtype)
+	})
 }
 
 //go:noescape
@@ -97,3 +105,74 @@ func DispatchTrailingSumAVX2(inPtr, outPtr unsafe.Pointer, A, B int, dtype dtype
 	}
 	return true
 }
+
+//go:noescape
+func reduceLeadingSumFloat32AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumFloat64AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumFloat16AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumBFloat16AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumInt32AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumUint32AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumInt16AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumUint16AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumInt8AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumUint8AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumInt64AVX2(in, out unsafe.Pointer, A, B int)
+
+//go:noescape
+func reduceLeadingSumUint64AVX2(in, out unsafe.Pointer, A, B int)
+
+// DispatchLeadingSumAVX2 dispatches leading sum reduction to AVX2 assembly kernels.
+// Returns true if handled, false if dtype is unsupported.
+func DispatchLeadingSumAVX2(inPtr, outPtr unsafe.Pointer, A, B int, dtype dtypes.DType) bool {
+	switch dtype {
+	case dtypes.Float32:
+		reduceLeadingSumFloat32AVX2(inPtr, outPtr, A, B)
+	case dtypes.Float64:
+		reduceLeadingSumFloat64AVX2(inPtr, outPtr, A, B)
+	case dtypes.Float16:
+		reduceLeadingSumFloat16AVX2(inPtr, outPtr, A, B)
+	case dtypes.BFloat16:
+		reduceLeadingSumBFloat16AVX2(inPtr, outPtr, A, B)
+	case dtypes.Int32:
+		reduceLeadingSumInt32AVX2(inPtr, outPtr, A, B)
+	case dtypes.Uint32:
+		reduceLeadingSumUint32AVX2(inPtr, outPtr, A, B)
+	case dtypes.Int64:
+		reduceLeadingSumInt64AVX2(inPtr, outPtr, A, B)
+	case dtypes.Uint64:
+		reduceLeadingSumUint64AVX2(inPtr, outPtr, A, B)
+	case dtypes.Int16:
+		reduceLeadingSumInt16AVX2(inPtr, outPtr, A, B)
+	case dtypes.Uint16:
+		reduceLeadingSumUint16AVX2(inPtr, outPtr, A, B)
+	case dtypes.Int8:
+		reduceLeadingSumInt8AVX2(inPtr, outPtr, A, B)
+	case dtypes.Uint8:
+		reduceLeadingSumUint8AVX2(inPtr, outPtr, A, B)
+	default:
+		return false
+	}
+	return true
+}
+
