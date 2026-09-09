@@ -24,7 +24,7 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	input := inputs[0]
 	dtype := input.RawShape.DType
 	if dtype != dtypes.Float32 && dtype != dtypes.Float64 {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 
 	dims := input.RawShape.Dimensions
@@ -44,7 +44,7 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		}
 	}
 	if !isTrailingAxes || normSize <= 0 {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 
 	output, err := backend.GetBuffer(node.Shape)
@@ -83,7 +83,7 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		}
 		simdLayerNormTrailingAxesFloat64(input.Flat.([]float64), output.Flat.([]float64), gammaData, betaData, normSize, data.epsilon)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 
 	return output, nil

@@ -126,9 +126,9 @@ type executorEntry struct {
 	executor NodeExecutor
 }
 
-// ErrNotImplemented is returned by a NodeExecutor when it does not support the given input combination
+// ErrFallback is returned by a NodeExecutor when it does not support (or is too slow for) the given input combination
 // (e.g. data type or broadcast pattern), signaling the execution engine to fall back to the next registered executor.
-var ErrNotImplemented = errors.New("node executor not implemented for input combination")
+var ErrFallback = errors.New("node executor not implemented for input combination")
 
 var (
 	// nodeExecutors maps OpType to registered executors sorted in descending order of priority.

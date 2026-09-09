@@ -5,8 +5,8 @@
 package ops
 
 import (
-	"slices"
 	"simd"
+	"slices"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -36,7 +36,23 @@ func canExecuteReduceSIMD(cfg ReduceConfig, dtype dtypes.DType, supported []dtyp
 		return false
 	}
 	switch cfg.Pattern {
-	case ReduceAll, ReduceLeading, ReduceTrailing:
+	case ReduceTrailing:
+		minB := reduceThresholds.TrailingMinB[dtype]
+		if minB > 0 && cfg.B < minB {
+			return false
+		}
+		return true
+	case ReduceLeading:
+		minB := reduceThresholds.LeadingMinB[dtype]
+		if minB > 0 && cfg.B < minB {
+			return false
+		}
+		return true
+	case ReduceAll:
+		minN := reduceThresholds.AllMinN[dtype]
+		if minN > 0 && (cfg.A*cfg.B) < minN {
+			return false
+		}
 		return true
 	default:
 		return false
@@ -213,9 +229,9 @@ func simdReduceAllSumFloat32(in []float32, out []float32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat32s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat32s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Add(simd.LoadFloat32s(in[i:]))
@@ -363,9 +379,9 @@ func simdReduceAllMaxFloat32(in []float32, out []float32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat32s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat32s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Max(simd.LoadFloat32s(in[i:]))
@@ -513,9 +529,9 @@ func simdReduceAllMinFloat32(in []float32, out []float32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat32s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat32s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Min(simd.LoadFloat32s(in[i:]))
@@ -663,9 +679,9 @@ func simdReduceAllProductFloat32(in []float32, out []float32, dtype dtypes.DType
 	vAcc0 := simd.LoadFloat32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat32s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat32s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Mul(simd.LoadFloat32s(in[i:]))
@@ -813,9 +829,9 @@ func simdReduceAllSumFloat64(in []float64, out []float64, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat64s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat64s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat64s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat64s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat64s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat64s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Add(simd.LoadFloat64s(in[i:]))
@@ -963,9 +979,9 @@ func simdReduceAllMaxFloat64(in []float64, out []float64, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat64s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat64s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat64s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat64s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat64s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat64s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Max(simd.LoadFloat64s(in[i:]))
@@ -1113,9 +1129,9 @@ func simdReduceAllMinFloat64(in []float64, out []float64, dtype dtypes.DType) {
 	vAcc0 := simd.LoadFloat64s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat64s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat64s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat64s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat64s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat64s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Min(simd.LoadFloat64s(in[i:]))
@@ -1263,9 +1279,9 @@ func simdReduceAllProductFloat64(in []float64, out []float64, dtype dtypes.DType
 	vAcc0 := simd.LoadFloat64s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadFloat64s(in[i:i+vLen])
-		vAcc2 := simd.LoadFloat64s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadFloat64s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadFloat64s(in[i : i+vLen])
+		vAcc2 := simd.LoadFloat64s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadFloat64s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Mul(simd.LoadFloat64s(in[i:]))
@@ -1413,9 +1429,9 @@ func simdReduceAllSumInt32(in []int32, out []int32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadInt32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadInt32s(in[i:i+vLen])
-		vAcc2 := simd.LoadInt32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadInt32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadInt32s(in[i : i+vLen])
+		vAcc2 := simd.LoadInt32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadInt32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Add(simd.LoadInt32s(in[i:]))
@@ -1563,9 +1579,9 @@ func simdReduceAllMaxInt32(in []int32, out []int32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadInt32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadInt32s(in[i:i+vLen])
-		vAcc2 := simd.LoadInt32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadInt32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadInt32s(in[i : i+vLen])
+		vAcc2 := simd.LoadInt32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadInt32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Max(simd.LoadInt32s(in[i:]))
@@ -1713,9 +1729,9 @@ func simdReduceAllMinInt32(in []int32, out []int32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadInt32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadInt32s(in[i:i+vLen])
-		vAcc2 := simd.LoadInt32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadInt32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadInt32s(in[i : i+vLen])
+		vAcc2 := simd.LoadInt32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadInt32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Min(simd.LoadInt32s(in[i:]))
@@ -1863,9 +1879,9 @@ func simdReduceAllProductInt32(in []int32, out []int32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadInt32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadInt32s(in[i:i+vLen])
-		vAcc2 := simd.LoadInt32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadInt32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadInt32s(in[i : i+vLen])
+		vAcc2 := simd.LoadInt32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadInt32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Mul(simd.LoadInt32s(in[i:]))
@@ -2013,9 +2029,9 @@ func simdReduceAllSumUint32(in []uint32, out []uint32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadUint32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadUint32s(in[i:i+vLen])
-		vAcc2 := simd.LoadUint32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadUint32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadUint32s(in[i : i+vLen])
+		vAcc2 := simd.LoadUint32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadUint32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Add(simd.LoadUint32s(in[i:]))
@@ -2163,9 +2179,9 @@ func simdReduceAllMaxUint32(in []uint32, out []uint32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadUint32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadUint32s(in[i:i+vLen])
-		vAcc2 := simd.LoadUint32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadUint32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadUint32s(in[i : i+vLen])
+		vAcc2 := simd.LoadUint32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadUint32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Max(simd.LoadUint32s(in[i:]))
@@ -2313,9 +2329,9 @@ func simdReduceAllMinUint32(in []uint32, out []uint32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadUint32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadUint32s(in[i:i+vLen])
-		vAcc2 := simd.LoadUint32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadUint32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadUint32s(in[i : i+vLen])
+		vAcc2 := simd.LoadUint32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadUint32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Min(simd.LoadUint32s(in[i:]))
@@ -2463,9 +2479,9 @@ func simdReduceAllProductUint32(in []uint32, out []uint32, dtype dtypes.DType) {
 	vAcc0 := simd.LoadUint32s(in[:vLen])
 	i := vLen
 	if i+3*vLen <= n {
-		vAcc1 := simd.LoadUint32s(in[i:i+vLen])
-		vAcc2 := simd.LoadUint32s(in[i+vLen:i+2*vLen])
-		vAcc3 := simd.LoadUint32s(in[i+2*vLen:i+3*vLen])
+		vAcc1 := simd.LoadUint32s(in[i : i+vLen])
+		vAcc2 := simd.LoadUint32s(in[i+vLen : i+2*vLen])
+		vAcc3 := simd.LoadUint32s(in[i+2*vLen : i+3*vLen])
 		i += 3 * vLen
 		for ; i+4*vLen <= n; i += 4 * vLen {
 			vAcc0 = vAcc0.Mul(simd.LoadUint32s(in[i:]))
@@ -3775,7 +3791,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float64:
 		in := operand.Flat.([]float64)
@@ -3788,7 +3804,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int32:
 		in := operand.Flat.([]int32)
@@ -3801,7 +3817,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint32:
 		in := operand.Flat.([]uint32)
@@ -3814,7 +3830,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float16:
 		in := operand.Flat.([]float16.Float16)
@@ -3827,7 +3843,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.BFloat16:
 		in := operand.Flat.([]bfloat16.BFloat16)
@@ -3840,7 +3856,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int8:
 		in := operand.Flat.([]int8)
@@ -3853,7 +3869,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint8:
 		in := operand.Flat.([]uint8)
@@ -3866,7 +3882,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int16:
 		in := operand.Flat.([]int16)
@@ -3879,7 +3895,7 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint16:
 		in := operand.Flat.([]uint16)
@@ -3892,10 +3908,10 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingSumUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	default:
-		return gobackend.ErrNotImplemented
+		return gobackend.ErrFallback
 	}
 	return nil
 }
@@ -3920,7 +3936,7 @@ func execReduceSumSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
 	if err != nil {
@@ -3949,7 +3965,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float64:
 		in := operand.Flat.([]float64)
@@ -3962,7 +3978,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int32:
 		in := operand.Flat.([]int32)
@@ -3975,7 +3991,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint32:
 		in := operand.Flat.([]uint32)
@@ -3988,7 +4004,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float16:
 		in := operand.Flat.([]float16.Float16)
@@ -4001,7 +4017,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.BFloat16:
 		in := operand.Flat.([]bfloat16.BFloat16)
@@ -4014,7 +4030,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int8:
 		in := operand.Flat.([]int8)
@@ -4027,7 +4043,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint8:
 		in := operand.Flat.([]uint8)
@@ -4040,7 +4056,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int16:
 		in := operand.Flat.([]int16)
@@ -4053,7 +4069,7 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint16:
 		in := operand.Flat.([]uint16)
@@ -4066,10 +4082,10 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	default:
-		return gobackend.ErrNotImplemented
+		return gobackend.ErrFallback
 	}
 	return nil
 }
@@ -4094,7 +4110,7 @@ func execReduceMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
 	if err != nil {
@@ -4123,7 +4139,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float64:
 		in := operand.Flat.([]float64)
@@ -4136,7 +4152,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int32:
 		in := operand.Flat.([]int32)
@@ -4149,7 +4165,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint32:
 		in := operand.Flat.([]uint32)
@@ -4162,7 +4178,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float16:
 		in := operand.Flat.([]float16.Float16)
@@ -4175,7 +4191,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.BFloat16:
 		in := operand.Flat.([]bfloat16.BFloat16)
@@ -4188,7 +4204,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int8:
 		in := operand.Flat.([]int8)
@@ -4201,7 +4217,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint8:
 		in := operand.Flat.([]uint8)
@@ -4214,7 +4230,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int16:
 		in := operand.Flat.([]int16)
@@ -4227,7 +4243,7 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint16:
 		in := operand.Flat.([]uint16)
@@ -4240,10 +4256,10 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 		case ReduceTrailing:
 			simdReduceTrailingMinUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	default:
-		return gobackend.ErrNotImplemented
+		return gobackend.ErrFallback
 	}
 	return nil
 }
@@ -4268,7 +4284,7 @@ func execReduceMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
 	if err != nil {
@@ -4297,7 +4313,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float64:
 		in := operand.Flat.([]float64)
@@ -4310,7 +4326,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int32:
 		in := operand.Flat.([]int32)
@@ -4323,7 +4339,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint32:
 		in := operand.Flat.([]uint32)
@@ -4336,7 +4352,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Float16:
 		in := operand.Flat.([]float16.Float16)
@@ -4349,7 +4365,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.BFloat16:
 		in := operand.Flat.([]bfloat16.BFloat16)
@@ -4362,7 +4378,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int8:
 		in := operand.Flat.([]int8)
@@ -4375,7 +4391,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint8:
 		in := operand.Flat.([]uint8)
@@ -4388,7 +4404,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Int16:
 		in := operand.Flat.([]int16)
@@ -4401,7 +4417,7 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	case dtypes.Uint16:
 		in := operand.Flat.([]uint16)
@@ -4414,10 +4430,10 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 		case ReduceTrailing:
 			simdReduceTrailingProductUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
-			return gobackend.ErrNotImplemented
+			return gobackend.ErrFallback
 		}
 	default:
-		return gobackend.ErrNotImplemented
+		return gobackend.ErrFallback
 	}
 	return nil
 }
@@ -4442,7 +4458,7 @@ func execReduceProductSIMD(backend *gobackend.Backend, node *gobackend.Node, inp
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
 	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := prepareReduceBuffers(backend, node, inputs)
 	if err != nil {

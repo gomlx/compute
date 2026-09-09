@@ -186,3 +186,37 @@ func TestReduceFastPaths(t *testing.T) {
 		runReduceTest(t, "ReduceLeading_Float16_Min", ops.ReduceMin, s2x3_f16, data_f16, []int{0}, expected)
 	})
 }
+
+func TestReduceThresholdFallback(t *testing.T) {
+	// 1. Below threshold: shape [10, 4] for Float32 ReduceTrailing (threshold is 32)
+	// Must fall back to scalar and succeed.
+	s10x4 := shapes.Make(dtypes.Float32, 10, 4)
+	data10x4 := make([]float32, 40)
+	expected10 := make([]float32, 10)
+	for r := range 10 {
+		var sum float32
+		for c := range 4 {
+			val := float32(r*4 + c + 1)
+			data10x4[r*4+c] = val
+			sum += val
+		}
+		expected10[r] = sum
+	}
+	runReduceTest(t, "ReduceTrailing_BelowThreshold", ops.ReduceSum, s10x4, data10x4, []int{1}, expected10)
+
+	// 2. Above threshold: shape [10, 64] for Float32 ReduceTrailing (threshold is 32)
+	// Runs SIMD.
+	s10x64 := shapes.Make(dtypes.Float32, 10, 64)
+	data10x64 := make([]float32, 640)
+	expected10_64 := make([]float32, 10)
+	for r := range 10 {
+		var sum float32
+		for c := range 64 {
+			val := float32(r*64 + c + 1)
+			data10x64[r*64+c] = val
+			sum += val
+		}
+		expected10_64[r] = sum
+	}
+	runReduceTest(t, "ReduceTrailing_AboveThreshold", ops.ReduceSum, s10x64, data10x64, []int{1}, expected10_64)
+}

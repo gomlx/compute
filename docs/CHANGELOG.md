@@ -1,3 +1,9 @@
+- 2026-09-09:
+  - Added adaptive SIMD vs. non-SIMD thresholding for `Reduce` operations (`ReduceSum`, `ReduceMax`, `ReduceMin`, `ReduceProduct`) in the Go backend. When the reduced axis or tensor size is below the architecture-specific threshold, SIMD executors decline with `ErrFallback` to allow the faster scalar implementation to execute.
+  - Implemented thread-safe node-level executor caching (`cachedExecutorIdx` on `*Node`), eliminating dispatch loop and fallback check overhead for subsequent runs across both static graphs and dynamic shape specializations.
+  - Added `testutil.DurationSampler` supporting reservoir sampling (default 16K samples) to measure median and percentile durations with constant space.
+  - Added parameterized benchmark suite `TestFindReduceThresholds` in `internal/gobackend/ops/reduce_bench_test.go` to empirically measure crossover thresholds for AVX2, AVX-512, and ARM64/default architectures.
+
 - 2026-08-28:
   - Fixed `gobackend.DataEqual` to check `reflect.Type.Comparable()` before equality check to support deduplication of nodes with non-comparable structs (containing slices).
   - Fixed `gobackend.DotGeneral` de-normalization reshape to delegate to `DynamicReshape` when handling dynamic matrices/batches.
