@@ -6,11 +6,24 @@ package ops
 
 import (
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
+)
+
+const (
+	// ThresholdNone indicates that SIMD is always as fast or faster (or ties), so no fallback threshold is needed.
+	ThresholdNone = gobackend.ThresholdNone
+
+	// ThresholdAlwaysFallBack indicates that scalar is always faster (or SIMD unsupported), so always fall back to scalar.
+	ThresholdAlwaysFallBack = gobackend.ThresholdAlwaysFallBack
 )
 
 // reduceThresholdsConfig specifies the minimum dimension thresholds below which
 // SIMD reduction falls back to generic (scalar) execution because the scalar loop
 // is faster than the vector setup and horizontal reduction overhead.
+// Threshold values can be:
+// - A positive integer: minimum dimension for SIMD; smaller dimensions fall back to scalar.
+// - ThresholdNone: SIMD is always as fast or faster (or ties); no fallback threshold.
+// - ThresholdAlwaysFallBack: Scalar is always faster (or SIMD unsupported); always fall back to scalar.
 type reduceThresholdsConfig struct {
 	// TrailingMinB is the minimum inner dimension B for ReduceTrailing [A, B] -> [A].
 	// If B < TrailingMinB[dtype], SIMD falls back to scalar.

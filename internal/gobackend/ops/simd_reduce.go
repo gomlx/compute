@@ -38,19 +38,19 @@ func canExecuteReduceSIMD(cfg ReduceConfig, dtype dtypes.DType, supported []dtyp
 	switch cfg.Pattern {
 	case ReduceTrailing:
 		minB := reduceThresholds.TrailingMinB[dtype]
-		if minB > 0 && cfg.B < minB {
+		if minB == ThresholdAlwaysFallBack || (minB > 0 && cfg.B < minB) {
 			return false
 		}
 		return true
 	case ReduceLeading:
 		minB := reduceThresholds.LeadingMinB[dtype]
-		if minB > 0 && cfg.B < minB {
+		if minB == ThresholdAlwaysFallBack || (minB > 0 && cfg.B < minB) {
 			return false
 		}
 		return true
 	case ReduceAll:
 		minN := reduceThresholds.AllMinN[dtype]
-		if minN > 0 && (cfg.A*cfg.B) < minN {
+		if minN == ThresholdAlwaysFallBack || (minN > 0 && (cfg.A*cfg.B) < minN) {
 			return false
 		}
 		return true

@@ -130,6 +130,14 @@ type executorEntry struct {
 // (e.g. data type or broadcast pattern), signaling the execution engine to fall back to the next registered executor.
 var ErrFallback = errors.New("node executor not implemented for input combination")
 
+const (
+	// ThresholdNone indicates that SIMD is always as fast or faster (or ties), so no fallback threshold is needed.
+	ThresholdNone = 0
+
+	// ThresholdAlwaysFallBack indicates that scalar is always faster (or SIMD unsupported), so always fall back to scalar.
+	ThresholdAlwaysFallBack = -1
+)
+
 var (
 	// nodeExecutors maps OpType to registered executors sorted in descending order of priority.
 	nodeExecutors [compute.OpTypeLast][]executorEntry
