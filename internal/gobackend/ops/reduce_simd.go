@@ -4280,7 +4280,7 @@ func execReduceSumSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		}
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
-	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
+	if !node.IsExecutorCached() && !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
@@ -4454,7 +4454,7 @@ func execReduceMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		}
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
-	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
+	if !node.IsExecutorCached() && !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
@@ -4628,7 +4628,7 @@ func execReduceMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 		}
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
-	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
+	if !node.IsExecutorCached() && !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)
@@ -4802,7 +4802,7 @@ func execReduceProductSIMD(backend *gobackend.Backend, node *gobackend.Node, inp
 		}
 		cfg = DetermineReduceConfig(inputs[0].RawShape, reduceAxes)
 	}
-	if !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
+	if !node.IsExecutorCached() && !canExecuteReduceSIMD(cfg, dtype, supportedReduceDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	operand, output, cfg, err := PrepareReduceBuffers(backend, node, inputs)

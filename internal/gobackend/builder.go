@@ -196,6 +196,11 @@ func (node *Node) ClearCachedExecutor() {
 	node.cachedExecutorIdx.Store(0)
 }
 
+// IsExecutorCached returns true if an executor was already selected and cached for this node.
+func (node *Node) IsExecutorCached() bool {
+	return node.cachedExecutorIdx.Load() > 0
+}
+
 // RecomputableNodeData is an interface that can be implemented by the Data field of a Node
 // to allow recomputing shape-dependent metadata when specializing a dynamic graph.
 type RecomputableNodeData interface {
