@@ -78,3 +78,48 @@ To calibrate thresholds for AVX-512:
    ```
 2. Inspect the crossover points (where `Ratio > 1.05` indicates Scalar is faster).
 3. Update `avx512ReduceThresholds` in [`compute/internal/gobackend/ops/reduce_thresholds_amd64.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/ops/reduce_thresholds_amd64.go).
+
+## Assembly Guidelines: Avoiding AVX-SSE Transition Penalties
+
+When writing AMD64 assembly routines for AVX2 or AVX-512, **never mix non-VEX (legacy SSE) instructions with VEX/EVEX instructions**.
+
+### The Problem: AVX $\leftrightarrow$ SSE State Transitions
+
+On x86_64 processors (especially Intel architectures like Skylake through Alder Lake / Raptor Lake), the CPU pipeline manages upper register bits (e.g. bits 128–255 of YMM registers) differently depending on whether VEX-encoded or legacy SSE-encoded instructions are executing.
+
+When a legacy SSE instruction (such as `MOVSS`, `ADDSS`, `DIVSS`, `SQRTSS`, or `CVTSL2SS`) executes while the upper bits of any YMM register are active or not cleanly zeroed:
+1. The CPU hardware must save the upper 128 bits of all YMM registers to an internal buffer and transition the register state.
+2. Executing a subsequent AVX/VEX instruction requires another transition to restore state.
+3. Each transition stalls the execution pipeline for **~70 to 140 CPU cycles**.
+
+In tight loops or row-by-row reductions (such as LayerNorm, RMSNorm, or Softmax), having even 2–4 transitions per row creates a massive **fixed latency penalty**. For example, in a 100-row LayerNorm operation, this introduced an artificial ~18 µs floor regardless of tensor size, completely negating SIMD benefits on small-to-medium batches. Eliminating these transitions yielded a **34× speedup** (from 18.8 µs down to 550 ns for batch size 16) and improved full model training throughput by 20%.
+
+### Rules for Assembly Implementations
+
+1. **Always Use VEX/EVEX Instructions (`V...`)**:
+   In any kernel using YMM (`Y0`–`Y15`) or ZMM (`Z0`–`Z31`) registers, **all** scalar floating-point instructions must also use their VEX-prefixed counterparts.
+
+2. **Go Assembly Opcode Names for Scalar VEX Operations**:
+   Go's internal assembler has specific naming conventions for 3-operand VEX scalar and conversion instructions:
+
+   | Operation | Legacy SSE (Avoid in AVX code) | VEX Equivalent (Use this) |
+   | :--- | :--- | :--- |
+   | **Float32 Move** | `MOVSS src, dst` | `VMOVSS src, dst` |
+   | **Float64 Move** | `MOVSD src, dst` | `VMOVSD src, dst` |
+   | **Float32 Add/Sub/Mul** | `ADDSS / SUBSS / MULSS src, dst` | `VADDSS / VSUBSS / VMULSS src2, src1, dst` |
+   | **Float64 Add/Sub/Mul** | `ADDSD / SUBSD / MULSD src, dst` | `VADDSD / VSUBSD / VMULSD src2, src1, dst` |
+   | **Float32 Division** | `DIVSS src, dst` | `VDIVSS divisor, dividend, dst` |
+   | **Float64 Division** | `DIVSD src, dst` | `VDIVSD divisor, dividend, dst` |
+   | **Square Root** | `SQRTSS src, dst` | `VSQRTSS src, src, dst` |
+   | **Int32 $\to$ Float32** | `CVTSL2SS reg, xmm` | `VCVTSI2SSL reg, xmm, dst` |
+   | **Int64 $\to$ Float64** | `CVTSQ2SD reg, xmm` | `VCVTSI2SDQ reg, xmm, dst` |
+   | **Zeroing Registers** | `XORPS xmm, xmm` | `VXORPS ymm, ymm, ymm` |
+
+   > [!NOTE]
+   > For `VDIVSS` and `VDIVSD`, the operand order in Go assembly is `VDIVSS divisor, dividend, dst` (e.g. `VDIVSS X0, X1, X1` computes `X1 = X1 / X0`).
+   > For `VCVTSI2SSL`, the trailing `L` indicates a 32-bit integer register (`R11` / `R11D`), while `VCVTSI2SDQ` with trailing `Q` indicates a 64-bit integer register.
+
+3. **Always Call `VZEROUPPER` Before Returning (`RET`)**:
+   Standard Go compiler code generation uses legacy SSE instructions for scalar float math. If an assembly routine leaves the upper halves of YMM/ZMM registers in a "dirty" state upon returning, the very next Go-compiled SSE instruction will trigger an AVX $\to$ SSE penalty.
+   Always emit `VZEROUPPER` immediately before every `RET` instruction in functions using 256-bit or 512-bit registers.
+

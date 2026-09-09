@@ -21,13 +21,12 @@ TEXT ·layerNormFloat32AVX512(SB), NOSPLIT, $0-52
 	MOVQ beta+24(FP), R9
 	MOVQ outerSize+32(FP), R10
 	MOVQ normSize+40(FP), R11
-	MOVSS epsilon+48(FP), X15 // X15 = epsilon
+	VMOVSS epsilon+48(FP), X15 // X15 = epsilon
 
 	// Precompute 1.0 / float32(normSize) in X14
-	CVTSL2SS R11, X14
-	MOVSS ·float32One(SB), X13
-	DIVSS X14, X13
-	MOVSS X13, X14 // X14 = 1.0 / float32(normSize)
+	VCVTSI2SSL R11, X14, X14
+	VMOVSS ·float32One(SB), X13
+	VDIVSS X14, X13, X14 // X14 = 1.0 / float32(normSize)
 
 	TESTQ R10, R10
 	JLE done
@@ -84,12 +83,12 @@ pass1_reduce:
 pass1_scalar:
 	CMPQ AX, R11
 	JGE pass1_done
-	ADDSS (SI)(AX*4), X0
+	VADDSS (SI)(AX*4), X0, X0
 	INCQ AX
 	JMP pass1_scalar
 
 pass1_done:
-	MULSS X14, X0
+	VMULSS X14, X0, X0
 	VBROADCASTSS X0, Z12 // Z12 = mean
 
 	// --- PASS 2: VARIANCE ---
@@ -145,19 +144,19 @@ pass2_reduce:
 pass2_scalar:
 	CMPQ AX, R11
 	JGE pass2_done
-	MOVSS (SI)(AX*4), X1
-	SUBSS X12, X1
-	MULSS X1, X1
-	ADDSS X1, X0
+	VMOVSS (SI)(AX*4), X1
+	VSUBSS X12, X1, X1
+	VMULSS X1, X1, X1
+	VADDSS X1, X0, X0
 	INCQ AX
 	JMP pass2_scalar
 
 pass2_done:
-	MULSS X14, X0
-	ADDSS X15, X0
-	SQRTSS X0, X0
-	MOVSS ·float32One(SB), X1
-	DIVSS X0, X1
+	VMULSS X14, X0, X0
+	VADDSS X15, X0, X0
+	VSQRTSS X0, X0, X0
+	VMOVSS ·float32One(SB), X1
+	VDIVSS X0, X1, X1
 	VBROADCASTSS X1, Z13 // Z13 = invStd
 
 	// --- PASS 3: NORMALIZE + SCALE/BIAS ---
@@ -186,12 +185,12 @@ pass3_both_loop16:
 pass3_both_scalar:
 	CMPQ AX, R11
 	JGE next_row
-	MOVSS (SI)(AX*4), X0
-	SUBSS X12, X0
-	MULSS X13, X0
-	MULSS (R8)(AX*4), X0
-	ADDSS (R9)(AX*4), X0
-	MOVSS X0, (DI)(AX*4)
+	VMOVSS (SI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMULSS (R8)(AX*4), X0, X0
+	VADDSS (R9)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
 	INCQ AX
 	JMP pass3_both_scalar
 
@@ -214,11 +213,11 @@ pass3_gamma_loop16:
 pass3_gamma_scalar:
 	CMPQ AX, R11
 	JGE next_row
-	MOVSS (SI)(AX*4), X0
-	SUBSS X12, X0
-	MULSS X13, X0
-	MULSS (R8)(AX*4), X0
-	MOVSS X0, (DI)(AX*4)
+	VMOVSS (SI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMULSS (R8)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
 	INCQ AX
 	JMP pass3_gamma_scalar
 
@@ -245,11 +244,11 @@ pass3_beta_loop16:
 pass3_beta_scalar:
 	CMPQ AX, R11
 	JGE next_row
-	MOVSS (SI)(AX*4), X0
-	SUBSS X12, X0
-	MULSS X13, X0
-	ADDSS (R9)(AX*4), X0
-	MOVSS X0, (DI)(AX*4)
+	VMOVSS (SI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VADDSS (R9)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
 	INCQ AX
 	JMP pass3_beta_scalar
 
@@ -270,10 +269,10 @@ pass3_none_loop16:
 pass3_none_scalar:
 	CMPQ AX, R11
 	JGE next_row
-	MOVSS (SI)(AX*4), X0
-	SUBSS X12, X0
-	MULSS X13, X0
-	MOVSS X0, (DI)(AX*4)
+	VMOVSS (SI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMOVSS X0, (DI)(AX*4)
 	INCQ AX
 	JMP pass3_none_scalar
 
@@ -306,13 +305,12 @@ TEXT ·layerNormFloat64AVX512(SB), NOSPLIT, $0-56
 	MOVQ beta+24(FP), R9
 	MOVQ outerSize+32(FP), R10
 	MOVQ normSize+40(FP), R11
-	MOVSD epsilon+48(FP), X15 // X15 = epsilon
+	VMOVSD epsilon+48(FP), X15 // X15 = epsilon
 
 	// Precompute 1.0 / float64(normSize) in X14
-	CVTSQ2SD R11, X14
-	MOVSD ·float64One(SB), X13
-	DIVSD X14, X13
-	MOVSD X13, X14 // X14 = 1.0 / float64(normSize)
+	VCVTSI2SDQ R11, X14, X14
+	VMOVSD ·float64One(SB), X13
+	VDIVSD X14, X13, X14 // X14 = 1.0 / float64(normSize)
 
 	TESTQ R10, R10
 	JLE done64
@@ -367,12 +365,12 @@ pass1_64_reduce:
 pass1_64_scalar:
 	CMPQ AX, R11
 	JGE pass1_64_done
-	ADDSD (SI)(AX*8), X0
+	VADDSD (SI)(AX*8), X0, X0
 	INCQ AX
 	JMP pass1_64_scalar
 
 pass1_64_done:
-	MULSD X14, X0
+	VMULSD X14, X0, X0
 	VBROADCASTSD X0, Z12 // Z12 = mean
 
 	// --- PASS 2: VARIANCE ---
@@ -427,19 +425,19 @@ pass2_64_reduce:
 pass2_64_scalar:
 	CMPQ AX, R11
 	JGE pass2_64_done
-	MOVSD (SI)(AX*8), X1
-	SUBSD X12, X1
-	MULSD X1, X1
-	ADDSD X1, X0
+	VMOVSD (SI)(AX*8), X1
+	VSUBSD X12, X1, X1
+	VMULSD X1, X1, X1
+	VADDSD X1, X0, X0
 	INCQ AX
 	JMP pass2_64_scalar
 
 pass2_64_done:
-	MULSD X14, X0
-	ADDSD X15, X0
-	SQRTSD X0, X0
-	MOVSD ·float64One(SB), X1
-	DIVSD X0, X1
+	VMULSD X14, X0, X0
+	VADDSD X15, X0, X0
+	VSQRTSD X0, X0, X0
+	VMOVSD ·float64One(SB), X1
+	VDIVSD X0, X1, X1
 	VBROADCASTSD X1, Z13 // Z13 = invStd
 
 	// --- PASS 3: NORMALIZE + SCALE/BIAS ---
@@ -468,12 +466,12 @@ pass3_64_both_loop8:
 pass3_64_both_scalar:
 	CMPQ AX, R11
 	JGE next_row64
-	MOVSD (SI)(AX*8), X0
-	SUBSD X12, X0
-	MULSD X13, X0
-	MULSD (R8)(AX*8), X0
-	ADDSD (R9)(AX*8), X0
-	MOVSD X0, (DI)(AX*8)
+	VMOVSD (SI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMULSD (R8)(AX*8), X0, X0
+	VADDSD (R9)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
 	INCQ AX
 	JMP pass3_64_both_scalar
 
@@ -496,11 +494,11 @@ pass3_64_gamma_loop8:
 pass3_64_gamma_scalar:
 	CMPQ AX, R11
 	JGE next_row64
-	MOVSD (SI)(AX*8), X0
-	SUBSD X12, X0
-	MULSD X13, X0
-	MULSD (R8)(AX*8), X0
-	MOVSD X0, (DI)(AX*8)
+	VMOVSD (SI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMULSD (R8)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
 	INCQ AX
 	JMP pass3_64_gamma_scalar
 
@@ -527,11 +525,11 @@ pass3_64_beta_loop8:
 pass3_64_beta_scalar:
 	CMPQ AX, R11
 	JGE next_row64
-	MOVSD (SI)(AX*8), X0
-	SUBSD X12, X0
-	MULSD X13, X0
-	ADDSD (R9)(AX*8), X0
-	MOVSD X0, (DI)(AX*8)
+	VMOVSD (SI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VADDSD (R9)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
 	INCQ AX
 	JMP pass3_64_beta_scalar
 
@@ -552,10 +550,10 @@ pass3_64_none_loop8:
 pass3_64_none_scalar:
 	CMPQ AX, R11
 	JGE next_row64
-	MOVSD (SI)(AX*8), X0
-	SUBSD X12, X0
-	MULSD X13, X0
-	MOVSD X0, (DI)(AX*8)
+	VMOVSD (SI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMOVSD X0, (DI)(AX*8)
 	INCQ AX
 	JMP pass3_64_none_scalar
 
