@@ -26,13 +26,7 @@ func readBufferInt32(t *testing.T, buf compute.Buffer) []int32 {
 }
 
 func TestDynamicShapeOps(t *testing.T) {
-	backendGeneric, err := New("")
-	if err != nil {
-		t.Fatalf("Failed to create backend: %+v", err)
-	}
-	defer backendGeneric.Finalize()
-
-	builder := backendGeneric.Builder("test_dynamic")
+	builder := backend.Builder("test_dynamic")
 	mainFn := builder.Main()
 
 	// x has dynamic dimension: [batchSize=-1, 3]
@@ -67,7 +61,7 @@ func TestDynamicShapeOps(t *testing.T) {
 
 	// Execute with batch=2
 	inputVal2 := []float32{1, 2, 3, 4, 5, 6}
-	inputBuf2, err := backendGeneric.BufferFromFlatData(0, inputVal2, shapes.Make(dtypes.Float32, 2, 3))
+	inputBuf2, err := backend.BufferFromFlatData(0, inputVal2, shapes.Make(dtypes.Float32, 2, 3))
 	if err != nil {
 		t.Fatalf("BufferFromFlatData failed: %+v", err)
 	}
@@ -94,7 +88,7 @@ func TestDynamicShapeOps(t *testing.T) {
 
 	// Execute with batch=4
 	inputVal4 := make([]float32, 12)
-	inputBuf4, err := backendGeneric.BufferFromFlatData(0, inputVal4, shapes.Make(dtypes.Float32, 4, 3))
+	inputBuf4, err := backend.BufferFromFlatData(0, inputVal4, shapes.Make(dtypes.Float32, 4, 3))
 	if err != nil {
 		t.Fatalf("BufferFromFlatData failed: %+v", err)
 	}

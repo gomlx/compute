@@ -56,11 +56,7 @@ func TestDataEqual(t *testing.T) {
 	}
 }
 func TestMakeNodeDedupKey(t *testing.T) {
-	be, err := gobackend.New("")
-	if err != nil {
-		t.Fatalf("Failed to create backend: %v", err)
-	}
-	defer be.Finalize()
+	be := backend.(*gobackend.Backend)
 	b := be.Builder("test").(*gobackend.Builder)
 	mainFn := b.Main().(*gobackend.Function)
 	shape := shapes.Make(dtypes.F32, 2, 3)
@@ -115,13 +111,8 @@ func TestMakeNodeDedupKey(t *testing.T) {
 }
 
 func TestDedup(t *testing.T) {
+	be := backend.(*gobackend.Backend)
 	t.Run("BinaryOp", func(t *testing.T) {
-		// Create a backend and builder
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -158,12 +149,6 @@ func TestDedup(t *testing.T) {
 	})
 
 	t.Run("UnaryOp", func(t *testing.T) {
-		// Create a backend and builder
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -196,12 +181,6 @@ func TestDedup(t *testing.T) {
 	})
 
 	t.Run("SliceOp", func(t *testing.T) {
-		// Create a backend and builder
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -251,12 +230,8 @@ func TestDedup(t *testing.T) {
 }
 
 func TestNoDedup(t *testing.T) {
+	be := backend.(*gobackend.Backend)
 	t.Run("DifferentParameters", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -290,11 +265,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentShapes", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -324,11 +294,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("OptimizationBarrier", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -352,11 +317,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("SchedulingBarrier", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -384,11 +344,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentConstants", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -418,11 +373,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentIotaAxes", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -452,11 +402,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentTransposePermutations", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -490,11 +435,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentReduceAxes", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -528,11 +468,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentInputs", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -561,11 +496,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentBroadcastDims", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -599,11 +529,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("SameParameterTwice", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -633,11 +558,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("ConcatenateDifferentAxis", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -675,11 +595,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("ReshapeDifferentDims", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -714,12 +629,7 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("BroadcastInDimDifferentAxes", func(t *testing.T) {
-		backend, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer backend.Finalize()
-		builder := backend.Builder("test").(*gobackend.Builder)
+		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
 		x, err := mainFn.Parameter("x", shapes.Make(dtypes.F32, 2), nil)
@@ -753,11 +663,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("DifferentOpTypes", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 
@@ -800,11 +705,6 @@ func TestNoDedup(t *testing.T) {
 	})
 
 	t.Run("OperationsWithNilData", func(t *testing.T) {
-		be, err := gobackend.New("")
-		if err != nil {
-			t.Fatalf("Failed to create backend: %v", err)
-		}
-		defer be.Finalize()
 		builder := be.Builder("test").(*gobackend.Builder)
 		mainFn := builder.Main().(*gobackend.Function)
 

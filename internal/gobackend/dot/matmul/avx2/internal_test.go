@@ -353,11 +353,11 @@ func TestAVX2(t *testing.T) {
 }
 
 func BenchmarkAVX2SmallMatMul(b *testing.B) {
-	backendGeneric, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		b.Fatalf("failed to create backend: %+v", err)
 	}
-	backend := backendGeneric.(*gobackend.Backend)
+	defer backend.Finalize()
 
 	cases := []struct {
 		name    string

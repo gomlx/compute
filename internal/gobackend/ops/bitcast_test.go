@@ -15,7 +15,7 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 	// Bitcast uint8[2] → Uint4[4]: raw bytes stay the same.
 	// Byte 0xF0 = low nibble 0, high nibble 15.
 	// Byte 0x87 = low nibble 7, high nibble 8.
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -33,7 +33,7 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 	node := &gobackend.Node{Shape: dstShape}
 
 	// Not owned: should copy bytes without unpacking.
-	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend, node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -50,7 +50,7 @@ func TestBitcast_Uint8ToUint4_PureReinterpret(t *testing.T) {
 
 func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 	// Bitcast uint8[2] → Int4[4]: raw bytes stay the same.
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -67,7 +67,7 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Int4, 4)
 	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend, node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -83,7 +83,7 @@ func TestBitcast_Uint8ToInt4_PureReinterpret(t *testing.T) {
 }
 
 func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -101,7 +101,7 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Int4, 4)
 	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{true})
+	result, err := execBitcast(backend, node, []*gobackend.Buffer{srcBuf}, []bool{true})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}
@@ -119,7 +119,7 @@ func TestBitcast_Uint8ToInt4_OwnedReuse(t *testing.T) {
 
 func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 	// Same bit-width, different Go type: should copy bytes.
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}
@@ -136,7 +136,7 @@ func TestBitcast_SameSize_Uint8ToInt8(t *testing.T) {
 	dstShape := shapes.Make(dtypes.Int8, 3)
 	node := &gobackend.Node{Shape: dstShape}
 
-	result, err := execBitcast(backend.(*gobackend.Backend), node, []*gobackend.Buffer{srcBuf}, []bool{false})
+	result, err := execBitcast(backend, node, []*gobackend.Buffer{srcBuf}, []bool{false})
 	if err != nil {
 		t.Fatalf("execBitcast failed: %+v", err)
 	}

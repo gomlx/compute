@@ -134,11 +134,10 @@ func TestFindReduceThresholds(t *testing.T) {
 	if *flagRepeatThresholdTest < 1 {
 		t.Skip("Run with -repeat_threshold_test=<n> to benchmark, repeating <n> times, with n > 1")
 	}
-	backendGeneric, err := gobackend.New("")
+	be, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("failed to create backend: %+v", err)
 	}
-	be := backendGeneric.(*gobackend.Backend)
 	defer be.Finalize()
 
 	testDTypes := []dtypes.DType{

@@ -36,10 +36,13 @@ func setup() {
 		fmt.Printf("\t$%s=%q\n", compute.ConfigEnvVar, os.Getenv(compute.ConfigEnvVar))
 	}
 	var err error
-	backend, err = New(*configFlag)
+	if *configFlag != "" {
+		backend, err = New(*configFlag)
+	} else {
+		backend, err = compute.New()
+	}
 	if err != nil {
 		klog.Fatalf("Failed to create backend: %+v", err)
-
 	}
 	fmt.Printf("Backend: %s, %s\n", backend.Name(), backend.Description())
 }

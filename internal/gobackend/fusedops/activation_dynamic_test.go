@@ -17,7 +17,7 @@ import (
 )
 
 func TestActivationDynamic(t *testing.T) {
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}

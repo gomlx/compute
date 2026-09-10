@@ -12,6 +12,7 @@ package gobackend
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,6 +53,20 @@ var GetBackend = sync.OnceValue(func() compute.Backend {
 	}
 	return backend
 })
+
+// NewBackend returns a "go" backend (*compute/internal/gobackend.Backend) for test.
+// It returns an error if the backend is not a "go" backend.
+func NewBackend() (*Backend, error) {
+	backendRaw, err := compute.New()
+	if err != nil {
+		return nil, err
+	}
+	be, ok := backendRaw.(*Backend)
+	if !ok {
+		return nil, errors.Errorf("backend configured is not a Go backend: GOMLX_BACKEND=%q", os.Getenv(compute.ConfigEnvVar))
+	}
+	return be, nil
+}
 
 // New constructs a new Go backend.
 // There are no configurations, the string is simply ignored.

@@ -278,11 +278,10 @@ func TestBinaryBroadcastBenchmark(t *testing.T) {
 	if *flagRepeatBinaryBench < 1 {
 		t.Skip("Run with -repeat_binary_bench=<n> to benchmark binary broadcast trailing (n >= 1)")
 	}
-	backendGeneric, err := gobackend.New("")
+	be, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("failed to create backend: %+v", err)
 	}
-	be := backendGeneric.(*gobackend.Backend)
 	defer be.Finalize()
 
 	testDTypes := []dtypes.DType{
@@ -430,11 +429,10 @@ func TestBinaryBroadcastBenchmark(t *testing.T) {
 
 func benchmarkBroadcastTrailing(b *testing.B, pattern gobackend.BroadcastPattern, op compute.OpType, dt dtypes.DType, A, B int) {
 	b.Helper()
-	backendGeneric, err := gobackend.New("")
+	be, err := gobackend.NewBackend()
 	if err != nil {
 		b.Fatalf("failed to create backend: %+v", err)
 	}
-	be := backendGeneric.(*gobackend.Backend)
 	defer be.Finalize()
 
 	var lhsShape, rhsShape shapes.Shape

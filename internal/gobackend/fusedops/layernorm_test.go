@@ -25,7 +25,7 @@ func runLayerNormTest[T float32 | float64](
 	gammaData, betaData []T,
 ) {
 	t.Helper()
-	backend, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}

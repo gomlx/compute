@@ -89,8 +89,7 @@ func TestLayerNormBenchmark(t *testing.T) {
 		t.Skip("skipping layernorm comparison benchmark; specify -repeat_layernorm_bench=N to run")
 	}
 
-	backendRaw, err := gobackend.New("")
-	be := backendRaw.(*gobackend.Backend)
+	be, err := NewBackend()
 	if err != nil {
 		t.Fatalf("failed to create backend: %+v", err)
 	}
