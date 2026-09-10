@@ -385,4 +385,5 @@ next_lhs_f64:
 	JMP loop_lhs_f64
 
 done_f64:
+	VZEROUPPER
 	RET

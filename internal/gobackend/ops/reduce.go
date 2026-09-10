@@ -152,7 +152,7 @@ func (c *ReduceConfig) Recompute(backend *gobackend.Backend, resolvedNodes []*go
 func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 	rank := shape.Rank()
 	if rank == 0 {
-		return ReduceConfig{Pattern: ReduceAll}
+		return ReduceConfig{Pattern: ReduceAll, A: 1, B: 1}
 	}
 
 	// Normalize and sort axes.
@@ -177,6 +177,8 @@ func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 
 	if len(sortedAxes) == rank {
 		cfg.Pattern = ReduceAll
+		cfg.A = 1
+		cfg.B = shape.Size()
 		return cfg
 	}
 
@@ -198,6 +200,8 @@ func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 
 	if k1 == 0 && k2 == rank {
 		cfg.Pattern = ReduceAll
+		cfg.A = 1
+		cfg.B = shape.Size()
 		return cfg
 	}
 
@@ -314,15 +318,6 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		}
 		cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
 	}
-	if len(reduceAxes) == 0 {
-		// Identity.
-		output, err := backend.GetBuffer(operand.RawShape)
-		if err != nil {
-			return nil, err
-		}
-		gobackend.CopyFlat(output.Flat, operand.Flat)
-		return output, nil
-	}
 	outputShape := node.Shape
 	if outputShape.IsDynamic() {
 		concreteShape := outputShape.Clone()
@@ -336,6 +331,21 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		}
 		outputShape = concreteShape
 		cfg = DetermineReduceConfig(operand.RawShape, reduceAxes)
+	}
+	if len(reduceAxes) == 0 || operand.RawShape.Size() == outputShape.Size() {
+		// Either no axes are reduced, or all reduced axes have dimension 1: the reduction is a no-op.
+		if len(inputsOwned) > 0 && inputsOwned[0] {
+			output := operand
+			inputs[0] = nil
+			output.RawShape = outputShape
+			return output, nil
+		}
+		output, err := backend.GetBuffer(outputShape)
+		if err != nil {
+			return nil, err
+		}
+		gobackend.CopyFlat(output.Flat, operand.Flat)
+		return output, nil
 	}
 	output, err := backend.GetBuffer(outputShape)
 	if err != nil {

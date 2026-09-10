@@ -27,11 +27,11 @@ func setup() {
 	} else {
 		fmt.Printf("\t$%s=%q\n", compute.ConfigEnvVar, os.Getenv(compute.ConfigEnvVar))
 	}
-	backendGeneric, err := gobackend.New("")
+	var err error
+	backend, err = gobackend.NewBackend()
 	if err != nil {
 		klog.Fatalf("Failed to create backend: %+v", err)
 	}
-	backend = backendGeneric.(*gobackend.Backend)
 	fmt.Printf("Backend: %s, %s\n", backend.Name(), backend.Description())
 }
 

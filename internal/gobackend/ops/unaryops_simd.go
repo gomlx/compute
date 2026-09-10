@@ -225,7 +225,7 @@ func execExpSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -244,7 +244,7 @@ func execExpSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.ExpFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -253,7 +253,7 @@ func execSqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -272,7 +272,7 @@ func execSqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.SqrtFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -281,7 +281,7 @@ func execRsqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -300,7 +300,7 @@ func execRsqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.RsqrtFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -309,7 +309,7 @@ func execLogisticSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -328,7 +328,7 @@ func execLogisticSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.SigmoidFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -337,7 +337,7 @@ func execTanhSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -356,7 +356,7 @@ func execTanhSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.TanhFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -365,7 +365,7 @@ func execErfSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -384,7 +384,7 @@ func execErfSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	case dtypes.Float16:
 		simdUnaryFloat16(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), simdmath.ErfFloat32)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -393,7 +393,7 @@ func execAbsSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -414,7 +414,7 @@ func execAbsSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	case dtypes.Int32:
 		simdAbsInt32(input.Flat.([]int32), output.Flat.([]int32))
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -423,7 +423,7 @@ func execNegSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Int64:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -446,7 +446,7 @@ func execNegSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	case dtypes.Int64:
 		simdNegInt64(input.Flat.([]int64), output.Flat.([]int64))
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }
@@ -455,7 +455,7 @@ func execSignSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Int64:
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	input, output, err := unaryOperandAndOutput(backend, inputs, inputsOwned)
 	if err != nil {
@@ -490,7 +490,7 @@ func execSignSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	case dtypes.Int64:
 		simdSignInt64(input.Flat.([]int64), output.Flat.([]int64))
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, nil
 }

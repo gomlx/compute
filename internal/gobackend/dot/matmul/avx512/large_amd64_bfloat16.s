@@ -450,4 +450,5 @@ next_lhs_bf16:
 	JMP loop_lhs_bf16
 
 done_bf16:
+	VZEROUPPER
 	RET

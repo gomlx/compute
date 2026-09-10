@@ -5,6 +5,7 @@ package gobackend
 import (
 	"reflect"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -183,6 +184,21 @@ type Node struct {
 
 	// Data for the specific node type.
 	Data any
+
+	// cachedExecutorIdx caches the 1-based index (idx + 1) of the winning executor
+	// in nodeExecutors[node.OpType] after the first successful execution.
+	// 0 means uninitialized / not cached.
+	cachedExecutorIdx atomic.Int32
+}
+
+// ClearCachedExecutor clears any cached executor on the node, forcing rediscovery on next run.
+func (node *Node) ClearCachedExecutor() {
+	node.cachedExecutorIdx.Store(0)
+}
+
+// IsExecutorCached returns true if an executor was already selected and cached for this node.
+func (node *Node) IsExecutorCached() bool {
+	return node.cachedExecutorIdx.Load() > 0
 }
 
 // RecomputableNodeData is an interface that can be implemented by the Data field of a Node
@@ -192,7 +208,6 @@ type RecomputableNodeData interface {
 	// Returns a new Data object (or the same one if it's mutable and updated in-place).
 	Recompute(backend *Backend, resolvedNodes []*Node, originalNode *Node) (any, error)
 }
-
 
 // MultiOutputValues converts a multi-output node's outputs to []compute.Value.
 func (node *Node) MultiOutputValues() []compute.Value {

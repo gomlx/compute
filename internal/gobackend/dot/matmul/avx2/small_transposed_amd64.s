@@ -122,6 +122,7 @@ write_output:
 	VMOVSS X5, 4(DX)
 	VMOVSS X6, 0(DX)(R15*1)
 	VMOVSS X7, 4(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // func avx2SmallTransposedTile4x1Float32Asm(
@@ -199,6 +200,7 @@ write_output_4x1:
 	LEAQ (R14)(R15*2), DX
 	VMOVSS X2, 0(DX)
 	VMOVSS X3, 0(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -298,6 +300,7 @@ write_output_f64:
 	VMOVSD X5, 8(DX)
 	VMOVSD X6, 0(DX)(R15*1)
 	VMOVSD X7, 8(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // func avx2SmallTransposedTile4x1Float64Asm(...)
@@ -370,6 +373,7 @@ write_output_4x1_f64:
 	LEAQ (R14)(R15*2), DX
 	VMOVSD X2, 0(DX)
 	VMOVSD X3, 0(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -469,6 +473,7 @@ write_output_f16:
 	VMOVSS X5, 4(DX)
 	VMOVSS X6, 0(DX)(R15*1)
 	VMOVSS X7, 4(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // func avx2SmallTransposedTile4x1Float16Asm(...)
@@ -541,6 +546,7 @@ write_output_4x1_f16:
 	LEAQ (R14)(R15*2), DX
 	VMOVSS X2, 0(DX)
 	VMOVSS X3, 0(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -640,6 +646,7 @@ write_output_bf16:
 	VMOVSS X5, 4(DX)
 	VMOVSS X6, 0(DX)(R15*1)
 	VMOVSS X7, 4(DX)(R15*1)
+	VZEROUPPER
 	RET
 
 // func avx2SmallTransposedTile4x1BFloat16Asm(...)
@@ -712,4 +719,5 @@ write_output_4x1_bf16:
 	LEAQ (R14)(R15*2), DX
 	VMOVSS X2, 0(DX)
 	VMOVSS X3, 0(DX)(R15*1)
+	VZEROUPPER
 	RET

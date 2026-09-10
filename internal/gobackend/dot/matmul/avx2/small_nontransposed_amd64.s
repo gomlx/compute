@@ -71,6 +71,7 @@ loop_k_f32:
 	VMOVUPS Y5, 32(DI)
 	VMOVUPS Y6, 0(SI)
 	VMOVUPS Y7, 32(SI)
+	VZEROUPPER
 	RET
 
 // func avx2SmallNonTransposedTile4x8Float32Asm(...)
@@ -118,6 +119,7 @@ loop_k_4x8_f32:
 	VMOVUPS Y1, 0(R15)
 	VMOVUPS Y2, 0(DI)
 	VMOVUPS Y3, 0(SI)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -182,6 +184,7 @@ loop_k_f64:
 	VMOVUPD Y5, 32(DI)
 	VMOVUPD Y6, 0(SI)
 	VMOVUPD Y7, 32(SI)
+	VZEROUPPER
 	RET
 
 // func avx2SmallNonTransposedTile4x4Float64Asm(...)
@@ -229,6 +232,7 @@ loop_k_4x4_f64:
 	VMOVUPD Y1, 0(R15)
 	VMOVUPD Y2, 0(DI)
 	VMOVUPD Y3, 0(SI)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -293,6 +297,7 @@ loop_k_f16:
 	VMOVUPS Y5, 32(DI)
 	VMOVUPS Y6, 0(SI)
 	VMOVUPS Y7, 32(SI)
+	VZEROUPPER
 	RET
 
 // func avx2SmallNonTransposedTile4x8Float16Asm(...)
@@ -340,6 +345,7 @@ loop_k_4x8_f16:
 	VMOVUPS Y1, 0(R15)
 	VMOVUPS Y2, 0(DI)
 	VMOVUPS Y3, 0(SI)
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -404,6 +410,7 @@ loop_k_bf16:
 	VMOVUPS Y5, 32(DI)
 	VMOVUPS Y6, 0(SI)
 	VMOVUPS Y7, 32(SI)
+	VZEROUPPER
 	RET
 
 // func avx2SmallNonTransposedTile4x8BFloat16Asm(...)
@@ -451,4 +458,5 @@ loop_k_4x8_bf16:
 	VMOVUPS Y1, 0(R15)
 	VMOVUPS Y2, 0(DI)
 	VMOVUPS Y3, 0(SI)
+	VZEROUPPER
 	RET

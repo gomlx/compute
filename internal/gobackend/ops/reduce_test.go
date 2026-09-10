@@ -185,4 +185,180 @@ func TestReduceFastPaths(t *testing.T) {
 		expected := []float16.Float16{float16.FromFloat32(1), float16.FromFloat32(2), float16.FromFloat32(3)}
 		runReduceTest(t, "ReduceLeading_Float16_Min", ops.ReduceMin, s2x3_f16, data_f16, []int{0}, expected)
 	})
+
+	t.Run("ReduceTrailing_Int64_Sum", func(t *testing.T) {
+		s2x3_i64 := shapes.Make(dtypes.Int64, 2, 3)
+		data_i64 := []int64{1, 2, 3, 4, 5, 6}
+		expected := []int64{6, 15}
+		runReduceTest(t, "ReduceTrailing_Int64_Sum", ops.ReduceSum, s2x3_i64, data_i64, []int{1}, expected)
+	})
+
+	t.Run("ReduceTrailing_Uint64_Sum", func(t *testing.T) {
+		s2x3_u64 := shapes.Make(dtypes.Uint64, 2, 3)
+		data_u64 := []uint64{1, 2, 3, 4, 5, 6}
+		expected := []uint64{6, 15}
+		runReduceTest(t, "ReduceTrailing_Uint64_Sum", ops.ReduceSum, s2x3_u64, data_u64, []int{1}, expected)
+	})
+
+	t.Run("ReduceDimension1_Trailing", func(t *testing.T) {
+		s3x1 := shapes.Make(dtypes.Float32, 3, 1)
+		data3x1 := []float32{10, 20, 30}
+		expected := []float32{10, 20, 30}
+		runReduceTest(t, "ReduceDimension1_Trailing", ops.ReduceSum, s3x1, data3x1, []int{1}, expected)
+	})
+
+	t.Run("ReduceDimension1_Leading", func(t *testing.T) {
+		s1x4 := shapes.Make(dtypes.Float32, 1, 4)
+		data1x4 := []float32{10, 20, 30, 40}
+		expected := []float32{10, 20, 30, 40}
+		runReduceTest(t, "ReduceDimension1_Leading", ops.ReduceSum, s1x4, data1x4, []int{0}, expected)
+	})
+
+	t.Run("ReduceDimension1_All", func(t *testing.T) {
+		s1 := shapes.Make(dtypes.Float32, 1)
+		data1 := []float32{42}
+		expected := []float32{42}
+		runReduceTest(t, "ReduceDimension1_All", ops.ReduceSum, s1, data1, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_Float16_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Float16, n)
+		data := make([]float16.Float16, n)
+		var expectedSum float32
+		for i := range n {
+			val := float32(i%7 - 3)
+			data[i] = float16.FromFloat32(val)
+			expectedSum += val
+		}
+		expected := []float16.Float16{float16.FromFloat32(expectedSum)}
+		runReduceTest(t, "ReduceAll_Float16_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_BFloat16_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.BFloat16, n)
+		data := make([]bfloat16.BFloat16, n)
+		var expectedSum float32
+		for i := range n {
+			val := float32(i%7 - 3)
+			data[i] = bfloat16.FromFloat32(val)
+			expectedSum += val
+		}
+		expected := []bfloat16.BFloat16{bfloat16.FromFloat32(expectedSum)}
+		runReduceTest(t, "ReduceAll_BFloat16_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_Int8_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Int8, n)
+		data := make([]int8, n)
+		var expectedSum int8
+		for i := range n {
+			val := int8(i%5 - 2)
+			data[i] = val
+			expectedSum += val
+		}
+		expected := []int8{expectedSum}
+		runReduceTest(t, "ReduceAll_Int8_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceAll_Int32_Sum", func(t *testing.T) {
+		n := 100
+		s100 := shapes.Make(dtypes.Int32, n)
+		data := make([]int32, n)
+		var expectedSum int32
+		for i := range n {
+			val := int32(i + 1)
+			data[i] = val
+			expectedSum += val
+		}
+		expected := []int32{expectedSum}
+		runReduceTest(t, "ReduceAll_Int32_Sum", ops.ReduceSum, s100, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceLeading_Float16_Sum", func(t *testing.T) {
+		a, b := 5, 20
+		sAxB := shapes.Make(dtypes.Float16, a, b)
+		data := make([]float16.Float16, a*b)
+		expected := make([]float16.Float16, b)
+		for col := range b {
+			var sum float32
+			for row := range a {
+				val := float32((row*b + col)%11 - 5)
+				data[row*b+col] = float16.FromFloat32(val)
+				sum += val
+			}
+			expected[col] = float16.FromFloat32(sum)
+		}
+		runReduceTest(t, "ReduceLeading_Float16_Sum", ops.ReduceSum, sAxB, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceLeading_BFloat16_Sum", func(t *testing.T) {
+		a, b := 5, 20
+		sAxB := shapes.Make(dtypes.BFloat16, a, b)
+		data := make([]bfloat16.BFloat16, a*b)
+		expected := make([]bfloat16.BFloat16, b)
+		for col := range b {
+			var sum float32
+			for row := range a {
+				val := float32((row*b + col)%11 - 5)
+				data[row*b+col] = bfloat16.FromFloat32(val)
+				sum += val
+			}
+			expected[col] = bfloat16.FromFloat32(sum)
+		}
+		runReduceTest(t, "ReduceLeading_BFloat16_Sum", ops.ReduceSum, sAxB, data, []int{0}, expected)
+	})
+
+	t.Run("ReduceLeading_Int8_Sum", func(t *testing.T) {
+		a, b := 5, 20
+		sAxB := shapes.Make(dtypes.Int8, a, b)
+		data := make([]int8, a*b)
+		expected := make([]int8, b)
+		for col := range b {
+			var sum int8
+			for row := range a {
+				val := int8((row*b + col)%7 - 3)
+				data[row*b+col] = val
+				sum += val
+			}
+			expected[col] = sum
+		}
+		runReduceTest(t, "ReduceLeading_Int8_Sum", ops.ReduceSum, sAxB, data, []int{0}, expected)
+	})
+}
+
+func TestReduceThresholdFallback(t *testing.T) {
+	// 1. Below threshold: shape [10, 4] for Float32 ReduceTrailing (threshold is 32)
+	// Must fall back to scalar and succeed.
+	s10x4 := shapes.Make(dtypes.Float32, 10, 4)
+	data10x4 := make([]float32, 40)
+	expected10 := make([]float32, 10)
+	for r := range 10 {
+		var sum float32
+		for c := range 4 {
+			val := float32(r*4 + c + 1)
+			data10x4[r*4+c] = val
+			sum += val
+		}
+		expected10[r] = sum
+	}
+	runReduceTest(t, "ReduceTrailing_BelowThreshold", ops.ReduceSum, s10x4, data10x4, []int{1}, expected10)
+
+	// 2. Above threshold: shape [10, 64] for Float32 ReduceTrailing (threshold is 32)
+	// Runs SIMD.
+	s10x64 := shapes.Make(dtypes.Float32, 10, 64)
+	data10x64 := make([]float32, 640)
+	expected10_64 := make([]float32, 10)
+	for r := range 10 {
+		var sum float32
+		for c := range 64 {
+			val := float32(r*64 + c + 1)
+			data10x64[r*64+c] = val
+			sum += val
+		}
+		expected10_64[r] = sum
+	}
+	runReduceTest(t, "ReduceTrailing_AboveThreshold", ops.ReduceSum, s10x64, data10x64, []int{1}, expected10_64)
 }

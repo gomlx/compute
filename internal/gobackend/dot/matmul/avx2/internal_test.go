@@ -18,7 +18,7 @@ import (
 )
 
 func TestAVX2(t *testing.T) {
-	if !archsimd.X86.AVX2() {
+	if !gobackend.IsAVX2Allowed() {
 		t.Skip("AVX2 is not supported on this architecture")
 	}
 
@@ -353,11 +353,11 @@ func TestAVX2(t *testing.T) {
 }
 
 func BenchmarkAVX2SmallMatMul(b *testing.B) {
-	backendGeneric, err := gobackend.New("")
+	backend, err := gobackend.NewBackend()
 	if err != nil {
 		b.Fatalf("failed to create backend: %+v", err)
 	}
-	backend := backendGeneric.(*gobackend.Backend)
+	defer backend.Finalize()
 
 	cases := []struct {
 		name    string

@@ -113,14 +113,14 @@ check_tail_cols:
 	JGE next_strip
 
 loop_tail_cols:
-	MOVSD (SI), X0
-	MOVSD X0, (R9)
-	MOVSD (DX), X0
-	MOVSD X0, 8(R9)
-	MOVSD (DI), X0
-	MOVSD X0, 16(R9)
-	MOVSD (CX), X0
-	MOVSD X0, 24(R9)
+	VMOVSD (SI), X0
+	VMOVSD X0, (R9)
+	VMOVSD (DX), X0
+	VMOVSD X0, 8(R9)
+	VMOVSD (DI), X0
+	VMOVSD X0, 16(R9)
+	VMOVSD (CX), X0
+	VMOVSD X0, 24(R9)
 
 	ADDQ $8, SI
 	ADDQ $8, DX

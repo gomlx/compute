@@ -13,6 +13,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support"
 	"github.com/pkg/errors"
@@ -213,6 +215,14 @@ func CopyFlat(flatDst, flatSrc any) {
 		copy(dst, flatSrc.([]float32)) //nolint:errcheck
 	case []float64:
 		copy(dst, flatSrc.([]float64)) //nolint:errcheck
+	case []float16.Float16:
+		copy(dst, flatSrc.([]float16.Float16)) //nolint:errcheck
+	case []bfloat16.BFloat16:
+		copy(dst, flatSrc.([]bfloat16.BFloat16)) //nolint:errcheck
+	case []int8:
+		copy(dst, flatSrc.([]int8)) //nolint:errcheck
+	case []int16:
+		copy(dst, flatSrc.([]int16)) //nolint:errcheck
 	case []int32:
 		copy(dst, flatSrc.([]int32)) //nolint:errcheck
 	case []int64:
@@ -221,6 +231,12 @@ func CopyFlat(flatDst, flatSrc any) {
 		copy(dst, flatSrc.([]int)) //nolint:errcheck
 	case []uint8:
 		copy(dst, flatSrc.([]uint8)) //nolint:errcheck
+	case []uint16:
+		copy(dst, flatSrc.([]uint16)) //nolint:errcheck
+	case []uint32:
+		copy(dst, flatSrc.([]uint32)) //nolint:errcheck
+	case []uint64:
+		copy(dst, flatSrc.([]uint64)) //nolint:errcheck
 	case []bool:
 		copy(dst, flatSrc.([]bool)) //nolint:errcheck
 	default:
@@ -251,6 +267,14 @@ func MutableBytesGeneric[T SupportedTypesConstraints](b *Buffer) ([]byte, error)
 	ptr := (*byte)(unsafe.Pointer(unsafe.SliceData(flat)))
 	size := len(flat) * int(unsafe.Sizeof(*new(T)))
 	return unsafe.Slice(ptr, size), nil
+}
+
+// UnsafePointer returns an unsafe.Pointer to the underlying data of this buffer.
+func (b *Buffer) UnsafePointer() unsafe.Pointer {
+	if b == nil || b.RawBytes == nil || b.Flat == nil {
+		return nil
+	}
+	return unsafe.Pointer(unsafe.SliceData(b.RawBytes))
 }
 
 // Fill the buffer with the given value.

@@ -101,14 +101,14 @@ check_tail_cols:
 	JGE next_strip
 
 loop_tail_cols:
-	MOVSS (SI), X0
-	MOVSS X0, (R9)
-	MOVSS (DX), X0
-	MOVSS X0, 4(R9)
-	MOVSS (DI), X0
-	MOVSS X0, 8(R9)
-	MOVSS (CX), X0
-	MOVSS X0, 12(R9)
+	VMOVSS (SI), X0
+	VMOVSS X0, (R9)
+	VMOVSS (DX), X0
+	VMOVSS X0, 4(R9)
+	VMOVSS (DI), X0
+	VMOVSS X0, 8(R9)
+	VMOVSS (CX), X0
+	VMOVSS X0, 12(R9)
 
 	ADDQ $4, SI
 	ADDQ $4, DX

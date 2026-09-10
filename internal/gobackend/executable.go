@@ -689,12 +689,28 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 
 		var result *Buffer
 		var err error
-		for _, entry := range executors {
-			result, err = entry.executor(backend, node, inputBuffers, inputsOwned)
-			if err == ErrNotImplemented {
-				continue
+
+		// Fast path: cached winning executor index (1-based: idx+1).
+		cachedIdx := int(node.cachedExecutorIdx.Load())
+		if cachedIdx > 0 {
+			result, err = executors[cachedIdx-1].executor(backend, node, inputBuffers, inputsOwned)
+			if err == ErrFallback {
+				node.cachedExecutorIdx.Store(0)
+				cachedIdx = 0
 			}
-			break
+		}
+		if cachedIdx == 0 {
+			for i, entry := range executors {
+				result, err = entry.executor(backend, node, inputBuffers, inputsOwned)
+				if err == ErrFallback {
+					continue
+				}
+				if err == nil {
+					// Cache executor in case of success.
+					node.cachedExecutorIdx.Store(int32(i + 1))
+				}
+				break
+			}
 		}
 		if err != nil {
 			return errors.WithMessagef(err, "executing %s", node.OpType)

@@ -26,7 +26,7 @@ import (
 )
 
 func newTestBackend(t *testing.T) compute.Backend {
-	b, err := gobackend.New("")
+	b, err := gobackend.NewBackend()
 	if err != nil {
 		t.Fatalf("Failed to create backend: %+v", err)
 	}

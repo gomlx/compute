@@ -24,9 +24,9 @@ func init() {
 // newGoBackend builds the CPU go backend for direct reference tests.
 func newGoBackend(t *testing.T) compute.Backend {
 	t.Helper()
-	b, err := gobackend.New("")
+	b, err := NewBackend()
 	if err != nil {
-		t.Fatalf("gobackend.New: %+v", err)
+		t.Fatalf("NewBackend: %+v", err)
 	}
 	return b
 }

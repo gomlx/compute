@@ -5,8 +5,8 @@
 package ops
 
 import (
-	"slices"
 	"simd"
+	"slices"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -1653,7 +1653,7 @@ func dispatchBinarySIMD[T any](
 			vs(lhs[:B], rhs[a], output[offset:offset+B])
 		}
 	default:
-		return gobackend.ErrNotImplemented
+		return gobackend.ErrFallback
 	}
 	return nil
 }
@@ -1674,9 +1674,20 @@ var supportedDivDTypes = []dtypes.DType{
 	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16,
 }
 
+func tryBinaryTrailingArch(op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) bool {
+	if bcastCfg.Pattern != gobackend.BroadcastTrailingRHS && bcastCfg.Pattern != gobackend.BroadcastTrailingLHS {
+		return false
+	}
+	if archFn := gobackend.GetBinaryTrailingArchDispatcher(); archFn != nil {
+		isLHS := bcastCfg.Pattern == gobackend.BroadcastTrailingLHS
+		return archFn(op, isLHS, lhs, rhs, output, bcastCfg.A, bcastCfg.B, lhs.RawShape.DType)
+	}
+	return false
+}
+
 func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
@@ -1686,6 +1697,9 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeAdd, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1699,7 +1713,9 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			nil, nil)
 	case dtypes.BFloat16:
 		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdAddVVBFloat16, simdAddVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdAddVSBFloat16(r, c, out) },
+			simdAddVVBFloat16, simdAddVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
+				simdAddVSBFloat16(r, c, out)
+			},
 			nil, nil)
 	case dtypes.Float16:
 		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
@@ -1722,20 +1738,23 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdAddVVUint64, simdAddVSUint64, func(c uint64, r []uint64, out []uint64) { simdAddVSUint64(r, c, out) },
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
 
 func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if backend.NoOps {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeSub, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1772,14 +1791,14 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdSubVVUint64, simdSubVSUint64, simdSubSVUint64,
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
 
 func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
@@ -1789,6 +1808,9 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMul, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1802,7 +1824,9 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			nil, nil)
 	case dtypes.BFloat16:
 		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdMulVVBFloat16, simdMulVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMulVSBFloat16(r, c, out) },
+			simdMulVVBFloat16, simdMulVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
+				simdMulVSBFloat16(r, c, out)
+			},
 			nil, nil)
 	case dtypes.Float16:
 		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
@@ -1817,20 +1841,23 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdMulVVUint32, simdMulVSUint32, func(c uint32, r []uint32, out []uint32) { simdMulVSUint32(r, c, out) },
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
 
 func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedDivDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedDivDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if backend.NoOps {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeDiv, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1851,14 +1878,14 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdDivVVFloat16, simdDivVSFloat16, simdDivSVFloat16,
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
 
 func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
@@ -1868,6 +1895,9 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1881,7 +1911,9 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			nil, nil)
 	case dtypes.BFloat16:
 		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdMaxVVBFloat16, simdMaxVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMaxVSBFloat16(r, c, out) },
+			simdMaxVVBFloat16, simdMaxVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
+				simdMaxVSBFloat16(r, c, out)
+			},
 			nil, nil)
 	case dtypes.Float16:
 		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
@@ -1896,14 +1928,14 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdMaxVVUint32, simdMaxVSUint32, func(c uint32, r []uint32, out []uint32) { simdMaxVSUint32(r, c, out) },
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
 
 func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
-		return nil, gobackend.ErrNotImplemented
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
@@ -1913,6 +1945,9 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
+	if tryBinaryTrailingArch(compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
+		return output, nil
+	}
 
 	var err error
 	switch lhs.RawShape.DType {
@@ -1926,7 +1961,9 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			nil, nil)
 	case dtypes.BFloat16:
 		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
-			simdMinVVBFloat16, simdMinVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) { simdMinVSBFloat16(r, c, out) },
+			simdMinVVBFloat16, simdMinVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
+				simdMinVSBFloat16(r, c, out)
+			},
 			nil, nil)
 	case dtypes.Float16:
 		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
@@ -1941,7 +1978,7 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			simdMinVVUint32, simdMinVSUint32, func(c uint32, r []uint32, out []uint32) { simdMinVSUint32(r, c, out) },
 			nil, nil)
 	default:
-		return nil, gobackend.ErrNotImplemented
+		return nil, gobackend.ErrFallback
 	}
 	return output, err
 }
