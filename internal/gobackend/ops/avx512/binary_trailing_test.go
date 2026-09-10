@@ -11,10 +11,11 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 )
 
 func TestAVX512BinaryTrailingCorrectness(t *testing.T) {
-	if !gobackendIsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed() {
 		t.Skip("AVX-512 not allowed or not supported on this host")
 	}
 
@@ -395,8 +396,4 @@ func TestAVX512BinaryTrailingCorrectness(t *testing.T) {
 			}
 		}
 	})
-}
-
-func gobackendIsAVX512Allowed() bool {
-	return true
 }
