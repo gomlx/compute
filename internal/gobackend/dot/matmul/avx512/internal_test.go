@@ -22,7 +22,7 @@ import (
 )
 
 func TestAVX512(t *testing.T) {
-	if !gobackend.IsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed {
 		t.Skip("AVX512 is not supported on this architecture")
 	}
 
@@ -817,10 +817,10 @@ func BenchmarkAVX512(b *testing.B) {
 	}
 
 	rhsSizes := []struct {
-		name                 string
-		contractingRows, rhsCols int
+		name                        string
+		contractingRows, rhsCols    int
 		panelContracting, panelCols int
-		kernelCols           int
+		kernelCols                  int
 	}{
 		{"Large-1_1920x1024", 1920, 1024, 192, 384, 64},
 		{"Large-2_1920x1536", 1920, 1536, 192, 384, 64},
@@ -1014,4 +1014,3 @@ func BenchmarkSmallMatMul(b *testing.B) {
 		}
 	}
 }
-

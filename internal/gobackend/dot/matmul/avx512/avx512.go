@@ -97,7 +97,7 @@ func init() {
 		return
 	}
 
-	if gobackend.IsAVX512Allowed() {
+	if gobackend.IsAVX512Allowed {
 		registerAVX512(false)
 	}
 }
@@ -720,4 +720,3 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 	lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows int) {
 	matmul.UnsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
 }
-

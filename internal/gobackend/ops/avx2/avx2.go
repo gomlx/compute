@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	if gobackend.IsAVX2Allowed() {
+	if gobackend.IsAVX2Allowed {
 		registerAVX2()
 	}
 }
@@ -394,5 +394,3 @@ func DispatchBinaryTrailingAVX2(op compute.OpType, isLHS bool, lhs, rhs, out uns
 	}
 	return false
 }
-
-

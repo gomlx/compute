@@ -4,7 +4,6 @@
 
 package avx2
 
-
 import (
 	"simd/archsimd"
 	"testing"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestAVX2(t *testing.T) {
-	if !gobackend.IsAVX2Allowed() {
+	if !gobackend.IsAVX2Allowed {
 		t.Skip("AVX2 is not supported on this architecture")
 	}
 
@@ -436,5 +435,3 @@ func BenchmarkAVX2SmallMatMul(b *testing.B) {
 		}
 	}
 }
-
-

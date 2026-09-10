@@ -39,7 +39,7 @@ func assertEqual[T comparable](t *testing.T, expected, actual T, msg string) {
 }
 
 func TestAVX512LeadingSumCorrectness(t *testing.T) {
-	if !gobackend.IsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed {
 		t.Skip("AVX-512 not allowed or not supported on this host")
 	}
 	bValues := []int{1, 2, 3, 4, 7, 8, 9, 15, 16, 23, 24, 31, 32, 33, 48, 63, 64, 65, 100, 127, 128, 129, 255, 256, 512, 1024}

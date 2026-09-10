@@ -14,7 +14,7 @@ import (
 )
 
 func TestAVX2Packing(t *testing.T) {
-	if !gobackend.IsAVX2Allowed() {
+	if !gobackend.IsAVX2Allowed {
 		t.Skip("AVX2 is not supported on this architecture")
 	}
 
