@@ -22,8 +22,8 @@ import (
 )
 
 func TestAVX512(t *testing.T) {
-	if !archsimd.X86.AVX512() {
-		t.Skip("AVX2 is not supported on this architecture")
+	if !gobackend.IsAVX512Allowed() {
+		t.Skip("AVX512 is not supported on this architecture")
 	}
 
 	t.Run("Pack", func(t *testing.T) {

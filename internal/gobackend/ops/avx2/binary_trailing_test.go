@@ -11,10 +11,11 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 )
 
 func TestAVX2BinaryTrailingCorrectness(t *testing.T) {
-	if !gobackendIsAVX2Allowed() {
+	if !gobackend.IsAVX2Allowed() {
 		t.Skip("AVX2 not allowed or not supported on this host")
 	}
 
@@ -396,9 +397,4 @@ func TestAVX2BinaryTrailingCorrectness(t *testing.T) {
 			}
 		}
 	})
-}
-
-// helper for test
-func gobackendIsAVX2Allowed() bool {
-	return true
 }

@@ -11,9 +11,13 @@ import (
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/gobackend"
 )
 
 func TestAVX2LayerNormCorrectness(t *testing.T) {
+	if !gobackend.IsAVX2Allowed() {
+		t.Skip("AVX-2 is not supported or allowed on this machine")
+	}
 	rand.Seed(42)
 
 	// Test a variety of hidden sizes, including odd sizes and sizes around vector boundaries

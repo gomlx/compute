@@ -18,7 +18,7 @@ import (
 )
 
 func TestAVX2(t *testing.T) {
-	if !archsimd.X86.AVX2() {
+	if !gobackend.IsAVX2Allowed() {
 		t.Skip("AVX2 is not supported on this architecture")
 	}
 

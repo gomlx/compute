@@ -253,6 +253,24 @@ Masks are returned by comparison operations (e.g., `v.Equal(zero)` returns a `Ma
 
 While `archsimd` is cross-architecture, some operations may only be available on certain platforms or require specific CPU features (like AVX-512). Always check for support using `archsimd.X86.AVX512()` or similar checks in `init()`.
 
+### Gating Tests by Runtime Support (AVX2 / AVX-512)
+
+SIMD and assembly implementations for specific architectures (such as AVX2 or AVX-512) are compiled and linked into test binaries whenever the OS/architecture matches (e.g. `amd64`), but the binary may run on a host machine that does not support those instructions:
+- **Always gate tests with runtime checks**: Every test targeting architecture-specific SIMD or assembly (e.g., in `avx2/` and `avx512/` subpackages) **must** verify that the instructions are supported and allowed on the current host, skipping gracefully if not:
+  ```go
+  // In AVX2 tests:
+  if !gobackend.IsAVX2Allowed() {
+      t.Skip("AVX2 is not supported or allowed on this host")
+  }
+
+  // In AVX-512 tests:
+  if !gobackend.IsAVX512Allowed() {
+      t.Skip("AVX-512 is not supported or allowed on this host")
+  }
+  ```
+- **Use `gobackend.IsAVX2Allowed()` / `gobackend.IsAVX512Allowed()`**: In `internal/gobackend/...`, prefer these helpers over raw `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`, as they check both hardware CPUID support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`). Outside `internal/gobackend` (e.g. in `dtypes/float16`), check `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`.
+- **Never invoke instructions directly in tests without gating**: Without this check, executing unsupported instructions triggers a `SIGILL` (illegal instruction) crash on machines that lack those CPU extensions (e.g., running AVX-512 code on a CPU without AVX-512, or in virtualized/containerized environments).
+
 ## Guidelines for Writing SIMD Assembly (AMD64 / AVX2 & AVX-512)
 
 Handwritten AMD64 assembly is used in performance-critical paths (e.g., GEMM microkernels, packing/transposition, reductions, fused LayerNorm/Softmax) where Go's experimental SIMD (`archsimd`) or compiler code generation introduces register spills, destructive FMA overwrites, or instruction overheads.
@@ -360,4 +378,10 @@ SIMD operations carry fixed overheads (register setup, horizontal reductions, ma
 - **Clean Fallback**: Return `(nil, gobackend.ErrFallback)` before allocating output buffers or consuming memory if dimensions are below architecture thresholds.
 - The executor dispatch loop catches `ErrFallback` and falls through to the scalar executor.
 - Winning executors are cached per node in `cachedExecutorIdx` for **0 ns dispatch overhead** on subsequent iterations.
+
+### 7. Gating Assembly Tests by Runtime Support
+
+Handwritten assembly functions (in `*_amd64.s`) bypass Go compiler checks and will immediately trigger a `SIGILL` crash if invoked on a CPU lacking the required instruction set:
+- Always gate unit tests in `avx2/` and `avx512/` subpackages by calling `if !gobackend.IsAVX2Allowed() { t.Skip(...) }` or `if !gobackend.IsAVX512Allowed() { t.Skip(...) }` at the top of each test function.
+- Never write tests that execute raw assembly kernels without this gate.
 

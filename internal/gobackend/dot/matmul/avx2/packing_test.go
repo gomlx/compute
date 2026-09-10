@@ -5,16 +5,16 @@
 package avx2
 
 import (
-	"simd/archsimd"
 	"testing"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul/matmultest"
 )
 
 func TestAVX2Packing(t *testing.T) {
-	if !archsimd.X86.AVX2() {
+	if !gobackend.IsAVX2Allowed() {
 		t.Skip("AVX2 is not supported on this architecture")
 	}
 
