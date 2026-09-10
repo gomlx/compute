@@ -1,18 +1,20 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
+//go:build goexperiment.simd
+
 package fusedops
 
 import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx2"
-	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx512"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -22,10 +24,15 @@ var (
 )
 
 func BenchmarkLayerNormTrailing(b *testing.B) {
-	backendRaw, err := gobackend.New(""); be := backendRaw.(*gobackend.Backend)
+	backendRaw, err := compute.New()
 	if err != nil {
 		b.Fatalf("failed to create backend: %+v", err)
 	}
+	be, ok := backendRaw.(*gobackend.Backend)
+	if !ok {
+		b.Fatalf("backend configured is not a Go backend: GOMLX_BACKEND=%q", os.Getenv("GOMLX_BACKEND"))
+	}
+	fmt.Printf("Backend: %s, %s\n", backendRaw.Name(), backendRaw.Description())
 	defer be.Finalize()
 
 	outerSize := 100
@@ -86,7 +93,8 @@ func TestLayerNormBenchmark(t *testing.T) {
 		t.Skip("skipping layernorm comparison benchmark; specify -repeat_layernorm_bench=N to run")
 	}
 
-	backendRaw, err := gobackend.New(""); be := backendRaw.(*gobackend.Backend)
+	backendRaw, err := gobackend.New("")
+	be := backendRaw.(*gobackend.Backend)
 	if err != nil {
 		t.Fatalf("failed to create backend: %+v", err)
 	}
