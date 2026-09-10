@@ -222,7 +222,7 @@ func padWithConcreteConfig(backend *gobackend.Backend, operand, fillValue *gobac
 		}
 	}
 
-	if len(operandBytes) == 0 {
+	if len(outputBytes) == 0 || len(operandBytes) == 0 {
 		return output, nil // Nothing to copy
 	}
 
@@ -299,15 +299,42 @@ func padWithConcreteConfig(backend *gobackend.Backend, operand, fillValue *gobac
 		}
 
 		mAxis := mergedAxes[axis]
+		step := 1 + mAxis.config.Interior
+
+		// Determine valid range [startI, endI) of operand indices
+		// such that 0 <= outIdx < mAxis.outputDim,
+		// where outIdx = mAxis.config.Start + i * step.
+		minI := 0
+		if -mAxis.config.Start > 0 {
+			minI = (-mAxis.config.Start + step - 1) / step
+		}
+		maxI := 0
+		if mAxis.outputDim-mAxis.config.Start > 0 {
+			maxI = (mAxis.outputDim - mAxis.config.Start - 1) / step + 1
+		}
+		startI := max(0, minI)
+		endI := min(mAxis.operandDim, maxI)
+		if startI >= endI {
+			return
+		}
+
 		outStride := outputStrides[axis]
+		outOffset := outputOffset + (mAxis.config.Start+startI*step)*outStride
+		opOffset := operandOffset + startI*operandStrides[axis]
 
-		outOffset := outputOffset + mAxis.config.Start*outStride
-		opOffset := operandOffset
+		if axis == numMerged-1 && mAxis.config.Interior == 0 {
+			count := endI - startI
+			copy(outputBytes[outOffset:outOffset+count*virtualElementSize],
+				operandBytes[opOffset:opOffset+count*virtualElementSize])
+			return
+		}
 
-		for i := 0; i < mAxis.operandDim; i++ {
+		outStep := outStride * step
+		opStep := operandStrides[axis]
+		for i := startI; i < endI; i++ {
 			copyND(axis+1, opOffset, outOffset)
-			opOffset += operandStrides[axis]
-			outOffset += outStride * (1 + mAxis.config.Interior)
+			opOffset += opStep
+			outOffset += outStep
 		}
 	}
 
