@@ -295,6 +295,77 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 			}
 			panelPtr += stripSizeBytes
 		}
+	case kernelRows == 8:
+		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
+			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
+			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
+
+			pSrc0 := pSrcBase
+			pSrc1 := pSrc0 + lhsColsBytes
+			pSrc2 := pSrc1 + lhsColsBytes
+			pSrc3 := pSrc2 + lhsColsBytes
+			pSrc4 := pSrc3 + lhsColsBytes
+			pSrc5 := pSrc4 + lhsColsBytes
+			pSrc6 := pSrc5 + lhsColsBytes
+			pSrc7 := pSrc6 + lhsColsBytes
+
+			pDst := panelPtr
+
+			col := 0
+			for ; col+1 < contractingCols; col += 2 {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				v2 := *(*T)(unsafe.Pointer(pSrc2))
+				v3 := *(*T)(unsafe.Pointer(pSrc3))
+				v4 := *(*T)(unsafe.Pointer(pSrc4))
+				v5 := *(*T)(unsafe.Pointer(pSrc5))
+				v6 := *(*T)(unsafe.Pointer(pSrc6))
+				v7 := *(*T)(unsafe.Pointer(pSrc7))
+				*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
+
+				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
+				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
+				v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
+				v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
+				v4_1 := *(*T)(unsafe.Pointer(pSrc4 + elemSize))
+				v5_1 := *(*T)(unsafe.Pointer(pSrc5 + elemSize))
+				v6_1 := *(*T)(unsafe.Pointer(pSrc6 + elemSize))
+				v7_1 := *(*T)(unsafe.Pointer(pSrc7 + elemSize))
+				*(*[8]T)(unsafe.Pointer(pDst + 8*elemSize)) = [8]T{v0_1, v1_1, v2_1, v3_1, v4_1, v5_1, v6_1, v7_1}
+
+				pSrc0 += 2 * elemSize
+				pSrc1 += 2 * elemSize
+				pSrc2 += 2 * elemSize
+				pSrc3 += 2 * elemSize
+				pSrc4 += 2 * elemSize
+				pSrc5 += 2 * elemSize
+				pSrc6 += 2 * elemSize
+				pSrc7 += 2 * elemSize
+				pDst += 16 * elemSize
+			}
+			for ; col < contractingCols; col++ {
+				v0 := *(*T)(unsafe.Pointer(pSrc0))
+				v1 := *(*T)(unsafe.Pointer(pSrc1))
+				v2 := *(*T)(unsafe.Pointer(pSrc2))
+				v3 := *(*T)(unsafe.Pointer(pSrc3))
+				v4 := *(*T)(unsafe.Pointer(pSrc4))
+				v5 := *(*T)(unsafe.Pointer(pSrc5))
+				v6 := *(*T)(unsafe.Pointer(pSrc6))
+				v7 := *(*T)(unsafe.Pointer(pSrc7))
+				*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
+
+				pSrc0 += elemSize
+				pSrc1 += elemSize
+				pSrc2 += elemSize
+				pSrc3 += elemSize
+				pSrc4 += elemSize
+				pSrc5 += elemSize
+				pSrc6 += elemSize
+				pSrc7 += elemSize
+				pDst += 8 * elemSize
+			}
+			panelPtr += stripSizeBytes
+		}
 
 	default:
 		// Larger values of kernelRows must be multiple of 4.
