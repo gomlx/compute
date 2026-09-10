@@ -39,19 +39,21 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
 		for _, node := range f.Nodes {
 			isBinary := shapeinference.AllBinaryOperations.Has(node.OpType)
 			isUnary := shapeinference.StandardUnaryOperations.Has(node.OpType)
-			if !isBinary && !isUnary {
+			isWhere := node.OpType == compute.OpTypeWhere
+			if !isBinary && !isUnary && !isWhere {
 				continue
 			}
 
 			changed := false
-			// Binary and Unary operations for which implicit broadcasting applies.
+			// Binary, Unary, and Where operations for which implicit broadcasting applies.
 			for i, input := range node.Inputs {
 				if input.OpType != compute.OpTypeBroadcastInDim {
 					continue
 				}
 
-				// Only fuse if rank doesn't change: implicit broadcasting only works if ranks are equal.
-				if input.Inputs[0].Shape.Rank() == node.Shape.Rank() {
+				// Only fuse if rank doesn't change or if the broadcast input is scalar:
+				// implicit broadcasting supports equal ranks and scalar operands.
+				if input.Inputs[0].Shape.Rank() == node.Shape.Rank() || input.Inputs[0].Shape.IsScalar() {
 					// Fuse: use the input of the broadcast directly.
 					node.Inputs[i] = input.Inputs[0]
 					changed = true
@@ -61,7 +63,9 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
 			if changed {
 				var newShape shapes.Shape
 				var err error
-				if isBinary {
+				if isWhere {
+					newShape, err = shapeinference.Where(node.Inputs[0].Shape, node.Inputs[1].Shape, node.Inputs[2].Shape)
+				} else if isBinary {
 					if shapeinference.StandardBinaryOperations.Has(node.OpType) {
 						newShape, err = shapeinference.BinaryOp(node.OpType, node.Inputs[0].Shape, node.Inputs[1].Shape)
 					} else {

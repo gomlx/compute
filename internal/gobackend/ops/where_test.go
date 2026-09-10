@@ -13,71 +13,119 @@ import (
 )
 
 func TestWhere(t *testing.T) {
-	for _, size := range []int{10, 1000, 40000} {
-		shape := shapes.Make(dtypes.Float32, size)
-		condShape := shapes.Make(dtypes.Bool, size)
-		scalarShape := shapes.Make(dtypes.Float32)
+	sizes := []int{1, 3, 7, 8, 9, 15, 16, 23, 32, 65, 1000, 50000}
+	cases := []struct {
+		name          string
+		onTrueScalar  bool
+		onFalseScalar bool
+	}{
+		{"VectorVector", false, false},
+		{"VectorScalar", false, true},
+		{"ScalarVector", true, false},
+		{"ScalarScalar", true, true},
+	}
 
-		condData := make([]bool, size)
-		onTrueData := make([]float32, size)
-		onFalseData := []float32{-10000.0} // scalar onFalse
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, size := range sizes {
+				condShape := shapes.Make(dtypes.Bool, size)
+				var trueShape, falseShape shapes.Shape
+				if c.onTrueScalar {
+					trueShape = shapes.Make(dtypes.Float32)
+				} else {
+					trueShape = shapes.Make(dtypes.Float32, size)
+				}
+				if c.onFalseScalar {
+					falseShape = shapes.Make(dtypes.Float32)
+				} else {
+					falseShape = shapes.Make(dtypes.Float32, size)
+				}
 
-		for i := 0; i < size; i++ {
-			condData[i] = (i % 2 == 0)
-			onTrueData[i] = float32(i + 1)
-		}
+				condData := make([]bool, size)
+				for i := 0; i < size; i++ {
+					condData[i] = (i%3 != 0)
+				}
 
-		builder := backend.Builder("test_where").(*gobackend.Builder)
-		main := builder.Main().(*gobackend.Function)
+				var onTrueData, onFalseData []float32
+				if c.onTrueScalar {
+					onTrueData = []float32{42.0}
+				} else {
+					onTrueData = make([]float32, size)
+					for i := 0; i < size; i++ {
+						onTrueData[i] = float32(i + 1)
+					}
+				}
 
-		condNode, err := main.Parameter("cond", condShape, nil)
-		if err != nil {
-			t.Fatalf("Parameter cond failed: %+v", err)
-		}
-		onTrueNode, err := main.Parameter("onTrue", shape, nil)
-		if err != nil {
-			t.Fatalf("Parameter onTrue failed: %+v", err)
-		}
-		onFalseNode, err := main.Parameter("onFalse", scalarShape, nil)
-		if err != nil {
-			t.Fatalf("Parameter onFalse failed: %+v", err)
-		}
+				if c.onFalseScalar {
+					onFalseData = []float32{-999.0}
+				} else {
+					onFalseData = make([]float32, size)
+					for i := 0; i < size; i++ {
+						onFalseData[i] = float32(-(i + 1))
+					}
+				}
 
-		outNode, err := ops.Where(main, condNode, onTrueNode, onFalseNode)
-		if err != nil {
-			t.Fatalf("Where failed: %+v", err)
-		}
-		err = main.Return([]compute.Value{outNode}, nil)
-		if err != nil {
-			t.Fatalf("Return failed: %+v", err)
-		}
+				builder := backend.Builder("test_where").(*gobackend.Builder)
+				main := builder.Main().(*gobackend.Function)
 
-		exec, err := builder.Compile()
-		if err != nil {
-			t.Fatalf("Compile failed: %+v", err)
-		}
-		defer exec.Finalize()
+				condNode, err := main.Parameter("cond", condShape, nil)
+				if err != nil {
+					t.Fatalf("Parameter cond failed: %+v", err)
+				}
+				onTrueNode, err := main.Parameter("onTrue", trueShape, nil)
+				if err != nil {
+					t.Fatalf("Parameter onTrue failed: %+v", err)
+				}
+				onFalseNode, err := main.Parameter("onFalse", falseShape, nil)
+				if err != nil {
+					t.Fatalf("Parameter onFalse failed: %+v", err)
+				}
 
-		condBuf := makeBuffer(t, condShape, condData)
-		onTrueBuf := makeBuffer(t, shape, onTrueData)
-		onFalseBuf := makeBuffer(t, scalarShape, onFalseData)
+				outNode, err := ops.Where(main, condNode, onTrueNode, onFalseNode)
+				if err != nil {
+					t.Fatalf("Where failed: %+v", err)
+				}
+				err = main.Return([]compute.Value{outNode}, nil)
+				if err != nil {
+					t.Fatalf("Return failed: %+v", err)
+				}
 
-		outputs, err := exec.Execute([]compute.Buffer{condBuf, onTrueBuf, onFalseBuf}, nil, 0)
-		if err != nil {
-			t.Fatalf("Execute failed: %+v", err)
-		}
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Compile failed: %+v", err)
+				}
 
-		outFlat := outputs[0].(*gobackend.Buffer).Flat.([]float32)
-		for i := 0; i < size; i++ {
-			var expected float32
-			if condData[i] {
-				expected = onTrueData[i]
-			} else {
-				expected = onFalseData[0]
+				condBuf := makeBuffer(t, condShape, condData)
+				onTrueBuf := makeBuffer(t, trueShape, onTrueData)
+				onFalseBuf := makeBuffer(t, falseShape, onFalseData)
+
+				outputs, err := exec.Execute([]compute.Buffer{condBuf, onTrueBuf, onFalseBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %+v", err)
+				}
+
+				outFlat := outputs[0].(*gobackend.Buffer).Flat.([]float32)
+				for i := 0; i < size; i++ {
+					var expected float32
+					if condData[i] {
+						if c.onTrueScalar {
+							expected = onTrueData[0]
+						} else {
+							expected = onTrueData[i]
+						}
+					} else {
+						if c.onFalseScalar {
+							expected = onFalseData[0]
+						} else {
+							expected = onFalseData[i]
+						}
+					}
+					if outFlat[i] != expected {
+						t.Fatalf("%s size=%d, idx=%d: got %f, want %f", c.name, size, i, outFlat[i], expected)
+					}
+				}
+				exec.Finalize()
 			}
-			if outFlat[i] != expected {
-				t.Fatalf("size=%d, idx=%d: got %f, want %f", size, i, outFlat[i], expected)
-			}
-		}
+		})
 	}
 }
