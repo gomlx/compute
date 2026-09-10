@@ -29,6 +29,7 @@ func TestAVX512(t *testing.T) {
 	t.Run("Pack", func(t *testing.T) {
 		t.Run("Float32", func(t *testing.T) {
 			matmultest.RunPackLHSTests(t, avx512PackLHSKernelRows4[float32], 4)
+			matmultest.RunPackLHSTests(t, avx512PackLHSKernelRows4[float32], 8)
 			matmultest.RunPackRHSTests(t, avx512PackRHSNonTransposed[float32], 32)
 			matmultest.RunApplyPackedOutputTests(t, avx512ApplyPackedOutputFloat32)
 		})
@@ -767,6 +768,12 @@ func BenchmarkAVX512(b *testing.B) {
 			AVX512UseAsm = true
 			defer func() { AVX512UseAsm = orig }()
 			runBenchmarkPackLHS[float32](b, "float32", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 4)
+		})
+		b.Run(s.name+"/Float32/Asm8", func(b *testing.B) {
+			orig := AVX512UseAsm
+			AVX512UseAsm = true
+			defer func() { AVX512UseAsm = orig }()
+			runBenchmarkPackLHS[float32](b, "float32", avx512PackLHSKernelRows4, s.totalRows, s.totalCols, s.panelRows, s.panelCols, 8)
 		})
 
 		b.Run(s.name+"/Float64/GoSIMD", func(b *testing.B) {

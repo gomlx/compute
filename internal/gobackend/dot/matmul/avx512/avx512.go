@@ -511,6 +511,20 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	contractingColsBytes := uintptr(contractingCols) * bytesPerElement
 
 	if kernelRows == 8 {
+		if AVX512UseAsm {
+			if lhsTyped, ok := any(lhs).([]float32); ok {
+				fullRows := copyRows & ^7
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8Float32Asm(lhsTyped, any(panel).([]float32), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				if fullRows == copyRows {
+					return
+				}
+				panelOffset := (fullRows / kernelRows) * contractingCols * kernelRows
+				unsafePackLHS(lhs, panel[panelOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
+				return
+			}
+		}
 		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
 		return
 	}

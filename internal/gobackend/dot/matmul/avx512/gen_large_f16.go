@@ -236,7 +236,7 @@ func avx512LargeMatrixSliceFloat16( //alt:f16
 
 				isFirstContractingPanel := contractingPanelIdx == 0
 				accumulate := !isFirstContractingPanel
-				canDirectOutput := (contractingSize <= params.PanelContractingSize) && (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 
 				if canDirectOutput {
 					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
@@ -332,7 +332,7 @@ func avx512LargeMatrixSliceFloat16( //alt:f16
 			// Copy accumulated results from L2 cache to outputMatrix in a single pass (only for panels that could not direct output).
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
 				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
-				canDirectOutput := (contractingSize <= params.PanelContractingSize) && (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 				if canDirectOutput {
 					continue
 				}
