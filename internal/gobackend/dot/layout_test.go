@@ -38,8 +38,8 @@ func TestTransposeToLayout(t *testing.T) {
 			rhsContract:     []int{2},
 			rhsBatch:        []int{0},
 			layout:          dot.LayoutTransposed,
-			wantLhsDims:     []int{2, 12, 5}, // Batch=2, Cross=3*4=12, Contracting=5
-			wantLhsContract: []int{2},
+			wantLhsDims:     []int{2, 3, 4, 5}, // Batch=2, Cross=(3,4) unmerged, Contracting=5
+			wantLhsContract: []int{3},
 			wantLhsBatch:    []int{0},
 			wantRhsDims:     []int{2, 6, 5},
 			wantRhsContract: []int{2},
@@ -54,8 +54,8 @@ func TestTransposeToLayout(t *testing.T) {
 			rhsContract:     []int{2},
 			rhsBatch:        []int{0},
 			layout:          dot.LayoutNonTransposed,
-			wantLhsDims:     []int{2, 12, 5}, // Batch=2, Cross=3*4=12, Contracting=5
-			wantLhsContract: []int{2},
+			wantLhsDims:     []int{2, 3, 4, 5}, // Batch=2, Cross=(3,4) unmerged, Contracting=5
+			wantLhsContract: []int{3},
 			wantLhsBatch:    []int{0},
 			wantRhsDims:     []int{2, 5, 6}, // LayoutNonTransposed for RHS -> [Batch, Contracting, Cross] -> [2, 5, 6]
 			wantRhsContract: []int{1},
@@ -70,12 +70,28 @@ func TestTransposeToLayout(t *testing.T) {
 			rhsContract:     []int{0},
 			rhsBatch:        []int{1},
 			layout:          dot.LayoutNonTransposed,
-			wantLhsDims:     []int{2, 12, 5}, // Batch=2, Cross=4*3=12, Contracting=5
-			wantLhsContract: []int{2},
+			wantLhsDims:     []int{2, 4, 3, 5}, // Batch=2, Cross=(4,3) unmerged, Contracting=5
+			wantLhsContract: []int{3},
 			wantLhsBatch:    []int{0},
 			wantRhsDims:     []int{2, 5, 6}, // Batch=2, Contracting=5, Cross=6
 			wantRhsContract: []int{1},
 			wantRhsBatch:    []int{0},
+		},
+		{
+			name:            "Multiple batch and contracting axes",
+			lhsShape:        shapes.Make(dtypes.Float32, 2, 3, 4, 5, 6), // Batch=(2,3), Cross=4, Contracting=(5,6)
+			lhsContract:     []int{3, 4},
+			lhsBatch:        []int{0, 1},
+			rhsShape:        shapes.Make(dtypes.Float32, 2, 3, 7, 5, 6), // Batch=(2,3), Cross=7, Contracting=(5,6)
+			rhsContract:     []int{3, 4},
+			rhsBatch:        []int{0, 1},
+			layout:          dot.LayoutTransposed,
+			wantLhsDims:     []int{2, 3, 4, 5, 6},
+			wantLhsContract: []int{3, 4},
+			wantLhsBatch:    []int{0, 1},
+			wantRhsDims:     []int{2, 3, 7, 5, 6},
+			wantRhsContract: []int{3, 4},
+			wantRhsBatch:    []int{0, 1},
 		},
 	}
 

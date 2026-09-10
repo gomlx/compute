@@ -1,3 +1,11 @@
+- 2026-09-10:
+  - Fixed and streamlined `gobackend.DotGeneral` for both static and dynamic shapes:
+    - Removed `MergeAxes` calls in `reshapeToSupportedLayout` and `TransposeToLayout`. Contiguous row-major axis groups naturally match GEMM strides, eliminating unnecessary reshape overhead and cleanly supporting multi-batch or multi-contracting dynamic dimensions.
+    - Updated `LayoutForDotGeneral` to accept multiple leading batch axes and sequential trailing contracting axes without merging.
+    - Simplified `DotGeneral` to directly construct the node with the desired `outputShape`, eliminating redundant intermediate 3D normalized shapes and subsequent reshapes.
+    - Documented flat row-major layout invariants across `LayoutForDotGeneral`, `TransposeToLayout`, `reshapeToSupportedLayout`, `DotGeneral`, and `execDotGeneral`.
+  - Added unit test `TestDotGeneralDynamic` in `internal/gobackend/dot/dot_test.go` verifying multi-batch dynamic attention score dot products.
+
 - 2026-09-09:
   - Added adaptive SIMD vs. non-SIMD thresholding for `Reduce` operations (`ReduceSum`, `ReduceMax`, `ReduceMin`, `ReduceProduct`) in the Go backend. When the reduced axis or tensor size is below the architecture-specific threshold, SIMD executors decline with `ErrFallback` to allow the faster scalar implementation to execute.
   - Implemented thread-safe node-level executor caching (`cachedExecutorIdx` on `*Node`), eliminating dispatch loop and fallback check overhead for subsequent runs across both static graphs and dynamic shape specializations.

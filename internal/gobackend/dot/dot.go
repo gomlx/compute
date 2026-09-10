@@ -61,12 +61,22 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 	numBatchAxes := len(d.LHSBatchAxes)
 	d.BatchSize = 1
 	for i := range numBatchAxes {
-		d.BatchSize *= lhsShape.Dimensions[d.LHSBatchAxes[i]]
+		dim := lhsShape.Dimensions[d.LHSBatchAxes[i]]
+		if dim == shapes.DynamicDim {
+			d.BatchSize = shapes.DynamicDim
+			break
+		}
+		d.BatchSize *= dim
 	}
 
 	d.ContractingSize = 1
 	for _, axis := range d.LHSContractingAxes {
-		d.ContractingSize *= lhsShape.Dimensions[axis]
+		dim := lhsShape.Dimensions[axis]
+		if dim == shapes.DynamicDim {
+			d.ContractingSize = shapes.DynamicDim
+			break
+		}
+		d.ContractingSize *= dim
 	}
 
 	lhsRank := lhsShape.Rank()
@@ -78,9 +88,14 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 	for _, axis := range d.LHSContractingAxes {
 		isBatchOrContractingLHS[axis] = true
 	}
-	for axis := 0; axis < lhsRank; axis++ {
+	for axis := range lhsRank {
 		if !isBatchOrContractingLHS[axis] {
-			d.LHSCrossSize *= lhsShape.Dimensions[axis]
+			dim := lhsShape.Dimensions[axis]
+			if dim == shapes.DynamicDim {
+				d.LHSCrossSize = shapes.DynamicDim
+				break
+			}
+			d.LHSCrossSize *= dim
 		}
 	}
 
@@ -93,9 +108,14 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 	for _, axis := range d.RHSContractingAxes {
 		isBatchOrContractingRHS[axis] = true
 	}
-	for axis := 0; axis < rhsRank; axis++ {
+	for axis := range rhsRank {
 		if !isBatchOrContractingRHS[axis] {
-			d.RHSCrossSize *= rhsShape.Dimensions[axis]
+			dim := rhsShape.Dimensions[axis]
+			if dim == shapes.DynamicDim {
+				d.RHSCrossSize = shapes.DynamicDim
+				break
+			}
+			d.RHSCrossSize *= dim
 		}
 	}
 }
@@ -144,7 +164,6 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 
 	return newData, nil
 }
-
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
 // for a general vector product -- a generalized "Einsum". Each axis can be:
@@ -239,32 +258,27 @@ func DotGeneral(f *gobackend.Function,
 			params.Layout, params.InputDType, params.OutputDType)
 	}
 
-	// Create dot-general node: it will generate a normalized output [batchSize, lhsCrossSize, rhsCrossSize].
-	var normalizedOutputShape shapes.Shape
-	if params.BatchSize == shapes.DynamicDim || params.LHSCrossSize == shapes.DynamicDim || params.RHSCrossSize == shapes.DynamicDim {
-		axisNames := make([]string, 3)
-		if params.BatchSize == shapes.DynamicDim {
-			axisNames[0] = findDynamicAxisName(lhs.Shape, params.LHSBatchAxes)
-		}
-		if params.LHSCrossSize == shapes.DynamicDim {
-			axisNames[1] = findDynamicCrossAxisName(lhs.Shape, params.LHSBatchAxes, params.LHSContractingAxes)
-		}
-		if params.RHSCrossSize == shapes.DynamicDim {
-			axisNames[2] = findDynamicCrossAxisName(rhs.Shape, params.RHSBatchAxes, params.RHSContractingAxes)
-		}
-		normalizedOutputShape = shapes.MakeDynamic(params.OutputDType,
-			[]int{params.BatchSize, params.LHSCrossSize, params.RHSCrossSize},
-			axisNames)
-	} else {
-		normalizedOutputShape = shapes.Make(params.OutputDType, params.BatchSize, params.LHSCrossSize, params.RHSCrossSize)
+	// Create dot-general node: it directly generates outputShape (with OutputDType).
+	//
+	// Output Shape & Row-Major Layout Invariant:
+	// Standard DotGeneral specifies output dimensions in the order:
+	//   [BatchAxes..., LHSCrossAxes..., RHSCrossAxes...]
+	// The underlying GEMM computes C[b, n, m] = sum_k A[b, n, k] * B[b, m, k] (or B[b, k, m])
+	// and writes sequentially into output.Flat in row-major order:
+	//   outer loop: batch (b)
+	//   middle loop: lhs cross (n)
+	//   inner loop: rhs cross (m)
+	// In row-major layout of any multi-dimensional tensor with shape [B..., N..., M...],
+	// the flat index b_flat * (N * M) + n_flat * M + m_flat exactly matches this GEMM output order.
+	// Therefore, the node directly outputs outputShape (preserving all original dimensions, dynamic
+	// axes, and names). No subsequent reshape (static or DynamicReshape) is needed.
+	nodeOutputShape := outputShape
+	if params.OutputDType != outputShape.DType {
+		nodeOutputShape = outputShape.Clone()
+		nodeOutputShape.DType = params.OutputDType
 	}
-	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, normalizedOutputShape, inputs, params)
-	if result.Shape.Equal(outputShape) {
-		// If no de-normalization is needed, return the result immediately.
-		return result, nil
-	}
+	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, nodeOutputShape, inputs, params)
 
-	// Reshape result to recover batch and cross dimensions.
 	if result.Shape.DType != outputShape.DType {
 		// Requires final DType conversion:
 		resultValue, err := f.ConvertDType(result, outputShape.DType)
@@ -273,55 +287,18 @@ func DotGeneral(f *gobackend.Function,
 		}
 		result = resultValue.(*gobackend.Node)
 	}
-	if !result.Shape.Equal(outputShape) {
-		// Reshape to axes that may have been merged during layout normalization.
-		if outputShape.IsDynamic() || result.Shape.IsDynamic() {
-			specs := make([]compute.DynamicDimensionSpec, outputShape.Rank())
-			for i, dim := range outputShape.Dimensions {
-				name := outputShape.AxisName(i)
-				if dim == shapes.DynamicDim {
-					var val compute.Value
-					for j, rDim := range result.Shape.Dimensions {
-						if rDim == shapes.DynamicDim && result.Shape.AxisName(j) == name && name != "" {
-							val, err = f.DynamicDimensionSize(result, j)
-							if err != nil {
-								return nil, err
-							}
-							break
-						}
-					}
-					specs[i] = compute.DynamicDimensionSpec{
-						Name:  name,
-						Value: val,
-					}
-				} else {
-					specs[i] = compute.DynamicDimensionSpec{
-						Static: dim,
-						Name:   name,
-					}
-				}
-			}
-			resultValue, err := f.DynamicReshape(result, specs...)
-			if err != nil {
-				return nil, err
-			}
-			result = resultValue.(*gobackend.Node)
-		} else {
-			resultValue, err := f.Reshape(result, outputShape.Dimensions...)
-			if err != nil {
-				return nil, err
-			}
-			result = resultValue.(*gobackend.Node)
-		}
-	}
 	return result, nil
 }
 
-// reshapeToSupportedLayout reshapes/transposes lhs and rhs to a layout
-// supported by the underlying execution backends.
+// reshapeToSupportedLayout checks if lhs and rhs already match a layout supported
+// by GEMM kernels (LayoutTransposed or LayoutNonTransposed).
+// If not, it transposes the inputs via TransposeToLayout to LayoutTransposed.
 //
-// It returns the updated lhs, rhs and params (same as the input, with fields updated).
-// The params.Layout field will be set to the supported layout.
+// Note on axis merging:
+// No reshape is performed here for non-incompatible layouts. Contiguous axes belonging to the same semantic category
+// (all batch axes, all cross axes, or all contracting axes) already have contiguous element
+// offsets in row-major memory. The GEMM kernels operate on flat slices using total combined
+// sizes (SetSizes), so preserving unmerged axes is both faster and fully compatible with dynamic dims.
 func reshapeToSupportedLayout(
 	f *gobackend.Function,
 	lhs, rhs *gobackend.Node,
@@ -335,25 +312,7 @@ func reshapeToSupportedLayout(
 		return lhs, rhs, params, nil
 	}
 
-	// First attempt to merge axes with same function:
-	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs, params.RHSContractingAxes, params.RHSBatchAxes, err = MergeAxes(
-		f, lhs, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs, params.RHSContractingAxes, params.RHSBatchAxes)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	params.Layout = LayoutForDotGeneral(lhs.Shape, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs.Shape, params.RHSContractingAxes, params.RHSBatchAxes)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if params.Layout != LayoutIncompatible {
-		// Merged axes make a supported layout.
-		return lhs, rhs, params, nil
-	}
-
-	// We need to transpose inputs to a supported layout. Since the
+	// We need to transpose inputs to a supported layout. Since
 	// LayoutTransposed is the fastest, we transpose to that.
 	targetLayout := LayoutTransposed
 	lhs, params.LHSContractingAxes, params.LHSBatchAxes,
@@ -405,6 +364,14 @@ func convertToAccumulatorDType(f *gobackend.Function, lhs, rhs *gobackend.Node, 
 }
 
 // execDotGeneral executes the DotGeneral operation.
+//
+// The output buffer is allocated with node.Shape (which is outputShape).
+// The GEMM kernels write into output.Flat in row-major order:
+//
+//	b_flat * (lhsCrossSize * rhsCrossSize) + lhsCross_flat * rhsCrossSize + rhsCross_flat
+//
+// This matches the row-major flat layout of [BatchAxes..., LHSCrossAxes..., RHSCrossAxes...] exactly,
+// so the allocated buffer immediately possesses the target N-dimensional shape without any reshape.
 func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	params := node.Data.(*NodeData)
@@ -427,31 +394,4 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	// Use registered implementation.
 	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
 	return output, nil
-}
-
-func findDynamicAxisName(shape shapes.Shape, axes []int) string {
-	for _, axis := range axes {
-		if shape.Dimensions[axis] == shapes.DynamicDim {
-			return shape.AxisName(axis)
-		}
-	}
-	return ""
-}
-
-func findDynamicCrossAxisName(shape shapes.Shape, batchAxes, contractingAxes []int) string {
-	isSpecial := make([]bool, shape.Rank())
-	for _, axis := range batchAxes {
-		isSpecial[axis] = true
-	}
-	for _, axis := range contractingAxes {
-		isSpecial[axis] = true
-	}
-	for axis := 0; axis < shape.Rank(); axis++ {
-		if !isSpecial[axis] {
-			if shape.Dimensions[axis] == shapes.DynamicDim {
-				return shape.AxisName(axis)
-			}
-		}
-	}
-	return ""
 }
