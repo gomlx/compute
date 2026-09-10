@@ -103,6 +103,7 @@ write_output_64_f32:
 	VMOVUPS Z14, 128(DI)
 	VMOVUPS Z15, 192(DI)
 
+	VZEROUPPER
 	RET
 
 TEXT ·avx512SmallNonTransposedTile4x16Float32Asm(SB), NOSPLIT, $0-88
@@ -155,6 +156,7 @@ write_output_16_f32:
 	VMOVUPS Z2, 0(R15)
 	VMOVUPS Z3, 0(DI)
 
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -256,6 +258,7 @@ write_output_32_f64:
 	VMOVUPD Z14, 128(DI)
 	VMOVUPD Z15, 192(DI)
 
+	VZEROUPPER
 	RET
 
 TEXT ·avx512SmallNonTransposedTile4x8Float64Asm(SB), NOSPLIT, $0-88
@@ -308,6 +311,7 @@ write_output_8_f64:
 	VMOVUPD Z2, 0(R15)
 	VMOVUPD Z3, 0(DI)
 
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -409,6 +413,7 @@ write_output_64_f16:
 	VMOVUPS Z14, 128(DI)
 	VMOVUPS Z15, 192(DI)
 
+	VZEROUPPER
 	RET
 
 TEXT ·avx512SmallNonTransposedTile4x16Float16Asm(SB), NOSPLIT, $0-88
@@ -461,6 +466,7 @@ write_output_16_f16:
 	VMOVUPS Z2, 0(R15)
 	VMOVUPS Z3, 0(DI)
 
+	VZEROUPPER
 	RET
 
 // ============================================================================
@@ -562,6 +568,7 @@ write_output_64_bf16:
 	VMOVUPS Z14, 128(DI)
 	VMOVUPS Z15, 192(DI)
 
+	VZEROUPPER
 	RET
 
 TEXT ·avx512SmallNonTransposedTile4x16BFloat16Asm(SB), NOSPLIT, $0-88
@@ -614,4 +621,5 @@ write_output_16_bf16:
 	VMOVUPS Z2, 0(R15)
 	VMOVUPS Z3, 0(DI)
 
+	VZEROUPPER
 	RET
