@@ -830,7 +830,11 @@ type StandardOps interface {
 	//
 	// The condition must be boolean, and onTrue and onFalse must have the same dtype.
 	//
-	// If either condition, onTrue or onFalse is a scalar, it will be broadcasted to the shape of the other operands.
+	// Standard implicit broadcasting rules apply across all three operands:
+	// - Scalar operands are implicitly broadcast to the shape of the other operands.
+	// - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
+	//   Dimension 1 is broadcast to the larger dimension.
+	// - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
 	Where(condition, onTrue, onFalse Value) (Value, error)
 
 	// OptimizationBarrier introduces an optimization barrier.
