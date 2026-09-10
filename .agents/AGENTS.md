@@ -56,6 +56,13 @@ auto-differentiation, use GoMLX instead.
 
 ## Coding Style In GoMLX projects, including this one.
 
+### Minimal External Dependencies (No Testify)
+
+- The `compute` repository is a foundational, low-level package and must have minimal external dependencies.
+- **Do NOT add external dependencies**, especially for tests.
+- **In particular, do NOT use or import `github.com/stretchr/testify`** (`assert`, `require`, etc.) anywhere in this repository.
+- Use standard Go testing primitives (`t.Fatalf`, `t.Errorf`, `math.Abs`, `cmp.Diff`, etc.) or the locally defined `support/testutil` package (which provides `IsEqual`, `IsInDelta`, `IsInRelativeDelta`, etc.).
+
 ### Auto-generated code
 
 Files that start with `gen_` are auto-generated and don't include a copyright line

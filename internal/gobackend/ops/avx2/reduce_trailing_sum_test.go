@@ -13,8 +13,6 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/ops/avx2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAVX2TrailingSumCorrectness(t *testing.T) {
@@ -37,9 +35,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float32)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.InDelta(t, expected[row], out[row], 1e-4, fmt.Sprintf("Float32 failed for B=%d, row=%d", b, row))
+				assertInDelta(t, expected[row], out[row], 1e-4, fmt.Sprintf("Float32 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -60,9 +58,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float64)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.InDelta(t, expected[row], out[row], 1e-6, fmt.Sprintf("Float64 failed for B=%d, row=%d", b, row))
+				assertInDelta(t, expected[row], out[row], 1e-6, fmt.Sprintf("Float64 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -83,9 +81,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = float16.FromFloat32(sum)
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float16)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.InDelta(t, expected[row].Float32(), out[row].Float32(), 0.1, fmt.Sprintf("Float16 failed for B=%d, row=%d", b, row))
+				assertInDelta(t, expected[row].Float32(), out[row].Float32(), 0.1, fmt.Sprintf("Float16 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -106,9 +104,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = bfloat16.FromFloat32(sum)
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.BFloat16)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.InDelta(t, expected[row].Float32(), out[row].Float32(), 0.1, fmt.Sprintf("BFloat16 failed for B=%d, row=%d", b, row))
+				assertInDelta(t, expected[row].Float32(), out[row].Float32(), 0.1, fmt.Sprintf("BFloat16 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -129,9 +127,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int32)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Int32 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Int32 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -152,9 +150,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint32)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Uint32 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Uint32 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -175,9 +173,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int16)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Int16 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Int16 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -198,9 +196,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint16)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Uint16 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Uint16 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -221,9 +219,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int8)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Int8 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Int8 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -244,9 +242,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint8)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Uint8 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Uint8 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -267,9 +265,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int64)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Int64 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Int64 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})
@@ -290,9 +288,9 @@ func TestAVX2TrailingSumCorrectness(t *testing.T) {
 				expected[row] = sum
 			}
 			ok := avx2.DispatchTrailingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint64)
-			require.True(t, ok)
+			requireTrue(t, ok)
 			for row := range a {
-				assert.Equal(t, expected[row], out[row], fmt.Sprintf("Uint64 failed for B=%d, row=%d", b, row))
+				assertEqual(t, expected[row], out[row], fmt.Sprintf("Uint64 failed for B=%d, row=%d", b, row))
 			}
 		}
 	})

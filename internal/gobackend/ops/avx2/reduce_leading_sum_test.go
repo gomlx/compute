@@ -6,6 +6,7 @@ package avx2_test
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"unsafe"
 
@@ -13,9 +14,28 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/ops/avx2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
+
+func requireTrue(t *testing.T, ok bool) {
+	t.Helper()
+	if !ok {
+		t.Fatalf("expected true, got false")
+	}
+}
+
+func assertInDelta[T ~float32 | ~float64](t *testing.T, expected, actual T, delta float64, msg string) {
+	t.Helper()
+	if diff := math.Abs(float64(expected - actual)); diff > delta {
+		t.Errorf("%s: got %v, expected %v (diff %v > delta %v)", msg, actual, expected, diff, delta)
+	}
+}
+
+func assertEqual[T comparable](t *testing.T, expected, actual T, msg string) {
+	t.Helper()
+	if expected != actual {
+		t.Errorf("%s: got %v, expected %v", msg, actual, expected)
+	}
+}
 
 func TestAVX2LeadingSumCorrectness(t *testing.T) {
 	bValues := []int{1, 2, 3, 4, 7, 8, 9, 15, 16, 23, 24, 31, 32, 33, 48, 63, 64, 65, 100, 127, 128, 129, 255, 256, 512, 1024}
@@ -38,9 +58,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float32)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.InDelta(t, expected[col], out[col], 1e-4, fmt.Sprintf("Float32 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertInDelta(t, expected[col], out[col], 1e-4, fmt.Sprintf("Float32 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -63,9 +83,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float64)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.InDelta(t, expected[col], out[col], 1e-6, fmt.Sprintf("Float64 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertInDelta(t, expected[col], out[col], 1e-6, fmt.Sprintf("Float64 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -88,9 +108,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = float16.FromFloat32(sum)
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Float16)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.InDelta(t, expected[col].Float32(), out[col].Float32(), 1e-2, fmt.Sprintf("Float16 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertInDelta(t, expected[col].Float32(), out[col].Float32(), 1e-2, fmt.Sprintf("Float16 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -113,9 +133,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = bfloat16.FromFloat32(sum)
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.BFloat16)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.InDelta(t, expected[col].Float32(), out[col].Float32(), 1e-1, fmt.Sprintf("BFloat16 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertInDelta(t, expected[col].Float32(), out[col].Float32(), 1e-1, fmt.Sprintf("BFloat16 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -138,9 +158,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int32)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Int32 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Int32 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -163,9 +183,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint32)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Uint32 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Uint32 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -188,9 +208,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int16)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Int16 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Int16 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -213,9 +233,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint16)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Uint16 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Uint16 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -238,9 +258,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int8)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Int8 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Int8 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -263,9 +283,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint8)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Uint8 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Uint8 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -288,9 +308,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Int64)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Int64 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Int64 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
@@ -313,9 +333,9 @@ func TestAVX2LeadingSumCorrectness(t *testing.T) {
 					expected[col] = sum
 				}
 				ok := avx2.DispatchLeadingSumAVX2(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), a, b, dtypes.Uint64)
-				require.True(t, ok)
+				requireTrue(t, ok)
 				for col := range b {
-					assert.Equal(t, expected[col], out[col], fmt.Sprintf("Uint64 failed for A=%d, B=%d, col=%d", a, b, col))
+					assertEqual(t, expected[col], out[col], fmt.Sprintf("Uint64 failed for A=%d, B=%d, col=%d", a, b, col))
 				}
 			}
 		}
