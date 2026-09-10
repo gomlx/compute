@@ -8,14 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx512"
 
-	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
@@ -27,15 +25,10 @@ var (
 )
 
 func BenchmarkLayerNormTrailing(b *testing.B) {
-	backendRaw, err := compute.New()
+	be, err := NewBackend()
 	if err != nil {
 		b.Fatalf("failed to create backend: %+v", err)
 	}
-	be, ok := backendRaw.(*gobackend.Backend)
-	if !ok {
-		b.Fatalf("backend configured is not a Go backend: GOMLX_BACKEND=%q", os.Getenv("GOMLX_BACKEND"))
-	}
-	fmt.Printf("Backend: %s, %s\n", backendRaw.Name(), backendRaw.Description())
 	defer be.Finalize()
 
 	outerSize := 100
