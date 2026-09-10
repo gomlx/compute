@@ -98,21 +98,15 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 
 		// Start
 		start := starts[axis]
-		if dimSize != shapes.DynamicDim {
-			if start < 0 {
-				start = dimSize + start
-			}
-			start = min(max(start, 0), dimSize)
+		if dimSize != shapes.DynamicDim && start < 0 {
+			start = dimSize + start
 		}
 		data.starts[axis] = start
 
 		// Limit
 		limit := limits[axis]
-		if dimSize != shapes.DynamicDim {
-			if limit < 0 {
-				limit = dimSize + limit
-			}
-			limit = min(max(limit, 0), dimSize)
+		if dimSize != shapes.DynamicDim && limit < 0 {
+			limit = dimSize + limit
 		}
 		data.limits[axis] = limit
 

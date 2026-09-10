@@ -157,9 +157,9 @@ var Capabilities = compute.Capabilities{
 		// TODO: not implemented yet:
 		compute.OpTypeSelectAndScatterMax: true,
 		compute.OpTypeSelectAndScatterMin: true,
+		compute.OpTypeDynamicUpdateSlice:  true,
 		// compute.OpTypeSelectAndScatterSum: true,
 		// compute.OpTypeDynamicSlice: true,
-		// compute.OpTypeDynamicUpdateSlice: true,
 
 		// Lower priority ops:
 		// compute.OpTypeBatchNormForInference: true,

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
@@ -16,6 +17,8 @@ import (
 func init() {
 	gobackend.RegisterReduceWindow.Register(ReduceWindow, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeReduceWindow, gobackend.PriorityGeneric, execReduceWindow)
+	reduceWindowMinDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, reduceWindowMinBuildUpdateFnBool)
+	reduceWindowMaxDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, reduceWindowMaxBuildUpdateFnBool)
 }
 
 type reduceWindowNode struct {
@@ -349,5 +352,21 @@ func reduceWindowProductBuildUpdateFnHalf[T gotype.HalfPrecision[T], P gotype.Ha
 	return func(operandFlatIdx, outputFlatIdx int) {
 		P(&outputFlat[outputFlatIdx]).SetFloat32(
 			outputFlat[outputFlatIdx].Float32() * operandFlat[operandFlatIdx].Float32())
+	}
+}
+
+func reduceWindowMinBuildUpdateFnBool(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]bool)
+	outputFlat := output.Flat.([]bool)
+	return func(operandFlatIdx, outputFlatIdx int) {
+		outputFlat[outputFlatIdx] = outputFlat[outputFlatIdx] && operandFlat[operandFlatIdx]
+	}
+}
+
+func reduceWindowMaxBuildUpdateFnBool(operand, output *gobackend.Buffer) reduceWindowUpdateFn {
+	operandFlat := operand.Flat.([]bool)
+	outputFlat := output.Flat.([]bool)
+	return func(operandFlatIdx, outputFlatIdx int) {
+		outputFlat[outputFlatIdx] = outputFlat[outputFlatIdx] || operandFlat[operandFlatIdx]
 	}
 }

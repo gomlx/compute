@@ -53,17 +53,35 @@ func TestPool_Saturate(t *testing.T) {
 
 	// Test Unlimited
 	pool.SetMaxParallelism(-1)
-	count.Store(0)
+	wantUnlimited := runtime.GOMAXPROCS(0)
 	var started atomic.Int32
-	pool.Saturate(func() {
-		started.Add(1)
-		runtime.Gosched()
-		count.Add(1)
-	})
+	doneUnlimited := xsync.NewLatch()
+	doneTestUnlimited := xsync.NewLatch()
+
+	go func() {
+		pool.Saturate(func() {
+			got := started.Add(1)
+			runtime.Gosched()
+			if int(got) == wantUnlimited {
+				doneUnlimited.Trigger()
+				return
+			}
+			doneUnlimited.Wait()
+		})
+		doneTestUnlimited.Trigger()
+	}()
+
+	select {
+	case <-doneTestUnlimited.WaitChan():
+		// Success
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timeout before all unlimited tasks were executed.")
+	}
+
 	if runtime.GOMAXPROCS(0) > 1 && started.Load() <= 1 {
 		t.Errorf("Expected more than 1 started task for unlimited parallelism, got %d", started.Load())
 	}
-	if count.Load() != started.Load() {
-		t.Errorf("Expected count %d to match started %d", count.Load(), started.Load())
+	if int(started.Load()) != wantUnlimited {
+		t.Errorf("Expected started %d to match wantUnlimited %d", started.Load(), wantUnlimited)
 	}
 }
