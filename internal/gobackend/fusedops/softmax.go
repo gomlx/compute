@@ -2,6 +2,7 @@ package fusedops
 
 import (
 	"math"
+	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -59,9 +60,9 @@ func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs [
 
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		fusedSoftmax(input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape, fastmath.Exp32)
+		fusedSoftmax(backend, input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape, fastmath.Exp32)
 	case dtypes.Float64:
-		fusedSoftmax(input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape, math.Exp)
+		fusedSoftmax(backend, input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape, math.Exp)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedSoftmax: dtype %s", input.RawShape.DType)
 	}
@@ -85,35 +86,57 @@ func fusedSoftmaxComputeAxisStrides(shape shapes.Shape, axis int) (outerSize, ax
 	return
 }
 
-func fusedSoftmax[T float32 | float64](input, output []T, axis int, shape shapes.Shape, expFn func(T) T) {
+func fusedSoftmax[T float32 | float64](backend *gobackend.Backend, input, output []T, axis int, shape shapes.Shape, expFn func(T) T) {
 	outerSize, axisSize, innerSize := fusedSoftmaxComputeAxisStrides(shape, axis)
-	for outer := range outerSize {
-		for inner := range innerSize {
-			baseIdx := outer*axisSize*innerSize + inner
+	totalElements := outerSize * axisSize * innerSize
 
-			// Pass 1: Find max.
-			maxVal := T(math.Inf(-1))
-			for i := range axisSize {
-				idx := baseIdx + i*innerSize
-				if input[idx] > maxVal {
-					maxVal = input[idx]
+	processOuter := func(start, end int) {
+		for outer := start; outer < end; outer++ {
+			for inner := range innerSize {
+				baseIdx := outer*axisSize*innerSize + inner
+
+				// Pass 1: Find max.
+				maxVal := T(math.Inf(-1))
+				for i := range axisSize {
+					idx := baseIdx + i*innerSize
+					if input[idx] > maxVal {
+						maxVal = input[idx]
+					}
+				}
+
+				// Pass 2: Exp and sum.
+				var sum T
+				for i := range axisSize {
+					idx := baseIdx + i*innerSize
+					output[idx] = expFn(input[idx] - maxVal)
+					sum += output[idx]
+				}
+
+				// Pass 3: Normalize.
+				invSum := 1.0 / sum
+				for i := range axisSize {
+					idx := baseIdx + i*innerSize
+					output[idx] *= invSum
 				}
 			}
-
-			// Pass 2: Exp and sum.
-			var sum T
-			for i := range axisSize {
-				idx := baseIdx + i*innerSize
-				output[idx] = expFn(input[idx] - maxVal)
-				sum += output[idx]
-			}
-
-			// Pass 3: Normalize.
-			invSum := 1.0 / sum
-			for i := range axisSize {
-				idx := baseIdx + i*innerSize
-				output[idx] *= invSum
-			}
 		}
+	}
+
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := min(outerSize, max(1, numWorkers*2))
+		outerPerChunk := max(1, (outerSize+targetChunks-1)/targetChunks)
+		var wg sync.WaitGroup
+		for start := 0; start < outerSize; start += outerPerChunk {
+			end := min(start+outerPerChunk, outerSize)
+			wg.Add(1)
+			backend.Workers.WaitToStart(func() {
+				processOuter(start, end)
+				wg.Done()
+			})
+		}
+		wg.Wait()
+	} else {
+		processOuter(0, outerSize)
 	}
 }

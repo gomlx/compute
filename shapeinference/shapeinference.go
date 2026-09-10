@@ -418,7 +418,16 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 //     must be Bool.
 //
 // Note: If you need to select between values of different dtypes, use ConvertDType to convert them
-// to a common dtype before calling Where.
+// Where returns the shape resulting from the Where operation.
+//
+// The condition must be of boolean dtype.
+// The onTrue and onFalse must have the same dtype.
+//
+// Standard implicit broadcasting rules apply across all three operands:
+// - Scalar operands are implicitly broadcast to the shape of the other operands.
+// - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
+//   Dimension 1 is broadcast to the larger dimension.
+// - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
 func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
 	if condition.DType != dtypes.Bool {
 		err = errors.Errorf("condition for Where() must be a boolean, got %s instead", condition)
@@ -429,28 +438,87 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 			onTrue.DType, onFalse.DType)
 		return
 	}
-	if !onTrue.IsScalar() && !onFalse.IsScalar() && !onTrue.Equal(onFalse) {
-		err = errors.Errorf("onTrue (%s) and onFalse (%s) values for Where() must either be scalar or match each other's shape",
-			onTrue, onFalse)
-		return
+
+	// Trivial case: all operands are scalar.
+	if condition.IsScalar() && onTrue.IsScalar() && onFalse.IsScalar() {
+		return shapes.Make(onTrue.DType), nil
 	}
 
-	output = onTrue
-	if output.IsScalar() {
-		output = onFalse
-		if output.IsScalar() && !condition.IsScalar() {
-			output = condition.Clone()
-			output.DType = onTrue.DType
+	// Collect non-scalar operands.
+	var nonScalars []shapes.Shape
+	for _, s := range []shapes.Shape{condition, onTrue, onFalse} {
+		if !s.IsScalar() {
+			nonScalars = append(nonScalars, s)
 		}
 	}
 
-	if !condition.IsScalar() && slices.Compare(condition.Dimensions, output.Dimensions) != 0 {
-		err = errors.Errorf("condition for Where() must either be a scalar or match the output shape (not the DType), instead got shapes condition=%s, onTrue=%s and onFalse=%s",
-			condition, onTrue, onFalse)
-		return
+	// If only one operand is non-scalar, it determines the shape.
+	if len(nonScalars) == 1 {
+		output = nonScalars[0].Clone()
+		output.DType = onTrue.DType
+		return output, nil
 	}
 
-	return
+	// Check that all non-scalar operands have the same rank.
+	rank := nonScalars[0].Rank()
+	for _, s := range nonScalars[1:] {
+		if s.Rank() != rank {
+			err = errors.Errorf("if operands are not scalars, their rank must match for Where(); got shapes condition=%s, onTrue=%s and onFalse=%s",
+				condition, onTrue, onFalse)
+			return shapes.Invalid(), err
+		}
+	}
+
+	output = shapes.Make(onTrue.DType, make([]int, rank)...)
+	for axis := range rank {
+		targetDim := 1
+		hasDynamic := false
+		var dynamicName string
+		for _, s := range nonScalars {
+			d := s.Dimensions[axis]
+			if d == shapes.DynamicDim {
+				hasDynamic = true
+				if dynamicName == "" {
+					dynamicName = s.AxisName(axis)
+				} else if !shapes.AxisNameEqual(dynamicName, s.AxisName(axis)) {
+					err = errors.Errorf("axis #%d is dynamic for multiple operands, but have different axis names for Where(), "+
+						"they cannot be implicitly broadcast; got shapes condition=%s, onTrue=%s and onFalse=%s",
+						axis, condition, onTrue, onFalse)
+					return shapes.Invalid(), err
+				}
+			} else if d != 1 {
+				if targetDim != 1 && targetDim != d {
+					err = errors.Errorf("dimension of axis #%d doesn't match and cannot be broadcast for Where(), got shapes condition=%s, onTrue=%s and onFalse=%s",
+						axis, condition, onTrue, onFalse)
+					return shapes.Invalid(), err
+				}
+				targetDim = d
+			}
+		}
+
+		if hasDynamic {
+			if targetDim != 1 {
+				err = errors.Errorf("axis #%d is dynamic for one operand and non-1 (%d) for another for Where(), "+
+					"they cannot be implicitly broadcast; got shapes condition=%s, onTrue=%s and onFalse=%s",
+					axis, targetDim, condition, onTrue, onFalse)
+				return shapes.Invalid(), err
+			}
+			output.Dimensions[axis] = shapes.DynamicDim
+		} else {
+			output.Dimensions[axis] = targetDim
+		}
+	}
+
+	// Unify axis names across all non-scalar operands.
+	axisNames := nonScalars[0].AxisNames
+	for _, s := range nonScalars[1:] {
+		axisNames, err = shapes.UnifyAxisNames(shapes.Shape{Dimensions: output.Dimensions, AxisNames: axisNames}, s)
+		if err != nil {
+			return shapes.Invalid(), errors.Wrapf(err, "axis name conflict in Where()")
+		}
+	}
+	output.AxisNames = axisNames
+	return output, nil
 }
 
 // Reshape to the given dimensions: trivial output shape, but this function also checks

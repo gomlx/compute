@@ -79,6 +79,59 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual([]float32{101, 2, 3}, y3); !ok {
 			t.Errorf("Where (non-scalar cond and values) mismatch:\n%s", diff)
 		}
+
+		// Vector cond, vector onTrue, scalar onFalse.
+		y4, err := testutil.Exec1(b, []any{[]bool{true, false, true}, []float32{1, 2, 3}, float32(10)}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (vector cond, vector onTrue, scalar onFalse) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{1, 10, 3}, y4); !ok {
+			t.Errorf("Where (vector cond, vector onTrue, scalar onFalse) mismatch:\n%s", diff)
+		}
+
+		// Vector cond, scalar onTrue, vector onFalse.
+		y5, err := testutil.Exec1(b, []any{[]bool{true, false, true}, float32(10), []float32{1, 2, 3}}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (vector cond, scalar onTrue, vector onFalse) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{10, 2, 10}, y5); !ok {
+			t.Errorf("Where (vector cond, scalar onTrue, vector onFalse) mismatch:\n%s", diff)
+		}
+
+		// Vector cond, scalar onTrue, scalar onFalse.
+		y6, err := testutil.Exec1(b, []any{[]bool{true, false, true}, float32(10), float32(20)}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (vector cond, scalar onTrue, scalar onFalse) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{10, 20, 10}, y6); !ok {
+			t.Errorf("Where (vector cond, scalar onTrue, scalar onFalse) mismatch:\n%s", diff)
+		}
+
+		// 2D multidirectional broadcasting: cond [2, 1], onTrue [2, 3], onFalse [1, 3] -> output [2, 3].
+		y7, err := testutil.Exec1(b, []any{
+			[][]bool{{true}, {false}},
+			[][]float32{{1, 2, 3}, {4, 5, 6}},
+			[][]float32{{10, 20, 30}},
+		}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (2D multidirectional broadcast) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([][]float32{{1, 2, 3}, {10, 20, 30}}, y7); !ok {
+			t.Errorf("Where (2D multidirectional broadcast) mismatch:\n%s", diff)
+		}
+
+		// 3D broadcasting with trailing dimensions: cond [1, 2, 1], onTrue [1, 2, 2], onFalse scalar.
+		y8, err := testutil.Exec1(b, []any{
+			[][][]bool{{{true}, {false}}},
+			[][][]float32{{{1, 2}, {3, 4}}},
+			float32(99),
+		}, buildWhere)
+		if err != nil {
+			t.Fatalf("Where (3D broadcast with trailing dimension) failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([][][]float32{{{1, 2}, {99, 99}}}, y8); !ok {
+			t.Errorf("Where (3D broadcast with trailing dimension) mismatch:\n%s", diff)
+		}
 	})
 
 	t.Run("Reshape", func(t *testing.T) {

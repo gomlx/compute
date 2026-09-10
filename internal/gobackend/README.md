@@ -30,8 +30,8 @@ But there are many relatively "low-hanging fruits" for optimization, a few obvio
   loop over the data many times, each time applying the unary function.
 * Fuse binary/unary ops: perform unary functions while traversing the data for binary functions. Again to save
   memory accesses.
-* Further in-operation parallelization: only DotGeneral has been parallelized so far: it is usually the one that consumes most of the time.
-* Use intrinsics/SIMD on platforms that allow it. It was announced as experimental in Go 1.25.
+* In-operation parallelization: `DotGeneral` and `FusedScaledDotProductAttention` are parallelized across worker pools using dynamic lock-free work-stealing.
+* Use intrinsics/SIMD on platforms that allow it: AVX2 and AVX-512 SIMD kernels are implemented for `DotGeneral` (GEMM), `FusedScaledDotProductAttention`, `Where`, `FusedLayerNorm`, and activations (`Gelu`).
 * ~~Eliminate common sub-expressions.~~
 
 ## SIMD Thresholding
@@ -122,4 +122,52 @@ In tight loops or row-by-row reductions (such as LayerNorm, RMSNorm, or Softmax)
 3. **Always Call `VZEROUPPER` Before Returning (`RET`)**:
    Standard Go compiler code generation uses legacy SSE instructions for scalar float math. If an assembly routine leaves the upper halves of YMM/ZMM registers in a "dirty" state upon returning, the very next Go-compiled SSE instruction will trigger an AVX $\to$ SSE penalty.
    Always emit `VZEROUPPER` immediately before every `RET` instruction in functions using 256-bit or 512-bit registers.
+
+## Fused Operations & Intra-Op Parallelization Architecture
+
+When implementing compute-intensive fused operations (such as `FusedScaledDotProductAttention`), the Go backend employs several core design principles to maximize hardware efficiency on modern multi-core x86_64 processors:
+
+### 1. Dynamic Work-Stealing with Atomic Counters
+
+Rather than using Go channels or statically partitioning work across goroutines:
+- **Avoid Go Channels in Inner Loops**: Distributing work units through Go channels introduces channel mutex lock contention, channel buffer overhead, and goroutine parking/unparking latency.
+- **Avoid Static Chunking**: Dividing tasks evenly across $W$ workers upfront leads to thread imbalance when individual tasks have variable workloads (e.g. varying sequence lengths due to padding) or when the number of tasks does not divide evenly by worker count.
+- **Atomic Work-Stealing**:
+  1. Workers are spawned up to $\min(N_{\text{tasks}}, \text{backend.Workers})$.
+  2. Workers dynamically steal the next available task index using an atomic counter:
+     ```go
+     for {
+         taskIdx := int(taskCounter.Add(1) - 1)
+         if taskIdx >= numTasks {
+             break
+         }
+         // Process taskIdx
+     }
+     ```
+  3. This provides zero-allocation, lock-free dynamic load balancing where faster cores naturally process more tasks.
+
+### 2. Cache-Aware Task Decomposition (KV-Head Grouping in GQA/MQA)
+
+In Grouped Query Attention (GQA) and Multi-Query Attention (MQA), multiple query heads share a single key/value (KV) head ($N_{\text{query}} \ge N_{\text{kv}}$):
+- If tasks are decomposed per individual query head, multiple worker goroutines concurrently compete for memory bandwidth fetching identical $K$ and $V$ tensors from L3 cache or DRAM.
+- By defining each parallel task as a $(batch, kv\_head)$ chunk, a single worker iterates over all $G = N_{\text{query}} / N_{\text{kv}}$ query heads sequentially.
+- This guarantees that the key and value sequences ($S_{\text{kv}} \times D$) are loaded once and remain resident in the core's private L1/L2 cache while computing all $G$ query heads.
+
+### 3. Zero-Transpose Direct Strided Memory Access
+
+Deep learning models frequently switch between layout conventions (e.g. `LayoutBSHD` $[B, S, H, D]$ and `LayoutBHSD` $[B, H, S, D]$):
+- Decomposing attention into explicit 4D tensor permutations (`Transpose`) incurs severe memory copying penalties (accounting for ~20% of CPU time and dominating `runtime.memmove`).
+- In row-major tensors, the inner head dimension $D$ is contiguous (stride 1) in both layouts.
+- By parametrizing inner loops with sequence strides (`qSeqStride`, `kvSeqStride`) and query group strides (`qGroupStride`), compute kernels can read operands and write outputs directly in their native layouts with zero tensor copying.
+
+### 4. In-Cache Softmax & Register-Accumulated Values
+
+- **Avoid Materializing $S \times S$ Matrices in Memory**: Writing intermediate attention logits or probabilities to DRAM creates severe bandwidth bottlenecks.
+- **Per-Worker Scratch Buffers**: Each worker allocates a small temporary slice ($S_{\text{kv}}$ floats) reused across tokens.
+- **In-Register Fused Math**: Scale factors, causal masks, additive masks, and attention biases are folded directly into vector registers during dot-product accumulation. Softmax exponentiation uses fast vectorized polynomial approximations (`exp512` / `exp256`), and weighted values ($P \cdot V$) accumulate directly into vector registers before writing directly to the final destination buffer.
+
+### 5. Head Dimension Specialization ($D \in \{32, 64, 128\}$)
+
+When the inner loop over dimension $D$ has a dynamic upper bound, the compiler cannot unroll vector loops and must emit loop counter branches. Specializing kernels for standard head dimensions allows completely unrolling into a fixed set of vector registers (e.g. 2 `Float32x16` registers for $D=32$ on AVX-512, 4 for $D=64$, 8 for $D=128$), sustaining near-peak FMA throughput.
+
 

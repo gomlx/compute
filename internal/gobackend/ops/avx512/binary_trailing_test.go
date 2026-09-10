@@ -15,7 +15,7 @@ import (
 )
 
 func TestAVX512BinaryTrailingCorrectness(t *testing.T) {
-	if !gobackend.IsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed {
 		t.Skip("AVX-512 not allowed or not supported on this host")
 	}
 
@@ -210,10 +210,10 @@ func TestAVX512BinaryTrailingCorrectness(t *testing.T) {
 					expected := make([]int32, A*B)
 
 					for i := range lhs {
-						lhs[i] = int32((i%100) - 50)
+						lhs[i] = int32((i % 100) - 50)
 					}
 					for i := range rhs {
-						rhs[i] = int32((i%10) - 5)
+						rhs[i] = int32((i % 10) - 5)
 					}
 
 					for a := 0; a < A; a++ {
@@ -353,10 +353,10 @@ func TestAVX512BinaryTrailingCorrectness(t *testing.T) {
 					expected := make([]int64, A*B)
 
 					for i := range lhs {
-						lhs[i] = int64((i%100) - 50)
+						lhs[i] = int64((i % 100) - 50)
 					}
 					for i := range rhs {
-						rhs[i] = int64((i%10) - 5)
+						rhs[i] = int64((i % 10) - 5)
 					}
 
 					for a := 0; a < A; a++ {

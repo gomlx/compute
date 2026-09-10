@@ -259,16 +259,16 @@ SIMD and assembly implementations for specific architectures (such as AVX2 or AV
 - **Always gate tests with runtime checks**: Every test targeting architecture-specific SIMD or assembly (e.g., in `avx2/` and `avx512/` subpackages) **must** verify that the instructions are supported and allowed on the current host, skipping gracefully if not:
   ```go
   // In AVX2 tests:
-  if !gobackend.IsAVX2Allowed() {
+  if !gobackend.IsAVX2Allowed {
       t.Skip("AVX2 is not supported or allowed on this host")
   }
 
   // In AVX-512 tests:
-  if !gobackend.IsAVX512Allowed() {
+  if !gobackend.IsAVX512Allowed {
       t.Skip("AVX-512 is not supported or allowed on this host")
   }
   ```
-- **Use `gobackend.IsAVX2Allowed()` / `gobackend.IsAVX512Allowed()`**: In `internal/gobackend/...`, prefer these helpers over raw `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`, as they check both hardware CPUID support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`). Outside `internal/gobackend` (e.g. in `dtypes/float16`), check `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`.
+- **Use `gobackend.IsAVX2Allowed` / `gobackend.IsAVX512Allowed`**: In `internal/gobackend/...`, prefer these helpers over raw `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`, as they check both hardware CPUID support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`). Outside `internal/gobackend` (e.g. in `dtypes/float16`), check `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`.
 - **Never invoke instructions directly in tests without gating**: Without this check, executing unsupported instructions triggers a `SIGILL` (illegal instruction) crash on machines that lack those CPU extensions (e.g., running AVX-512 code on a CPU without AVX-512, or in virtualized/containerized environments).
 
 ## Guidelines for Writing SIMD Assembly (AMD64 / AVX2 & AVX-512)
@@ -382,6 +382,59 @@ SIMD operations carry fixed overheads (register setup, horizontal reductions, ma
 ### 7. Gating Assembly Tests by Runtime Support
 
 Handwritten assembly functions (in `*_amd64.s`) bypass Go compiler checks and will immediately trigger a `SIGILL` crash if invoked on a CPU lacking the required instruction set:
-- Always gate unit tests in `avx2/` and `avx512/` subpackages by calling `if !gobackend.IsAVX2Allowed() { t.Skip(...) }` or `if !gobackend.IsAVX512Allowed() { t.Skip(...) }` at the top of each test function.
+- Always gate unit tests in `avx2/` and `avx512/` subpackages by calling `if !gobackend.IsAVX2Allowed { t.Skip(...) }` or `if !gobackend.IsAVX512Allowed { t.Skip(...) }` at the top of each test function.
 - Never write tests that execute raw assembly kernels without this gate.
+
+## Guidelines for Fused Kernels and Intra-Op Parallelization
+
+Lessons learned from optimizing high-performance fused operations (such as `FusedScaledDotProductAttention`, `FusedLayerNorm`, and `FusedDense`):
+
+### 1. Zero-Transpose Strided Memory Access
+Complex multi-dimensional operations frequently encounter multiple tensor layout conventions across frameworks (e.g. `[B, S, H, D]` vs `[B, H, S, D]` in attention):
+- **The Pitfall**: Decomposing operations or permuting tensors using explicit transposition (`Transpose`) introduces massive memory copying overhead. In transformer benchmarks, 4D transpositions accounted for **19.8% of total CPU time** and dominated `runtime.memmove` (26.7%).
+- **The Principle**: In row-major tensors, the inner head dimension $D$ remains contiguous (unit stride) regardless of whether heads $H$ or sequence $S$ comes first.
+- **The Implementation**:
+  - Parametrize the inner kernel with sequence strides (`qSeqStride`, `kvSeqStride`) and head/group strides (`qGroupStride`).
+  - Read operands and write outputs directly using strided indexing over the native slices without creating intermediate tensors.
+  - Completely eliminates intermediate transposition passes and tensor allocations, cutting memory movement by >70%.
+
+### 2. Cache-Aware Task Decomposition (KV-Head Grouping)
+In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attention (MQA), $N_{query}$ query heads share $N_{kv}$ key/value heads ($N_{query} \ge N_{kv}$):
+- **Avoid Independent Query Head Parallelization**: If tasks are split per query head, multiple worker threads concurrently compete for memory bandwidth fetching identical $K$ and $V$ tensors from L3 cache or DRAM.
+- **Group by KV-Head**: Partition the workload into $N_{tasks} = Batch \times N_{kv}$ chunks.
+- Each worker processes an entire $(batch, kv\_head)$ unit, iterating through all $G = N_{query} / N_{kv}$ query heads sequentially. This guarantees that the key and value sequences ($S_{kv} \times D$) are loaded once and stay resident in the core's private L1/L2 cache across all $G$ query heads.
+
+### 3. Dynamic Work-Stealing with Atomic Counters
+- **Channel vs Atomic Counter**: Avoid distributing tasks via Go channels. In tight compute loops, channel send/receive operations introduce channel lock contention, context switching, and runtime scheduler latency.
+- **Static Slicing Pitfall**: Evenly dividing $N_{tasks}$ across $W$ workers upfront leads to thread imbalance if sequence lengths vary (due to padding) or if task counts do not divide evenly by worker count.
+- **Optimal Pattern**:
+  1. Spawn $W = \min(N_{tasks}, \text{backend.Workers})$ goroutines using `backend.Workers.Saturate` or the worker pool.
+  2. Use an `atomic.Int64` task counter shared across workers:
+     ```go
+     for {
+         taskIdx := int(taskCounter.Add(1) - 1)
+         if taskIdx >= numTasks {
+             break
+         }
+         // execute taskIdx
+     }
+     ```
+  3. This provides lock-free, zero-allocation dynamic load balancing where faster cores naturally process more tasks.
+
+### 4. In-Cache Reductions & Register Accumulation
+- **Never Materialize Intermediate Full Matrices**: Materializing $S_q \times S_{kv}$ attention logit matrices in DRAM creates severe memory-bandwidth bottlenecks for sequence lengths $S \ge 512$.
+- **Per-Worker Scratch Buffers**: Allocate a small scratch slice ($S_{kv}$ floats) per worker (or reuse a buffer across rows).
+- **Fused Math in Vector Registers**:
+  - Immediately fold scale factors, additive masks, and attention bias into vector registers during the dot product ($Q_q \cdot K_k$).
+  - For causal masking, immediately short-circuit keys where $k > q$.
+  - Evaluate softmax normalizations using vectorized polynomial approximations (e.g. degree-7 Cephes `exp512` / `exp256`).
+  - Accumulate the weighted value vectors ($P \cdot V$) directly into vector accumulators and store directly into the destination buffer.
+
+### 5. Head Dimension Specialization ($D \in \{32, 64, 128\}$)
+- When the inner reduction loop over dimension $D$ has a dynamic or variable upper bound, compilers and SIMD abstractions cannot unroll completely and must maintain loop counters and boundary checks.
+- Generating specialized fast paths for standard power-of-two head dimensions ($D=32, 64, 128$):
+  - On AVX-512 (`Float32x16`): $D=32$ unrolls into exactly 2 vector registers, $D=64$ into 4 vectors, $D=128$ into 8 vectors.
+  - On AVX2 (`Float32x8`): $D=32$ unrolls into 4 vector registers, $D=64$ into 8 vectors, $D=128$ into 16 vectors.
+  - Completely unrolling the inner dimension eliminates loop overhead and allows optimal compiler/assembler instruction scheduling across FMA execution ports.
+
 

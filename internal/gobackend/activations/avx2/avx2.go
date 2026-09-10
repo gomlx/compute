@@ -18,13 +18,13 @@ import (
 const PriorityAVX2 = gobackend.PriorityArch
 
 func init() {
-	if gobackend.IsAVX2Allowed() {
+	if gobackend.IsAVX2Allowed {
 		registerAVX2()
 	}
 }
 
 func registerAVX2() {
-// Float32
+	// Float32
 	activations.Register[float32]("avx2:relu", compute.ActivationRelu, ReluAVX2, PriorityAVX2)
 	activations.Register[float32]("avx2:hardswish", compute.ActivationHardSwish, HardSwishAVX2, PriorityAVX2)
 	activations.Register[float32]("avx2:silu", compute.ActivationSilu, SiluAVX2, PriorityAVX2)

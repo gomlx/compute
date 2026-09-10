@@ -48,8 +48,10 @@ func ApplyEpilogue[T any](
 
 	// Fast path: No bias, only activation. We can apply activation on the whole buffer or in chunks.
 	if !hasBias && act != nil {
-		if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && len(output) > 8192 {
-			chunkSize := 4096
+		if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && len(output) > 32768 {
+			numWorkers := backend.Workers.AdjustedMaxParallelism()
+			targetChunks := max(1, numWorkers*2)
+			chunkSize := max(16384, (len(output)+targetChunks-1)/targetChunks)
 			var wg sync.WaitGroup
 			for i := 0; i < len(output); i += chunkSize {
 				end := min(i+chunkSize, len(output))
@@ -81,8 +83,11 @@ func ApplyEpilogue[T any](
 	}
 
 	totalElements := numRows * rowSize
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && numRows > 1 && totalElements > 8192 {
-		rowsPerChunk := max(1, 4096/rowSize)
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && numRows > 1 && totalElements > 32768 {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := max(1, numWorkers*2)
+		chunkSize := max(16384, (totalElements+targetChunks-1)/targetChunks)
+		rowsPerChunk := max(1, chunkSize/rowSize)
 		var wg sync.WaitGroup
 		for r := 0; r < numRows; r += rowsPerChunk {
 			rStart := r
@@ -103,6 +108,9 @@ func addBias[T any](row, bias []T) {
 	switch r := any(row).(type) {
 	case []float32:
 		b := any(bias).([]float32)
+		if addBiasFloat32Arch(r, b) {
+			return
+		}
 		for i, val := range b {
 			r[i] += val
 		}

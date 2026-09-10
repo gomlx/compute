@@ -7,6 +7,7 @@ package fusedops
 import (
 	"math"
 	"simd"
+	"sync"
 	"unsafe"
 
 	"github.com/gomlx/compute"
@@ -68,14 +69,71 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	}
 
 	outerSize := input.RawShape.Size() / normSize
-	if archFn := gobackend.GetLayerNormTrailingArchDispatcher(); archFn != nil {
-		var gPtr, bPtr unsafe.Pointer
-		if gamma != nil {
-			gPtr = gamma.UnsafePointer()
+	archFn := gobackend.GetLayerNormTrailingArchDispatcher()
+	var gPtr, bPtr unsafe.Pointer
+	if gamma != nil {
+		gPtr = gamma.UnsafePointer()
+	}
+	if beta != nil {
+		bPtr = beta.UnsafePointer()
+	}
+
+	totalElements := input.RawShape.Size()
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := min(outerSize, max(1, numWorkers*2))
+		outerPerChunk := max(1, (outerSize+targetChunks-1)/targetChunks)
+		inPtr := input.UnsafePointer()
+		outPtr := output.UnsafePointer()
+		elemSize := dtype.Size()
+		var wg sync.WaitGroup
+
+		for start := 0; start < outerSize; start += outerPerChunk {
+			chunkOuter := min(start+outerPerChunk, outerSize) - start
+			rStart := start
+			wg.Add(1)
+			backend.Workers.WaitToStart(func() {
+				defer wg.Done()
+				rowOffset := rStart * normSize
+				if archFn != nil {
+					chunkIn := unsafe.Pointer(uintptr(inPtr) + uintptr(rowOffset*elemSize))
+					chunkOut := unsafe.Pointer(uintptr(outPtr) + uintptr(rowOffset*elemSize))
+					if archFn(chunkIn, chunkOut, gPtr, bPtr, chunkOuter, normSize, data.epsilon, dtype) {
+						return
+					}
+				}
+				// Fallback path
+				switch dtype {
+				case dtypes.Float32:
+					var gData, bData []float32
+					if gamma != nil {
+						gData = gamma.Flat.([]float32)
+					}
+					if beta != nil {
+						bData = beta.Flat.([]float32)
+					}
+					inSlice := input.Flat.([]float32)[rowOffset : rowOffset+chunkOuter*normSize]
+					outSlice := output.Flat.([]float32)[rowOffset : rowOffset+chunkOuter*normSize]
+					simdLayerNormTrailingAxesFloat32(inSlice, outSlice, gData, bData, normSize, data.epsilon)
+				case dtypes.Float64:
+					var gData, bData []float64
+					if gamma != nil {
+						gData = gamma.Flat.([]float64)
+					}
+					if beta != nil {
+						bData = beta.Flat.([]float64)
+					}
+					inSlice := input.Flat.([]float64)[rowOffset : rowOffset+chunkOuter*normSize]
+					outSlice := output.Flat.([]float64)[rowOffset : rowOffset+chunkOuter*normSize]
+					simdLayerNormTrailingAxesFloat64(inSlice, outSlice, gData, bData, normSize, data.epsilon)
+				}
+			})
 		}
-		if beta != nil {
-			bPtr = beta.UnsafePointer()
-		}
+		wg.Wait()
+		return output, nil
+	}
+
+	if archFn != nil {
 		if archFn(input.UnsafePointer(), output.UnsafePointer(), gPtr, bPtr, outerSize, normSize, data.epsilon, dtype) {
 			return output, nil
 		}

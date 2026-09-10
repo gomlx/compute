@@ -18,7 +18,7 @@ import (
 const PriorityAVX512 = gobackend.PriorityArch + 1
 
 func init() {
-	if gobackend.IsAVX512Allowed() {
+	if gobackend.IsAVX512Allowed {
 		registerAVX512()
 	}
 }
@@ -406,7 +406,7 @@ func LeakyReluAVX512(data []float32) {
 }
 
 const (
-	seluScaleAVX512     = 1.0507009873554804934193349852946
+	seluScaleAVX512      = 1.0507009873554804934193349852946
 	seluScaleAlphaAVX512 = 1.0507009873554804934193349852946 * 1.6732632423543772848170429916717
 )
 

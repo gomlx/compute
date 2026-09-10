@@ -15,7 +15,7 @@ import (
 )
 
 func TestAVX512LayerNormCorrectness(t *testing.T) {
-	if !gobackend.IsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed {
 		t.Skip("AVX-512 is not supported or allowed on this machine")
 	}
 	rand.Seed(42)

@@ -106,9 +106,9 @@ var avx512ReduceThresholds = ReduceThresholdsConfig{
 }
 
 func init() {
-	if gobackend.IsAVX512Allowed() {
+	if gobackend.IsAVX512Allowed {
 		reduceThresholds = avx512ReduceThresholds
-	} else if gobackend.IsAVX2Allowed() {
+	} else if gobackend.IsAVX2Allowed {
 		reduceThresholds = avx2ReduceThresholds
 	}
 }

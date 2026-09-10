@@ -17,7 +17,7 @@ import (
 )
 
 func TestAVX512(t *testing.T) {
-	if !gobackend.IsAVX512Allowed() {
+	if !gobackend.IsAVX512Allowed {
 		t.Skip("AVX512 is not supported on this architecture")
 	}
 

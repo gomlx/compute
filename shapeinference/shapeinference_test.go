@@ -1584,3 +1584,95 @@ func TestScatterOp_Dynamic(t *testing.T) {
 		}
 	})
 }
+
+func TestWhere(t *testing.T) {
+	// All scalars.
+	out, err := Where(S(Bool), S(F32), S(F32))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32)) {
+		t.Fatalf("Expected scalar F32, got %s", out)
+	}
+
+	// Two scalars, one tensor.
+	out, err = Where(S(Bool, 2, 3), S(F32), S(F32))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3)) {
+		t.Fatalf("Expected F32[2, 3], got %s", out)
+	}
+
+	// Scalar onFalse.
+	out, err = Where(S(Bool, 2, 3), S(F32, 2, 3), S(F32))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3)) {
+		t.Fatalf("Expected F32[2, 3], got %s", out)
+	}
+
+	// Scalar onTrue.
+	out, err = Where(S(Bool, 2, 3), S(F32), S(F32, 2, 3))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3)) {
+		t.Fatalf("Expected F32[2, 3], got %s", out)
+	}
+
+	// 2D multidirectional broadcasting: [2, 1], [1, 3], [2, 3].
+	out, err = Where(S(Bool, 2, 1), S(F32, 1, 3), S(F32, 2, 3))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3)) {
+		t.Fatalf("Expected F32[2, 3], got %s", out)
+	}
+
+	// 3D broadcasting with trailing dimensions.
+	out, err = Where(S(Bool, 2, 1, 4), S(F32, 1, 3, 4), S(F32, 2, 3, 1))
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3, 4)) {
+		t.Fatalf("Expected F32[2, 3, 4], got %s", out)
+	}
+
+	// Axis name unification.
+	sCond := S(Bool, 2, 1).WithAxisNames("batch", "")
+	sTrue := S(F32, 1, 3).WithAxisNames("", "seq")
+	sFalse := S(F32, 2, 3).WithAxisNames("batch", "seq")
+	out, err = Where(sCond, sTrue, sFalse)
+	if err != nil {
+		t.Fatalf("Where failed: %v", err)
+	}
+	if !out.Equal(S(F32, 2, 3).WithAxisNames("batch", "seq")) {
+		t.Fatalf("Expected F32[2, 3] with axis names [batch, seq], got %s", out)
+	}
+
+	// Error: condition not bool.
+	_, err = Where(S(I32, 2), S(F32, 2), S(F32, 2))
+	if err == nil {
+		t.Fatalf("Expected error for non-boolean condition, got nil")
+	}
+
+	// Error: onTrue vs onFalse dtype mismatch.
+	_, err = Where(S(Bool, 2), S(F32, 2), S(I32, 2))
+	if err == nil {
+		t.Fatalf("Expected error for dtype mismatch, got nil")
+	}
+
+	// Error: rank mismatch among non-scalars.
+	_, err = Where(S(Bool, 2), S(F32, 2, 3), S(F32, 2, 3))
+	if err == nil {
+		t.Fatalf("Expected error for rank mismatch, got nil")
+	}
+
+	// Error: dimension mismatch.
+	_, err = Where(S(Bool, 2, 4), S(F32, 2, 3), S(F32, 2, 3))
+	if err == nil {
+		t.Fatalf("Expected error for dimension mismatch, got nil")
+	}
+}

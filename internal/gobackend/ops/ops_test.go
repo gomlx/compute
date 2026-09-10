@@ -39,7 +39,7 @@ func teardown() {
 	backend.Finalize()
 }
 
-func makeBuffer(t *testing.T, shape shapes.Shape, flat any) *gobackend.Buffer {
+func makeBuffer(t testing.TB, shape shapes.Shape, flat any) *gobackend.Buffer {
 	t.Helper()
 	computeBuf, err := backend.BufferFromFlatData(0, flat, shape)
 	if err != nil {

@@ -234,7 +234,7 @@ func runApplyPackedOutputTests[T gotype.NumericNotComplex](t *testing.T, applyFn
 }
 
 func TestUnsafe(t *testing.T) {
-	for _, kernelRows := range []int{2, 4, 16, 32} {
+	for _, kernelRows := range []int{2, 4, 8, 16, 32} {
 		t.Run(fmt.Sprintf("PackLHS_kernelRows=%d", kernelRows), func(t *testing.T) {
 			runPackLHSTests(t, unsafePackLHS[float32], kernelRows)
 		})
@@ -317,6 +317,13 @@ func BenchmarkNoSIMD(b *testing.B) {
 	})
 	b.Run("PackLHS/kernelRows=4", func(b *testing.B) {
 		kernelRows := 4
+		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+		runBenchmarkPackLHS[bfloat16.BFloat16](b, "unsafe/bfloat16", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
+	})
+	b.Run("PackLHS/kernelRows=8", func(b *testing.B) {
+		kernelRows := 8
 		runBenchmarkPackLHS[float32](b, "standard/float32", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
 		runBenchmarkPackLHS[float32](b, "unsafe/float32", unsafePackLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)
 		runBenchmarkPackLHS[bfloat16.BFloat16](b, "standard/bfloat16", packLHS, totalRows, totalCols, panelRows, panelCols, kernelRows)

@@ -2,6 +2,8 @@ package fusedops
 
 import (
 	"math"
+	"sync"
+	"sync/atomic"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -51,13 +53,8 @@ func FusedScaledDotProductAttention(
 }
 
 func init() {
-	// DISABLED: the new matmul with SIMD support is much faster (+3x faster), so thi fused op ends up being slower,
-	// at least in a small sentence embedding model.
-	// TODO: add a SIMD version and re-evaluate.
-	if false {
-		gobackend.RegisterFusedScaledDotProductAttention.Register(FusedScaledDotProductAttention, gobackend.PriorityGeneric)
-		gobackend.SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, gobackend.PriorityTyped, execFusedScaledDotProductAttention)
-	}
+	gobackend.RegisterFusedScaledDotProductAttention.Register(FusedScaledDotProductAttention, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeFusedScaledDotProductAttention, gobackend.PriorityTyped, execFusedScaledDotProductAttention)
 }
 
 type nodeScaledDotProductAttention struct {
@@ -135,9 +132,11 @@ func buildSDPANode(
 		return nil, errors.Errorf("%s: key must have rank 4, got %d", opName, kNode.Shape.Rank())
 	}
 	switch qNode.Shape.DType {
-	case dtypes.F8E4M3FN, dtypes.F8E5M2:
+	case dtypes.Float32, dtypes.Float64:
+		// Supported in go backend.
+	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented,
-			"%s: float8 input dtype %s is not implemented in the go backend", opName, qNode.Shape.DType)
+			"%s: dtype %s is not implemented in the go backend", opName, qNode.Shape.DType)
 	}
 
 	numHeads := qNode.Shape.Dimensions[axesLayout.HeadsAxis()]
@@ -290,11 +289,11 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 
 	switch query.RawShape.DType {
 	case dtypes.Float32:
-		sdpaMultiHeadGeneric[float32](query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
+		sdpaMultiHeadGeneric[float32](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
 	case dtypes.Float64:
-		sdpaMultiHeadGeneric[float64](query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
+		sdpaMultiHeadGeneric[float64](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
 	default:
-		return nil, errors.Errorf("FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
 	}
 
 	return output, nil
@@ -518,7 +517,13 @@ func sdpaGeneric[T float32 | float64](
 	}
 }
 
-func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, bias, output *gobackend.Buffer, data *nodeScaledDotProductAttention, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride int, querySeqLen, keyValueSeqLen []int32) {
+func sdpaMultiHeadGeneric[T float32 | float64](
+	backend *gobackend.Backend,
+	query, key, value, mask, bias, output *gobackend.Buffer,
+	data *nodeScaledDotProductAttention,
+	maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride int,
+	querySeqLen, keyValueSeqLen []int32,
+) {
 	q := query.Flat.([]T)
 	k := key.Flat.([]T)
 	v := value.Flat.([]T)
@@ -577,9 +582,10 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, bias, ou
 		kvBatchStride = numKVHeads * kvLen * headDim
 	}
 
-	scores := make([]T, groupSize*seqLen*kvLen)
 	maskSliceLen := seqLen * kvLen
-	for batchIdx := range batchSize {
+	archFn := gobackend.GetSDPAArchDispatcher()
+
+	processHead := func(batchIdx, kvHeadIdx int, scores []T) {
 		qLimit := seqLen
 		kvLimit := kvLen
 		if len(querySeqLen) > 0 {
@@ -588,49 +594,111 @@ func sdpaMultiHeadGeneric[T float32 | float64](query, key, value, mask, bias, ou
 		if len(keyValueSeqLen) > 0 {
 			kvLimit = max(0, min(int(keyValueSeqLen[batchIdx]), kvLen))
 		}
-		for kvHeadIdx := range numKVHeads {
-			qOff := batchIdx*qBatchStride + kvHeadIdx*groupSize*qHeadStride
-			kvOff := batchIdx*kvBatchStride + kvHeadIdx*kvHeadStride
+		qOff := batchIdx*qBatchStride + kvHeadIdx*groupSize*qHeadStride
+		kvOff := batchIdx*kvBatchStride + kvHeadIdx*kvHeadStride
 
-			// Compute mask slice and group stride for this KV head group.
-			var additiveMaskSlice []T
-			var booleanMaskSlice []bool
-			maskGroupStride := 0
-			if len(additiveMask) > 0 || len(booleanMask) > 0 {
-				maskOffset := batchIdx*maskBatchStride + kvHeadIdx*groupSize*maskHeadStride
-				maskEnd := maskOffset + maskSliceLen
-				if maskHeadStride > 0 && groupSize > 1 {
-					maskEnd = maskOffset + (groupSize-1)*maskHeadStride + maskSliceLen
-					maskGroupStride = maskHeadStride
+		// Compute mask slice and group stride for this KV head group.
+		var additiveMaskSlice []T
+		var booleanMaskSlice []bool
+		maskGroupStride := 0
+		if len(additiveMask) > 0 || len(booleanMask) > 0 {
+			maskOffset := batchIdx*maskBatchStride + kvHeadIdx*groupSize*maskHeadStride
+			maskEnd := maskOffset + maskSliceLen
+			if maskHeadStride > 0 && groupSize > 1 {
+				maskEnd = maskOffset + (groupSize-1)*maskHeadStride + maskSliceLen
+				maskGroupStride = maskHeadStride
+			}
+			if len(additiveMask) > 0 {
+				additiveMaskSlice = additiveMask[maskOffset:maskEnd]
+			} else {
+				booleanMaskSlice = booleanMask[maskOffset:maskEnd]
+			}
+		}
+		// Compute bias slice and group stride for this KV head group.
+		var additiveBiasSlice []T
+		biasGroupStride := 0
+		if len(additiveBias) > 0 {
+			// *groupSize: bias is per-Q-head under GQA; first Q-head of this KV group starts at kvHeadIdx*groupSize.
+			biasOffset := batchIdx*biasBatchStride + kvHeadIdx*groupSize*biasHeadStride
+			biasEnd := biasOffset + maskSliceLen
+			if biasHeadStride > 0 && groupSize > 1 {
+				biasEnd = biasOffset + (groupSize-1)*biasHeadStride + maskSliceLen
+				biasGroupStride = biasHeadStride
+			}
+			additiveBiasSlice = additiveBias[biasOffset:biasEnd]
+		}
+
+		if archFn != nil {
+			if qF32, ok := any(q).([]float32); ok {
+				kF32 := any(k).([]float32)
+				vF32 := any(v).([]float32)
+				outF32 := any(out).([]float32)
+				var addMaskF32 []float32
+				if len(additiveMaskSlice) > 0 {
+					addMaskF32 = any(additiveMaskSlice).([]float32)
 				}
-				if len(additiveMask) > 0 {
-					additiveMaskSlice = additiveMask[maskOffset:maskEnd]
-				} else {
-					booleanMaskSlice = booleanMask[maskOffset:maskEnd]
+				var addBiasF32 []float32
+				if len(additiveBiasSlice) > 0 {
+					addBiasF32 = any(additiveBiasSlice).([]float32)
+				}
+				scratchF32 := any(scores).([]float32)
+				if archFn(
+					qF32, kF32, vF32, outF32,
+					qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
+					addMaskF32, booleanMaskSlice, maskGroupStride,
+					addBiasF32, biasGroupStride,
+					scratchF32,
+					groupSize, seqLen, kvLen, headDim,
+					float32(scale), causal,
+					qLimit, kvLimit,
+				) {
+					return
 				}
 			}
-			// Compute bias slice and group stride for this KV head group.
-			var additiveBiasSlice []T
-			biasGroupStride := 0
-			if len(additiveBias) > 0 {
-				// *groupSize: bias is per-Q-head under GQA; first Q-head of this KV group starts at kvHeadIdx*groupSize.
-				biasOffset := batchIdx*biasBatchStride + kvHeadIdx*groupSize*biasHeadStride
-				biasEnd := biasOffset + maskSliceLen
-				if biasHeadStride > 0 && groupSize > 1 {
-					biasEnd = biasOffset + (groupSize-1)*biasHeadStride + maskSliceLen
-					biasGroupStride = biasHeadStride
+		}
+
+		sdpaGeneric(
+			q, k, v, qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
+			additiveMaskSlice, booleanMaskSlice, maskGroupStride,
+			additiveBiasSlice, biasGroupStride,
+			scores,
+			out,
+			groupSize, seqLen, kvLen, headDim, scale, causal,
+			qLimit, kvLimit,
+		)
+	}
+
+	totalTasks := batchSize * numKVHeads
+	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalTasks > 1 {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		workersToStart := min(totalTasks, numWorkers)
+		var taskCounter atomic.Int64
+		var wg sync.WaitGroup
+		scratchSize := max(groupSize*seqLen*kvLen, kvLen)
+
+		for range workersToStart {
+			wg.Add(1)
+			backend.Workers.WaitToStart(func() {
+				defer wg.Done()
+				workerScores := make([]T, scratchSize)
+				for {
+					taskIdx := int(taskCounter.Add(1) - 1)
+					if taskIdx >= totalTasks {
+						break
+					}
+					batchIdx := taskIdx / numKVHeads
+					kvHeadIdx := taskIdx % numKVHeads
+					processHead(batchIdx, kvHeadIdx, workerScores)
 				}
-				additiveBiasSlice = additiveBias[biasOffset:biasEnd]
+			})
+		}
+		wg.Wait()
+	} else {
+		scores := make([]T, max(groupSize*seqLen*kvLen, kvLen))
+		for batchIdx := range batchSize {
+			for kvHeadIdx := range numKVHeads {
+				processHead(batchIdx, kvHeadIdx, scores)
 			}
-			sdpaGeneric(
-				q, k, v, qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
-				additiveMaskSlice, booleanMaskSlice, maskGroupStride,
-				additiveBiasSlice, biasGroupStride,
-				scores,
-				out,
-				groupSize, seqLen, kvLen, headDim, scale, causal,
-				qLimit, kvLimit,
-			)
 		}
 	}
 }

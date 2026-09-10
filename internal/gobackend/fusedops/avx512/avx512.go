@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	if gobackend.IsAVX512Allowed() {
+	if gobackend.IsAVX512Allowed {
 		registerAVX512()
 	}
 }
