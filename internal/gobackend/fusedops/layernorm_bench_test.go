@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx2"
+	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx512"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
