@@ -227,6 +227,12 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// Set up parameters from inputs using idx directly
 	for i, inputNode := range funcParams {
 		inputIdx := inputNode.Index
+		if inputIdx >= fe.NumNodesToProcess || fe.NumUses[inputIdx] == 0 {
+			if donate[i] {
+				backend.PutBuffer(inputs[i])
+			}
+			continue
+		}
 		execBuf.results[inputIdx] = inputs[i]
 		execBuf.owned[inputIdx] = donate[i]
 	}
@@ -235,6 +241,12 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// If donateCaptures[i] is true, the closure takes ownership of the buffer.
 	for i, captureNode := range fe.Function.CapturedLocalNodes {
 		captureIdx := captureNode.Index
+		if captureIdx >= fe.NumNodesToProcess || fe.NumUses[captureIdx] == 0 {
+			if donateCaptures[i] {
+				backend.PutBuffer(capturedInputs[i])
+			}
+			continue
+		}
 		execBuf.results[captureIdx] = capturedInputs[i]
 		execBuf.owned[captureIdx] = donateCaptures[i]
 	}
