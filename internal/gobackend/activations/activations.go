@@ -168,7 +168,7 @@ func GetSwiGLU[T gotype.Supported]() SwiGLUFn[T] {
 	return fn.(SwiGLUFn[T])
 }
 
-const minParallelizeChunk = 4096
+const minParallelizeChunk = 32768
 
 // Apply applies the given activation function in-place across the slice.
 // If the slice is large and workers are available, work is parallelized in chunks.
@@ -196,9 +196,12 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 
 	n := len(in)
 	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := max(1, numWorkers*2)
+		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
-		for i := 0; i < n; i += minParallelizeChunk {
-			end := min(i+minParallelizeChunk, n)
+		for i := 0; i < n; i += chunkSize {
+			end := min(i+chunkSize, n)
 			inChunk := in[i:end]
 			outChunk := out[i:end]
 			wg.Add(1)
@@ -223,7 +226,10 @@ func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, 
 
 	totalWork := numRows * hiddenDim
 	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		rowsPerChunk := max(minParallelizeChunk/hiddenDim, 1)
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := max(1, numWorkers*2)
+		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
+		rowsPerChunk := max(chunkSize/hiddenDim, 1)
 		var wg sync.WaitGroup
 		for r := 0; r < numRows; r += rowsPerChunk {
 			rEnd := min(r+rowsPerChunk, numRows)
@@ -337,9 +343,12 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 
 	n := len(dOutput)
 	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := max(1, numWorkers*2)
+		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
-		for i := 0; i < n; i += minParallelizeChunk {
-			end := min(i+minParallelizeChunk, n)
+		for i := 0; i < n; i += chunkSize {
+			end := min(i+chunkSize, n)
 			var yChunk, xChunk []T
 			if len(y) > 0 {
 				yChunk = y[i:end]
@@ -394,7 +403,10 @@ func ExecuteSwiGLUVJP[T gotype.Supported](backend *gobackend.Backend, x, dOutput
 
 	totalWork := numRows * hiddenDim
 	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		rowsPerChunk := max(minParallelizeChunk/hiddenDim, 1)
+		numWorkers := backend.Workers.AdjustedMaxParallelism()
+		targetChunks := max(1, numWorkers*2)
+		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
+		rowsPerChunk := max(chunkSize/hiddenDim, 1)
 		var wg sync.WaitGroup
 		for r := 0; r < numRows; r += rowsPerChunk {
 			rEnd := min(r+rowsPerChunk, numRows)
