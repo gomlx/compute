@@ -32,18 +32,28 @@ const (
 
 // LayoutForDotGeneral returns the layout for DotGeneral given the shapes of the
 // inputs and the axes to contract and batch over.
+//
+// Memory Layout Expectations:
+// The underlying GEMM implementations (CallRegisteredImplementation) operate on flat 1D
+// memory buffers. In row-major memory order, adjacent dimensions of the same semantic
+// type (batch, cross, or contracting) have linear strides identical to their scalar product.
+// Therefore, tensors with any rank can be executed directly by the GEMM kernels as long as:
+//   - All batch axes are leading and sequential: [0, 1, ..., numBatchAxes-1] on both LHS and RHS.
+//   - Contracting axes match in count and are contiguous in memory.
+//   - For LHS: contracting axes are trailing: [B..., N..., K...].
+//   - For RHS LayoutTransposed: contracting axes are trailing: [B..., M..., K...].
+//   - For RHS LayoutNonTransposed: contracting axes immediately follow batch axes: [B..., K..., M...].
+//
+// No reshape or axis merging is required when these conditions are met.
 func LayoutForDotGeneral(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes []int,
 	rhsShape shapes.Shape, rhsContractingAxes, rhsBatchAxes []int) Layout {
-	// Require exactly one contracting axis.
-	if len(lhsContractingAxes) != 1 || len(rhsContractingAxes) != 1 {
+	numContractingAxes := len(lhsContractingAxes)
+	if numContractingAxes == 0 || len(rhsContractingAxes) != numContractingAxes {
 		return LayoutIncompatible
 	}
 
-	// Batch axes must match in count, must be 0 or 1, and must be leading and sequential (0, 1, 2, ...).
+	// Batch axes must match in count, and must be leading and sequential (0, 1, 2, ...).
 	numBatchAxes := len(lhsBatchAxes)
-	if numBatchAxes > 1 {
-		return LayoutIncompatible
-	}
 	if len(rhsBatchAxes) != numBatchAxes {
 		return LayoutIncompatible
 	}
@@ -56,18 +66,34 @@ func LayoutForDotGeneral(lhsShape shapes.Shape, lhsContractingAxes, lhsBatchAxes
 	lhsRank := lhsShape.Rank()
 	rhsRank := rhsShape.Rank()
 
-	// LHS contracting axis must be the last axis: [B..., N, K]
-	if lhsContractingAxes[0] != lhsRank-1 {
-		return LayoutIncompatible
+	// LHS contracting axes must be trailing and sequential: [B..., N..., K...]
+	for i := range numContractingAxes {
+		if lhsContractingAxes[i] != lhsRank-numContractingAxes+i {
+			return LayoutIncompatible
+		}
 	}
 
-	// For LayoutNonTransposed (MatMul): RHS contracting axis is first after batch axes [B..., K, M]
-	if rhsContractingAxes[0] == numBatchAxes {
+	// Check if RHS contracting axes are leading after batch axes [B..., K..., M...] -> LayoutNonTransposed
+	isNonTransposed := true
+	for i := range numContractingAxes {
+		if rhsContractingAxes[i] != numBatchAxes+i {
+			isNonTransposed = false
+			break
+		}
+	}
+	if isNonTransposed {
 		return LayoutNonTransposed
 	}
 
-	// For LayoutTransposed (Normal-Transposed): RHS contracting axis is last [B..., M, K]
-	if rhsContractingAxes[0] == rhsRank-1 {
+	// Check if RHS contracting axes are trailing [B..., M..., K...] -> LayoutTransposed
+	isTransposed := true
+	for i := range numContractingAxes {
+		if rhsContractingAxes[i] != rhsRank-numContractingAxes+i {
+			isTransposed = false
+			break
+		}
+	}
+	if isTransposed {
 		return LayoutTransposed
 	}
 
@@ -100,189 +126,6 @@ func getAxisInfo(axis int, batchAxes, contractingAxes []int) axisInfo {
 		}
 	}
 	return axisInfo{AxisTypeCross, -1}
-}
-
-// MergeAxes checks if adjacent axes in lhs and rhs are used for the same purpose
-// (batch, contracting or cross), and if so, merges them by reshaping.
-// This simplifies the shape of the tensors, making it more likely that the
-// operation can be matched to a fast execution path (like SmallMatMul or Packgemm).
-//
-// It returns the reshaped lhs and rhs, the new contracting and batch axes.
-func MergeAxes(f *gobackend.Function,
-	lhs *gobackend.Node, lhsContractingAxes, lhsBatchAxes []int,
-	rhs *gobackend.Node, rhsContractingAxes, rhsBatchAxes []int) (
-	newLhs *gobackend.Node, newLhsContractingAxes, newLhsBatchAxes []int,
-	newRhs *gobackend.Node, newRhsContractingAxes, newRhsBatchAxes []int,
-	err error) {
-
-	lhsRank := lhs.Shape.Rank()
-	rhsRank := rhs.Shape.Rank()
-
-	// 1. Group adjacent mergable axes in LHS
-	var lhsGroups [][]int
-	if lhsRank > 0 {
-		currentGroup := []int{0}
-		for i := 1; i < lhsRank; i++ {
-			prev := currentGroup[len(currentGroup)-1]
-			infoPrev := getAxisInfo(prev, lhsBatchAxes, lhsContractingAxes)
-			infoCurr := getAxisInfo(i, lhsBatchAxes, lhsContractingAxes)
-
-			canMerge := false
-			if infoPrev.typ == infoCurr.typ {
-				switch infoPrev.typ {
-				case AxisTypeCross:
-					canMerge = true
-				case AxisTypeBatch:
-					// Batch axes must be adjacent in the axes list and in correct order.
-					if infoCurr.idx == infoPrev.idx+1 {
-						rhsPrev := rhsBatchAxes[infoPrev.idx]
-						rhsCurr := rhsBatchAxes[infoCurr.idx]
-						// The corresponding RHS axes must be physically adjacent and in order.
-						if rhsCurr == rhsPrev+1 {
-							canMerge = true
-						}
-					}
-				case AxisTypeContracting:
-					// Contracting axes must map to adjacent physical axes in RHS.
-					rhsPrev := rhsContractingAxes[infoPrev.idx]
-					rhsCurr := rhsContractingAxes[infoCurr.idx]
-					if rhsCurr == rhsPrev+1 {
-						canMerge = true
-					}
-				}
-			}
-
-			if canMerge {
-				currentGroup = append(currentGroup, i)
-			} else {
-				lhsGroups = append(lhsGroups, currentGroup)
-				currentGroup = []int{i}
-			}
-		}
-		if len(currentGroup) > 0 {
-			lhsGroups = append(lhsGroups, currentGroup)
-		}
-	}
-
-	// 2. Group adjacent mergable axes in RHS
-	var rhsGroups [][]int
-	if rhsRank > 0 {
-		currentGroup := []int{0}
-		for j := 1; j < rhsRank; j++ {
-			prev := currentGroup[len(currentGroup)-1]
-			infoPrev := getAxisInfo(prev, rhsBatchAxes, rhsContractingAxes)
-			infoCurr := getAxisInfo(j, rhsBatchAxes, rhsContractingAxes)
-
-			canMerge := false
-			if infoPrev.typ == infoCurr.typ {
-				switch infoPrev.typ {
-				case AxisTypeCross:
-					canMerge = true
-				case AxisTypeBatch:
-					// Check if LHS merged them
-					if infoCurr.idx == infoPrev.idx+1 {
-						lhsPrev := lhsBatchAxes[infoPrev.idx]
-						lhsCurr := lhsBatchAxes[infoCurr.idx]
-						if lhsCurr == lhsPrev+1 {
-							canMerge = true
-						}
-					}
-				case AxisTypeContracting:
-					// Check if LHS merged them
-					lhsPrev := lhsContractingAxes[infoPrev.idx]
-					lhsCurr := lhsContractingAxes[infoCurr.idx]
-					if lhsCurr == lhsPrev+1 {
-						canMerge = true
-					}
-				}
-			}
-
-			if canMerge {
-				currentGroup = append(currentGroup, j)
-			} else {
-				rhsGroups = append(rhsGroups, currentGroup)
-				currentGroup = []int{j}
-			}
-		}
-		if len(currentGroup) > 0 {
-			rhsGroups = append(rhsGroups, currentGroup)
-		}
-	}
-
-	// Calculate new shapes
-	newLhsDims := make([]int, len(lhsGroups))
-	lhsOldToNew := make([]int, lhsRank)
-	for newAxis, group := range lhsGroups {
-		size := 1
-		for _, oldAxis := range group {
-			size *= lhs.Shape.Dimensions[oldAxis]
-			lhsOldToNew[oldAxis] = newAxis
-		}
-		newLhsDims[newAxis] = size
-	}
-
-	newRhsDims := make([]int, len(rhsGroups))
-	rhsOldToNew := make([]int, rhsRank)
-	for newAxis, group := range rhsGroups {
-		size := 1
-		for _, oldAxis := range group {
-			size *= rhs.Shape.Dimensions[oldAxis]
-			rhsOldToNew[oldAxis] = newAxis
-		}
-		newRhsDims[newAxis] = size
-	}
-
-	// Reshape nodes if needed
-	newLhs = lhs
-	if len(newLhsDims) != lhsRank {
-		reshaped, err := f.Reshape(lhs, newLhsDims...)
-		if err != nil {
-			return nil, nil, nil, nil, nil, nil, err
-		}
-		newLhs = reshaped.(*gobackend.Node)
-	}
-
-	newRhs = rhs
-	if len(newRhsDims) != rhsRank {
-		reshaped, err := f.Reshape(rhs, newRhsDims...)
-		if err != nil {
-			return nil, nil, nil, nil, nil, nil, err
-		}
-		newRhs = reshaped.(*gobackend.Node)
-	}
-
-	// Generate new batch and contracting axes mapping
-	newLhsBatchAxes = make([]int, 0)
-	for _, oldAxis := range lhsBatchAxes {
-		newAxis := lhsOldToNew[oldAxis]
-		if len(newLhsBatchAxes) == 0 || newLhsBatchAxes[len(newLhsBatchAxes)-1] != newAxis {
-			newLhsBatchAxes = append(newLhsBatchAxes, newAxis)
-		}
-	}
-
-	newRhsBatchAxes = make([]int, 0)
-	for _, oldAxis := range rhsBatchAxes {
-		newAxis := rhsOldToNew[oldAxis]
-		if len(newRhsBatchAxes) == 0 || newRhsBatchAxes[len(newRhsBatchAxes)-1] != newAxis {
-			newRhsBatchAxes = append(newRhsBatchAxes, newAxis)
-		}
-	}
-
-	newLhsContractingAxes = make([]int, 0)
-	newRhsContractingAxes = make([]int, 0)
-	seenLhsContracting := make(map[int]bool)
-	for i := range lhsContractingAxes {
-		newLhsAxis := lhsOldToNew[lhsContractingAxes[i]]
-		newRhsAxis := rhsOldToNew[rhsContractingAxes[i]]
-		if !seenLhsContracting[newLhsAxis] {
-			seenLhsContracting[newLhsAxis] = true
-			newLhsContractingAxes = append(newLhsContractingAxes, newLhsAxis)
-			newRhsContractingAxes = append(newRhsContractingAxes, newRhsAxis)
-		}
-	}
-
-	return newLhs, newLhsContractingAxes, newLhsBatchAxes,
-		newRhs, newRhsContractingAxes, newRhsBatchAxes, nil
 }
 
 // transposeSide is a helper to transpose one side to a specific ordering of (batch, cross, contracting).
@@ -360,9 +203,18 @@ func transposeSide(f *gobackend.Function, node *gobackend.Node, contractingAxes,
 	return newNode, newContractingAxes, newBatchAxes, nil
 }
 
-// TransposeToLayout attempts to transpose the axes of lhs and rhs to match a the given layout: LayoutTransposed or LayoutNonTranposed.
+// TransposeToLayout transposes the axes of lhs and rhs so that their semantic groups
+// (batch, cross, and contracting axes) form contiguous blocks matching the target layout:
+//   - LHS: [Batch..., Cross..., Contracting...] (LayoutTransposed)
+//   - RHS: [Batch..., Cross..., Contracting...] (LayoutTransposed) or [Batch..., Contracting..., Cross...] (LayoutNonTransposed)
 //
-// Consider running MergeAxes first, it will make the transposing faster.
+// Memory Layout Invariant:
+// In row-major format, any sequence of contiguous dimensions of the same semantic category
+// (e.g. B0, B1 or N0, N1, N2 or K0, K1) has flat memory offsets that are identical to a single
+// collapsed dimension with size equal to their product. The GEMM implementation operates directly
+// on the flat data slices using the total combined sizes (batchSize, crossSize, contractingSize).
+// Therefore, no physical or logical MergeAxes reshape is needed; keeping the original (unmerged)
+// dimensions avoids reshape overhead and seamlessly supports dynamic dimensions.
 func TransposeToLayout(f *gobackend.Function,
 	lhs *gobackend.Node, lhsContractingAxes, lhsBatchAxes []int,
 	rhs *gobackend.Node, rhsContractingAxes, rhsBatchAxes []int,
@@ -377,15 +229,6 @@ func TransposeToLayout(f *gobackend.Function,
 	}
 
 	newRhs, newRhsContractingAxes, newRhsBatchAxes, err = transposeSide(f, rhs, rhsContractingAxes, rhsBatchAxes, layout)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-
-	// Merge axes
-	newLhs, newLhsContractingAxes, newLhsBatchAxes,
-		newRhs, newRhsContractingAxes, newRhsBatchAxes, err = MergeAxes(
-		f, newLhs, newLhsContractingAxes, newLhsBatchAxes,
-		newRhs, newRhsContractingAxes, newRhsBatchAxes)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}

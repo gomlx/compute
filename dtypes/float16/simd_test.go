@@ -18,7 +18,9 @@ func TestFloat16SIMD(t *testing.T) {
 	for x := -10.0; x <= 10.0; x += 0.25 {
 		testFloats = append(testFloats, float32(x))
 	}
-	testFloats = append(testFloats, 0, -0.0, float32(math.Inf(1)), float32(math.Inf(-1)), 1.2345, -7.891)
+	testFloats = append(testFloats, 0, -0.0, float32(math.Inf(1)), float32(math.Inf(-1)), 1.2345, -7.891,
+		SmallestNonzero.Float32(), -SmallestNonzero.Float32(),
+		FromBits(0x0002).Float32(), FromBits(0x03FF).Float32(), FromBits(0x83FF).Float32())
 	for len(testFloats)%vecLen != 0 {
 		testFloats = append(testFloats, 0)
 	}

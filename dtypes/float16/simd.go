@@ -82,9 +82,11 @@ func float32sToF16Bits(f simd.Float32s) simd.Uint32s {
 	sign := u.ShiftAllRight(16).And(simd.BroadcastUint32s(0x8000))
 	uAbs := u.And(simd.BroadcastUint32s(0x7FFFFFFF))
 
-	isOverflow := uAbs.GreaterEqual(simd.BroadcastUint32s(0x477F8000))
+	f16MantissaMask := simd.BroadcastUint32s(0x03FF)
+
+	isOverflow := uAbs.GreaterEqual(simd.BroadcastUint32s(0x47800000))
 	isNan := uAbs.Greater(simd.BroadcastUint32s(0x7F800000))
-	nanRes := sign.Or(simd.BroadcastUint32s(0x7C00)).Or(uAbs.ShiftAllRight(13).And(simd.BroadcastUint32s(0x03FF))).Or(simd.BroadcastUint32s(1))
+	nanRes := sign.Or(simd.BroadcastUint32s(0x7C00)).Or(uAbs.ShiftAllRight(13).And(f16MantissaMask)).Or(simd.BroadcastUint32s(1))
 	infRes := sign.Or(simd.BroadcastUint32s(0x7C00))
 	overRes := selectBits(isNan, nanRes, infRes)
 
@@ -92,9 +94,18 @@ func float32sToF16Bits(f simd.Float32s) simd.Uint32s {
 	isZero := uAbs.Less(simd.BroadcastUint32s(0x33000000))
 
 	fAbs := uAbs.BitsToFloat32()
-	magicF32 := simd.BroadcastUint32s(113 << 23).BitsToFloat32()
-	fDenorm := fAbs.Add(magicF32)
-	denormMant := fDenorm.ToBits().Sub(simd.BroadcastUint32s(113 << 23)).And(simd.BroadcastUint32s(0x03FF))
+	// denormMagicBits uses biased exponent 126 (0x3F000000, value 0.5f: sign=0, exp=126, mantissa=0).
+	// Float16 denormals range from 2^-24 (SmallestNonzero) to 2^-14 with 10 mantissa bits. Float32 has 23 mantissa bits.
+	// We want the smallest float16 denormal (2^-24) to align with bit 0 (2^-23 * 2^-1 = 2^-24) of the float32 mantissa:
+	//   biased_exp = (127 - 15) [float16 normal bias] + (23 - 10) [mantissa width diff] + 1 = 126 (2^-1 = 0.5f).
+	// When fAbs is added to denormMagic:
+	//   - Hardware floating-point addition aligns fAbs to exponent -1, providing round-to-nearest-even.
+	//   - The resulting float32 has sign=0, exp=126, mantissa bits [22:10]=0, and bits [9:0] containing the 10-bit denormal mantissa.
+	// Subtracting denormMagicBits in integer arithmetic removes the float32 exponent, leaving the 10-bit denormal mantissa in bits [9:0].
+	denormMagicBits := simd.BroadcastUint32s(126 << 23)
+	denormMagic := denormMagicBits.BitsToFloat32()
+	fDenorm := fAbs.Add(denormMagic)
+	denormMant := fDenorm.ToBits().Sub(denormMagicBits).And(f16MantissaMask)
 	denormRes := selectBits(isZero, sign, sign.Or(denormMant))
 
 	bias := simd.BroadcastUint32s(0x0FFF).Add(uAbs.ShiftAllRight(13).And(simd.BroadcastUint32s(1)))

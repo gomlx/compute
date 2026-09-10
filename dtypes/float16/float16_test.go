@@ -47,4 +47,20 @@ func TestFloat16(t *testing.T) {
 	if SmallestNonzero.Bits() != 0x0001 {
 		t.Errorf("SmallestNonzero bits got 0x%X, want 0x0001", SmallestNonzero.Bits())
 	}
+
+	// Test Subnormals roundtrip
+	subnormals := []Float16{
+		SmallestNonzero,
+		FromBits(0x8001), // -SmallestNonzero
+		FromBits(0x0002),
+		FromBits(0x03FF),
+		FromBits(0x83FF),
+	}
+	for _, expected := range subnormals {
+		f32 := expected.Float32()
+		got := FromFloat32(f32)
+		if got != expected {
+			t.Errorf("Subnormal roundtrip failed for 0x%04X: got 0x%04X (float32 %g)", expected.Bits(), got.Bits(), f32)
+		}
+	}
 }
