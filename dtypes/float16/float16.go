@@ -103,65 +103,39 @@ func FromNumbers[T numberTypes](values ...T) []Float16 {
 func FromFloat32(x float32) Float16 {
 	bits := math.Float32bits(x)
 	sign := uint16((bits >> 16) & 0x8000)
-	exp := int((bits >> 23) & 0xFF)
-	mantissa := bits & 0x007FFFFF
+	uAbs := bits & 0x7FFFFFFF
 
-	if exp == 0xFF {
-		// NaN or Infinity
-		if mantissa == 0 {
-			return Float16(sign | 0x7C00)
+	const f16MantissaMask = 0x03FF
+
+	if uAbs >= 0x47800000 { // >= 65536.0f overflows to Inf or is NaN
+		if uAbs > 0x7F800000 {
+			// NaN: preserve payload bits and ensure non-zero mantissa
+			return Float16(sign | 0x7C00 | uint16((uAbs>>13)&f16MantissaMask) | 1)
 		}
-		// NaN: keep some bits of mantissa
-		return Float16(sign | 0x7C00 | uint16(mantissa>>13) | 1)
-	}
-
-	exp -= 127 // Unbias
-
-	if exp > 15 {
-		// Overflow -> Infinity
+		// Infinity
 		return Float16(sign | 0x7C00)
 	}
 
-	if exp < -24 {
-		// Underflow -> Zero
-		return Float16(sign)
-	}
-
-	if exp < -14 {
-		// Denormalized
-		mantissa |= 0x00800000 // Add implicit leading bit
-		shift := uint(14 - exp)
-		// Rounding to nearest even
-		mantissa = (mantissa >> (shift - 1))
-		if (mantissa & 1) != 0 {
-			// Round up
-			mantissa = (mantissa >> 1) + 1
-		} else {
-			mantissa >>= 1
+	if uAbs < 0x38800000 { // < 2^-14: subnormal or zero
+		if uAbs < 0x33000000 { // < 2^-25: rounds to zero
+			return Float16(sign)
 		}
-		return Float16(sign | uint16(mantissa))
+		fAbs := math.Float32frombits(uAbs)
+		const denormMagicBits = 126 << 23
+		fDenorm := fAbs + math.Float32frombits(denormMagicBits)
+		denormMant := uint16((math.Float32bits(fDenorm) - denormMagicBits) & f16MantissaMask)
+		return Float16(sign | denormMant)
 	}
 
-	// Normalized
-	resExp := uint16(exp+15) << 10
-	resMantissa := uint16(mantissa >> 13)
-
-	// Rounding to nearest even
-	if (mantissa & 0x1000) != 0 {
-		if (mantissa&0x0FFF) != 0 || (resMantissa&1) != 0 {
-			resMantissa++
-			if resMantissa&0x0400 != 0 {
-				resMantissa = 0
-				resExp += 0x0400
-				if resExp >= 0x7C00 {
-					// Overflow to infinity
-					return Float16(sign | 0x7C00)
-				}
-			}
-		}
+	// Normalized: round to nearest even
+	bias := uint32(0x0FFF) + ((uAbs >> 13) & 1)
+	rounded := uAbs + bias
+	normExpAdjusted := rounded - (112 << 23)
+	if normExpAdjusted >= (0x1F << 23) {
+		// Overflow to infinity
+		return Float16(sign | 0x7C00)
 	}
-
-	return Float16(sign | resExp | resMantissa)
+	return Float16(sign | uint16(normExpAdjusted>>13))
 }
 
 // FromFloat64 converts a float64 to a Float16.
