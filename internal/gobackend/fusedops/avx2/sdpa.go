@@ -206,10 +206,10 @@ func softmaxAndValueAccumDim32(
 		v1 := archsimd.LoadFloat32x8(v[vBase+8 : vBase+16])
 		v2 := archsimd.LoadFloat32x8(v[vBase+16 : vBase+24])
 		v3 := archsimd.LoadFloat32x8(v[vBase+24 : vBase+32])
-		out0 = out0.MulAdd(vW, v0)
-		out1 = out1.MulAdd(vW, v1)
-		out2 = out2.MulAdd(vW, v2)
-		out3 = out3.MulAdd(vW, v3)
+		out0 = vW.MulAdd(v0, out0)
+		out1 = vW.MulAdd(v1, out1)
+		out2 = vW.MulAdd(v2, out2)
+		out3 = vW.MulAdd(v3, out3)
 	}
 
 	out0.Store(output[outBase : outBase+8])
@@ -374,14 +374,14 @@ func softmaxAndValueAccumDim64(
 		v5 := archsimd.LoadFloat32x8(v[vBase+40 : vBase+48])
 		v6 := archsimd.LoadFloat32x8(v[vBase+48 : vBase+56])
 		v7 := archsimd.LoadFloat32x8(v[vBase+56 : vBase+64])
-		out0 = out0.MulAdd(vW, v0)
-		out1 = out1.MulAdd(vW, v1)
-		out2 = out2.MulAdd(vW, v2)
-		out3 = out3.MulAdd(vW, v3)
-		out4 = out4.MulAdd(vW, v4)
-		out5 = out5.MulAdd(vW, v5)
-		out6 = out6.MulAdd(vW, v6)
-		out7 = out7.MulAdd(vW, v7)
+		out0 = vW.MulAdd(v0, out0)
+		out1 = vW.MulAdd(v1, out1)
+		out2 = vW.MulAdd(v2, out2)
+		out3 = vW.MulAdd(v3, out3)
+		out4 = vW.MulAdd(v4, out4)
+		out5 = vW.MulAdd(v5, out5)
+		out6 = vW.MulAdd(v6, out6)
+		out7 = vW.MulAdd(v7, out7)
 	}
 
 	out0.Store(output[outBase : outBase+8])
@@ -650,7 +650,7 @@ func sdpaFloat32AVX2General(
 					vW := archsimd.BroadcastFloat32x8(w)
 					vBase := kvOff + kIdx*kvSeqStride + d
 					vVal := archsimd.LoadFloat32x8(v[vBase : vBase+8])
-					outV = outV.MulAdd(vW, vVal)
+					outV = vW.MulAdd(vVal, outV)
 				}
 				outV.Store(output[outBase+d : outBase+d+8])
 			}

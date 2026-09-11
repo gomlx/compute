@@ -340,6 +340,102 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
+		t.Run("BHSD_Causal_Dim32", func(t *testing.T) {
+			onesX32 := xslices.SliceWithValue(32, float32(1))
+			tensX32 := xslices.SliceWithValue(32, float32(10))
+			twentyX32 := xslices.SliceWithValue(32, float32(20))
+			q := [][][][]float32{{{onesX32, onesX32}}} // [1,1,2,32]
+			k := [][][][]float32{{{onesX32, onesX32}}}
+			v := [][][][]float32{{{tensX32, twentyX32}}} // [1,1,2,32]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX32 := xslices.SliceWithValue(32, float32(15))
+			want := [][][][]float32{{{tensX32, fifteenX32}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA causal Dim32 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BHSD_NonCausal_Dim32", func(t *testing.T) {
+			onesX32 := xslices.SliceWithValue(32, float32(1))
+			tensX32 := xslices.SliceWithValue(32, float32(10))
+			twentyX32 := xslices.SliceWithValue(32, float32(20))
+			q := [][][][]float32{{{onesX32, onesX32}}} // [1,1,2,32]
+			k := [][][][]float32{{{onesX32, onesX32}}}
+			v := [][][][]float32{{{tensX32, twentyX32}}} // [1,1,2,32]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: false})
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX32 := xslices.SliceWithValue(32, float32(15))
+			want := [][][][]float32{{{fifteenX32, fifteenX32}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA non-causal Dim32 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BHSD_Causal_Dim64", func(t *testing.T) {
+			onesX64 := xslices.SliceWithValue(64, float32(1))
+			tensX64 := xslices.SliceWithValue(64, float32(10))
+			twentyX64 := xslices.SliceWithValue(64, float32(20))
+			q := [][][][]float32{{{onesX64, onesX64}}} // [1,1,2,64]
+			k := [][][][]float32{{{onesX64, onesX64}}}
+			v := [][][][]float32{{{tensX64, twentyX64}}} // [1,1,2,64]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX64 := xslices.SliceWithValue(64, float32(15))
+			want := [][][][]float32{{{tensX64, fifteenX64}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA causal Dim64 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("BSHD_Causal_Dim32", func(t *testing.T) {
+			onesX32 := xslices.SliceWithValue(32, float32(1))
+			tensX32 := xslices.SliceWithValue(32, float32(10))
+			twentyX32 := xslices.SliceWithValue(32, float32(20))
+			q := [][][][]float32{{{onesX32}, {onesX32}}} // [1,2,1,32]
+			k := [][][][]float32{{{onesX32}, {onesX32}}}
+			v := [][][][]float32{{{tensX32}, {twentyX32}}} // [1,2,1,32]
+			got, err := testutil.Exec1(b, []any{q, k, v}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBSHD, &compute.ScaledDotProductAttentionConfig{Scale: 1.0, Causal: true})
+				return out, err
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			fifteenX32 := xslices.SliceWithValue(32, float32(15))
+			want := [][][][]float32{{{tensX32}, {fifteenX32}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA BSHD Dim32 mismatch:\n%s", diff)
+			}
+		})
+
 		t.Run("BHSD_Causal_BF16", func(t *testing.T) {
 			bf16 := bfloat16.FromFloat32
 			// For cuDNN hidden dim must be multiple of 8.

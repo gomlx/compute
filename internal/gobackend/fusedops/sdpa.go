@@ -157,44 +157,165 @@ func buildSDPANode(
 		scale = 1.0 / math.Sqrt(float64(headDim))
 	}
 
+	var batchDim, numHeadsDim, seqDim, kvDim int
+	var batchName, numHeadsName, seqName, kvName string
+	if axesLayout == compute.AttentionAxesLayoutBSHD {
+		batchDim = qNode.Shape.Dimensions[0]
+		batchName = qNode.Shape.AxisName(0)
+		numHeadsDim = numHeads
+		numHeadsName = qNode.Shape.AxisName(2)
+		seqDim = qNode.Shape.Dimensions[1]
+		seqName = qNode.Shape.AxisName(1)
+		kvDim = kNode.Shape.Dimensions[1]
+		kvName = kNode.Shape.AxisName(1)
+	} else {
+		// BHSD: [batch, heads, seq, headDim]
+		batchDim = qNode.Shape.Dimensions[0]
+		batchName = qNode.Shape.AxisName(0)
+		numHeadsDim = numHeads
+		numHeadsName = qNode.Shape.AxisName(1)
+		seqDim = qNode.Shape.Dimensions[2]
+		seqName = qNode.Shape.AxisName(2)
+		kvDim = kNode.Shape.Dimensions[2]
+		kvName = kNode.Shape.AxisName(2)
+	}
+
+	if mask != nil {
+		maskNode := inputs[3]
+		if maskNode.Shape.DType != dtypes.Bool && maskNode.Shape.DType != qNode.Shape.DType {
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: mask dtype %s is not supported in the go backend (expected Bool or %s)",
+				opName, maskNode.Shape.DType, qNode.Shape.DType)
+		}
+		maskRank := maskNode.Shape.Rank()
+		if maskRank < 2 || maskRank > 4 {
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: mask rank %d is not supported in the go backend (expected rank 2, 3, or 4)",
+				opName, maskRank)
+		}
+
+		var mBatchDim, mHeadsDim, mSeqDim, mKVDim int
+		var mBatchName, mHeadsName, mSeqName, mKVName string
+
+		switch maskRank {
+		case 4:
+			if axesLayout == compute.AttentionAxesLayoutBSHD {
+				mBatchDim = maskNode.Shape.Dimensions[0]
+				mBatchName = maskNode.Shape.AxisName(0)
+				mSeqDim = maskNode.Shape.Dimensions[1]
+				mSeqName = maskNode.Shape.AxisName(1)
+				mHeadsDim = maskNode.Shape.Dimensions[2]
+				mHeadsName = maskNode.Shape.AxisName(2)
+				mKVDim = maskNode.Shape.Dimensions[3]
+				mKVName = maskNode.Shape.AxisName(3)
+			} else {
+				mBatchDim = maskNode.Shape.Dimensions[0]
+				mBatchName = maskNode.Shape.AxisName(0)
+				mHeadsDim = maskNode.Shape.Dimensions[1]
+				mHeadsName = maskNode.Shape.AxisName(1)
+				mSeqDim = maskNode.Shape.Dimensions[2]
+				mSeqName = maskNode.Shape.AxisName(2)
+				mKVDim = maskNode.Shape.Dimensions[3]
+				mKVName = maskNode.Shape.AxisName(3)
+			}
+		case 3:
+			mBatchDim = maskNode.Shape.Dimensions[0]
+			mBatchName = maskNode.Shape.AxisName(0)
+			mHeadsDim = 1
+			mSeqDim = maskNode.Shape.Dimensions[1]
+			mSeqName = maskNode.Shape.AxisName(1)
+			mKVDim = maskNode.Shape.Dimensions[2]
+			mKVName = maskNode.Shape.AxisName(2)
+		case 2:
+			mBatchDim = 1
+			mHeadsDim = 1
+			mSeqDim = maskNode.Shape.Dimensions[0]
+			mSeqName = maskNode.Shape.AxisName(0)
+			mKVDim = maskNode.Shape.Dimensions[1]
+			mKVName = maskNode.Shape.AxisName(1)
+			if mSeqName != "" && mSeqName == batchName {
+				return nil, errors.Wrapf(compute.ErrNotImplemented,
+					"%s: 2D mask has batch axis %q instead of query sequence axis", opName, mSeqName)
+			}
+		}
+
+		if !isSDPABatchOrHeadCompatible(mBatchDim, mBatchName, batchDim, batchName) ||
+			!isSDPABatchOrHeadCompatible(mHeadsDim, mHeadsName, numHeadsDim, numHeadsName) ||
+			!isSDPASeqDimCompatible(mSeqDim, mSeqName, seqDim, seqName) ||
+			!isSDPASeqDimCompatible(mKVDim, mKVName, kvDim, kvName) {
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: mask shape %s is not supported by go backend fused SDPA (requires [batch, heads, %d, %d])",
+				opName, maskNode.Shape, seqDim, kvDim)
+		}
+	}
+
 	if hasBias {
 		// Bias input is the last appended value; resolve its node from inputs.
 		biasIdx := len(inputs) - 1
 		biasNode := inputs[biasIdx]
-		if !biasNode.Shape.DType.IsFloat() {
-			return nil, errors.Errorf("%s: bias must be a float dtype matching the compute dtype, got %s",
-				opName, biasNode.Shape.DType)
+		if biasNode.Shape.DType != qNode.Shape.DType {
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: bias must be a float dtype matching the compute dtype (%s), got %s",
+				opName, qNode.Shape.DType, biasNode.Shape.DType)
 		}
 		biasRank := biasNode.Shape.Rank()
 		if biasRank < 2 || biasRank > 4 {
-			return nil, errors.Errorf("%s: bias must have rank 2, 3, or 4, got rank %d", opName, biasRank)
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: bias must have rank 2, 3, or 4, got rank %d", opName, biasRank)
 		}
-		// Score shape is [B, H, S, Skv]. Bias dims are right-aligned and each must be 1
-		// or equal to the corresponding score dim (standard broadcasting contract).
-		var batchDim, numHeadsDim, seqDim, kvDim int
-		if axesLayout == compute.AttentionAxesLayoutBSHD {
-			batchDim = qNode.Shape.Dimensions[0]
-			numHeadsDim = numHeads
-			seqDim = qNode.Shape.Dimensions[1]
-			kvDim = kNode.Shape.Dimensions[1]
-		} else {
-			// BHSD: [batch, heads, seq, headDim]
-			batchDim = qNode.Shape.Dimensions[0]
-			numHeadsDim = numHeads
-			seqDim = qNode.Shape.Dimensions[2]
-			kvDim = kNode.Shape.Dimensions[2]
-		}
-		scoreDims := [4]int{batchDim, numHeadsDim, seqDim, kvDim}
-		biasDims := biasNode.Shape.Dimensions
-		// Right-align bias dims against score dims.
-		offset := 4 - biasRank
-		for i, bd := range biasDims {
-			sd := scoreDims[offset+i]
-			if bd != 1 && bd != sd {
-				return nil, errors.Errorf(
-					"%s: bias dim %d is %d, not broadcastable to score dim %d (score shape [%d,%d,%d,%d])",
-					opName, i, bd, sd, scoreDims[0], scoreDims[1], scoreDims[2], scoreDims[3])
+
+		var bBatchDim, bHeadsDim, bSeqDim, bKVDim int
+		var bBatchName, bHeadsName, bSeqName, bKVName string
+
+		switch biasRank {
+		case 4:
+			if axesLayout == compute.AttentionAxesLayoutBSHD {
+				bBatchDim = biasNode.Shape.Dimensions[0]
+				bBatchName = biasNode.Shape.AxisName(0)
+				bSeqDim = biasNode.Shape.Dimensions[1]
+				bSeqName = biasNode.Shape.AxisName(1)
+				bHeadsDim = biasNode.Shape.Dimensions[2]
+				bHeadsName = biasNode.Shape.AxisName(2)
+				bKVDim = biasNode.Shape.Dimensions[3]
+				bKVName = biasNode.Shape.AxisName(3)
+			} else {
+				bBatchDim = biasNode.Shape.Dimensions[0]
+				bBatchName = biasNode.Shape.AxisName(0)
+				bHeadsDim = biasNode.Shape.Dimensions[1]
+				bHeadsName = biasNode.Shape.AxisName(1)
+				bSeqDim = biasNode.Shape.Dimensions[2]
+				bSeqName = biasNode.Shape.AxisName(2)
+				bKVDim = biasNode.Shape.Dimensions[3]
+				bKVName = biasNode.Shape.AxisName(3)
 			}
+		case 3:
+			bBatchDim = biasNode.Shape.Dimensions[0]
+			bBatchName = biasNode.Shape.AxisName(0)
+			bHeadsDim = 1
+			bSeqDim = biasNode.Shape.Dimensions[1]
+			bSeqName = biasNode.Shape.AxisName(1)
+			bKVDim = biasNode.Shape.Dimensions[2]
+			bKVName = biasNode.Shape.AxisName(2)
+		case 2:
+			bBatchDim = 1
+			bHeadsDim = 1
+			bSeqDim = biasNode.Shape.Dimensions[0]
+			bSeqName = biasNode.Shape.AxisName(0)
+			bKVDim = biasNode.Shape.Dimensions[1]
+			bKVName = biasNode.Shape.AxisName(1)
+			if bSeqName != "" && bSeqName == batchName {
+				return nil, errors.Wrapf(compute.ErrNotImplemented,
+					"%s: 2D bias has batch axis %q instead of query sequence axis", opName, bSeqName)
+			}
+		}
+
+		if !isSDPABatchOrHeadCompatible(bBatchDim, bBatchName, batchDim, batchName) ||
+			!isSDPABatchOrHeadCompatible(bHeadsDim, bHeadsName, numHeadsDim, numHeadsName) ||
+			!isSDPASeqDimCompatible(bSeqDim, bSeqName, seqDim, seqName) ||
+			!isSDPASeqDimCompatible(bKVDim, bKVName, kvDim, kvName) {
+			return nil, errors.Wrapf(compute.ErrNotImplemented,
+				"%s: bias shape %s is not supported by go backend fused SDPA (requires [batch, heads, %d, %d])",
+				opName, biasNode.Shape, seqDim, kvDim)
 		}
 	}
 
@@ -206,6 +327,47 @@ func buildSDPANode(
 	}
 	node, _ := f.GetOrCreateNode(opType, qNode.Shape.Clone(), inputs, data)
 	return node, nil
+}
+
+// isSDPABatchOrHeadCompatible checks if a batch or head dimension can be broadcast (dim == 1)
+// or matches the target dimension.
+func isSDPABatchOrHeadCompatible(dim int, name string, targetDim int, targetName string) bool {
+	if dim == 1 {
+		return true
+	}
+	if dim > 0 && targetDim > 0 {
+		return dim == targetDim
+	}
+	if dim < 0 && targetDim < 0 {
+		if name != "" && targetName != "" {
+			return name == targetName
+		}
+		return true
+	}
+	return false
+}
+
+// isSDPASeqDimCompatible checks if a sequence dimension in mask or bias matches the target sequence dimension.
+// The go backend kernel cannot broadcast across sequence dimensions, so dim == 1 is only valid if targetDim == 1.
+func isSDPASeqDimCompatible(dim int, name string, targetDim int, targetName string) bool {
+	if targetDim == 1 {
+		return dim == 1
+	}
+	if dim == 1 {
+		// targetDim is either > 1 or dynamic (< 0). The go backend kernel cannot broadcast across
+		// sequence length, so dim == 1 is not supported.
+		return false
+	}
+	if dim > 0 && targetDim > 0 {
+		return dim == targetDim
+	}
+	if dim < 0 && targetDim < 0 {
+		if name != "" && targetName != "" {
+			return name == targetName
+		}
+		return true
+	}
+	return false
 }
 
 // execFusedScaledDotProductAttention implements multi-head scaled dot-product attention.
@@ -642,6 +804,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 					addBiasF32 = any(additiveBiasSlice).([]float32)
 				}
 				scratchF32 := any(scores).([]float32)
+
 				if archFn(
 					qF32, kF32, vF32, outF32,
 					qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
