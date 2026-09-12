@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
@@ -104,8 +105,15 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 	fe.InitSchedule()
 
 	if klog.V(1).Enabled() {
+		estMem := fe.EstimatedTemporaryMemory()
+		var memStr string
+		if estMem == int64(shapes.DynamicDim) {
+			memStr = "dynamic (unknown at compile time)"
+		} else {
+			memStr = humanize.Bytes(estMem)
+		}
 		klog.Infof("* Compiling function %q: estimated max temporary memory: %s\n",
-			fe.Function.Name(), humanize.Bytes(fe.EstimatedTemporaryMemory()))
+			fe.Function.Name(), memStr)
 	}
 	return fe, nil
 }
@@ -807,12 +815,20 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 }
 
 // EstimatedTemporaryMemory estimates the memory used for the function if executed sequentially.
+// Returns int64(shapes.DynamicDim) (-1) if any parameter or node in the function has dynamic dimensions,
+// since dynamic models cannot have their memory statically estimated at compile time.
 //
 // It assumes temporary memory is used for every node output (using Shape.ByteSize()),
 // and released everytime one node output is no longer needed (its output has been used
 // fe.NumUses[nodeIdx] times). It does not actually execute the nodes, just simulates the
 // execution to report back the maximum temporary memory live at any time.
 func (fe *FunctionExecutable) EstimatedTemporaryMemory() int64 {
+	for _, p := range fe.Function.Parameters {
+		if p.Shape.IsDynamic() {
+			return int64(shapes.DynamicDim)
+		}
+	}
+
 	var currentMemory int64
 	var maxMemory int64
 	numUsed := make([]int, fe.NumNodesToProcess)
@@ -854,10 +870,16 @@ func (fe *FunctionExecutable) EstimatedTemporaryMemory() int64 {
 					continue
 				}
 				computed[outputNode.Index] = true
+				if outputNode.Shape.IsDynamic() {
+					return int64(shapes.DynamicDim)
+				}
 				currentMemory += outputNode.Shape.ByteSize()
 			}
 		} else {
 			computed[nodeIdx] = true
+			if node.Shape.IsDynamic() {
+				return int64(shapes.DynamicDim)
+			}
 			currentMemory += node.Shape.ByteSize()
 		}
 
