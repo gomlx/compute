@@ -46,6 +46,11 @@ type Capabilities struct {
 	// bucket/pad inputs to avoid excessive recompilations (if inputs vary in size).
 	DynamicShapes DynamicShapesSupport
 
+	// DynamicDimDType specifies the DType used or returned by the backend for dynamic dimensions
+	// (such as DynamicDimensionSize and DynamicShape).
+	// If not set (or set to dtypes.InvalidDType), it defaults to dtypes.Int64.
+	DynamicDimDType dtypes.DType
+
 	// PreferConstantsForVariables indicates that the backend prefers context variables
 	// (model weights) to be embedded as constants in the computation graph rather than
 	// passed as parameters (inputs) at execution time. This enables optimizations like
@@ -69,6 +74,14 @@ func (c Capabilities) Clone() Capabilities {
 // HasDynamicShapes returns true if the backend supports dynamic shapes in any mode.
 func (c Capabilities) HasDynamicShapes() bool {
 	return c.DynamicShapes != DynamicShapesNone
+}
+
+// DynamicDimDTypeOrDefault returns DynamicDimDType if set and valid, or dtypes.Int64 by default.
+func (c Capabilities) DynamicDimDTypeOrDefault() dtypes.DType {
+	if c.DynamicDimDType != dtypes.InvalidDType {
+		return c.DynamicDimDType
+	}
+	return dtypes.Int64
 }
 
 // DynamicShapesSupport enumeration values indicating whether and how a backend supports dynamic shapes.

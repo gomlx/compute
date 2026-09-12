@@ -15,7 +15,7 @@ type DynamicDimensionSpec struct {
 	// dimension). Empty string for static dimensions.
 	Name string
 
-	// Scalar integer value for runtime dimension size (nil if static or auto-inferred).
+	// Scalar integer (Int32 or Int64) value for runtime dimension size (nil if static or auto-inferred).
 	Value Value
 }
 
@@ -37,7 +37,9 @@ type DynamicPadAxis struct {
 // DynamicOps defines the operations that expect or operate on dynamic shapes.
 type DynamicOps interface {
 	// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
-	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicShapes).
+	//
+	// The returned scalar has dtype Capabilities.DynamicDimDType (typically Int64, or backend-dependent).
 	DynamicDimensionSize(operand Value, axis int) (Value, error)
 
 	// DynamicReshape reshapes x to target dimensions specified by dimensions.
@@ -85,4 +87,3 @@ type DynamicOps interface {
 	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
 	DynamicPad(x, fillValue Value, axesConfig ...DynamicPadAxis) (Value, error)
 }
-

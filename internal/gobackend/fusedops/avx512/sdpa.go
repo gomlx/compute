@@ -215,8 +215,8 @@ func softmaxAndValueAccumDim32(
 		vBase := kvOff + ki*kvSeqStride
 		v0 := archsimd.LoadFloat32x16(v[vBase : vBase+16])
 		v1 := archsimd.LoadFloat32x16(v[vBase+16 : vBase+32])
-		out0 = out0.MulAdd(vW, v0)
-		out1 = out1.MulAdd(vW, v1)
+		out0 = vW.MulAdd(v0, out0)
+		out1 = vW.MulAdd(v1, out1)
 	}
 
 	out0.Store(output[outBase : outBase+16])
@@ -285,7 +285,8 @@ func sdpaFloat32AVX512Dim32(
 				k0 := archsimd.LoadFloat32x16(k[kBase : kBase+16])
 				k1 := archsimd.LoadFloat32x16(k[kBase+16 : kBase+32])
 
-				dot := reduceSum16(q0.Mul(k0).Add(q1.Mul(k1)))
+				sumVec := q0.Mul(k0).Add(q1.Mul(k1))
+				dot := reduceSum16(sumVec)
 				s := dot * scale
 				if len(additiveBias) > 0 {
 					s += additiveBias[biasIdxBase+ki]
@@ -366,10 +367,10 @@ func softmaxAndValueAccumDim64(
 		v1 := archsimd.LoadFloat32x16(v[vBase+16 : vBase+32])
 		v2 := archsimd.LoadFloat32x16(v[vBase+32 : vBase+48])
 		v3 := archsimd.LoadFloat32x16(v[vBase+48 : vBase+64])
-		out0 = out0.MulAdd(vW, v0)
-		out1 = out1.MulAdd(vW, v1)
-		out2 = out2.MulAdd(vW, v2)
-		out3 = out3.MulAdd(vW, v3)
+		out0 = vW.MulAdd(v0, out0)
+		out1 = vW.MulAdd(v1, out1)
+		out2 = vW.MulAdd(v2, out2)
+		out3 = vW.MulAdd(v3, out3)
 	}
 
 	out0.Store(output[outBase : outBase+16])
@@ -534,14 +535,14 @@ func softmaxAndValueAccumDim128(
 		v5 := archsimd.LoadFloat32x16(v[vBase+80 : vBase+96])
 		v6 := archsimd.LoadFloat32x16(v[vBase+96 : vBase+112])
 		v7 := archsimd.LoadFloat32x16(v[vBase+112 : vBase+128])
-		out0 = out0.MulAdd(vW, v0)
-		out1 = out1.MulAdd(vW, v1)
-		out2 = out2.MulAdd(vW, v2)
-		out3 = out3.MulAdd(vW, v3)
-		out4 = out4.MulAdd(vW, v4)
-		out5 = out5.MulAdd(vW, v5)
-		out6 = out6.MulAdd(vW, v6)
-		out7 = out7.MulAdd(vW, v7)
+		out0 = vW.MulAdd(v0, out0)
+		out1 = vW.MulAdd(v1, out1)
+		out2 = vW.MulAdd(v2, out2)
+		out3 = vW.MulAdd(v3, out3)
+		out4 = vW.MulAdd(v4, out4)
+		out5 = vW.MulAdd(v5, out5)
+		out6 = vW.MulAdd(v6, out6)
+		out7 = vW.MulAdd(v7, out7)
 	}
 
 	out0.Store(output[outBase : outBase+16])
@@ -785,7 +786,7 @@ func sdpaFloat32AVX512General(
 					vW := archsimd.BroadcastFloat32x16(w)
 					vBase := kvOff + kIdx*kvSeqStride + d
 					vVal := archsimd.LoadFloat32x16(v[vBase : vBase+16])
-					outV = outV.MulAdd(vW, vVal)
+					outV = vW.MulAdd(vVal, outV)
 				}
 				outV.Store(output[outBase+d : outBase+d+16])
 			}

@@ -367,8 +367,10 @@ type StandardOps interface {
 		config DotGeneralConfig,
 	) (Value, error)
 
-	// DynamicShape returns the shape of the operand as a dynamic value.
-	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+	// DynamicShape returns the shape of the operand as a dynamic 1D tensor.
+	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicShapes).
+	//
+	// The returned 1D tensor has dtype Capabilities.DynamicDimDType (typically Int64, or backend-dependent).
 	DynamicShape(operand Value) (Value, error)
 
 	// DynamicSlice extracts a slice from the operand at the startIndices position and the given sliceSizes.

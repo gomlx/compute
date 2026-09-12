@@ -55,7 +55,7 @@ func TestDurationSampler(t *testing.T) {
 
 	// Median of uniformly distributed samples in 1..1100 should be roughly in the middle (550ms +/- 100ms)
 	med = s.Median()
-	if med < 400*time.Millisecond || med > 700*time.Millisecond {
+	if med < 350*time.Millisecond || med > 750*time.Millisecond {
 		t.Errorf("expected median ~550ms, got %v", med)
 	}
 

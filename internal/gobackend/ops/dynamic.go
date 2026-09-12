@@ -29,7 +29,7 @@ func DynamicDimensionSize(f *gobackend.Function, operandValue compute.Value, axi
 		return nil, errors.Errorf("DynamicDimensionSize: axis %d out of bounds for rank %d", axis, operand.Shape.Rank())
 	}
 	opType := compute.OpTypeDynamicDimensionSize
-	outputShape := shapes.Make(dtypes.Int32)
+	outputShape := shapes.Make(dtypes.Int64)
 	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, axis)
 	return node, nil
 }
@@ -65,7 +65,7 @@ func DynamicShape(f *gobackend.Function, operandValue compute.Value) (compute.Va
 	}
 	operand := inputs[0]
 	opType := compute.OpTypeDynamicShape
-	outputShape := shapes.Make(dtypes.Int32, operand.Shape.Rank())
+	outputShape := shapes.Make(dtypes.Int64, operand.Shape.Rank())
 	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, nil)
 	return node, nil
 }
