@@ -1,3 +1,9 @@
+- 2026-09-12:
+  - Added SIMD vectorization for `FusedAttentionQKVProjection` epilogue (`CopyAndAddBiasFloat32` and `CopyAndAddBiasFloat64`) in `internal/gobackend/dot/matmul` with AVX2 and AVX-512 assembly implementations (`copyAndAddBiasFloat32AVX2Asm`, `copyAndAddBiasFloat32AVX512Asm`).
+  - Added dynamic shape support in `FusedAttentionQKVProjection` in `gobackend` using `shapes.MakeDynamic` preserving axis names.
+  - Added SIMD-vectorized executor (`PrioritySIMD`) for `OpTypeFusedSoftmax` in `internal/gobackend/fusedops` targeting contiguous trailing axes, utilizing vector max reduction, `simdmath.ExpFloat32`, and vector normalization.
+  - Added backend compliance tests for dynamic `FusedAttentionQKVProjection` and remainder-tail `FusedSoftmax` in `support/backendtest`.
+
 - 2026-09-10:
   - Fixed and streamlined `gobackend.DotGeneral` for both static and dynamic shapes:
     - Removed `MergeAxes` calls in `reshapeToSupportedLayout` and `TransposeToLayout`. Contiguous row-major axis groups naturally match GEMM strides, eliminating unnecessary reshape overhead and cleanly supporting multi-batch or multi-contracting dynamic dimensions.

@@ -131,3 +131,37 @@ func addBias[T any](row, bias []T) {
 		}
 	}
 }
+
+// AddBias adds bias to row in-place using SIMD/assembly where available.
+func AddBias[T any](row, bias []T) {
+	addBias(row, bias)
+}
+
+// CopyAndAddBiasFloat32 copies src to dst while adding bias in a single pass.
+// If bias is nil, it performs a standard copy. Uses AVX-512 or AVX2 assembly where available.
+func CopyAndAddBiasFloat32(dst, src, bias []float32) {
+	if bias == nil {
+		copy(dst, src)
+		return
+	}
+	if copyAndAddBiasFloat32Arch(dst, src, bias) {
+		return
+	}
+	for i, val := range bias {
+		dst[i] = src[i] + val
+	}
+}
+
+// CopyAndAddBiasFloat64 copies src to dst while adding bias in a single pass.
+// If bias is nil, it performs a standard copy.
+func CopyAndAddBiasFloat64(dst, src, bias []float64) {
+	if bias == nil {
+		copy(dst, src)
+		return
+	}
+	for i, val := range bias {
+		dst[i] = src[i] + val
+	}
+}
+
+

@@ -1,9 +1,15 @@
 package fusedops
 
 import (
+	"slices"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -65,9 +71,25 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 	copy(kvDims, batchDims)
 	kvDims[len(batchDims)] = keyValueDim
 
-	qShape := shapes.Make(xNode.Shape.DType, qDims...)
-	kShape := shapes.Make(xNode.Shape.DType, kvDims...)
-	vShape := shapes.Make(xNode.Shape.DType, kvDims...)
+	var qShape, kShape, vShape shapes.Shape
+	if xNode.Shape.IsDynamic() || len(xNode.Shape.AxisNames) > 0 {
+		var qAxes, kvAxes []string
+		if len(xNode.Shape.AxisNames) > 0 {
+			batchAxes := xNode.Shape.AxisNames[:xNode.Shape.Rank()-1]
+			qAxes = append(slices.Clone(batchAxes), "")
+			kvAxes = append(slices.Clone(batchAxes), "")
+		} else {
+			qAxes = make([]string, len(qDims))
+			kvAxes = make([]string, len(kvDims))
+		}
+		qShape = shapes.MakeDynamic(xNode.Shape.DType, qDims, qAxes)
+		kShape = shapes.MakeDynamic(xNode.Shape.DType, kvDims, kvAxes)
+		vShape = shapes.MakeDynamic(xNode.Shape.DType, kvDims, kvAxes)
+	} else {
+		qShape = shapes.Make(xNode.Shape.DType, qDims...)
+		kShape = shapes.Make(xNode.Shape.DType, kvDims...)
+		vShape = shapes.Make(xNode.Shape.DType, kvDims...)
+	}
 
 	// Build DotGeneral sub-node for the matmul: x @ wQKV.
 	// This delegates to the optimized matmul infrastructure.
@@ -137,9 +159,13 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 
 	switch combined.RawShape.DType {
 	case dtypes.Float32:
-		qkvSplitBiasGeneric[float32](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasFloat32(combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	case dtypes.Float64:
-		qkvSplitBiasGeneric[float64](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasFloat64(combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+	case dtypes.Float16:
+		qkvSplitBiasHalf[float16.Float16](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+	case dtypes.BFloat16:
+		qkvSplitBiasHalf[bfloat16.BFloat16](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	default:
 		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.RawShape.DType)
 	}
@@ -147,9 +173,81 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 	return []*gobackend.Buffer{qBuf, kBuf, vBuf}, nil
 }
 
-// qkvSplitBiasGeneric splits the pre-computed matmul result [batch, totalOut] into
-// Q [batch, qDim], K [batch, kvDim], V [batch, kvDim] and adds optional biases.
-func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+func qkvSplitBiasFloat32(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+	src := combined.Flat.([]float32)
+	q := qBuf.Flat.([]float32)
+	k := kBuf.Flat.([]float32)
+	v := vBuf.Flat.([]float32)
+	var biasQ, biasK, biasV []float32
+	if biasQBuf != nil {
+		biasQ = biasQBuf.Flat.([]float32)
+	}
+	if biasKBuf != nil {
+		biasK = biasKBuf.Flat.([]float32)
+	}
+	if biasVBuf != nil {
+		biasV = biasVBuf.Flat.([]float32)
+	}
+
+	totalOut := qDim + 2*kvDim
+	batchSize := len(src) / totalOut
+	for batchIdx := range batchSize {
+		srcBase := batchIdx * totalOut
+		qBase := batchIdx * qDim
+		kBase := batchIdx * kvDim
+		vBase := batchIdx * kvDim
+
+		// Q projection
+		projectSliceFloat32(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
+		// K projection
+		projectSliceFloat32(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
+		// V projection
+		projectSliceFloat32(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+	}
+}
+
+func projectSliceFloat32(dst, src, bias []float32) {
+	matmul.CopyAndAddBiasFloat32(dst, src, bias)
+}
+
+func qkvSplitBiasFloat64(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+	src := combined.Flat.([]float64)
+	q := qBuf.Flat.([]float64)
+	k := kBuf.Flat.([]float64)
+	v := vBuf.Flat.([]float64)
+	var biasQ, biasK, biasV []float64
+	if biasQBuf != nil {
+		biasQ = biasQBuf.Flat.([]float64)
+	}
+	if biasKBuf != nil {
+		biasK = biasKBuf.Flat.([]float64)
+	}
+	if biasVBuf != nil {
+		biasV = biasVBuf.Flat.([]float64)
+	}
+
+	totalOut := qDim + 2*kvDim
+	batchSize := len(src) / totalOut
+	for batchIdx := range batchSize {
+		srcBase := batchIdx * totalOut
+		qBase := batchIdx * qDim
+		kBase := batchIdx * kvDim
+		vBase := batchIdx * kvDim
+
+		// Q projection
+		projectSliceFloat64(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
+		// K projection
+		projectSliceFloat64(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
+		// V projection
+		projectSliceFloat64(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+	}
+}
+
+func projectSliceFloat64(dst, src, bias []float64) {
+	matmul.CopyAndAddBiasFloat64(dst, src, bias)
+}
+
+func qkvSplitBiasHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
 	src := combined.Flat.([]T)
 	q := qBuf.Flat.([]T)
 	k := kBuf.Flat.([]T)
@@ -165,6 +263,16 @@ func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, bias
 		biasV = biasVBuf.Flat.([]T)
 	}
 
+	projectSliceHalf := func(dst, src, bias []T) {
+		if bias == nil {
+			copy(dst, src)
+			return
+		}
+		for i := range dst {
+			P(&dst[i]).SetFloat32(src[i].Float32() + bias[i].Float32())
+		}
+	}
+
 	totalOut := qDim + 2*kvDim
 	batchSize := len(src) / totalOut
 	for batchIdx := range batchSize {
@@ -173,28 +281,8 @@ func qkvSplitBiasGeneric[T float32 | float64](combined, biasQBuf, biasKBuf, bias
 		kBase := batchIdx * kvDim
 		vBase := batchIdx * kvDim
 
-		// Copy Q columns and add bias.
-		copy(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim])
-		if biasQ != nil {
-			for o := range qDim {
-				q[qBase+o] += biasQ[o]
-			}
-		}
-
-		// Copy K columns and add bias.
-		copy(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim])
-		if biasK != nil {
-			for o := range kvDim {
-				k[kBase+o] += biasK[o]
-			}
-		}
-
-		// Copy V columns and add bias.
-		copy(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut])
-		if biasV != nil {
-			for o := range kvDim {
-				v[vBase+o] += biasV[o]
-			}
-		}
+		projectSliceHalf(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
+		projectSliceHalf(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
+		projectSliceHalf(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
 	}
 }
