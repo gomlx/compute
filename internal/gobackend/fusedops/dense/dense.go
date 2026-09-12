@@ -115,9 +115,9 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		BatchSize:       1,
 		LHSCrossSize:    lhsCrossSize,
 		RHSCrossSize:    rhsCrossSize,
-		ContractingSize: contractingSize,
-		CanCachePackLHS: xNode.IsConstant(),
-		CanCachePackRHS: wNode.IsConstant(),
+		// TODO: Re-enable constant panel caching once 2D worker splitting and packed panel indexing are unified.
+		CanCachePackLHS: false,
+		CanCachePackRHS: false,
 		PackedLHS:       &dot.PackedMatrixCache{},
 		PackedRHS:       &dot.PackedMatrixCache{},
 	}

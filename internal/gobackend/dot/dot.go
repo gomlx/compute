@@ -289,8 +289,9 @@ func DotGeneral(f *gobackend.Function,
 		nodeOutputShape = outputShape.Clone()
 		nodeOutputShape.DType = params.OutputDType
 	}
-	params.CanCachePackLHS = lhs.IsConstant()
-	params.CanCachePackRHS = rhs.IsConstant()
+	// TODO: Re-enable constant panel caching once 2D worker splitting and packed panel indexing are unified.
+	params.CanCachePackLHS = false
+	params.CanCachePackRHS = false
 	if params.CanCachePackLHS {
 		params.PackedLHS = &PackedMatrixCache{}
 	}
