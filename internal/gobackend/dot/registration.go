@@ -34,7 +34,8 @@ type DotGeneralExecFn[I, O interface {
 	backend *gobackend.Backend, layout Layout,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O)
+	output []O,
+	nodeData *NodeData)
 
 type ImplementationRegistration struct {
 	// implFn holds the DotGeneralExecFn[InputDType, OutputDType] for the specific ImplementationKey.
@@ -146,8 +147,8 @@ func CallRegisteredImplementation(
 	if err != nil {
 		panic(err)
 	}
-	callFn := callFnAny.(func(*gobackend.Backend, any, Layout, any, any, any, int, int, int, int))
-	callFn(backend, implFnAny, params.Layout, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize)
+	callFn := callFnAny.(func(*gobackend.Backend, any, Layout, any, any, any, int, int, int, int, *NodeData))
+	callFn(backend, implFnAny, params.Layout, lhsFlat, rhsFlat, outputFlat, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, params)
 }
 
 var (
@@ -169,10 +170,11 @@ func callImplementationGeneric[I, O interface {
 	implFnAny any,
 	layout Layout,
 	lhsAny, rhsAny, outputAny any,
-	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int) {
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
+	nodeData *NodeData) {
 	lhs := lhsAny.([]I)
 	rhs := rhsAny.([]I)
 	output := outputAny.([]O)
 	implFn := implFnAny.(DotGeneralExecFn[I, O])
-	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
 }

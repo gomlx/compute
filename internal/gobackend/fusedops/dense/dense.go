@@ -28,6 +28,7 @@ type nodeFusedDense struct {
 	lhsCrossSize    int
 	rhsCrossSize    int
 	contractingSize int
+	dotNodeData     *dot.NodeData
 }
 
 func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
@@ -51,6 +52,7 @@ func (d *nodeFusedDense) Recompute(backend *gobackend.Backend, resolvedNodes []*
 		lhsCrossSize:    resolvedX.Size() / inFeatures,
 		rhsCrossSize:    d.rhsCrossSize,
 		contractingSize: d.contractingSize,
+		dotNodeData:     d.dotNodeData,
 	}
 	return newData, nil
 }
@@ -108,6 +110,18 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	rhsCrossSize := wNode.Shape.Size() / inFeatures
 	contractingSize := inFeatures
 
+	dotNodeData := &dot.NodeData{
+		Layout:          layout,
+		BatchSize:       1,
+		LHSCrossSize:    lhsCrossSize,
+		RHSCrossSize:    rhsCrossSize,
+		ContractingSize: contractingSize,
+		CanCachePackLHS: xNode.IsConstant(),
+		CanCachePackRHS: wNode.IsConstant(),
+		PackedLHS:       &dot.PackedMatrixCache{},
+		PackedRHS:       &dot.PackedMatrixCache{},
+	}
+
 	data := &nodeFusedDense{
 		options:         options,
 		layout:          layout,
@@ -115,6 +129,7 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		lhsCrossSize:    lhsCrossSize,
 		rhsCrossSize:    rhsCrossSize,
 		contractingSize: contractingSize,
+		dotNodeData:     dotNodeData,
 	}
 
 	node, _ := f.GetOrCreateNode(compute.OpTypeFusedDense, outShape, inputs, data)
@@ -168,6 +183,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			backend, data.layout, xFlat, wFlat,
 			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
 			outFlat, epilogue,
+			data.dotNodeData,
 		)
 		if err != nil {
 			return nil, err
@@ -199,6 +215,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			backend, data.layout, xFlat, wFlat,
 			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
 			outFlat, epilogue,
+			data.dotNodeData,
 		)
 		if err != nil {
 			return nil, err
@@ -240,6 +257,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			backend, data.layout, xFlat, wFlat,
 			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
 			tmpF32, epilogue,
+			data.dotNodeData,
 		)
 		if err != nil {
 			return nil, err
@@ -284,6 +302,7 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 			backend, data.layout, xFlat, wFlat,
 			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
 			tmpF32, epilogue,
+			data.dotNodeData,
 		)
 		if err != nil {
 			return nil, err

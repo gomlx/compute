@@ -270,7 +270,9 @@ func (f Function) DynamicBroadcastInDim(operand compute.Value, broadcastAxes []i
 }
 
 // DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
-// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicShapes).
+//
+// The returned scalar has dtype Capabilities.DynamicDimDType (typically Int64, or backend-dependent).
 func (f Function) DynamicDimensionSize(operand compute.Value, axis int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeDynamicDimensionSize)
 }
@@ -309,8 +311,10 @@ func (f Function) DynamicReshape(operand compute.Value, dimensions ...compute.Dy
 	return nil, f.baseErrFn(compute.OpTypeDynamicReshape)
 }
 
-// DynamicShape returns the shape of the operand as a dynamic value.
-// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicAxes).
+// DynamicShape returns the shape of the operand as a dynamic 1D tensor.
+// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicShapes).
+//
+// The returned 1D tensor has dtype Capabilities.DynamicDimDType (typically Int64, or backend-dependent).
 func (f Function) DynamicShape(operand compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeDynamicShape)
 }
@@ -960,7 +964,11 @@ func (f Function) Transpose(x compute.Value, permutation ...int) (compute.Value,
 //
 // The condition must be boolean, and onTrue and onFalse must have the same dtype.
 //
-// If either condition, onTrue or onFalse is a scalar, it will be broadcasted to the shape of the other operands.
+// Standard implicit broadcasting rules apply across all three operands:
+//   - Scalar operands are implicitly broadcast to the shape of the other operands.
+//   - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
+//     Dimension 1 is broadcast to the larger dimension.
+//   - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
 func (f Function) Where(condition compute.Value, onTrue compute.Value, onFalse compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeWhere)
 }

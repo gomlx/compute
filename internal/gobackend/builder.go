@@ -189,6 +189,10 @@ type Node struct {
 	// in nodeExecutors[node.OpType] after the first successful execution.
 	// 0 means uninitialized / not cached.
 	cachedExecutorIdx atomic.Int32
+
+	// isConstant caches whether this node is constant (depends only on constants and deterministic ops).
+	// 0 = uninitialized, 1 = false, 2 = true.
+	isConstant atomic.Int32
 }
 
 // ClearCachedExecutor clears any cached executor on the node, forcing rediscovery on next run.
@@ -199,6 +203,64 @@ func (node *Node) ClearCachedExecutor() {
 // IsExecutorCached returns true if an executor was already selected and cached for this node.
 func (node *Node) IsExecutorCached() bool {
 	return node.cachedExecutorIdx.Load() > 0
+}
+
+// IsConstant returns true if this node and all of its ancestors are constants
+// (i.e. not dependent on input parameters or any non-deterministic / random operator).
+func (node *Node) IsConstant() bool {
+	if node == nil {
+		return false
+	}
+	cached := node.isConstant.Load()
+	if cached != 0 {
+		return cached == 2
+	}
+
+	result := node.computeIsConstant()
+	if result {
+		node.isConstant.Store(2)
+	} else {
+		node.isConstant.Store(1)
+	}
+	return result
+}
+
+func (node *Node) computeIsConstant() bool {
+	switch node.OpType {
+	case compute.OpTypeConstant:
+		return true
+	case compute.OpTypeParameter,
+		compute.OpTypeRNGBitGenerator:
+		return false
+	}
+
+	// Leaf nodes with no inputs that are not OpTypeConstant cannot be guaranteed constant.
+	if len(node.Inputs) == 0 {
+		return false
+	}
+
+	// Check that all inputs are constant.
+	for _, in := range node.Inputs {
+		if !in.IsConstant() {
+			return false
+		}
+	}
+
+	// Check captured inputs for closures (if, while, etc.)
+	for _, capturedList := range node.CapturedInputs {
+		for _, in := range capturedList {
+			if !in.IsConstant() {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// IsConstantNode is a helper function to check whether a node is constant.
+func IsConstantNode(node *Node) bool {
+	return node != nil && node.IsConstant()
 }
 
 // RecomputableNodeData is an interface that can be implemented by the Data field of a Node

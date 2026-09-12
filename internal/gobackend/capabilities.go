@@ -32,10 +32,11 @@ var NumericDTypes = []dtypes.DType{
 
 // Capabilities of the Go backend: the set of supported operations and data types.
 var Capabilities = compute.Capabilities{
-	Functions:       true,
-	DynamicAxes:     true,
-	DynamicShapes:   compute.DynamicShapesNative,
-	DynamicDimDType: dtypes.Int64,
+	Functions:                   true,
+	DynamicAxes:                 true,
+	DynamicShapes:               compute.DynamicShapesNative,
+	DynamicDimDType:             dtypes.Int64,
+	PreferConstantsForVariables: true,
 
 	Operations: map[compute.OpType]bool{
 		// Graph inputs (leaf nodes)

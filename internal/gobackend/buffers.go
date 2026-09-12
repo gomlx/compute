@@ -3,6 +3,7 @@
 package gobackend
 
 import (
+	"bytes"
 	stderrors "errors"
 	"fmt"
 	"reflect"
@@ -58,9 +59,19 @@ type Buffer struct {
 // EqualNodeData implements nodeDataComparable for Buffer.
 // For Constants, this compares the shape and the actual data values.
 func (b *Buffer) EqualNodeData(other NodeDataComparable) bool {
-	o := other.(*Buffer) //nolint:errcheck
+	if b == other {
+		return true
+	}
+	o, ok := other.(*Buffer)
+	if !ok || o == nil {
+		return false
+	}
 	if !b.RawShape.Equal(o.RawShape) || b.InUse != o.InUse {
 		return false
+	}
+	byteSize := int(b.RawShape.ByteSize())
+	if byteSize > 0 && len(b.RawBytes) >= byteSize && len(o.RawBytes) >= byteSize {
+		return bytes.Equal(b.RawBytes[:byteSize], o.RawBytes[:byteSize])
 	}
 	// Compare flat data by comparing the underlying slice values
 	return compareFlatData(b.Flat, o.Flat)
@@ -73,6 +84,36 @@ func compareFlatData(a, b any) bool {
 	}
 	if a == nil || b == nil {
 		return false
+	}
+	switch aVal := a.(type) {
+	case []float32:
+		if bVal, ok := b.([]float32); ok {
+			return slices.Equal(aVal, bVal)
+		}
+	case []float64:
+		if bVal, ok := b.([]float64); ok {
+			return slices.Equal(aVal, bVal)
+		}
+	case []int32:
+		if bVal, ok := b.([]int32); ok {
+			return slices.Equal(aVal, bVal)
+		}
+	case []int64:
+		if bVal, ok := b.([]int64); ok {
+			return slices.Equal(aVal, bVal)
+		}
+	case []int:
+		if bVal, ok := b.([]int); ok {
+			return slices.Equal(aVal, bVal)
+		}
+	case []byte:
+		if bVal, ok := b.([]byte); ok {
+			return bytes.Equal(aVal, bVal)
+		}
+	case []bool:
+		if bVal, ok := b.([]bool); ok {
+			return slices.Equal(aVal, bVal)
+		}
 	}
 	// Use reflection to compare slices element by element
 	va := reflect.ValueOf(a)

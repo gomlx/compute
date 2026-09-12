@@ -116,3 +116,92 @@ func TestDotGeneralDynamic(t *testing.T) {
 		t.Fatalf("unexpected output shape: %v", err)
 	}
 }
+
+func TestDotGeneralConstantCaching(t *testing.T) {
+	if _, ok := backend.(*gobackend.Backend); !ok {
+		t.Skip("Skipping test because backend is not the Go backend")
+	}
+
+	// Test caching of packed constant RHS across dynamic batch executions.
+	builder := backend.Builder("TestDotGeneralConstantCaching")
+	mainFn := builder.Main()
+	sLHS := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 64}, []string{"batch", ""})
+	lhsParam, err := mainFn.Parameter("lhs", sLHS, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Constant RHS: [64, 128]
+	rhsData := make([]float32, 64*128)
+	for i := range rhsData {
+		rhsData[i] = float32(i % 7)
+	}
+	rhsConst, err := mainFn.Constant(rhsData, 64, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dotNode, err := mainFn.DotGeneral(lhsParam, []int{1}, nil, rhsConst, []int{0}, nil, compute.DotGeneralConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = mainFn.Return([]compute.Value{dotNode}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec, err := builder.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run with batch = 16
+	concreteShape1 := shapes.Make(dtypes.Float32, 16, 64)
+	lhsData1 := make([]float32, 16*64)
+	for i := range lhsData1 {
+		lhsData1[i] = 1.0
+	}
+	lhsBuf1, err := backend.BufferFromFlatData(0, lhsData1, concreteShape1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs1, err := exec.Execute([]compute.Buffer{lhsBuf1}, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out1Shape, _ := outputs1[0].Shape()
+	if err := out1Shape.Check(dtypes.Float32, 16, 128); err != nil {
+		t.Fatalf("unexpected output shape: %v", err)
+	}
+
+	// Run with batch = 32 (different dynamic shape specialization)
+	concreteShape2 := shapes.Make(dtypes.Float32, 32, 64)
+	lhsData2 := make([]float32, 32*64)
+	for i := range lhsData2 {
+		lhsData2[i] = 1.0
+	}
+	lhsBuf2, err := backend.BufferFromFlatData(0, lhsData2, concreteShape2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs2, err := exec.Execute([]compute.Buffer{lhsBuf2}, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out2Shape, _ := outputs2[0].Shape()
+	if err := out2Shape.Check(dtypes.Float32, 32, 128); err != nil {
+		t.Fatalf("unexpected output shape: %v", err)
+	}
+
+	// Verify values for the first 16 rows match between run 1 and run 2
+	out1Data := make([]float32, 16*128)
+	if err := outputs1[0].ToFlatData(out1Data); err != nil {
+		t.Fatal(err)
+	}
+	out2Data := make([]float32, 32*128)
+	if err := outputs2[0].ToFlatData(out2Data); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 16*128; i++ {
+		if out1Data[i] != out2Data[i] {
+			t.Fatalf("output values mismatch at index %d: %v != %v", i, out1Data[i], out2Data[i])
+		}
+	}
+}

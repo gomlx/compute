@@ -28,7 +28,9 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 	layout dot.Layout,
 	lhs, rhs []I,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []O) {
+	output []O,
+	nodeData *dot.NodeData) {
+	_ = nodeData
 
 	// Check if small matrix multiplication kernel can be used.
 	flopsPerMatrix := lhsCrossSize * rhsCrossSize * contractingSize
