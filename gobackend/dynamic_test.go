@@ -11,13 +11,13 @@ import (
 	"github.com/gomlx/compute/shapes"
 )
 
-func readBufferInt32(t *testing.T, buf compute.Buffer) []int32 {
+func readBufferInt64(t *testing.T, buf compute.Buffer) []int64 {
 	t.Helper()
 	shape, err := buf.Shape()
 	if err != nil {
 		t.Fatalf("buf.Shape failed: %+v", err)
 	}
-	flat := make([]int32, shape.Size())
+	flat := make([]int64, shape.Size())
 	err = buf.ToFlatData(flat)
 	if err != nil {
 		t.Fatalf("buf.ToFlatData failed: %+v", err)
@@ -75,14 +75,14 @@ func TestDynamicShapeOps(t *testing.T) {
 	}
 
 	// Check dimSize output (scalar 2)
-	sizeFlat2 := readBufferInt32(t, outputs2[0])
-	if !reflect.DeepEqual(sizeFlat2, []int32{2}) {
+	sizeFlat2 := readBufferInt64(t, outputs2[0])
+	if !reflect.DeepEqual(sizeFlat2, []int64{2}) {
 		t.Errorf("Expected dimSize to be [2], got %v", sizeFlat2)
 	}
 
 	// Check shapeVal output ([2, 3])
-	shapeFlat2 := readBufferInt32(t, outputs2[1])
-	if !reflect.DeepEqual(shapeFlat2, []int32{2, 3}) {
+	shapeFlat2 := readBufferInt64(t, outputs2[1])
+	if !reflect.DeepEqual(shapeFlat2, []int64{2, 3}) {
 		t.Errorf("Expected shape to be [2, 3], got %v", shapeFlat2)
 	}
 
@@ -102,14 +102,14 @@ func TestDynamicShapeOps(t *testing.T) {
 	}
 
 	// Check dimSize output (scalar 4)
-	sizeFlat4 := readBufferInt32(t, outputs4[0])
-	if !reflect.DeepEqual(sizeFlat4, []int32{4}) {
+	sizeFlat4 := readBufferInt64(t, outputs4[0])
+	if !reflect.DeepEqual(sizeFlat4, []int64{4}) {
 		t.Errorf("Expected dimSize to be [4], got %v", sizeFlat4)
 	}
 
 	// Check shapeVal output ([4, 3])
-	shapeFlat4 := readBufferInt32(t, outputs4[1])
-	if !reflect.DeepEqual(shapeFlat4, []int32{4, 3}) {
+	shapeFlat4 := readBufferInt64(t, outputs4[1])
+	if !reflect.DeepEqual(shapeFlat4, []int64{4, 3}) {
 		t.Errorf("Expected shape to be [4, 3], got %v", shapeFlat4)
 	}
 }
