@@ -11,9 +11,13 @@ import (
 type PackedMatrixCache struct {
 	Once sync.Once
 
+	// Buffer holds the underlying single flat allocation for all panels (from GetBuffer).
+	Buffer any
+
 	// Panels holds the pre-packed panels.
 	// For RHS: []T or [][]T indexed by (kPanelIdx * numColPanels + colPanelIdx).
 	// For LHS: []T or [][]T indexed by (kPanelIdx * numRowPanels + rowPanelIdx).
 	// Stored as any to support float32, bfloat16, float16, float64 without code duplication.
 	Panels any
 }
+

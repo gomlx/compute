@@ -63,34 +63,11 @@ func avx512LargeFloat32( //alt:f32
 	//alt:f64 var cachedRHSPanels [][]float64
 	if nodeData != nil && nodeData.CanCachePackRHS && nodeData.PackedRHS != nil {
 		nodeData.PackedRHS.Once.Do(func() {
-			panels := make([][]float32, batchSize*rhsPanelsPerBatch) //alt:f32
-			//alt:bf16 panels := make([][]bfloat16.BFloat16, batchSize*rhsPanelsPerBatch)
-			//alt:f16 panels := make([][]float16.Float16, batchSize*rhsPanelsPerBatch)
-			//alt:f64 panels := make([][]float64, batchSize*rhsPanelsPerBatch)
-			rhsFlatIdx := 0
-			for b := range batchSize {
-				batchRHS := rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
-				for colPanelIdx := range numColPanels {
-					rhsPanelColIdx := colPanelIdx * params.RHSPanelCrossSize
-					rhsPanelWidth := min(params.RHSPanelCrossSize, rhsCrossSize-rhsPanelColIdx)
-					for kPanelIdx := range numKPanels {
-						contractingPanelIdx := kPanelIdx * params.PanelContractingSize
-						contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-						numStrips := (rhsPanelWidth + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols
-						panelBuf := make([]float32, contractingPanelWidth*numStrips*params.RHSL1KernelCols) //alt:f32
-						//alt:bf16 panelBuf := make([]bfloat16.BFloat16, contractingPanelWidth*numStrips*params.RHSL1KernelCols)
-						//alt:f16 panelBuf := make([]float16.Float16, contractingPanelWidth*numStrips*params.RHSL1KernelCols)
-						//alt:f64 panelBuf := make([]float64, contractingPanelWidth*numStrips*params.RHSL1KernelCols)
-						if layout == dot.LayoutNonTransposed {
-							avx512PackRHSNonTransposed(batchRHS, panelBuf, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
-						} else {
-							unsafePackLHS(batchRHS, panelBuf, rhsPanelColIdx, contractingPanelIdx, contractingSize, rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
-						}
-						panels[b*rhsPanelsPerBatch+kPanelIdx*numColPanels+colPanelIdx] = panelBuf
-					}
-				}
-				rhsFlatIdx += rhsBatchStride
-			}
+			ref, panels := avx512PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f32
+			//alt:bf16 ref, panels := avx512PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+			//alt:f16 ref, panels := avx512PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+			//alt:f64 ref, panels := avx512PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+			nodeData.PackedRHS.Buffer = ref
 			nodeData.PackedRHS.Panels = panels
 		})
 		if p, ok := nodeData.PackedRHS.Panels.([][]float32); ok { //alt:f32
@@ -107,30 +84,11 @@ func avx512LargeFloat32( //alt:f32
 	//alt:f64 var cachedLHSPanels [][]float64
 	if nodeData != nil && nodeData.CanCachePackLHS && nodeData.PackedLHS != nil {
 		nodeData.PackedLHS.Once.Do(func() {
-			panels := make([][]float32, batchSize*lhsPanelsPerBatch) //alt:f32
-			//alt:bf16 panels := make([][]bfloat16.BFloat16, batchSize*lhsPanelsPerBatch)
-			//alt:f16 panels := make([][]float16.Float16, batchSize*lhsPanelsPerBatch)
-			//alt:f64 panels := make([][]float64, batchSize*lhsPanelsPerBatch)
-			lhsFlatIdx := 0
-			for b := range batchSize {
-				batchLHS := lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
-				for rowPanelIdx := range numRowPanels {
-					lhsPanelRowIdx := rowPanelIdx * params.LHSPanelCrossSize
-					lhsPanelHeight := min(params.LHSPanelCrossSize, lhsCrossSize-lhsPanelRowIdx)
-					for kPanelIdx := range numKPanels {
-						contractingPanelIdx := kPanelIdx * params.PanelContractingSize
-						contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
-						numStrips := (lhsPanelHeight + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows
-						panelBuf := make([]float32, contractingPanelWidth*numStrips*params.LHSL1KernelRows) //alt:f32
-						//alt:bf16 panelBuf := make([]bfloat16.BFloat16, contractingPanelWidth*numStrips*params.LHSL1KernelRows)
-						//alt:f16 panelBuf := make([]float16.Float16, contractingPanelWidth*numStrips*params.LHSL1KernelRows)
-						//alt:f64 panelBuf := make([]float64, contractingPanelWidth*numStrips*params.LHSL1KernelRows)
-						avx512PackLHSKernelRows4(batchLHS, panelBuf, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
-						panels[b*lhsPanelsPerBatch+kPanelIdx*numRowPanels+rowPanelIdx] = panelBuf
-					}
-				}
-				lhsFlatIdx += lhsBatchStride
-			}
+			ref, panels := avx512PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f32
+			//alt:bf16 ref, panels := avx512PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+			//alt:f16 ref, panels := avx512PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+			//alt:f64 ref, panels := avx512PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+			nodeData.PackedLHS.Buffer = ref
 			nodeData.PackedLHS.Panels = panels
 		})
 		if p, ok := nodeData.PackedLHS.Panels.([][]float32); ok { //alt:f32
@@ -373,9 +331,15 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 	}
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
-	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; rhsPanelColIdx += params.RHSPanelCrossSize {
-		rhsPanelWidth := min(params.RHSPanelCrossSize, colEnd-rhsPanelColIdx)
-		numMPanels := (rowEnd - rowStart + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; {
+		colPanelIdx := rhsPanelColIdx / params.RHSPanelCrossSize
+		panelEnd := (colPanelIdx + 1) * params.RHSPanelCrossSize
+		rhsPanelWidth := min(colEnd, panelEnd) - rhsPanelColIdx
+
+		numMPanels := 0
+		if rowEnd > rowStart {
+			numMPanels = ((rowEnd - 1) / params.LHSPanelCrossSize) - (rowStart / params.LHSPanelCrossSize) + 1
+		}
 		accumPanelStride := params.RHSPanelCrossSize
 		panelSize := params.LHSPanelCrossSize * accumPanelStride
 		useAccum := len(accumBuffer) >= numMPanels*panelSize
@@ -385,7 +349,6 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
 			if len(cachedRHSPanels) > 0 {
 				numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
-				colPanelIdx := rhsPanelColIdx / params.RHSPanelCrossSize
 				kPanelIdx := contractingPanelIdx / params.PanelContractingSize
 				panel := cachedRHSPanels[kPanelIdx*numColPanels+colPanelIdx]
 				stripOffset := (rhsPanelColIdx % params.RHSPanelCrossSize) / params.RHSL1KernelCols
@@ -400,11 +363,13 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 			}
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
-			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
-				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
+				rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
+				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
+
 				if len(cachedLHSPanels) > 0 {
 					numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
-					rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
 					kPanelIdx := contractingPanelIdx / params.PanelContractingSize
 					panel := cachedLHSPanels[kPanelIdx*numRowPanels+rowPanelIdx]
 					stripOffset := (lhsPanelRowIdx % params.LHSPanelCrossSize) / params.LHSL1KernelRows
@@ -505,31 +470,184 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 						rhsCrossSize,
 						lhsPanelHeight, rhsPanelWidth)
 				}
+				lhsPanelRowIdx += lhsPanelHeight
 			}
 		}
 
 		if useAccum {
 			// Copy accumulated results from L2 cache to outputMatrix in a single pass (only for panels that could not direct output).
-			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx, lhsPanelRowIdx = mIdx+1, lhsPanelRowIdx+params.LHSPanelCrossSize {
-				lhsPanelHeight := min(params.LHSPanelCrossSize, rowEnd-lhsPanelRowIdx)
+			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
+				rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
+				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
+
 				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
-				if canDirectOutput {
-					continue
+				if !canDirectOutput {
+					accumOffset := mIdx * panelSize
+					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
+					avx512ApplyPackedOutputFloat32( //alt:f32|bf16|f16
+						//alt:f64 avx512ApplyPackedOutputFloat64(
+						accumSlice, outputMatrix,
+						true,
+						accumPanelStride,
+						lhsPanelRowIdx, rhsPanelColIdx,
+						rhsCrossSize,
+						lhsPanelHeight, rhsPanelWidth)
 				}
-				accumOffset := mIdx * panelSize
-				accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
-				avx512ApplyPackedOutputFloat32( //alt:f32|bf16|f16
-					//alt:f64 avx512ApplyPackedOutputFloat64(
-					accumSlice, outputMatrix,
-					true,
-					accumPanelStride,
-					lhsPanelRowIdx, rhsPanelColIdx,
-					rhsCrossSize,
-					lhsPanelHeight, rhsPanelWidth)
+				lhsPanelRowIdx += lhsPanelHeight
 			}
 		}
+		rhsPanelColIdx += rhsPanelWidth
 	}
 }
+
+// avx512PrepackRHSFloat32 pre-packs the RHS matrix into a single flat buffer and returns panel slices.
+func avx512PrepackRHSFloat32( //alt:f32
+	//alt:bf16 func avx512PrepackRHSBFloat16(
+	//alt:f16 func avx512PrepackRHSFloat16(
+	//alt:f64 func avx512PrepackRHSFloat64(
+	backend *gobackend.Backend,
+	layout dot.Layout,
+	rhs []float32, //alt:f32
+	//alt:bf16 rhs []bfloat16.BFloat16,
+	//alt:f16 rhs []float16.Float16,
+	//alt:f64 rhs []float64,
+	batchSize, rhsCrossSize, contractingSize int,
+	params matmul.CacheParams,
+) (*gobackend.Buffer, [][]float32) { //alt:f32
+	//alt:bf16 ) (*gobackend.Buffer, [][]bfloat16.BFloat16) {
+	//alt:f16 ) (*gobackend.Buffer, [][]float16.Float16) {
+	//alt:f64 ) (*gobackend.Buffer, [][]float64) {
+	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
+	numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
+	rhsPanelsPerBatch := numKPanels * numColPanels
+	rhsBatchStride := rhsCrossSize * contractingSize
+
+	totalElements := 0
+	for colPanelIdx := range numColPanels {
+		rhsPanelColIdx := colPanelIdx * params.RHSPanelCrossSize
+		rhsPanelWidth := min(params.RHSPanelCrossSize, rhsCrossSize-rhsPanelColIdx)
+		numStrips := (rhsPanelWidth + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols
+		for kPanelIdx := range numKPanels {
+			contractingPanelIdx := kPanelIdx * params.PanelContractingSize
+			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
+			totalElements += contractingPanelWidth * numStrips * params.RHSL1KernelCols
+		}
+	}
+	totalElements *= batchSize
+
+	ref, flatBuf, ok := GetBuffer[float32](backend, totalElements) //alt:f32
+	//alt:bf16 ref, flatBuf, ok := GetBuffer[bfloat16.BFloat16](backend, totalElements)
+	//alt:f16 ref, flatBuf, ok := GetBuffer[float16.Float16](backend, totalElements)
+	//alt:f64 ref, flatBuf, ok := GetBuffer[float64](backend, totalElements)
+	if !ok {
+		return nil, nil
+	}
+
+	panels := make([][]float32, batchSize*rhsPanelsPerBatch) //alt:f32
+	//alt:bf16 panels := make([][]bfloat16.BFloat16, batchSize*rhsPanelsPerBatch)
+	//alt:f16 panels := make([][]float16.Float16, batchSize*rhsPanelsPerBatch)
+	//alt:f64 panels := make([][]float64, batchSize*rhsPanelsPerBatch)
+
+	offset := 0
+	rhsFlatIdx := 0
+	for b := range batchSize {
+		batchRHS := rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
+		for colPanelIdx := range numColPanels {
+			rhsPanelColIdx := colPanelIdx * params.RHSPanelCrossSize
+			rhsPanelWidth := min(params.RHSPanelCrossSize, rhsCrossSize-rhsPanelColIdx)
+			numStrips := (rhsPanelWidth + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols
+			for kPanelIdx := range numKPanels {
+				contractingPanelIdx := kPanelIdx * params.PanelContractingSize
+				contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
+				panelLen := contractingPanelWidth * numStrips * params.RHSL1KernelCols
+				panelBuf := flatBuf[offset : offset+panelLen]
+				offset += panelLen
+
+				if layout == dot.LayoutNonTransposed {
+					avx512PackRHSNonTransposed(batchRHS, panelBuf, contractingPanelIdx, rhsPanelColIdx, rhsCrossSize, contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols)
+				} else {
+					unsafePackLHS(batchRHS, panelBuf, rhsPanelColIdx, contractingPanelIdx, contractingSize, rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
+				}
+				panels[b*rhsPanelsPerBatch+kPanelIdx*numColPanels+colPanelIdx] = panelBuf
+			}
+		}
+		rhsFlatIdx += rhsBatchStride
+	}
+	return ref, panels
+}
+
+// avx512PrepackLHSFloat32 pre-packs the LHS matrix into a single flat buffer and returns panel slices.
+func avx512PrepackLHSFloat32( //alt:f32
+	//alt:bf16 func avx512PrepackLHSBFloat16(
+	//alt:f16 func avx512PrepackLHSFloat16(
+	//alt:f64 func avx512PrepackLHSFloat64(
+	backend *gobackend.Backend,
+	lhs []float32, //alt:f32
+	//alt:bf16 lhs []bfloat16.BFloat16,
+	//alt:f16 lhs []float16.Float16,
+	//alt:f64 lhs []float64,
+	batchSize, lhsCrossSize, contractingSize int,
+	params matmul.CacheParams,
+) (*gobackend.Buffer, [][]float32) { //alt:f32
+	//alt:bf16 ) (*gobackend.Buffer, [][]bfloat16.BFloat16) {
+	//alt:f16 ) (*gobackend.Buffer, [][]float16.Float16) {
+	//alt:f64 ) (*gobackend.Buffer, [][]float64) {
+	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
+	numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+	lhsPanelsPerBatch := numKPanels * numRowPanels
+	lhsBatchStride := lhsCrossSize * contractingSize
+
+	totalElements := 0
+	for rowPanelIdx := range numRowPanels {
+		lhsPanelRowIdx := rowPanelIdx * params.LHSPanelCrossSize
+		lhsPanelHeight := min(params.LHSPanelCrossSize, lhsCrossSize-lhsPanelRowIdx)
+		numStrips := (lhsPanelHeight + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows
+		for kPanelIdx := range numKPanels {
+			contractingPanelIdx := kPanelIdx * params.PanelContractingSize
+			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
+			totalElements += contractingPanelWidth * numStrips * params.LHSL1KernelRows
+		}
+	}
+	totalElements *= batchSize
+
+	ref, flatBuf, ok := GetBuffer[float32](backend, totalElements) //alt:f32
+	//alt:bf16 ref, flatBuf, ok := GetBuffer[bfloat16.BFloat16](backend, totalElements)
+	//alt:f16 ref, flatBuf, ok := GetBuffer[float16.Float16](backend, totalElements)
+	//alt:f64 ref, flatBuf, ok := GetBuffer[float64](backend, totalElements)
+	if !ok {
+		return nil, nil
+	}
+
+	panels := make([][]float32, batchSize*lhsPanelsPerBatch) //alt:f32
+	//alt:bf16 panels := make([][]bfloat16.BFloat16, batchSize*lhsPanelsPerBatch)
+	//alt:f16 panels := make([][]float16.Float16, batchSize*lhsPanelsPerBatch)
+	//alt:f64 panels := make([][]float64, batchSize*lhsPanelsPerBatch)
+
+	offset := 0
+	lhsFlatIdx := 0
+	for b := range batchSize {
+		batchLHS := lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
+		for rowPanelIdx := range numRowPanels {
+			lhsPanelRowIdx := rowPanelIdx * params.LHSPanelCrossSize
+			lhsPanelHeight := min(params.LHSPanelCrossSize, lhsCrossSize-lhsPanelRowIdx)
+			numStrips := (lhsPanelHeight + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows
+			for kPanelIdx := range numKPanels {
+				contractingPanelIdx := kPanelIdx * params.PanelContractingSize
+				contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
+				panelLen := contractingPanelWidth * numStrips * params.LHSL1KernelRows
+				panelBuf := flatBuf[offset : offset+panelLen]
+				offset += panelLen
+
+				avx512PackLHSKernelRows4(batchLHS, panelBuf, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+				panels[b*lhsPanelsPerBatch+kPanelIdx*numRowPanels+rowPanelIdx] = panelBuf
+			}
+		}
+		lhsFlatIdx += lhsBatchStride
+	}
+	return ref, panels
+}
+
 
 // avx512LargeKernelFloat32 implements a kernel of the matrix multiplication for
 // a lhs and rhs packed panels into an intermediate output panel.
