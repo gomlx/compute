@@ -31,8 +31,9 @@ func avx512RouterFloat64( //alt:f64
 	//alt:f16  lhs, rhs []float16.Float16,
 	lhs, rhs []float64, //alt:f64
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	//alt:f32|bf16|f16 output []float32) {
-	output []float64) { //alt:f64
+	//alt:f32|bf16|f16 output []float32,
+	output []float64, //alt:f64
+	nodeData *dot.NodeData) {
 
 	// Check if small matrix multiplication kernel can be used.
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
@@ -63,5 +64,5 @@ func avx512RouterFloat64( //alt:f64
 	//alt:bf16  avx512LargeBFloat16(
 	//alt:f16  avx512LargeFloat16(
 	avx512LargeFloat64( //alt:f64
-		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+		backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
 }

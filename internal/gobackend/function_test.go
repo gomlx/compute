@@ -1738,3 +1738,57 @@ func TestClosureCaptureExecutionWithWhile(t *testing.T) {
 		t.Errorf("While result mismatch:\n%s", diff)
 	}
 }
+
+func TestEstimatedTemporaryMemory(t *testing.T) {
+	// 1. Static function: should return a non-negative estimated byte count.
+	{
+		builder := backend.Builder("test_estimated_memory_static")
+		mainFn := builder.Main()
+		p, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 10, 20), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		addRes, err := mainFn.Add(p, p)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		err = mainFn.Return([]compute.Value{addRes}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		estMem := exec.(*gobackend.Executable).EstimatedTemporaryMemory()
+		if estMem <= 0 {
+			t.Errorf("expected positive estimated temporary memory for static graph, got %d", estMem)
+		}
+	}
+
+	// 2. Dynamic function: should return int64(shapes.DynamicDim) (-1).
+	{
+		builder := backend.Builder("test_estimated_memory_dynamic")
+		mainFn := builder.Main()
+		p, err := mainFn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 20}, []string{"batch", ""}), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		addRes, err := mainFn.Add(p, p)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		err = mainFn.Return([]compute.Value{addRes}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("unexpected error: %+v", err)
+		}
+		estMem := exec.(*gobackend.Executable).EstimatedTemporaryMemory()
+		if estMem != int64(shapes.DynamicDim) {
+			t.Errorf("expected EstimatedTemporaryMemory() == DynamicDim (%d) for dynamic graph, got %d", shapes.DynamicDim, estMem)
+		}
+	}
+}

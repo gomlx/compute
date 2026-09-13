@@ -7,3 +7,7 @@ package matmul
 func addBiasFloat32Arch(row, bias []float32) bool {
 	return false
 }
+
+func copyAndAddBiasFloat32Arch(dst, src, bias []float32) bool {
+	return false
+}

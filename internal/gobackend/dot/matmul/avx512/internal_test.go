@@ -943,7 +943,7 @@ func BenchmarkSmallMatMul(b *testing.B) {
 		b.Run(tc.name+"/Router", func(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
-				avx512RouterFloat32(backend, tc.layout, lhs, rhs, 1, M, N, K, out)
+				avx512RouterFloat32(backend, tc.layout, lhs, rhs, 1, M, N, K, out, nil)
 			}
 			elapsed := b.Elapsed()
 			if elapsed > 0 && b.N > 0 {

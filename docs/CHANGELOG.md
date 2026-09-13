@@ -1,3 +1,15 @@
+- 2026-09-12:
+  - Enabled constant weight panel caching in `DotGeneral` and `FusedDense` for the Go backend:
+    - Advertised `PreferConstantsForVariables: true` in `gobackend` capabilities.
+    - Optimized large constant deduplication and equality checking in `buffers.go` using fast byte-slice comparison (`bytes.Equal`) and typed slice equality instead of reflection.
+    - Added memoized constant subgraph detection (`node.IsConstant()` and `builder.IsConstantNode()`) to identify deterministic constant subgraphs.
+    - Added `PackedLHSCache` and `PackedRHSCache` panel caches (`*dot.PackedMatrixCache` with `sync.Once`) to `DotGeneral` and `FusedDense` `NodeData`, preserved across dynamic shape specializations.
+    - Added one-time pre-packing and zero-copy panel reuse in AVX-512 and AVX2 GEMM routines (`avx512LargeFloat32`, `avx2LargeFloat32`), supporting both static and batched matrices.
+  - Added SIMD vectorization for `FusedAttentionQKVProjection` epilogue (`CopyAndAddBiasFloat32` and `CopyAndAddBiasFloat64`) in `internal/gobackend/dot/matmul` with AVX2 and AVX-512 assembly implementations (`copyAndAddBiasFloat32AVX2Asm`, `copyAndAddBiasFloat32AVX512Asm`).
+  - Added dynamic shape support in `FusedAttentionQKVProjection` in `gobackend` using `shapes.MakeDynamic` preserving axis names.
+  - Added SIMD-vectorized executor (`PrioritySIMD`) for `OpTypeFusedSoftmax` in `internal/gobackend/fusedops` targeting contiguous trailing axes, utilizing vector max reduction, `simdmath.ExpFloat32`, and vector normalization.
+  - Added backend compliance tests for dynamic `FusedAttentionQKVProjection` and remainder-tail `FusedSoftmax` in `support/backendtest`.
+
 - 2026-09-10:
   - Fixed and streamlined `gobackend.DotGeneral` for both static and dynamic shapes:
     - Removed `MergeAxes` calls in `reshapeToSupportedLayout` and `TransposeToLayout`. Contiguous row-major axis groups naturally match GEMM strides, eliminating unnecessary reshape overhead and cleanly supporting multi-batch or multi-contracting dynamic dimensions.

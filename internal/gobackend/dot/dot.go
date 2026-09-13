@@ -53,6 +53,12 @@ type NodeData struct {
 
 	// implementation for current layout.
 	implementation *ImplementationRegistration
+
+	// PackedLHSCache and PackedRHSCache store pre-packed panel representations
+	// for LHS and RHS matrices when they are constant. They are non-nil if and only if
+	// the corresponding matrix input is constant and eligible for panel caching.
+	PackedLHSCache *PackedMatrixCache
+	PackedRHSCache *PackedMatrixCache
 }
 
 // SetSizes computes and sets the internal sizes (BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize)
@@ -126,7 +132,9 @@ func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	if d.BatchSize != o.BatchSize ||
 		d.LHSCrossSize != o.LHSCrossSize ||
 		d.RHSCrossSize != o.RHSCrossSize ||
-		d.ContractingSize != o.ContractingSize {
+		d.ContractingSize != o.ContractingSize ||
+		(d.PackedLHSCache != nil) != (o.PackedLHSCache != nil) ||
+		(d.PackedRHSCache != nil) != (o.PackedRHSCache != nil) {
 		return false
 	}
 	return slices.Equal(d.LHSContractingAxes, o.LHSContractingAxes) &&
@@ -146,6 +154,8 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 		LHSBatchAxes:       slices.Clone(d.LHSBatchAxes),
 		RHSContractingAxes: slices.Clone(d.RHSContractingAxes),
 		RHSBatchAxes:       slices.Clone(d.RHSBatchAxes),
+		PackedLHSCache:     d.PackedLHSCache,
+		PackedRHSCache:     d.PackedRHSCache,
 	}
 
 	// Get resolved (concrete) input shapes.
@@ -276,6 +286,12 @@ func DotGeneral(f *gobackend.Function,
 	if params.OutputDType != outputShape.DType {
 		nodeOutputShape = outputShape.Clone()
 		nodeOutputShape.DType = params.OutputDType
+	}
+	if lhs.IsConstant() {
+		params.PackedLHSCache = &PackedMatrixCache{}
+	}
+	if rhs.IsConstant() {
+		params.PackedRHSCache = &PackedMatrixCache{}
 	}
 	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, nodeOutputShape, inputs, params)
 

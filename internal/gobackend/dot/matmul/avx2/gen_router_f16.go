@@ -29,8 +29,9 @@ func avx2RouterFloat16( //alt:f16
 	lhs, rhs []float16.Float16, //alt:f16
 	//alt:f64  lhs, rhs []float64,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
-	output []float32) { //alt:f32|bf16|f16
-	//alt:f64  output []float64) {
+	output []float32, //alt:f32|bf16|f16
+	//alt:f64  output []float64,
+	nodeData *dot.NodeData) {
 
 	if !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || (lhsCrossSize*rhsCrossSize*contractingSize < matmul.SmallMatMulSizeThreshold)) {
 		//alt:f32 avx2SmallFloat32Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
@@ -40,8 +41,8 @@ func avx2RouterFloat16( //alt:f16
 		return
 	}
 
-	//alt:f32 avx2LargeFloat32(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-	//alt:bf16  avx2LargeBFloat16(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
-	avx2LargeFloat16(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:f16
-	//alt:f64  avx2LargeFloat64(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+	//alt:f32 avx2LargeFloat32(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
+	//alt:bf16  avx2LargeBFloat16(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
+	avx2LargeFloat16(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData) //alt:f16
+	//alt:f64  avx2LargeFloat64(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
 }

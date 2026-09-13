@@ -75,9 +75,14 @@ func ExecuteWithEpilogue[I, O interface {
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O,
 	epilogue Epilogue[O],
+	nodeDataOpt ...*dot.NodeData,
 ) error {
 	if backend.NoOps {
 		return nil
+	}
+	var nodeData *dot.NodeData
+	if len(nodeDataOpt) > 0 {
+		nodeData = nodeDataOpt[0]
 	}
 	inDType := dtypes.FromGenericsType[I]()
 	outDType := dtypes.FromGenericsType[O]()
@@ -92,7 +97,7 @@ func ExecuteWithEpilogue[I, O interface {
 		return errors.Errorf("invalid implementation function type for layout=%s, input=%s, output=%s",
 			layout, inDType, outDType)
 	}
-	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
+	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)
 
 	if epilogue.HasWork() {
 		ApplyEpilogue(backend, output, batchSize, lhsCrossSize, rhsCrossSize, epilogue)

@@ -100,6 +100,24 @@ func TestShape(t *testing.T) {
 	if shapeUint1.ByteSize() != 1 {
 		t.Errorf("expected shapeUint1.ByteSize() to be 1, got %d", shapeUint1.ByteSize())
 	}
+
+	// Zero-size shape: 0 bytes.
+	shapeZero := Make(dtypes.Float32, 0, 5)
+	if !shapeZero.IsZeroSize() {
+		t.Errorf("expected shapeZero.IsZeroSize() to be true")
+	}
+	if shapeZero.ByteSize() != 0 {
+		t.Errorf("expected shapeZero.ByteSize() to be 0, got %d", shapeZero.ByteSize())
+	}
+
+	// Dynamic shape: int64(DynamicDim) (-1) bytes.
+	shapeDynamic := MakeDynamic(dtypes.Float32, []int{DynamicDim, 384}, []string{"batch", ""})
+	if !shapeDynamic.IsDynamic() {
+		t.Errorf("expected shapeDynamic.IsDynamic() to be true")
+	}
+	if shapeDynamic.ByteSize() != int64(DynamicDim) {
+		t.Errorf("expected shapeDynamic.ByteSize() to be DynamicDim (%d), got %d", DynamicDim, shapeDynamic.ByteSize())
+	}
 }
 
 func TestDim(t *testing.T) {

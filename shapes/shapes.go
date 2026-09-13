@@ -191,7 +191,11 @@ func (s Shape) IsZeroSize() bool {
 }
 
 // ByteSize returns the number of bytes used to store an array of the given shape.
+// Returns int64(DynamicDim) (-1) if the shape has dynamic dimensions.
 func (s Shape) ByteSize() int64 {
+	if s.IsDynamic() {
+		return int64(DynamicDim)
+	}
 	return int64(s.DType.SizeForDimensions(s.Dimensions...))
 }
 

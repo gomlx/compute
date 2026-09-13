@@ -54,6 +54,33 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
+		t.Run("LargeAndRemainder", func(t *testing.T) {
+			const numRows, rowSize = 3, 37
+			input := make([][]float32, numRows)
+			for r := range numRows {
+				input[r] = make([]float32, rowSize)
+				for c := range rowSize {
+					input[r][c] = float32(r*10 + c%7)
+				}
+			}
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedSoftmax(params[0], 1)
+			})
+			if err != nil {
+				t.Fatalf("FusedSoftmax failed: %+v", err)
+			}
+			gotSlice := got.([][]float32)
+			for r := range numRows {
+				var sum float32
+				for c := range rowSize {
+					sum += gotSlice[r][c]
+				}
+				if ok, diff := testutil.IsInDelta(float32(1.0), sum, fusedTestTolerance); !ok {
+					t.Errorf("row %d: sum %f not within delta %f:\n%s", r, sum, fusedTestTolerance, diff)
+				}
+			}
+		})
+
 		t.Run("NegativeAxis", func(t *testing.T) {
 			builder := b.Builder("fused_test")
 			mainFn := builder.Main()
@@ -699,30 +726,109 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 
 	t.Run("FusedAttentionQKVProjection", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeFusedAttentionQKVProjection)
-		x := [][]float32{{1, 2, 3}}
-		wQKV := [][]float32{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
-		bq := []float32{10, 20}
-		bk := []float32{100}
-		bv := []float32{1000}
+		t.Run("2D", func(t *testing.T) {
+			x := [][]float32{{1, 2, 3}}
+			wQKV := [][]float32{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
+			bq := []float32{10, 20}
+			bk := []float32{100}
+			bv := []float32{1000}
 
-		gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
-			return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], 2, 1)
+			gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+				return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], 2, 1)
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("QKV Projection failed: %+v", err)
+			}
+
+			if ok, diff := testutil.IsEqual([][]float32{{11, 22}}, gotQ); !ok {
+				t.Errorf("Q mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{103}}, gotK); !ok {
+				t.Errorf("K mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1006}}, gotV); !ok {
+				t.Errorf("V mismatch:\n%s", diff)
+			}
 		})
-		if err != nil && compute.IsNotImplemented(err) {
-			t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
-		}
-		if err != nil {
-			t.Fatalf("QKV Projection failed: %+v", err)
-		}
 
-		if ok, diff := testutil.IsEqual([][]float32{{11, 22}}, gotQ); !ok {
-			t.Errorf("Q mismatch:\n%s", diff)
-		}
-		if ok, diff := testutil.IsEqual([][]float32{{103}}, gotK); !ok {
-			t.Errorf("K mismatch:\n%s", diff)
-		}
-		if ok, diff := testutil.IsEqual([][]float32{{1006}}, gotV); !ok {
-			t.Errorf("V mismatch:\n%s", diff)
-		}
+		t.Run("3D", func(t *testing.T) {
+			x := [][][]float32{{{1, 2, 3}, {4, 5, 6}}}
+			wQKV := [][]float32{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
+			bq := []float32{10, 20}
+			bk := []float32{100}
+			bv := []float32{1000}
+
+			gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+				return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], 2, 1)
+			})
+			if err != nil && compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("QKV Projection 3D failed: %+v", err)
+			}
+
+			if ok, diff := testutil.IsEqual([][][]float32{{{11, 22}, {14, 25}}}, gotQ); !ok {
+				t.Errorf("Q mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][][]float32{{{103}, {106}}}, gotK); !ok {
+				t.Errorf("K mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][][]float32{{{1006}, {1015}}}, gotV); !ok {
+				t.Errorf("V mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Dynamic", func(t *testing.T) {
+			testutil.SkipIfMissingDynamicShapes(t, b)
+			builder := b.Builder("fused_qkv_dynamic")
+			mainFn := builder.Main()
+			xShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, shapes.DynamicDim, 3}, []string{"batch", "seq", ""})
+			pX, _ := mainFn.Parameter("x", xShape, nil)
+			pW, _ := mainFn.Parameter("w", shapes.Make(dtypes.Float32, 3, 4), nil)
+			pBQ, _ := mainFn.Parameter("bq", shapes.Make(dtypes.Float32, 2), nil)
+			pBK, _ := mainFn.Parameter("bk", shapes.Make(dtypes.Float32, 1), nil)
+			pBV, _ := mainFn.Parameter("bv", shapes.Make(dtypes.Float32, 1), nil)
+			q, k, v, err := mainFn.FusedAttentionQKVProjection(pX, pW, pBQ, pBK, pBV, 2, 1)
+			if err != nil {
+				t.Fatalf("FusedAttentionQKVProjection failed: %+v", err)
+			}
+			mainFn.Return([]compute.Value{q, k, v}, nil)
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %+v", err)
+			}
+			defer exec.Finalize()
+
+			xVal := [][][]float32{{{1, 2, 3}, {4, 5, 6}}}
+			wVal := [][]float32{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
+			bqVal := []float32{10, 20}
+			bkVal := []float32{100}
+			bvVal := []float32{1000}
+			bufX, _ := testutil.ToBuffer(b, xVal)
+			bufW, _ := testutil.ToBuffer(b, wVal)
+			bufBQ, _ := testutil.ToBuffer(b, bqVal)
+			bufBK, _ := testutil.ToBuffer(b, bkVal)
+			bufBV, _ := testutil.ToBuffer(b, bvVal)
+			outputs, err := exec.Execute([]compute.Buffer{bufX, bufW, bufBQ, bufBK, bufBV}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %+v", err)
+			}
+			gotQ, _ := testutil.FromBuffer(b, outputs[0])
+			gotK, _ := testutil.FromBuffer(b, outputs[1])
+			gotV, _ := testutil.FromBuffer(b, outputs[2])
+			if ok, diff := testutil.IsEqual([][][]float32{{{11, 22}, {14, 25}}}, gotQ); !ok {
+				t.Errorf("Dynamic Q mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][][]float32{{{103}, {106}}}, gotK); !ok {
+				t.Errorf("Dynamic K mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsEqual([][][]float32{{{1006}, {1015}}}, gotV); !ok {
+				t.Errorf("Dynamic V mismatch:\n%s", diff)
+			}
+		})
 	})
 }

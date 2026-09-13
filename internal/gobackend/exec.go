@@ -79,6 +79,15 @@ func (e *Executable) Outputs() (outputShapes []shapes.Shape) {
 	return outputShapes
 }
 
+// EstimatedTemporaryMemory estimates the memory used for the executable if executed sequentially.
+// Returns int64(shapes.DynamicDim) (-1) if the computation has dynamic shapes.
+func (e *Executable) EstimatedTemporaryMemory() int64 {
+	if e == nil || e.mainFn == nil {
+		return 0
+	}
+	return e.mainFn.EstimatedTemporaryMemory()
+}
+
 // newExecutable creates an Executable ready to run the graph built with builder.
 // The main function must have been compiled (via Return() and then any
 // duplicate output handling in Builder.Compile()).
