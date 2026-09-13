@@ -115,10 +115,13 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		BatchSize:       1,
 		LHSCrossSize:    lhsCrossSize,
 		RHSCrossSize:    rhsCrossSize,
-		CanCachePackLHS: xNode.IsConstant(),
-		CanCachePackRHS: wNode.IsConstant(),
-		PackedLHS:       &dot.PackedMatrixCache{},
-		PackedRHS:       &dot.PackedMatrixCache{},
+		ContractingSize: contractingSize,
+	}
+	if xNode.IsConstant() {
+		dotNodeData.PackedLHSCache = &dot.PackedMatrixCache{}
+	}
+	if wNode.IsConstant() {
+		dotNodeData.PackedRHSCache = &dot.PackedMatrixCache{}
 	}
 
 	data := &nodeFusedDense{

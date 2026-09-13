@@ -43,24 +43,24 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 		cachedLHSPanels [][]I
 	)
 	if nodeData != nil {
-		if nodeData.CanCachePackRHS && nodeData.PackedRHS != nil {
-			nodeData.PackedRHS.Once.Do(func() {
+		if nodeData.PackedRHSCache != nil {
+			nodeData.PackedRHSCache.Once.Do(func() {
 				ref, panels := noSIMDPrepackRHS(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				nodeData.PackedRHS.Buffer = ref
-				nodeData.PackedRHS.Panels = panels
+				nodeData.PackedRHSCache.Buffer = ref
+				nodeData.PackedRHSCache.Panels = panels
 			})
-			if p, ok := nodeData.PackedRHS.Panels.([][]I); ok {
+			if p, ok := nodeData.PackedRHSCache.Panels.([][]I); ok {
 				cachedRHSPanels = p
 			}
 		}
 
-		if nodeData.CanCachePackLHS && nodeData.PackedLHS != nil {
-			nodeData.PackedLHS.Once.Do(func() {
+		if nodeData.PackedLHSCache != nil {
+			nodeData.PackedLHSCache.Once.Do(func() {
 				ref, panels := noSIMDPrepackLHS(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				nodeData.PackedLHS.Buffer = ref
-				nodeData.PackedLHS.Panels = panels
+				nodeData.PackedLHSCache.Buffer = ref
+				nodeData.PackedLHSCache.Panels = panels
 			})
-			if p, ok := nodeData.PackedLHS.Panels.([][]I); ok {
+			if p, ok := nodeData.PackedLHSCache.Panels.([][]I); ok {
 				cachedLHSPanels = p
 			}
 		}

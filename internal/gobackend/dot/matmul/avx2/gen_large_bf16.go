@@ -65,36 +65,36 @@ func avx2LargeBFloat16( //alt:bf16
 	//alt:f16  var cachedLHSPanels [][]float16.Float16
 	//alt:f64  var cachedLHSPanels [][]float64
 	if nodeData != nil {
-		if nodeData.CanCachePackRHS && nodeData.PackedRHS != nil {
-			nodeData.PackedRHS.Once.Do(func() {
+		if nodeData.PackedRHSCache != nil {
+			nodeData.PackedRHSCache.Once.Do(func() {
 				//alt:f32 ref, panels := avx2PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
 				ref, panels := avx2PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:bf16
 				//alt:f16  ref, panels := avx2PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
 				//alt:f64  ref, panels := avx2PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				nodeData.PackedRHS.Buffer = ref
-				nodeData.PackedRHS.Panels = panels
+				nodeData.PackedRHSCache.Buffer = ref
+				nodeData.PackedRHSCache.Panels = panels
 			})
-			//alt:f32 if p, ok := nodeData.PackedRHS.Panels.([][]float32); ok {
-			if p, ok := nodeData.PackedRHS.Panels.([][]bfloat16.BFloat16); ok { //alt:bf16
-				//alt:f16  if p, ok := nodeData.PackedRHS.Panels.([][]float16.Float16); ok {
-				//alt:f64  if p, ok := nodeData.PackedRHS.Panels.([][]float64); ok {
+			//alt:f32 if p, ok := nodeData.PackedRHSCache.Panels.([][]float32); ok {
+			if p, ok := nodeData.PackedRHSCache.Panels.([][]bfloat16.BFloat16); ok { //alt:bf16
+				//alt:f16  if p, ok := nodeData.PackedRHSCache.Panels.([][]float16.Float16); ok {
+				//alt:f64  if p, ok := nodeData.PackedRHSCache.Panels.([][]float64); ok {
 				cachedRHSPanels = p
 			}
 		}
 
-		if nodeData.CanCachePackLHS && nodeData.PackedLHS != nil {
-			nodeData.PackedLHS.Once.Do(func() {
+		if nodeData.PackedLHSCache != nil {
+			nodeData.PackedLHSCache.Once.Do(func() {
 				//alt:f32 ref, panels := avx2PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
 				ref, panels := avx2PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:bf16
 				//alt:f16  ref, panels := avx2PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
 				//alt:f64  ref, panels := avx2PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				nodeData.PackedLHS.Buffer = ref
-				nodeData.PackedLHS.Panels = panels
+				nodeData.PackedLHSCache.Buffer = ref
+				nodeData.PackedLHSCache.Panels = panels
 			})
-			//alt:f32 if p, ok := nodeData.PackedLHS.Panels.([][]float32); ok {
-			if p, ok := nodeData.PackedLHS.Panels.([][]bfloat16.BFloat16); ok { //alt:bf16
-				//alt:f16  if p, ok := nodeData.PackedLHS.Panels.([][]float16.Float16); ok {
-				//alt:f64  if p, ok := nodeData.PackedLHS.Panels.([][]float64); ok {
+			//alt:f32 if p, ok := nodeData.PackedLHSCache.Panels.([][]float32); ok {
+			if p, ok := nodeData.PackedLHSCache.Panels.([][]bfloat16.BFloat16); ok { //alt:bf16
+				//alt:f16  if p, ok := nodeData.PackedLHSCache.Panels.([][]float16.Float16); ok {
+				//alt:f64  if p, ok := nodeData.PackedLHSCache.Panels.([][]float64); ok {
 				cachedLHSPanels = p
 			}
 		}
