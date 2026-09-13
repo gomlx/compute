@@ -116,7 +116,7 @@ func TanhFloat32(x simd.Float32s) simd.Float32s {
 // ErfFloat32 computes element-wise error function erf(x) using Abramowitz and
 // Stegun approximation formula 7.1.26 (maximum error < 1.5e-7).
 func ErfFloat32(x simd.Float32s) simd.Float32s {
-	vZero := simd.BroadcastFloat32s(0.0)
+	vSignMask := simd.BroadcastUint32s(0x80000000)
 	vOne := simd.BroadcastFloat32s(1.0)
 	vP := simd.BroadcastFloat32s(0.3275911)
 	vA1 := simd.BroadcastFloat32s(0.254829592)
@@ -137,8 +137,7 @@ func ErfFloat32(x simd.Float32s) simd.Float32s {
 	expNegX2 := ExpFloat32(absX.Mul(absX).Neg())
 	res := vOne.Sub(poly.Mul(expNegX2))
 
-	isNeg := x.Less(vZero)
-	return res.Neg().IfElse(isNeg, res)
+	return res.ToBits().Xor(x.ToBits().And(vSignMask)).BitsToFloat32()
 }
 
 // GeluApproxFloat32 computes element-wise approximate GELU:
@@ -277,7 +276,7 @@ func TanhFloat64(x simd.Float64s) simd.Float64s {
 
 // ErfFloat64 computes element-wise error function erf(x).
 func ErfFloat64(x simd.Float64s) simd.Float64s {
-	vZero := simd.BroadcastFloat64s(0.0)
+	vSignMask := simd.BroadcastUint64s(0x8000000000000000)
 	vOne := simd.BroadcastFloat64s(1.0)
 	vP := simd.BroadcastFloat64s(0.3275911)
 	vA1 := simd.BroadcastFloat64s(0.254829592)
@@ -298,8 +297,7 @@ func ErfFloat64(x simd.Float64s) simd.Float64s {
 	expNegX2 := ExpFloat64(absX.Mul(absX).Neg())
 	res := vOne.Sub(poly.Mul(expNegX2))
 
-	isNeg := x.Less(vZero)
-	return res.Neg().IfElse(isNeg, res)
+	return res.ToBits().Xor(x.ToBits().And(vSignMask)).BitsToFloat64()
 }
 
 // GeluApproxFloat64 computes element-wise approximate GELU:
