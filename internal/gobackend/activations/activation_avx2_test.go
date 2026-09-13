@@ -19,7 +19,7 @@ func init() {
 	f32Registry.RegisterInPlace("Relu", "AVX2_ArchSIMD", PriorityAVX2, avx2.ReluAVX2)
 	f32Registry.RegisterInPlace("Silu", "AVX2_ArchSIMD", PriorityAVX2, avx2.SiluAVX2)
 	f32Registry.RegisterInPlace("Tanh", "AVX2_ArchSIMD", PriorityAVX2, avx2.TanhAVX2)
-	f32Registry.RegisterInPlace("GeluApprox", "AVX2_ArchSIMD", PriorityAVX2, avx2.GeluAVX2)
+	f32Registry.Register("GeluApprox", "AVX2_ArchSIMD", PriorityAVX2, avx2.GeluAVX2)
 	f32Registry.RegisterInPlace("HardSwish", "AVX2_ArchSIMD", PriorityAVX2, avx2.HardSwishAVX2)
 }
 
