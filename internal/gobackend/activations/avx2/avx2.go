@@ -36,7 +36,6 @@ func registerAVX2() {
 	activations.Register[bfloat16.BFloat16]("avx2:relu", compute.ActivationRelu, reluBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:silu", compute.ActivationSilu, siluBF16AVX2, PriorityAVX2)
-	activations.Register[bfloat16.BFloat16]("avx2:gelu", compute.ActivationGelu, geluExactBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:geluapprox", compute.ActivationGeluApproximate, geluBF16AVX2, PriorityAVX2)
 	activations.Register[bfloat16.BFloat16]("avx2:tanh", compute.ActivationTanh, tanhBF16AVX2, PriorityAVX2)
 
@@ -44,7 +43,6 @@ func registerAVX2() {
 	activations.Register[float16.Float16]("avx2:relu", compute.ActivationRelu, reluF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:silu", compute.ActivationSilu, siluF16AVX2, PriorityAVX2)
-	activations.Register[float16.Float16]("avx2:gelu", compute.ActivationGelu, geluExactF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:geluapprox", compute.ActivationGeluApproximate, geluF16AVX2, PriorityAVX2)
 	activations.Register[float16.Float16]("avx2:tanh", compute.ActivationTanh, tanhF16AVX2, PriorityAVX2)
 }

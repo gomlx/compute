@@ -33,7 +33,7 @@ func registerAVX512() {
 	activations.Register[float32]("avx512:silu", compute.ActivationSilu, SiluAVX512, PriorityAVX512)
 	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishAVX512, PriorityAVX512)
 	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, TanhAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512, PriorityAVX512)
+	activations.RegisterKernel[float32]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512, PriorityAVX512)
 	activations.Register[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluAVX512, PriorityAVX512)
 	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512)
 
@@ -46,7 +46,6 @@ func registerAVX512() {
 	activations.Register[bfloat16.BFloat16]("avx512:silu", compute.ActivationSilu, siluBF16AVX512, PriorityAVX512)
 	activations.Register[bfloat16.BFloat16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX512, PriorityAVX512)
 	activations.Register[bfloat16.BFloat16]("avx512:tanh", compute.ActivationTanh, tanhBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:gelu", compute.ActivationGelu, geluExactBF16AVX512, PriorityAVX512)
 	activations.Register[bfloat16.BFloat16]("avx512:geluapprox", compute.ActivationGeluApproximate, geluBF16AVX512, PriorityAVX512)
 
 	// Float16
@@ -58,7 +57,6 @@ func registerAVX512() {
 	activations.Register[float16.Float16]("avx512:silu", compute.ActivationSilu, siluF16AVX512, PriorityAVX512)
 	activations.Register[float16.Float16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishF16AVX512, PriorityAVX512)
 	activations.Register[float16.Float16]("avx512:tanh", compute.ActivationTanh, tanhF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:gelu", compute.ActivationGelu, geluExactF16AVX512, PriorityAVX512)
 	activations.Register[float16.Float16]("avx512:geluapprox", compute.ActivationGeluApproximate, geluF16AVX512, PriorityAVX512)
 }
 
@@ -225,7 +223,7 @@ func erf512(x, vP, vA1, vA2, vA3, vA4, vA5, vOne archsimd.Float32x16, vSignMask 
 	return res.ToBits().Xor(x.ToBits().And(vSignMask)).BitsToFloat32()
 }
 
-func GeluExactAVX512(data []float32) {
+func GeluExactAVX512(in, out []float32) {
 	const (
 		p  = 0.3275911
 		a1 = 0.254829592
@@ -246,16 +244,23 @@ func GeluExactAVX512(data []float32) {
 	vSignMask := archsimd.BroadcastUint32x16(0x80000000)
 
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		x := archsimd.LoadFloat32x16(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		x := archsimd.LoadFloat32x16(in[i : i+16])
 		scaledX := x.Mul(vRsqrt2)
 		erfVal := erf512(scaledX, vP, vA1, vA2, vA3, vA4, vA5, vOne, vSignMask)
 		res := vHalf.Mul(x).Mul(vOne.Add(erfVal))
-		res.Store(data[i : i+16])
+		res.Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
-		data[i] = float32(float64(x) * 0.5 * (1.0 + math.Erf(float64(x)/math.Sqrt2)))
+	if i < len(in) {
+		rem := len(in) - i
+		var bufIn, bufOut [16]float32
+		copy(bufIn[:rem], in[i:])
+		x := archsimd.LoadFloat32x16(bufIn[:])
+		scaledX := x.Mul(vRsqrt2)
+		erfVal := erf512(scaledX, vP, vA1, vA2, vA3, vA4, vA5, vOne, vSignMask)
+		res := vHalf.Mul(x).Mul(vOne.Add(erfVal))
+		res.Store(bufOut[:])
+		copy(out[i:], bufOut[:rem])
 	}
 }
 
@@ -322,20 +327,6 @@ func geluBF16AVX512(data []bfloat16.BFloat16) {
 	}
 }
 
-func geluExactBF16AVX512(data []bfloat16.BFloat16) {
-	var buf [halfChunk]float32
-	for i := 0; i < len(data); i += halfChunk {
-		end := min(i+halfChunk, len(data))
-		chunk := data[i:end]
-		for j, v := range chunk {
-			buf[j] = v.Float32()
-		}
-		GeluExactAVX512(buf[:len(chunk)])
-		for j := range chunk {
-			chunk[j] = bfloat16.FromFloat32(buf[j])
-		}
-	}
-}
 
 func tanhBF16AVX512(data []bfloat16.BFloat16) {
 	var buf [halfChunk]float32
@@ -412,20 +403,6 @@ func geluF16AVX512(data []float16.Float16) {
 	}
 }
 
-func geluExactF16AVX512(data []float16.Float16) {
-	var buf [halfChunk]float32
-	for i := 0; i < len(data); i += halfChunk {
-		end := min(i+halfChunk, len(data))
-		chunk := data[i:end]
-		for j, v := range chunk {
-			buf[j] = v.Float32()
-		}
-		GeluExactAVX512(buf[:len(chunk)])
-		for j := range chunk {
-			chunk[j] = float16.FromFloat32(buf[j])
-		}
-	}
-}
 
 func tanhF16AVX512(data []float16.Float16) {
 	var buf [halfChunk]float32
