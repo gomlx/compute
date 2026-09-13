@@ -100,6 +100,7 @@ func noSIMDRouter[I, O gotype.NumericNotComplex]( //alt:generic
 			layout,
 			lhs, rhs,
 			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-			output)
+			output,
+			nodeData)
 	}
 }

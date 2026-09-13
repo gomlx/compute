@@ -105,6 +105,7 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 			layout,
 			lhs, rhs,
 			batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
-			output)
+			output,
+			nodeData)
 	}
 }
