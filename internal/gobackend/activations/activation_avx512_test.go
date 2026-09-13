@@ -19,7 +19,8 @@ func init() {
 	f32Registry.RegisterInPlace("Relu", "AVX512_ArchSIMD", PriorityAVX512, avx512.ReluAVX512)
 	f32Registry.RegisterInPlace("Silu", "AVX512_ArchSIMD", PriorityAVX512, avx512.SiluAVX512)
 	f32Registry.RegisterInPlace("Tanh", "AVX512_ArchSIMD", PriorityAVX512, avx512.TanhAVX512)
-	f32Registry.RegisterInPlace("GeluApprox", "AVX512_ArchSIMD", PriorityAVX512, avx512.GeluAVX512)
+	f32Registry.Register("GeluApprox", "AVX512_ArchSIMD", PriorityAVX512, avx512.GeluAVX512)
+	f32Registry.Register("GeluExact", "AVX512_ArchSIMD", PriorityAVX512, avx512.GeluExactAVX512)
 	f32Registry.RegisterInPlace("Sigmoid", "AVX512_ArchSIMD", PriorityAVX512, avx512.SigmoidAVX512)
 	f32Registry.RegisterInPlace("HardSigmoid", "AVX512_ArchSIMD", PriorityAVX512, avx512.HardSigmoidAVX512)
 	f32Registry.RegisterInPlace("HardSwish", "AVX512_ArchSIMD", PriorityAVX512, avx512.HardSwishAVX512)
@@ -31,7 +32,7 @@ func TestAVX512FlavorsRegistered(t *testing.T) {
 	if !archsimd.X86.AVX512() {
 		t.Skip("AVX512 not supported on this CPU")
 	}
-	for _, op := range []string{"Relu", "Silu", "Tanh", "GeluApprox", "Sigmoid", "HardSigmoid", "HardSwish", "LeakyRelu", "Selu"} {
+	for _, op := range []string{"Relu", "Silu", "Tanh", "GeluApprox", "GeluExact", "Sigmoid", "HardSigmoid", "HardSwish", "LeakyRelu", "Selu"} {
 		found := false
 		for _, f := range f32Registry.flavors[op] {
 			if f.name == "AVX512_ArchSIMD" {

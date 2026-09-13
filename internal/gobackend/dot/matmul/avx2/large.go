@@ -376,7 +376,7 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 
 				isFirstContractingPanel := contractingPanelIdx == 0
 				accumulate := !isFirstContractingPanel
-				canDirectOutput := (contractingSize <= params.PanelContractingSize) && (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 
 				if canDirectOutput {
 					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
@@ -476,9 +476,8 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
-				if !((contractingSize <= params.PanelContractingSize) &&
-					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
-					(rhsPanelWidth%params.RHSL1KernelCols == 0)) {
+				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				if !canDirectOutput {
 					accumOffset := mIdx * panelSize
 					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]
 					avx2ApplyPackedOutputFloat32( //alt:f32|bf16|f16
