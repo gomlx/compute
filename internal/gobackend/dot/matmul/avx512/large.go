@@ -61,41 +61,43 @@ func avx512LargeFloat32( //alt:f32
 	//alt:bf16 var cachedRHSPanels [][]bfloat16.BFloat16
 	//alt:f16 var cachedRHSPanels [][]float16.Float16
 	//alt:f64 var cachedRHSPanels [][]float64
-	if nodeData != nil && nodeData.CanCachePackRHS && nodeData.PackedRHS != nil {
-		nodeData.PackedRHS.Once.Do(func() {
-			ref, panels := avx512PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f32
-			//alt:bf16 ref, panels := avx512PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-			//alt:f16 ref, panels := avx512PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-			//alt:f64 ref, panels := avx512PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-			nodeData.PackedRHS.Buffer = ref
-			nodeData.PackedRHS.Panels = panels
-		})
-		if p, ok := nodeData.PackedRHS.Panels.([][]float32); ok { //alt:f32
-			//alt:bf16 if p, ok := nodeData.PackedRHS.Panels.([][]bfloat16.BFloat16); ok {
-			//alt:f16 if p, ok := nodeData.PackedRHS.Panels.([][]float16.Float16); ok {
-			//alt:f64 if p, ok := nodeData.PackedRHS.Panels.([][]float64); ok {
-			cachedRHSPanels = p
-		}
-	}
-
 	var cachedLHSPanels [][]float32 //alt:f32
 	//alt:bf16 var cachedLHSPanels [][]bfloat16.BFloat16
 	//alt:f16 var cachedLHSPanels [][]float16.Float16
 	//alt:f64 var cachedLHSPanels [][]float64
-	if nodeData != nil && nodeData.CanCachePackLHS && nodeData.PackedLHS != nil {
-		nodeData.PackedLHS.Once.Do(func() {
-			ref, panels := avx512PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f32
-			//alt:bf16 ref, panels := avx512PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-			//alt:f16 ref, panels := avx512PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-			//alt:f64 ref, panels := avx512PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-			nodeData.PackedLHS.Buffer = ref
-			nodeData.PackedLHS.Panels = panels
-		})
-		if p, ok := nodeData.PackedLHS.Panels.([][]float32); ok { //alt:f32
-			//alt:bf16 if p, ok := nodeData.PackedLHS.Panels.([][]bfloat16.BFloat16); ok {
-			//alt:f16 if p, ok := nodeData.PackedLHS.Panels.([][]float16.Float16); ok {
-			//alt:f64 if p, ok := nodeData.PackedLHS.Panels.([][]float64); ok {
-			cachedLHSPanels = p
+	if nodeData != nil {
+		if nodeData.CanCachePackRHS && nodeData.PackedRHS != nil {
+			nodeData.PackedRHS.Once.Do(func() {
+				ref, panels := avx512PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f32
+				//alt:bf16 ref, panels := avx512PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				//alt:f16 ref, panels := avx512PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				//alt:f64 ref, panels := avx512PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				nodeData.PackedRHS.Buffer = ref
+				nodeData.PackedRHS.Panels = panels
+			})
+			if p, ok := nodeData.PackedRHS.Panels.([][]float32); ok { //alt:f32
+				//alt:bf16 if p, ok := nodeData.PackedRHS.Panels.([][]bfloat16.BFloat16); ok {
+				//alt:f16 if p, ok := nodeData.PackedRHS.Panels.([][]float16.Float16); ok {
+				//alt:f64 if p, ok := nodeData.PackedRHS.Panels.([][]float64); ok {
+				cachedRHSPanels = p
+			}
+		}
+
+		if nodeData.CanCachePackLHS && nodeData.PackedLHS != nil {
+			nodeData.PackedLHS.Once.Do(func() {
+				ref, panels := avx512PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f32
+				//alt:bf16 ref, panels := avx512PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				//alt:f16 ref, panels := avx512PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				//alt:f64 ref, panels := avx512PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				nodeData.PackedLHS.Buffer = ref
+				nodeData.PackedLHS.Panels = panels
+			})
+			if p, ok := nodeData.PackedLHS.Panels.([][]float32); ok { //alt:f32
+				//alt:bf16 if p, ok := nodeData.PackedLHS.Panels.([][]bfloat16.BFloat16); ok {
+				//alt:f16 if p, ok := nodeData.PackedLHS.Panels.([][]float16.Float16); ok {
+				//alt:f64 if p, ok := nodeData.PackedLHS.Panels.([][]float64); ok {
+				cachedLHSPanels = p
+			}
 		}
 	}
 
