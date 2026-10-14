@@ -1,3 +1,6 @@
+- 2026-10-14:
+  - Documented `compute.Executable.Finalize()` lifecycle contract: callers must ensure no executions (`Execute()`) are in-flight before calling `Finalize()` to avoid undefined behavior/crashes, or alternatively leave cleanup to the GC or coordinate via higher-level objects (`graph.Exec` / `model.Exec`).
+
 - 2026-09-12:
   - Enabled constant weight panel caching in `DotGeneral` and `FusedDense` for the Go backend:
     - Advertised `PreferConstantsForVariables: true` in `gobackend` capabilities.
