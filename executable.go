@@ -9,6 +9,14 @@ import (
 // Executable is the API for compiled programs ready to execute.
 type Executable interface {
 	// Finalize immediately frees resources associated to the executable.
+	//
+	// It is the responsibility of the caller to guarantee that there are no unfinished executions
+	// (calls to [Executable.Execute]) before calling Finalize. Calling Finalize while an execution
+	// is still running may lead to undefined behavior and potentially crash depending on the backend.
+	//
+	// Calling Finalize is optional: one can always leave it to the garbage collector (GC), which will
+	// properly clean up native resources eventually. Alternatively, callers can rely on higher-level
+	// coordinator objects such as graph.Exec or model.Exec to coordinate safe concurrent execution and teardown.
 	Finalize()
 
 	// Inputs returns the parameters' names and shapes, in order created by the Builder.Parameter calls.
