@@ -58,6 +58,10 @@ type Capabilities struct {
 	// When true, libraries like onnx-gomlx should use graph.Const() instead of
 	// Variable.ValueGraph() for model weights.
 	PreferConstantsForVariables bool
+
+	// BuilderOnly indicates that the backend is only able to build a graph
+	// and cannot compile it.
+	BuilderOnly bool
 }
 
 // Clone makes a deep copy of the Capabilities.
@@ -101,3 +105,4 @@ const (
 	// weights/constants, but JIT-specializes/recompiles kernels per concrete shape.
 	DynamicShapesRecompiling
 )
+
