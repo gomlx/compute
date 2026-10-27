@@ -2,6 +2,7 @@ package workerspool
 
 import (
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -83,5 +84,74 @@ func TestPool_Saturate(t *testing.T) {
 	}
 	if int(started.Load()) != wantUnlimited {
 		t.Errorf("Expected started %d to match wantUnlimited %d", started.Load(), wantUnlimited)
+	}
+}
+
+// TestPool_WorkerIsAsleepWakesSaturate checks that a worker going to sleep wakes up a Saturate call that is
+// already waiting for a free slot: the pool is full, Saturate blocks, and then a running worker declares
+// itself asleep and so frees a slot.
+func TestPool_WorkerIsAsleepWakesSaturate(t *testing.T) {
+	pool := New()
+	pool.SetMaxParallelism(2)
+
+	release := make(chan struct{})
+	sleepNow := make(chan struct{})
+	sleeping := make(chan struct{})
+	var wgWorkers sync.WaitGroup
+
+	// Fill the pool: one worker that will go to sleep on request, and one that just holds its slot.
+	wgWorkers.Add(2)
+	if !pool.StartIfAvailable(func() {
+		defer wgWorkers.Done()
+		<-sleepNow
+		pool.WorkerIsAsleep()
+		close(sleeping)
+		<-release
+		pool.WorkerRestarted()
+	}) {
+		t.Fatal("could not start the first worker")
+	}
+	if !pool.StartIfAvailable(func() {
+		defer wgWorkers.Done()
+		<-release
+	}) {
+		t.Fatal("could not start the second worker")
+	}
+
+	ran := make(chan struct{})
+	saturateDone := make(chan struct{})
+	go func() {
+		defer close(saturateDone)
+		pool.Saturate(func() {
+			select {
+			case <-ran:
+			default:
+				close(ran)
+			}
+		})
+	}()
+
+	// The pool is full, so Saturate must not have run its task yet.
+	select {
+	case <-ran:
+		t.Fatal("Saturate ran a task while the pool was full")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// A worker goes to sleep: Saturate must be woken up and use the freed slot.
+	close(sleepNow)
+	<-sleeping
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("Saturate was not woken up when a worker went to sleep")
+	}
+
+	close(release)
+	wgWorkers.Wait()
+	select {
+	case <-saturateDone:
+	case <-time.After(time.Second):
+		t.Fatal("Saturate did not return")
 	}
 }
