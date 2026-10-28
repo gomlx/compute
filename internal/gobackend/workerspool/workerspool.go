@@ -189,8 +189,13 @@ func (w *Pool) Saturate(task func()) {
 // for other workers, and temporarily increases the available number of workers.
 //
 // Call WorkerRestarted when the worker is ready to run again.
+//
+// It wakes up one goroutine waiting for a free slot (in Saturate or WaitToStart), since a slot just became available.
 func (w *Pool) WorkerIsAsleep() {
 	w.extraParallelism.Add(1)
+	w.mu.Lock()
+	w.cond.Signal()
+	w.mu.Unlock()
 }
 
 // WorkerRestarted indicates the worker (the one that called the method) is ready to run again.

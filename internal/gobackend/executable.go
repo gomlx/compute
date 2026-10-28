@@ -434,13 +434,28 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 // When executing a node unlocks another node, it preferentially continues executing it
 // locally without routing through the channel.
 func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization,
-	completed *atomic.Int32, expected int32, stopExecutionFn func(), appendErrorFn func(error)) {
+	completed *atomic.Int32, expected int32, stopExecutionFn func(), appendErrorFn func(error), isPoolWorker bool) {
 	currNode := -1
 
 	for {
 		if currNode == -1 {
 			var ok bool
-			currNode, ok = <-execBuf.readyQueue
+			select {
+			case currNode, ok = <-execBuf.readyQueue:
+			default:
+				// Nothing ready: this executor is about to block. If it holds a slot of the workers pool, it
+				// declares itself asleep while blocked, so the slot can be used by the ops being executed (e.g.:
+				// a large MatMul fanning out with Workers.Saturate). Otherwise, in graphs that are mostly a chain
+				// of dependent nodes (e.g.: transformer layers) the idle executors hold all the slots, and
+				// the only executor with work gets no parallelism inside its ops.
+				if isPoolWorker {
+					backend.Workers.WorkerIsAsleep()
+				}
+				currNode, ok = <-execBuf.readyQueue
+				if isPoolWorker {
+					backend.Workers.WorkerRestarted()
+				}
+			}
 			if !ok {
 				// readyQueue closed: computation completed or errored out.
 				return
@@ -539,7 +554,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		wg.Add(1)
 		started := backend.Workers.StartIfAvailable(func() {
 			defer wg.Done()
-			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn)
+			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn, true)
 		})
 		if !started {
 			wg.Done()
@@ -547,8 +562,8 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		}
 	}
 
-	// Run the current caller goroutine as an executor as well.
-	fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn)
+	// Run the current caller goroutine as an executor as well. It doesn't hold a slot of the workers pool.
+	fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn, false)
 
 	// Wait for all background executors to finish.
 	wg.Wait()
