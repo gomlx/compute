@@ -1,8 +1,6 @@
 package fusedops
 
 import (
-	"sync"
-
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
@@ -553,31 +551,26 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 
 	if M > 1 {
 		// Parallelize over M rows.
-		var wg sync.WaitGroup
-		for m := range M {
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
+		backend.Scheduler.ParallelizeChunks(M, 1, func(mStart, mEnd int) {
+			for m := mStart; m < mEnd; m++ {
 				rowFn(m, m, 0, N)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+			}
+		})
 	} else {
 		// M=1: tile over N columns for single-token inference.
 		tileSize := max(quantizedDenseMinParallelizeChunk/K, 1)
-		var wg sync.WaitGroup
+		numTiles := (N + tileSize - 1) / tileSize
+		tasks := make([]func(), 0, numTiles)
 		workerIdx := 0
 		for nStart := 0; nStart < N; nStart += tileSize {
 			nEnd := min(nStart+tileSize, N)
 			idx := workerIdx
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
+			tasks = append(tasks, func() {
 				rowFn(idx, 0, nStart, nEnd)
-				wg.Done()
 			})
 			workerIdx++
 		}
-		wg.Wait()
+		backend.Scheduler.RunIntraOpTasks(tasks)
 	}
 }
 

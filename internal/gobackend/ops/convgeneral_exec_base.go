@@ -3,7 +3,6 @@
 package ops
 
 import (
-	"sync"
 	//alt:half|full_half "github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 )
@@ -237,21 +236,8 @@ func execConvNoDilationGeneric[T gobackend.PODNumericConstraints](plan convGener
 	lenOutputs := len(outputFlat)
 	goBackend, _ := plan.backend.(*gobackend.Backend)
 	if goBackend != nil && goBackend.Scheduler != nil && goBackend.Scheduler.IsEnabled() && lenOutputs >= 512 {
-		maxWorkers := goBackend.Scheduler.AdjustedMaxParallelism()
-		if maxWorkers > 1 {
-			chunkSize := max(256, (lenOutputs+maxWorkers-1)/maxWorkers)
-			var wg sync.WaitGroup
-			for startIdx := 0; startIdx < lenOutputs; startIdx += chunkSize {
-				endIdx := min(startIdx+chunkSize, lenOutputs)
-				wg.Add(1)
-				goBackend.Scheduler.WaitToStart(func() {
-					defer wg.Done()
-					runChunk(startIdx, endIdx)
-				})
-			}
-			wg.Wait()
-			return nil
-		}
+		goBackend.Scheduler.ParallelizeChunks(lenOutputs, 256, runChunk)
+		return nil
 	}
 
 	runChunk(0, lenOutputs)

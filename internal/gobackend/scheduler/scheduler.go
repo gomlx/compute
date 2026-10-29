@@ -1,5 +1,17 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
+// Package scheduler implements the runtime execution scheduler for the Go compute backend.
+//
+// It manages a persistent pool of worker goroutines and schedules tasks across three
+// hierarchical levels of parallelism:
+//  1. Inter-Call: across concurrent calls to Executable.Execute() (highest priority).
+//  2. Intra-Op: across contiguous memory chunks within a single operation.
+//  3. Inter-Op: across independent graph branches within a single Execute() call (lowest priority).
+//
+// When an operation spawns intra-op subtasks (via RunIntraOpTasks, ParallelizeChunks, or Saturate),
+// the calling goroutine immediately participates in executing its own op's subtasks (work-helping)
+// before waiting on the completion barrier. This guarantees forward progress and prevents deadlocks
+// even under nested inter-op and intra-op parallelism.
 package scheduler
 
 import (
@@ -8,200 +20,367 @@ import (
 	"sync/atomic"
 )
 
+const defaultQueueSize = 1024
+
+// Scheduler manages persistent worker goroutines and dispatches intra-op and inter-op tasks.
 type Scheduler struct {
-	// maxParallelism is a soft target on the limit of parallel work to do.
-	// The actual number of goroutines is higher than that -- because of waits and such.
+	// maxParallelism is the configured target limit of parallel workers:
+	//   > 0: explicit limit
+	//   == 0: parallelism disabled
+	//   < 0: unlimited (uses runtime.GOMAXPROCS(0))
 	maxParallelism int
-	mu             sync.Mutex
-	cond           sync.Cond // Should be signaled whenever numRunning is decreased.
-	numRunning     int
 
-	// extraParallelism is temporarily increased when a worked goes to sleep.
-	extraParallelism atomic.Int32
+	// numActiveCalls tracks the number of concurrent top-level Executable.Execute() calls
+	// for inter-call parallelism scaling.
+	numActiveCalls atomic.Int32
+
+	initOnce     sync.Once
+	intraOpQueue chan func()
+	interOpQueue chan func()
 }
 
-// New return a new Pool of workers with the default parallelism (2 * runtime.GOMAXPROCS()).
+// New returns a new Scheduler with the default parallelism set to runtime.GOMAXPROCS(0).
 func New() *Scheduler {
-	w := &Scheduler{}
-	w.maxParallelism = 2 * runtime.GOMAXPROCS(0)
-	w.cond = sync.Cond{L: &w.mu}
-	return w
-}
-
-// IsEnabled returns whether parallelism is enabled (maxParallelism is != 0)
-func (w *Scheduler) IsEnabled() bool {
-	return w.maxParallelism != 0
-}
-
-// IsUnlimited returns whether parallelism is unlimited (maxParallelism < 0)
-func (w *Scheduler) IsUnlimited() bool {
-	return w.maxParallelism < 0
-}
-
-// MaxParallelism returns the soft-target for parallelism.
-// If set to 0 parallelism is disabled.
-// If set to -1 parallelism is unlimited.
-func (w *Scheduler) MaxParallelism() int {
-	return w.maxParallelism
-}
-
-// AdjustedMaxParallelism returns the adjusted soft-target for parallelism (>= 1).
-//
-// If the target is set to -1 (unlimited parallelism) it returns runtime.GOMAXPROCS.
-// If the target is 0 (no parallelism) it returns 1.
-//
-// Also, it limits the number of workers to runtime.GOMAXPROCS.
-func (w *Scheduler) AdjustedMaxParallelism() int {
-	if w.maxParallelism < 0 {
-		return runtime.GOMAXPROCS(0)
+	return &Scheduler{
+		maxParallelism: runtime.GOMAXPROCS(0),
 	}
-	return min(max(w.maxParallelism, 1), runtime.GOMAXPROCS(0))
 }
 
-// SetMaxParallelism sets the maxParallelism.
-//
-// You should only change the parallelism before any workers start running. If changed during the execution
-// the behavior is undefined.
-func (w *Scheduler) SetMaxParallelism(maxParallelism int) {
-	w.maxParallelism = maxParallelism
+// ensureWorkersStarted lazily starts the persistent worker goroutines on first parallel use.
+func (s *Scheduler) ensureWorkersStarted() {
+	s.initOnce.Do(func() {
+		s.intraOpQueue = make(chan func(), defaultQueueSize)
+		s.interOpQueue = make(chan func(), defaultQueueSize)
+		// Start GOMAXPROCS persistent background workers.
+		// If SetMaxParallelism was called with a larger positive value before first use,
+		// start enough workers to cover it.
+		numWorkers := max(runtime.GOMAXPROCS(0), s.maxParallelism)
+		for range numWorkers {
+			go s.workerLoop()
+		}
+	})
 }
 
-const goroutineToParallelismRatio = 2
+// workerLoop is the main loop of each persistent worker goroutine.
+// It prioritizes intraOpQueue over interOpQueue so that in-flight operations complete as
+// quickly as possible (preserving L2/L3 cache locality and freeing intermediate buffers early).
+func (s *Scheduler) workerLoop() {
+	for {
+		// Priority 1: Check intraOpQueue first via non-blocking select.
+		select {
+		case task := <-s.intraOpQueue:
+			task()
+			continue
+		default:
+		}
 
-// lockedIsFull returns whether all available workers are in use.
-//
-// It must be called with workerPool.mu acquired.
-func (w *Scheduler) lockedIsFull() bool {
-	if w.maxParallelism == 0 {
-		return true
-	} else if w.maxParallelism < 0 {
-		return false
+		// Wait for either queue when intraOpQueue was empty.
+		select {
+		case task := <-s.intraOpQueue:
+			task()
+		case task := <-s.interOpQueue:
+			task()
+		}
 	}
-	return w.numRunning >= w.maxParallelism+int(w.extraParallelism.Load())
 }
 
-// WaitToStart waits until there is a worker available to run the task.
+// IsEnabled returns whether parallelism is enabled (maxParallelism != 0).
+func (s *Scheduler) IsEnabled() bool {
+	return s.maxParallelism != 0
+}
+
+// IsUnlimited returns whether parallelism is unlimited (maxParallelism < 0).
+func (s *Scheduler) IsUnlimited() bool {
+	return s.maxParallelism < 0
+}
+
+// MaxParallelism returns the configured target for parallelism.
+// If set to 0, parallelism is disabled.
+// If set to -1, parallelism is unlimited.
+func (s *Scheduler) MaxParallelism() int {
+	return s.maxParallelism
+}
+
+// SetMaxParallelism sets the target maxParallelism.
 //
-// If parallelism is disabled (maxParallelism is 0), it runs the task inline and returns when it is finished.
-// This is risky if one is relying on concurrency, and it can lead to deadlocks.
-// Avoid using this function if the parallelism is disabled.
-func (w *Scheduler) WaitToStart(task func()) {
-	if w.IsUnlimited() {
-		go task()
+// This should be configured before workers start executing.
+func (s *Scheduler) SetMaxParallelism(maxParallelism int) {
+	s.maxParallelism = maxParallelism
+}
+
+// EnterExecution registers the start of a top-level Executable.Execute() call (inter-call tracking).
+// It returns a function that must be deferred to unregister the call when Execute() finishes.
+func (s *Scheduler) EnterExecution() func() {
+	s.numActiveCalls.Add(1)
+	return func() {
+		s.numActiveCalls.Add(-1)
+	}
+}
+
+// EffectiveParallelism returns the target number of workers an operation within the current
+// Execute() call should use, dynamically scaled by the number of concurrent active executions:
+//
+//	max(1, totalParallelism / numActiveCalls)
+func (s *Scheduler) EffectiveParallelism() int {
+	if s.maxParallelism == 0 {
+		return 1
+	}
+	var total int
+	if s.maxParallelism < 0 {
+		total = runtime.GOMAXPROCS(0)
+	} else {
+		total = min(max(s.maxParallelism, 1), runtime.GOMAXPROCS(0))
+	}
+	activeCalls := max(int(s.numActiveCalls.Load()), 1)
+	return max(1, total/activeCalls)
+}
+
+// AdjustedMaxParallelism returns the effective parallelism for the current execution.
+// It is an alias for EffectiveParallelism() kept for convenience across op implementations.
+func (s *Scheduler) AdjustedMaxParallelism() int {
+	return s.EffectiveParallelism()
+}
+
+// RunIntraOpTasks executes the given intra-op tasks for the current operation and waits for all
+// of them to finish.
+//
+// Invariant (Deadlock-Free Work-Helping): The calling goroutine immediately participates in
+// executing tasks from this slice itself at highest priority, while available persistent workers
+// in the scheduler assist concurrently.
+func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
+	n := len(tasks)
+	if n == 0 {
 		return
-
-	} else if w.maxParallelism == 0 {
-		// No parallelism, run inline -- better avoided.
-		task()
-		return
 	}
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	for w.lockedIsFull() {
-		w.cond.Wait()
-	}
-	w.lockedRunTaskInGoroutine(task)
-}
-
-// lockedRunTaskInGoroutine and keep tabs on w.numRunning.
-//
-// It must be called with workerPool.mu acquired.
-func (w *Scheduler) lockedRunTaskInGoroutine(task func()) {
-	w.numRunning++
-	go func() {
-		task()
-		w.mu.Lock()
-		w.numRunning--
-		w.cond.Signal()
-		w.mu.Unlock()
-	}()
-}
-
-// StartIfAvailable runs the task in a separate goroutine, if there are enough workers left.
-// It returns true if it found workers to run the function, false otherwise.
-//
-// It's up to the client to synchronize the end of the function execution.
-func (w *Scheduler) StartIfAvailable(task func()) bool {
-	if w.IsUnlimited() {
-		go task()
-		return true
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.lockedIsFull() {
-		return false
-	}
-	w.lockedRunTaskInGoroutine(task)
-	return true
-}
-
-// Saturate fans out as many workers as available, each running the given task.
-// It keeps spawning workers if more workers become available.
-//
-// Each task is expected to keep doing work until there nothing else to be done.
-// As soon as any task finishes, it indicates there is no more need for more task, and it
-// immediately stops spawning new tasks.
-//
-// It returns when all started tasks have finished.
-func (w *Scheduler) Saturate(task func()) {
-	if w.maxParallelism == 0 {
-		task()
+	if n == 1 || !s.IsEnabled() {
+		for _, task := range tasks {
+			task()
+		}
 		return
 	}
 
-	limit := w.maxParallelism
-	if limit < 0 {
+	eff := s.EffectiveParallelism()
+	if s.IsUnlimited() {
+		eff = runtime.GOMAXPROCS(0)
+	} else if s.maxParallelism > 0 && int(s.numActiveCalls.Load()) <= 1 {
+		eff = s.maxParallelism
+	}
+	if eff <= 1 {
+		for _, task := range tasks {
+			task()
+		}
+		return
+	}
+
+	s.ensureWorkersStarted()
+
+	var nextIdx atomic.Int32
+	var wg sync.WaitGroup
+
+	// Number of helper workers to recruit (the caller is 1 worker itself).
+	numHelpers := min(n-1, eff-1)
+	for range numHelpers {
+		wg.Add(1)
+		helperFn := func() {
+			defer wg.Done()
+			for {
+				idx := int(nextIdx.Add(1) - 1)
+				if idx >= n {
+					return
+				}
+				tasks[idx]()
+			}
+		}
+		select {
+		case s.intraOpQueue <- helperFn:
+		default:
+			// Queue full: skip recruiting more helpers; the caller and already-queued helpers
+			// will drain all tasks via nextIdx.
+			wg.Done()
+		}
+	}
+
+	// Work-helping: the calling goroutine executes its own op's tasks until none remain.
+	for {
+		idx := int(nextIdx.Add(1) - 1)
+		if idx >= n {
+			break
+		}
+		tasks[idx]()
+	}
+
+	wg.Wait()
+}
+
+// ParallelizeChunks partitions [0, totalItems) into contiguous, cache-friendly ranges based on
+// EffectiveParallelism() and minChunkSize, and executes fn(start, end) across the calling goroutine
+// and available intra-op workers.
+//
+// Each worker processes contiguous ranges of items to prevent false sharing and preserve L1/L2
+// cache locality. If EffectiveParallelism() <= 1 or totalItems <= minChunkSize, it calls
+// fn(0, totalItems) directly inline with zero allocations.
+func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(start, end int)) {
+	if totalItems <= 0 {
+		return
+	}
+	minChunkSize = max(minChunkSize, 1)
+	if !s.IsEnabled() || totalItems <= minChunkSize {
+		fn(0, totalItems)
+		return
+	}
+
+	numWorkers := s.EffectiveParallelism()
+	if numWorkers <= 1 {
+		fn(0, totalItems)
+		return
+	}
+
+	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize
+	numChunks := min(maxChunksBySize, numWorkers*2)
+	if numChunks <= 1 {
+		fn(0, totalItems)
+		return
+	}
+
+	s.ensureWorkersStarted()
+
+	chunkSize := (totalItems + numChunks - 1) / numChunks
+	actualChunks := (totalItems + chunkSize - 1) / chunkSize
+	if actualChunks <= 1 {
+		fn(0, totalItems)
+		return
+	}
+
+	var nextChunk atomic.Int32
+	var wg sync.WaitGroup
+
+	numHelpers := min(actualChunks-1, numWorkers-1)
+	for range numHelpers {
+		wg.Add(1)
+		helperFn := func() {
+			defer wg.Done()
+			for {
+				c := int(nextChunk.Add(1) - 1)
+				if c >= actualChunks {
+					return
+				}
+				start := c * chunkSize
+				end := min(start+chunkSize, totalItems)
+				fn(start, end)
+			}
+		}
+		select {
+		case s.intraOpQueue <- helperFn:
+		default:
+			wg.Done()
+		}
+	}
+
+	// Work-helping: caller drains chunks alongside helpers.
+	for {
+		c := int(nextChunk.Add(1) - 1)
+		if c >= actualChunks {
+			break
+		}
+		start := c * chunkSize
+		end := min(start+chunkSize, totalItems)
+		fn(start, end)
+	}
+
+	wg.Wait()
+}
+
+// Saturate fans out workerFn across the calling goroutine and up to EffectiveParallelism()-1
+// available scheduler workers (used by work-pulling ops like MatMul).
+//
+// Each workerFn pulls work from a shared queue until no work remains and then returns.
+// Once any workerFn returns (indicating the work queue is exhausted), Saturate stops
+// recruiting additional workers and waits for all already-running workerFn instances
+// to finish before returning.
+func (s *Scheduler) Saturate(workerFn func()) {
+	if !s.IsEnabled() {
+		workerFn()
+		return
+	}
+
+	limit := s.EffectiveParallelism()
+	if s.IsUnlimited() {
 		limit = runtime.GOMAXPROCS(0)
+	} else if s.maxParallelism > 0 && int(s.numActiveCalls.Load()) <= 1 {
+		limit = s.maxParallelism
 	}
+	if limit <= 1 {
+		workerFn()
+		return
+	}
+
+	s.ensureWorkersStarted()
 
 	var wg sync.WaitGroup
 	var doneFanningOut atomic.Bool
 
-	w.mu.Lock()
-	started := 0
-
-	for !doneFanningOut.Load() {
-		// Check global limits and local limits (for unlimited pool)
-		if (w.IsUnlimited() && started >= limit) || (!w.IsUnlimited() && w.lockedIsFull()) {
-			w.cond.Wait()
-			// If we woke up because a task finished (signaled), we need to check if we are done.
-			if doneFanningOut.Load() {
-				w.cond.Signal() // Propagate signal to other potential waiters
-				break
-			}
-			continue
+	numHelpers := limit - 1
+	for range numHelpers {
+		if doneFanningOut.Load() {
+			break
 		}
-
-		started++
 		wg.Add(1)
-		w.lockedRunTaskInGoroutine(func() {
+		helperFn := func() {
 			defer wg.Done()
-			task()
+			if doneFanningOut.Load() {
+				return
+			}
+			workerFn()
 			doneFanningOut.Store(true)
-		})
+		}
+		select {
+		case s.intraOpQueue <- helperFn:
+		default:
+			wg.Done()
+		}
 	}
-	w.mu.Unlock()
+
+	// The calling goroutine participates directly as one of the workers.
+	if !doneFanningOut.Load() {
+		workerFn()
+		doneFanningOut.Store(true)
+	}
+
 	wg.Wait()
 }
 
-// WorkerIsAsleep indicates the worker (the one that called the method) is going to sleep waiting
-// for other workers, and temporarily increases the available number of workers.
-//
-// Call WorkerRestarted when the worker is ready to run again.
-//
-// It wakes up one goroutine waiting for a free slot (in Saturate or WaitToStart), since a slot just became available.
-func (w *Scheduler) WorkerIsAsleep() {
-	w.extraParallelism.Add(1)
-	w.mu.Lock()
-	w.cond.Signal()
-	w.mu.Unlock()
+// SubmitInterOp enqueues a coarse-grained inter-op task (such as a ready branch in executeParallel)
+// to be executed by a persistent worker when no higher-priority intra-op tasks are waiting.
+// It returns true if the task was enqueued to the worker pool, or false if parallelism is disabled
+// or the queue is full.
+func (s *Scheduler) SubmitInterOp(task func()) bool {
+	if !s.IsEnabled() {
+		return false
+	}
+	s.ensureWorkersStarted()
+	select {
+	case s.interOpQueue <- task:
+		return true
+	default:
+		return false
+	}
 }
 
-// WorkerRestarted indicates the worker (the one that called the method) is ready to run again.
-// It should only be called after WorkerIsAsleep.
+// WaitToStart runs the task using an available worker from the intra-op queue, or inline if
+// parallelism is disabled or the queue is full.
 //
-// It returns the temporary number of extra available workers.
-func (w *Scheduler) WorkerRestarted() {
-	w.extraParallelism.Add(-1)
+// Prefer ParallelizeChunks or RunIntraOpTasks for new intra-op code so the calling goroutine
+// participates in work-helping automatically.
+func (s *Scheduler) WaitToStart(task func()) {
+	if !s.IsEnabled() || s.EffectiveParallelism() <= 1 {
+		task()
+		return
+	}
+	s.ensureWorkersStarted()
+	select {
+	case s.intraOpQueue <- task:
+	default:
+		// If the queue is full, run inline on the caller goroutine (work-helping).
+		task()
+	}
 }

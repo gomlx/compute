@@ -89,12 +89,11 @@ func New(config string) (compute.Backend, error) {
 			b.Scheduler.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
 		case "ops_sequential":
-			// This will force the ops to be executed sequentially.
-			// The default is running parallel if it's the only thing executing, otherwise sequentially.
+			// This will force the ops to be executed sequentially (the default).
 			b.OpsExecutionType = OpsExecutionSequential
 		case "ops_parallel":
 			// This will force the ops to be executed in parallel where possible.
-			// The default is running parallel if it's the only thing executing, otherwise sequentially.
+			// By default, ops are executed sequentially (and parallelized via intra-op parallelism).
 			b.OpsExecutionType = OpsExecutionParallel
 		case "dependency_order":
 			b.SchedulingStrategy = DependencyOrderSchedule
@@ -133,7 +132,8 @@ const DefaultNumExecutors = 8
 
 func newDefaultBackend() *Backend {
 	b := &Backend{
-		NumExecutors: DefaultNumExecutors,
+		NumExecutors:     DefaultNumExecutors,
+		OpsExecutionType: OpsExecutionSequential,
 	}
 	b.Scheduler = scheduler.New()
 	return b

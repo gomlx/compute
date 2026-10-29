@@ -196,21 +196,9 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 
 	n := len(in)
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
-		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
-		targetChunks := max(1, numWorkers*2)
-		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
-		var wg sync.WaitGroup
-		for i := 0; i < n; i += chunkSize {
-			end := min(i+chunkSize, n)
-			inChunk := in[i:end]
-			outChunk := out[i:end]
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				fn(inChunk, outChunk)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+		backend.Scheduler.ParallelizeChunks(n, minParallelizeChunk, func(start, end int) {
+			fn(in[start:end], out[start:end])
+		})
 	} else {
 		fn(in, out)
 	}
@@ -226,25 +214,13 @@ func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, 
 
 	totalWork := numRows * hiddenDim
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
-		targetChunks := max(1, numWorkers*2)
-		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
-		rowsPerChunk := max(chunkSize/hiddenDim, 1)
-		var wg sync.WaitGroup
-		for r := 0; r < numRows; r += rowsPerChunk {
-			rEnd := min(r+rowsPerChunk, numRows)
-			chunkRows := rEnd - r
-			inOffset := r * 2 * hiddenDim
-			outOffset := r * hiddenDim
-			inChunk := in[inOffset : inOffset+chunkRows*2*hiddenDim]
-			outChunk := out[outOffset : outOffset+chunkRows*hiddenDim]
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				fn(inChunk, outChunk, chunkRows, hiddenDim)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+		minRows := max(minParallelizeChunk/hiddenDim, 1)
+		backend.Scheduler.ParallelizeChunks(numRows, minRows, func(rStart, rEnd int) {
+			chunkRows := rEnd - rStart
+			inOffset := rStart * 2 * hiddenDim
+			outOffset := rStart * hiddenDim
+			fn(in[inOffset:inOffset+chunkRows*2*hiddenDim], out[outOffset:outOffset+chunkRows*hiddenDim], chunkRows, hiddenDim)
+		})
 	} else {
 		fn(in, out, numRows, hiddenDim)
 	}
@@ -343,28 +319,16 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 
 	n := len(dOutput)
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
-		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
-		targetChunks := max(1, numWorkers*2)
-		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
-		var wg sync.WaitGroup
-		for i := 0; i < n; i += chunkSize {
-			end := min(i+chunkSize, n)
+		backend.Scheduler.ParallelizeChunks(n, minParallelizeChunk, func(start, end int) {
 			var yChunk, xChunk []T
 			if len(y) > 0 {
-				yChunk = y[i:end]
+				yChunk = y[start:end]
 			}
 			if len(x) > 0 {
-				xChunk = x[i:end]
+				xChunk = x[start:end]
 			}
-			dOutChunk := dOutput[i:end]
-			dxChunk := dx[i:end]
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				fn(yChunk, xChunk, dOutChunk, dxChunk)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+			fn(yChunk, xChunk, dOutput[start:end], dx[start:end])
+		})
 	} else {
 		fn(y, x, dOutput, dx)
 	}
@@ -403,26 +367,16 @@ func ExecuteSwiGLUVJP[T gotype.Supported](backend *gobackend.Backend, x, dOutput
 
 	totalWork := numRows * hiddenDim
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
-		targetChunks := max(1, numWorkers*2)
-		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
-		rowsPerChunk := max(chunkSize/hiddenDim, 1)
-		var wg sync.WaitGroup
-		for r := 0; r < numRows; r += rowsPerChunk {
-			rEnd := min(r+rowsPerChunk, numRows)
-			chunkRows := rEnd - r
-			xOffset := r * 2 * hiddenDim
-			dOutOffset := r * hiddenDim
+		minRows := max(minParallelizeChunk/hiddenDim, 1)
+		backend.Scheduler.ParallelizeChunks(numRows, minRows, func(rStart, rEnd int) {
+			chunkRows := rEnd - rStart
+			xOffset := rStart * 2 * hiddenDim
+			dOutOffset := rStart * hiddenDim
 			xChunk := x[xOffset : xOffset+chunkRows*2*hiddenDim]
 			dOutChunk := dOutput[dOutOffset : dOutOffset+chunkRows*hiddenDim]
 			dxChunk := dx[xOffset : xOffset+chunkRows*2*hiddenDim]
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				fn(xChunk, dOutChunk, dxChunk, chunkRows, hiddenDim)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+			fn(xChunk, dOutChunk, dxChunk, chunkRows, hiddenDim)
+		})
 	} else {
 		fn(x, dOutput, dx, numRows, hiddenDim)
 	}

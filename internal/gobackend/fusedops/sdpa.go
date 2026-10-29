@@ -2,7 +2,6 @@ package fusedops
 
 import (
 	"math"
-	"sync"
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
@@ -833,16 +832,14 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 
 	totalTasks := batchSize * numKVHeads
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
-		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
+		numWorkers := backend.Scheduler.EffectiveParallelism()
 		workersToStart := min(totalTasks, numWorkers)
 		var taskCounter atomic.Int64
-		var wg sync.WaitGroup
 		scratchSize := max(groupSize*seqLen*kvLen, kvLen)
 
-		for range workersToStart {
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				defer wg.Done()
+		tasks := make([]func(), workersToStart)
+		for i := range workersToStart {
+			tasks[i] = func() {
 				workerScores := make([]T, scratchSize)
 				for {
 					taskIdx := int(taskCounter.Add(1) - 1)
@@ -853,9 +850,9 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 					kvHeadIdx := taskIdx % numKVHeads
 					processHead(batchIdx, kvHeadIdx, workerScores)
 				}
-			})
+			}
 		}
-		wg.Wait()
+		backend.Scheduler.RunIntraOpTasks(tasks)
 	} else {
 		scores := make([]T, max(groupSize*seqLen*kvLen, kvLen))
 		for batchIdx := range batchSize {

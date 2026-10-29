@@ -5,7 +5,6 @@ package ops
 import (
 	"math"
 	"math/bits"
-	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -1006,21 +1005,13 @@ const unaryMinParallelizeChunk = 4096
 
 func execErfGeneric[T float32 | float64](backend *gobackend.Backend, inputs, outputs []T) {
 	lenInputs := len(inputs)
-	if backend.Scheduler.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
 		// Parallelize operation into chunks.
-		var wg sync.WaitGroup
-		for ii := 0; ii < lenInputs; ii += unaryMinParallelizeChunk {
-			iiEnd := min(ii+unaryMinParallelizeChunk, lenInputs)
-			wg.Add(1)
-			backend.Scheduler.WaitToStart(func() {
-				for jj := ii; jj < iiEnd; jj++ {
-					outputs[jj] = T(math.Erf(float64(inputs[jj])))
-				}
-				wg.Done()
-			})
-		}
-		wg.Wait()
-
+		backend.Scheduler.ParallelizeChunks(lenInputs, unaryMinParallelizeChunk, func(ii, iiEnd int) {
+			for jj := ii; jj < iiEnd; jj++ {
+				outputs[jj] = T(math.Erf(float64(inputs[jj])))
+			}
+		})
 	} else {
 		// Sequentially processing it.
 		for ii, input := range inputs {

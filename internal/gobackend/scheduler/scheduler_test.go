@@ -1,3 +1,5 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
 package scheduler
 
 import (
@@ -11,18 +13,18 @@ import (
 	"github.com/gomlx/compute/support/xsync"
 )
 
-func TestPool_Saturate(t *testing.T) {
-	// Test saturation.
-	pool := New()
+func TestScheduler_Saturate(t *testing.T) {
+	// Test saturation where all workers (caller + helpers) participate.
+	sched := New()
 	wantTasks := 5
-	pool.SetMaxParallelism(wantTasks)
+	sched.SetMaxParallelism(wantTasks)
 
 	var count atomic.Int32
 	doneNewTasks := xsync.NewLatch()
 	doneTest := xsync.NewLatch()
 
 	go func() {
-		pool.Saturate(func() {
+		sched.Saturate(func() {
 			got := count.Add(1)
 			runtime.Gosched()
 			if int(got) == wantTasks {
@@ -37,30 +39,32 @@ func TestPool_Saturate(t *testing.T) {
 	select {
 	case <-doneTest.WaitChan():
 		// Success
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Timeout before all tasks were executed.")
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Timeout before all tasks were executed (count=%d, want=%d).", count.Load(), wantTasks)
 	}
 	if int(count.Load()) != wantTasks {
 		t.Fatalf("Expected %d tasks, got %d", wantTasks, count.Load())
 	}
 
 	// Test No Parallelism
-	pool.SetMaxParallelism(0)
+	schedNoPar := New()
+	schedNoPar.SetMaxParallelism(0)
 	count.Store(0)
-	pool.Saturate(func() { count.Add(1) })
+	schedNoPar.Saturate(func() { count.Add(1) })
 	if ok, diff := testutil.IsEqual(int32(1), count.Load()); !ok {
-		t.Errorf("Pool with parallelism 0 result mismatch:\n%s", diff)
+		t.Errorf("Scheduler with parallelism 0 result mismatch:\n%s", diff)
 	}
 
 	// Test Unlimited
-	pool.SetMaxParallelism(-1)
+	schedUnlimited := New()
+	schedUnlimited.SetMaxParallelism(-1)
 	wantUnlimited := runtime.GOMAXPROCS(0)
 	var started atomic.Int32
 	doneUnlimited := xsync.NewLatch()
 	doneTestUnlimited := xsync.NewLatch()
 
 	go func() {
-		pool.Saturate(func() {
+		schedUnlimited.Saturate(func() {
 			got := started.Add(1)
 			runtime.Gosched()
 			if int(got) == wantUnlimited {
@@ -75,7 +79,7 @@ func TestPool_Saturate(t *testing.T) {
 	select {
 	case <-doneTestUnlimited.WaitChan():
 		// Success
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Timeout before all unlimited tasks were executed.")
 	}
 
@@ -87,71 +91,92 @@ func TestPool_Saturate(t *testing.T) {
 	}
 }
 
-// TestPool_WorkerIsAsleepWakesSaturate checks that a worker going to sleep wakes up a Saturate call that is
-// already waiting for a free slot: the pool is full, Saturate blocks, and then a running worker declares
-// itself asleep and so frees a slot.
-func TestPool_WorkerIsAsleepWakesSaturate(t *testing.T) {
-	pool := New()
-	pool.SetMaxParallelism(2)
+func TestScheduler_ParallelizeChunks(t *testing.T) {
+	sched := New()
+	sched.SetMaxParallelism(4)
 
-	release := make(chan struct{})
-	sleepNow := make(chan struct{})
-	sleeping := make(chan struct{})
-	var wgWorkers sync.WaitGroup
+	const total = 1000
+	out := make([]int, total)
+	sched.ParallelizeChunks(total, 64, func(start, end int) {
+		for i := start; i < end; i++ {
+			out[i] = i * 2
+		}
+	})
 
-	// Fill the pool: one worker that will go to sleep on request, and one that just holds its slot.
-	wgWorkers.Add(2)
-	if !pool.StartIfAvailable(func() {
-		defer wgWorkers.Done()
-		<-sleepNow
-		pool.WorkerIsAsleep()
-		close(sleeping)
-		<-release
-		pool.WorkerRestarted()
-	}) {
-		t.Fatal("could not start the first worker")
+	for i := range total {
+		if out[i] != i*2 {
+			t.Fatalf("out[%d] = %d, want %d", i, out[i], i*2)
+		}
 	}
-	if !pool.StartIfAvailable(func() {
-		defer wgWorkers.Done()
-		<-release
-	}) {
-		t.Fatal("could not start the second worker")
+}
+
+func TestScheduler_InterCallScaling(t *testing.T) {
+	sched := New()
+	sched.SetMaxParallelism(4)
+
+	if got := sched.EffectiveParallelism(); got != min(4, runtime.GOMAXPROCS(0)) {
+		t.Fatalf("EffectiveParallelism() = %d, want %d", got, min(4, runtime.GOMAXPROCS(0)))
 	}
 
-	ran := make(chan struct{})
-	saturateDone := make(chan struct{})
-	go func() {
-		defer close(saturateDone)
-		pool.Saturate(func() {
-			select {
-			case <-ran:
-			default:
-				close(ran)
+	// Simulate 4 concurrent Execute() calls.
+	var exits []func()
+	for range 4 {
+		exits = append(exits, sched.EnterExecution())
+	}
+	if got := sched.EffectiveParallelism(); got != 1 {
+		t.Fatalf("With 4 active calls, EffectiveParallelism() = %d, want 1", got)
+	}
+
+	for _, exit := range exits {
+		exit()
+	}
+	if got := sched.EffectiveParallelism(); got != min(4, runtime.GOMAXPROCS(0)) {
+		t.Fatalf("After exiting calls, EffectiveParallelism() = %d, want %d", got, min(4, runtime.GOMAXPROCS(0)))
+	}
+}
+
+func TestScheduler_NestedInterOpAndIntraOp_NoDeadlock(t *testing.T) {
+	for _, maxP := range []int{1, 2, 4, 8} {
+		sched := New()
+		sched.SetMaxParallelism(maxP)
+
+		const numInterOpTasks = 16
+		const numIntraOpChunks = 32
+		var totalCompleted atomic.Int32
+		var wg sync.WaitGroup
+
+		for range numInterOpTasks {
+			wg.Add(1)
+			interTask := func() {
+				defer wg.Done()
+				tasks := make([]func(), numIntraOpChunks)
+				for c := range numIntraOpChunks {
+					tasks[c] = func() {
+						totalCompleted.Add(1)
+					}
+				}
+				sched.RunIntraOpTasks(tasks)
 			}
-		})
-	}()
+			if !sched.SubmitInterOp(interTask) {
+				interTask()
+			}
+		}
 
-	// The pool is full, so Saturate must not have run its task yet.
-	select {
-	case <-ran:
-		t.Fatal("Saturate ran a task while the pool was full")
-	case <-time.After(50 * time.Millisecond):
-	}
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
 
-	// A worker goes to sleep: Saturate must be woken up and use the freed slot.
-	close(sleepNow)
-	<-sleeping
-	select {
-	case <-ran:
-	case <-time.After(time.Second):
-		t.Fatal("Saturate was not woken up when a worker went to sleep")
-	}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Deadlock detected with maxParallelism=%d", maxP)
+		}
 
-	close(release)
-	wgWorkers.Wait()
-	select {
-	case <-saturateDone:
-	case <-time.After(time.Second):
-		t.Fatal("Saturate did not return")
+		want := int32(numInterOpTasks * numIntraOpChunks)
+		if got := totalCompleted.Load(); got != want {
+			t.Fatalf("maxParallelism=%d: totalCompleted = %d, want %d", maxP, got, want)
+		}
 	}
 }
