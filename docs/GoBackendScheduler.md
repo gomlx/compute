@@ -147,8 +147,13 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func())
 // it calls fn(0, totalItems) directly inline with zero allocation.
 func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(start, end int))
 
-// Saturate runs workerFn concurrently across the calling goroutine and up to EffectiveParallelism()-1
-// available scheduler workers until workerFn returns on any worker (used by work-pulling ops like MatMul).
+// Saturate fans out workerFn across the calling goroutine and up to EffectiveParallelism()-1
+// available scheduler workers (used by work-pulling ops like MatMul).
+//
+// Each workerFn pulls work from a shared queue until no work remains and then returns.
+// Once any workerFn returns (indicating the work queue is exhausted), Saturate stops
+// spawning/recruiting additional workers and waits for all already-running workerFn
+// instances to finish before returning.
 func (s *Scheduler) Saturate(workerFn func())
 
 // SubmitInterOp enqueues an inter-op task (a ready graph branch when ops_parallel is enabled).
