@@ -242,8 +242,8 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
 
-	lastPackedLHSRow := -1
-	lastPackedLHSK := -1
+	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
+	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; {
@@ -255,6 +255,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 		if rowEnd > rowStart {
 			numMPanels = ((rowEnd - 1) / params.LHSPanelCrossSize) - (rowStart / params.LHSPanelCrossSize) + 1
 		}
+		canCacheAllLHS := len(packedLHS) >= numMPanels*numKPanels*lhsPanelBufSize
 		accumPanelStride := params.RHSPanelCrossSize
 		panelSize := params.LHSPanelCrossSize * accumPanelStride
 		useAccum := len(accumBuffer) >= numMPanels*panelSize
@@ -262,9 +263,9 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 		// Loop 4 (p): Tiling the contracting axis (K)
 		for contractingPanelIdx := 0; contractingPanelIdx < contractingSize; contractingPanelIdx += params.PanelContractingSize {
 			contractingPanelWidth := min(params.PanelContractingSize, contractingSize-contractingPanelIdx)
+			kPanelIdx := contractingPanelIdx / params.PanelContractingSize
 			if len(cachedRHSPanels) > 0 {
 				numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
-				kPanelIdx := contractingPanelIdx / params.PanelContractingSize
 				panel := cachedRHSPanels[kPanelIdx*numColPanels+colPanelIdx]
 				stripOffset := (rhsPanelColIdx % params.RHSPanelCrossSize) / params.RHSL1KernelCols
 				stripSize := contractingPanelWidth * params.RHSL1KernelCols
@@ -283,18 +284,23 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
+				curPackedLHS := packedLHS
 				if len(cachedLHSPanels) > 0 {
 					numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
-					kPanelIdx := contractingPanelIdx / params.PanelContractingSize
 					panel := cachedLHSPanels[kPanelIdx*numRowPanels+rowPanelIdx]
 					stripOffset := (lhsPanelRowIdx % params.LHSPanelCrossSize) / params.LHSL1KernelRows
 					stripSize := contractingPanelWidth * params.LHSL1KernelRows
-					packedLHS = panel[stripOffset*stripSize:]
-				} else if lhsPanelRowIdx != lastPackedLHSRow || contractingPanelIdx != lastPackedLHSK {
-					unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
+					curPackedLHS = panel[stripOffset*stripSize:]
+				} else if canCacheAllLHS {
+					panelIdx := mIdx*numKPanels + kPanelIdx
+					curPackedLHS = packedLHS[panelIdx*lhsPanelBufSize : (panelIdx+1)*lhsPanelBufSize]
+					if rhsPanelColIdx == colStart {
+						unsafePackLHS(lhsMatrix, curPackedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
+							lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+					}
+				} else {
+					unsafePackLHS(lhsMatrix, curPackedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
 						lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
-					lastPackedLHSRow = lhsPanelRowIdx
-					lastPackedLHSK = contractingPanelIdx
 				}
 
 				isFirstContractingPanel := contractingPanelIdx == 0
@@ -308,7 +314,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 					outSlice := outputMatrix[outOffset : outOffset+(lhsPanelHeight-1)*rhsCrossSize+rhsPanelWidth]
 					largeNoSIMDPanel( //alt:generic
 						//alt:half largeNoSIMDPanelHalfPrecision(
-						packedLHS, packedRHS, outSlice,
+						curPackedLHS, packedRHS, outSlice,
 						params.LHSPanelCrossSize, rhsCrossSize,
 						contractingPanelWidth,
 						lhsPanelHeight, rhsPanelWidth,
@@ -319,7 +325,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
 					largeNoSIMDPanel( //alt:generic
 						//alt:half largeNoSIMDPanelHalfPrecision(
-						packedLHS, packedRHS, accumSlice,
+						curPackedLHS, packedRHS, accumSlice,
 						params.LHSPanelCrossSize, accumPanelStride,
 						contractingPanelWidth,
 						lhsPanelHeight, rhsPanelWidth,
@@ -328,7 +334,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 				} else {
 					largeNoSIMDPanel( //alt:generic
 						//alt:half largeNoSIMDPanelHalfPrecision(
-						packedLHS, packedRHS, packedOutput,
+						curPackedLHS, packedRHS, packedOutput,
 						params.LHSPanelCrossSize, params.RHSPanelCrossSize,
 						contractingPanelWidth,
 						lhsPanelHeight, rhsPanelWidth,

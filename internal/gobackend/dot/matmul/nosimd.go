@@ -46,13 +46,13 @@ var (
 
 	// MinMatMulFlopsPerWorker is the minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	MinMatMulFlopsPerWorker = 32 * 1024
+	MinMatMulFlopsPerWorker = 96 * 1024
 	noSIMDMinMatMulFlopsPerWorker = MinMatMulFlopsPerWorker
 
 	// MinLargeMatMulFlopsPerWorker is the minimum number of multiply-adds per worker for the tiled/packed
 	// large matrix multiplication kernels so each worker receives enough compute to amortize panel packing
 	// and thread scheduling.
-	MinLargeMatMulFlopsPerWorker = 2 * 1024 * 1024
+	MinLargeMatMulFlopsPerWorker = 256 * 1024
 )
 
 func init() {
@@ -220,6 +220,14 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		if colChunk < minCol || rowChunk < minRow {
 			continue
 		}
+		if candN > 1 {
+			if colChunk < 8*minCol {
+				continue
+			}
+			if params.LHSPanelCrossSize > 0 && rowChunk < params.LHSPanelCrossSize && candM < maxPossibleM {
+				continue
+			}
+		}
 
 		// Score components:
 		// 1. Worker utilization: penalize if candM * candN != targetWorkers
@@ -258,12 +266,6 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		trafficScore := traffic / float64(M+N)
 
 		totalScore := trafficScore + utilPenalty + rowPenalty + colPenalty
-		// Bonus for candN == 1 if rowChunk is large enough:
-		// When rowChunk is already >= targetRow, splitting along M alone avoids
-		// multiple workers having to pack the same LHS rows and write to different columns of the same row.
-		if candN == 1 && rowChunk >= targetRow {
-			totalScore -= 200.0
-		}
 		if bestScore < 0 || totalScore < bestScore {
 			bestScore = totalScore
 			bestNumM = candM
@@ -324,11 +326,11 @@ func AppendWorkItems(
 
 	rhsSplitSize := (rhsCrossSize + numN - 1) / numN
 	if params.RHSL1KernelCols > 0 {
-		rhsSplitSize = max(params.RHSL1KernelCols, (rhsSplitSize/params.RHSL1KernelCols)*params.RHSL1KernelCols)
+		rhsSplitSize = ((rhsSplitSize + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols) * params.RHSL1KernelCols
 	}
 	lhsSplitSize := (lhsCrossSize + numM - 1) / numM
 	if params.LHSL1KernelRows > 0 {
-		lhsSplitSize = max(params.LHSL1KernelRows, (lhsSplitSize/params.LHSL1KernelRows)*params.LHSL1KernelRows)
+		lhsSplitSize = ((lhsSplitSize + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
 	}
 
 	for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
