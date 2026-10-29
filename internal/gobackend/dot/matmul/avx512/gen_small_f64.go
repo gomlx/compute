@@ -38,8 +38,8 @@ func avx512SmallFloat64Parallel( //alt:f64
 	// Split work by batch items.
 	// For small matrices, we only parallelize along the batch dimension if it's large enough.
 	maxWorkers := 1
-	if backend.Workers != nil {
-		maxWorkers = backend.Workers.AdjustedMaxParallelism()
+	if backend.Scheduler != nil {
+		maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
 	}
 
 	if maxWorkers <= 1 || batchSize <= 1 {
@@ -71,7 +71,7 @@ func avx512SmallFloat64Parallel( //alt:f64
 	}
 	close(work)
 
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			if layout == dot.LayoutNonTransposed {
 				//alt:f32 avx512SmallFloat32(

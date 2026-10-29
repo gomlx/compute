@@ -36,7 +36,7 @@ func smallNoSIMDGenericParallel[I, O gotype.NumericNotComplex]( //alt:generic
 	close(work)
 
 	// Execute the work in as many workers as available.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			smallNoSIMDGeneric( //alt:generic
 				//alt:half smallNoSIMDHalfPrecision(

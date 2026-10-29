@@ -195,8 +195,8 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 	}
 
 	n := len(in)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := max(1, numWorkers*2)
 		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
@@ -205,7 +205,7 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 			inChunk := in[i:end]
 			outChunk := out[i:end]
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				fn(inChunk, outChunk)
 				wg.Done()
 			})
@@ -225,8 +225,8 @@ func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, 
 	}
 
 	totalWork := numRows * hiddenDim
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := max(1, numWorkers*2)
 		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
 		rowsPerChunk := max(chunkSize/hiddenDim, 1)
@@ -239,7 +239,7 @@ func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, 
 			inChunk := in[inOffset : inOffset+chunkRows*2*hiddenDim]
 			outChunk := out[outOffset : outOffset+chunkRows*hiddenDim]
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				fn(inChunk, outChunk, chunkRows, hiddenDim)
 				wg.Done()
 			})
@@ -342,8 +342,8 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 	}
 
 	n := len(dOutput)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && n > minParallelizeChunk {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := max(1, numWorkers*2)
 		chunkSize := max(minParallelizeChunk, (n+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
@@ -359,7 +359,7 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 			dOutChunk := dOutput[i:end]
 			dxChunk := dx[i:end]
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				fn(yChunk, xChunk, dOutChunk, dxChunk)
 				wg.Done()
 			})
@@ -402,8 +402,8 @@ func ExecuteSwiGLUVJP[T gotype.Supported](backend *gobackend.Backend, x, dOutput
 	}
 
 	totalWork := numRows * hiddenDim
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := max(1, numWorkers*2)
 		chunkSize := max(minParallelizeChunk, (totalWork+targetChunks-1)/targetChunks)
 		rowsPerChunk := max(chunkSize/hiddenDim, 1)
@@ -417,7 +417,7 @@ func ExecuteSwiGLUVJP[T gotype.Supported](backend *gobackend.Backend, x, dOutput
 			dOutChunk := dOutput[dOutOffset : dOutOffset+chunkRows*hiddenDim]
 			dxChunk := dx[xOffset : xOffset+chunkRows*2*hiddenDim]
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				fn(xChunk, dOutChunk, dxChunk, chunkRows, hiddenDim)
 				wg.Done()
 			})
@@ -549,4 +549,3 @@ var (
 	_ = float16.FromFloat32
 	_ = bfloat16.FromFloat32
 )
-

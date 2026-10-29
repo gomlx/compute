@@ -25,7 +25,7 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 	nodeData *dot.NodeData) {
 
 	params := NoSIMDParams
-	maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -148,7 +148,7 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 	})
 
 	// 2. Saturate (fan-out workers) on workItems.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		var (
 			packedLHSRef *gobackend.Buffer
 			packedLHS    []I

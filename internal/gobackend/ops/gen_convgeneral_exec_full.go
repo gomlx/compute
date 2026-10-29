@@ -241,15 +241,15 @@ func execConvGeneric[T gobackend.PODNumericConstraints](plan convGeneralExecPlan
 
 	lenOutputs := len(outputFlat)
 	goBackend, _ := plan.backend.(*gobackend.Backend)
-	if goBackend != nil && goBackend.Workers != nil && goBackend.Workers.IsEnabled() && lenOutputs >= 512 {
-		maxWorkers := goBackend.Workers.AdjustedMaxParallelism()
+	if goBackend != nil && goBackend.Scheduler != nil && goBackend.Scheduler.IsEnabled() && lenOutputs >= 512 {
+		maxWorkers := goBackend.Scheduler.AdjustedMaxParallelism()
 		if maxWorkers > 1 {
 			chunkSize := max(256, (lenOutputs+maxWorkers-1)/maxWorkers)
 			var wg sync.WaitGroup
 			for startIdx := 0; startIdx < lenOutputs; startIdx += chunkSize {
 				endIdx := min(startIdx+chunkSize, lenOutputs)
 				wg.Add(1)
-				goBackend.Workers.WaitToStart(func() {
+				goBackend.Scheduler.WaitToStart(func() {
 					defer wg.Done()
 					runChunk(startIdx, endIdx)
 				})

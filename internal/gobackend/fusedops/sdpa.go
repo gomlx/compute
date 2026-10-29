@@ -832,8 +832,8 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	}
 
 	totalTasks := batchSize * numKVHeads
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalTasks > 1 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		workersToStart := min(totalTasks, numWorkers)
 		var taskCounter atomic.Int64
 		var wg sync.WaitGroup
@@ -841,7 +841,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 
 		for range workersToStart {
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				defer wg.Done()
 				workerScores := make([]T, scratchSize)
 				for {

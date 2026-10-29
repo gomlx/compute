@@ -48,8 +48,8 @@ func ApplyEpilogue[T any](
 
 	// Fast path: No bias, only activation. We can apply activation on the whole buffer or in chunks.
 	if !hasBias && act != nil {
-		if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && len(output) > 32768 {
-			numWorkers := backend.Workers.AdjustedMaxParallelism()
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(output) > 32768 {
+			numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 			targetChunks := max(1, numWorkers*2)
 			chunkSize := max(16384, (len(output)+targetChunks-1)/targetChunks)
 			var wg sync.WaitGroup
@@ -57,7 +57,7 @@ func ApplyEpilogue[T any](
 				end := min(i+chunkSize, len(output))
 				chunk := output[i:end]
 				wg.Add(1)
-				backend.Workers.WaitToStart(func() {
+				backend.Scheduler.WaitToStart(func() {
 					act(chunk)
 					wg.Done()
 				})
@@ -83,8 +83,8 @@ func ApplyEpilogue[T any](
 	}
 
 	totalElements := numRows * rowSize
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && numRows > 1 && totalElements > 32768 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && numRows > 1 && totalElements > 32768 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := max(1, numWorkers*2)
 		chunkSize := max(16384, (totalElements+targetChunks-1)/targetChunks)
 		rowsPerChunk := max(1, chunkSize/rowSize)
@@ -93,7 +93,7 @@ func ApplyEpilogue[T any](
 			rStart := r
 			rEnd := min(r+rowsPerChunk, numRows)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				applyRows(rStart, rEnd)
 				wg.Done()
 			})
@@ -163,5 +163,3 @@ func CopyAndAddBiasFloat64(dst, src, bias []float64) {
 		dst[i] = src[i] + val
 	}
 }
-
-

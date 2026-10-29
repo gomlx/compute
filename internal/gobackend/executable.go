@@ -449,11 +449,11 @@ func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuf
 				// of dependent nodes (e.g.: transformer layers) the idle executors hold all the slots, and
 				// the only executor with work gets no parallelism inside its ops.
 				if isPoolWorker {
-					backend.Workers.WorkerIsAsleep()
+					backend.Scheduler.WorkerIsAsleep()
 				}
 				currNode, ok = <-execBuf.readyQueue
 				if isPoolWorker {
-					backend.Workers.WorkerRestarted()
+					backend.Scheduler.WorkerRestarted()
 				}
 			}
 			if !ok {
@@ -539,7 +539,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 	if numExecutors <= 0 {
 		numExecutors = DefaultNumExecutors
 	}
-	if maxP := backend.Workers.MaxParallelism(); maxP > 0 {
+	if maxP := backend.Scheduler.MaxParallelism(); maxP > 0 {
 		numExecutors = min(numExecutors, maxP)
 	}
 
@@ -552,7 +552,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 	// The current caller goroutine serves as one of the executors.
 	for range numExecutors - 1 {
 		wg.Add(1)
-		started := backend.Workers.StartIfAvailable(func() {
+		started := backend.Scheduler.StartIfAvailable(func() {
 			defer wg.Done()
 			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn, true)
 		})

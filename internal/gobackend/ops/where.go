@@ -77,7 +77,7 @@ func dispatchWhereParallel(backend *gobackend.Backend, conditionBuf, onTrueBuf, 
 	}
 	outputShape := outputBuf.RawShape
 	n := outputShape.Size()
-	if backend == nil || backend.Workers == nil || !backend.Workers.IsEnabled() || n < 8192 {
+	if backend == nil || backend.Scheduler == nil || !backend.Scheduler.IsEnabled() || n < 8192 {
 		return false
 	}
 	if !conditionBuf.RawShape.Equal(outputShape) {
@@ -137,7 +137,7 @@ func parallelWhere[T any](backend *gobackend.Backend, cond []bool, onTrueBuf, on
 		onFalseScalar = onFalseFlat[0]
 	}
 
-	numWorkers := backend.Workers.AdjustedMaxParallelism()
+	numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 	targetChunks := min(n, max(1, numWorkers*2))
 	chunkSize := max(16384, (n+targetChunks-1)/targetChunks)
 	var wg sync.WaitGroup
@@ -147,7 +147,7 @@ func parallelWhere[T any](backend *gobackend.Backend, cond []bool, onTrueBuf, on
 	for start := 0; start < n; start += chunkSize {
 		end := min(start+chunkSize, n)
 		wg.Add(1)
-		backend.Workers.WaitToStart(func() {
+		backend.Scheduler.WaitToStart(func() {
 			if isFloat32 {
 				var onTrueChunk, onFalseChunk []float32
 				condChunk := cond[start:end]

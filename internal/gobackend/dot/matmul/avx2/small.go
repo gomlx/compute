@@ -30,8 +30,8 @@ func avx2SmallFloat32Parallel( //alt:f32
 	//alt:f64 output []float64) {
 
 	maxWorkers := 1
-	if backend.Workers != nil {
-		maxWorkers = backend.Workers.AdjustedMaxParallelism()
+	if backend.Scheduler != nil {
+		maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
 	}
 
 	if maxWorkers <= 1 || batchSize <= 1 {
@@ -61,7 +61,7 @@ func avx2SmallFloat32Parallel( //alt:f32
 	}
 	close(work)
 
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			if layout == dot.LayoutNonTransposed {
 				avx2SmallFloat32(lhs, rhs, chunk.batchIdx, chunk.batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:f32

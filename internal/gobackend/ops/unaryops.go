@@ -1006,13 +1006,13 @@ const unaryMinParallelizeChunk = 4096
 
 func execErfGeneric[T float32 | float64](backend *gobackend.Backend, inputs, outputs []T) {
 	lenInputs := len(inputs)
-	if backend.Workers.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
+	if backend.Scheduler.IsEnabled() && lenInputs > unaryMinParallelizeChunk {
 		// Parallelize operation into chunks.
 		var wg sync.WaitGroup
 		for ii := 0; ii < lenInputs; ii += unaryMinParallelizeChunk {
 			iiEnd := min(ii+unaryMinParallelizeChunk, lenInputs)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				for jj := ii; jj < iiEnd; jj++ {
 					outputs[jj] = T(math.Erf(float64(inputs[jj])))
 				}

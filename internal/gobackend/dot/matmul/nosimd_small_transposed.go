@@ -36,7 +36,7 @@ func smallNoSIMDGenericParallelTransposed[I, O gotype.NumericNotComplex]( //alt:
 	close(work)
 
 	// Execute the work in as many workers as available.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			smallNoSIMDGenericTransposed( //alt:generic
 				//alt:half smallNoSIMDHalfPrecisionTransposed(
@@ -399,8 +399,8 @@ func smallNoSIMDGenericTransposed[I, O gotype.NumericNotComplex]( //alt:generic
 					la1 := *(*I)(unsafe.Pointer(l0Idx + iSize)) //alt:generic
 					lb0 := *(*I)(unsafe.Pointer(l1Idx))         //alt:generic
 					lb1 := *(*I)(unsafe.Pointer(l1Idx + iSize)) //alt:generic
-					rk0 := *(*I)(unsafe.Pointer(rIdx))         //alt:generic
-					rk1 := *(*I)(unsafe.Pointer(rIdx + iSize)) //alt:generic
+					rk0 := *(*I)(unsafe.Pointer(rIdx))          //alt:generic
+					rk1 := *(*I)(unsafe.Pointer(rIdx + iSize))  //alt:generic
 
 					//alt:half la0 := (*(*I)(unsafe.Pointer(l0Idx))).Float32()
 					//alt:half la1 := (*(*I)(unsafe.Pointer(l0Idx + iSize))).Float32()

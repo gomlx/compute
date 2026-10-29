@@ -530,7 +530,7 @@ const quantizedDenseMinParallelizeChunk = 4096
 // quantizedDenseParallel will dispatch for the given dimensions.
 func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) int {
 	totalWork := M * K * N
-	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
+	if backend == nil || !backend.Scheduler.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
 		return M
 	}
 	if M > 1 {
@@ -544,7 +544,7 @@ func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) in
 // workerIdx is a dense index in [0, quantizedDenseParallelTileCount) identifying the work unit.
 func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
 	totalWork := M * K * N
-	if backend == nil || !backend.Workers.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
+	if backend == nil || !backend.Scheduler.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
 		for m := range M {
 			rowFn(m, m, 0, N)
 		}
@@ -556,7 +556,7 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 		var wg sync.WaitGroup
 		for m := range M {
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				rowFn(m, m, 0, N)
 				wg.Done()
 			})
@@ -571,7 +571,7 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 			nEnd := min(nStart+tileSize, N)
 			idx := workerIdx
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				rowFn(idx, 0, nStart, nEnd)
 				wg.Done()
 			})

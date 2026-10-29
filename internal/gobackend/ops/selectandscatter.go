@@ -215,8 +215,8 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 	}
 
 	lenSource := len(sourceFlat)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
-		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		if maxWorkers > 1 {
 			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
 				batchCount := sourceDimensions[0]
@@ -228,7 +228,7 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 					startIdx := startBatch * elementsPerBatch
 					endIdx := endBatch * elementsPerBatch
 					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
+					backend.Scheduler.WaitToStart(func() {
 						defer wg.Done()
 						runChunk(startIdx, endIdx, outputFlat)
 					})
@@ -248,7 +248,7 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 					endIdx := min(startIdx+chunkSize, lenSource)
 					isMain := (c == 0)
 					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
+					backend.Scheduler.WaitToStart(func() {
 						defer wg.Done()
 						if isMain {
 							runChunk(startIdx, endIdx, outputFlat)
@@ -359,8 +359,8 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 	}
 
 	lenSource := len(sourceFlat)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
-		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		if maxWorkers > 1 {
 			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
 				batchCount := sourceDimensions[0]
@@ -372,7 +372,7 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 					startIdx := startBatch * elementsPerBatch
 					endIdx := endBatch * elementsPerBatch
 					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
+					backend.Scheduler.WaitToStart(func() {
 						defer wg.Done()
 						runChunk(startIdx, endIdx, outputFlat)
 					})
@@ -392,7 +392,7 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 					endIdx := min(startIdx+chunkSize, lenSource)
 					isMain := (c == 0)
 					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
+					backend.Scheduler.WaitToStart(func() {
 						defer wg.Done()
 						if isMain {
 							runChunk(startIdx, endIdx, outputFlat)
@@ -418,4 +418,3 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 
 	runChunk(0, lenSource, outputFlat)
 }
-

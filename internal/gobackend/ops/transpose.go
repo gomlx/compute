@@ -200,15 +200,15 @@ func dispatchTranspose4D_0213(backend *gobackend.Backend, operand, output *gobac
 func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim, hDim, dDim int) {
 	totalElements := bDim * sDim * hDim * dDim
 	totalOuter := bDim * hDim
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalOuter > 1 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter > 1 && totalElements > 16384 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := min(totalOuter, max(1, numWorkers*2))
 		outerPerChunk := max(1, (totalOuter+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
 		for start := 0; start < totalOuter; start += outerPerChunk {
 			end := min(start+outerPerChunk, totalOuter)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				for outer := start; outer < end; outer++ {
 					b := outer / hDim
 					h := outer % hDim
@@ -225,15 +225,15 @@ func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim
 			})
 		}
 		wg.Wait()
-	} else if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalOuter == 1 && sDim > 512 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	} else if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter == 1 && sDim > 512 && totalElements > 16384 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := min(sDim, max(1, numWorkers*2))
 		sPerChunk := max(1, (sDim+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
 		for start := 0; start < sDim; start += sPerChunk {
 			end := min(start+sPerChunk, sDim)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				strideIn := hDim * dDim
 				for s := start; s < end; s++ {
 					inOff := s * strideIn
@@ -297,8 +297,8 @@ func dispatchTranspose2D(backend *gobackend.Backend, operand, output *gobackend.
 func transpose2D[T any](backend *gobackend.Backend, in, out []T, H, W int) {
 	tileSize := 32
 	totalElements := H * W
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && H > 32 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && H > 32 && totalElements > 16384 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		rTiles := (H + tileSize - 1) / tileSize
 		targetChunks := min(rTiles, max(1, numWorkers*2))
 		tilesPerChunk := max(1, (rTiles+targetChunks-1)/targetChunks)
@@ -307,7 +307,7 @@ func transpose2D[T any](backend *gobackend.Backend, in, out []T, H, W int) {
 			tStart := t * tileSize
 			tEnd := min((t+tilesPerChunk)*tileSize, H)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				for r0 := tStart; r0 < tEnd; r0 += tileSize {
 					rLimit := min(r0+tileSize, tEnd)
 					for c0 := 0; c0 < W; c0 += tileSize {
@@ -387,7 +387,6 @@ func transposeTrailing[T any](backend *gobackend.Backend, in, out []T, dims, per
 		copy(out[outOff:outOff+dDim], in[inOff:inOff+dDim])
 	}
 }
-
 
 // TransposeIterator creates a dynamic iterator that yields output flat indices
 // for the corresponding flat index on the input operand, assuming the operand flat index is moving

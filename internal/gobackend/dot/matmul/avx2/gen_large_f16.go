@@ -18,6 +18,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/pkg/errors"
+
 	//alt:bf16  "github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16" //alt:f16
 )
@@ -43,7 +44,7 @@ func avx2LargeFloat16( //alt:f16
 	//alt:bf16  params := AVX2ParamsBFloat16
 	params := AVX2ParamsFloat16 //alt:f16
 	//alt:f64  params := AVX2ParamsFloat64
-	maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -204,7 +205,7 @@ func avx2LargeFloat16( //alt:f16
 	})
 
 	// 2. Saturate (fan-out workers) on workItems.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		var (
 			packedLHSRef *gobackend.Buffer
 			//alt:f32 packedLHS    []float32

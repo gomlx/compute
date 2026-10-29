@@ -41,7 +41,7 @@ func smallNoSIMDHalfPrecisionParallel[I gotype.HalfPrecision[I], O gotype.Numeri
 	close(work)
 
 	// Execute the work in as many workers as available.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			//alt:generic smallNoSIMDGeneric(
 			smallNoSIMDHalfPrecision( //alt:half

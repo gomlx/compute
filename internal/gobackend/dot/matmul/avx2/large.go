@@ -38,7 +38,7 @@ func avx2LargeFloat32( //alt:f32
 	//alt:bf16 params := AVX2ParamsBFloat16
 	//alt:f16 params := AVX2ParamsFloat16
 	//alt:f64 params := AVX2ParamsFloat64
-	maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -199,7 +199,7 @@ func avx2LargeFloat32( //alt:f32
 	})
 
 	// 2. Saturate (fan-out workers) on workItems.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		var (
 			packedLHSRef *gobackend.Buffer
 			packedLHS    []float32 //alt:f32
@@ -758,7 +758,7 @@ func avx2LargeKernelFloat32( //alt:f32
 				// Load RHS (Broadcasting/Streaming)
 				rhsPtr0 := unsafe.Pointer(rhsRowPtr + rOffset)
 				rhsPtr1 := unsafe.Pointer(rhsRowPtr + rOffset + rhsRegisterStride) //alt:f32|f64
-				rhsVec0 := archsimd.LoadFloat32x8Array((*[8]float32)(rhsPtr0))        //alt:f32
+				rhsVec0 := archsimd.LoadFloat32x8Array((*[8]float32)(rhsPtr0))     //alt:f32
 				//alt:f64 rhsVec0 := archsimd.LoadFloat64x4Array((*[4]float64)(rhsPtr0))
 				rhsVec1 := archsimd.LoadFloat32x8Array((*[8]float32)(rhsPtr1)) //alt:f32
 				//alt:f64 rhsVec1 := archsimd.LoadFloat64x4Array((*[4]float64)(rhsPtr1))

@@ -79,8 +79,8 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	}
 
 	totalElements := input.RawShape.Size()
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && outerSize > 1 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := min(outerSize, max(1, numWorkers*2))
 		outerPerChunk := max(1, (outerSize+targetChunks-1)/targetChunks)
 		inPtr := input.UnsafePointer()
@@ -92,7 +92,7 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 			chunkOuter := min(start+outerPerChunk, outerSize) - start
 			rStart := start
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				defer wg.Done()
 				rowOffset := rStart * normSize
 				if archFn != nil {

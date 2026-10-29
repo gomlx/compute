@@ -14,6 +14,7 @@ import (
 
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
+
 	//alt:bf16  "github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16" //alt:f16
 )
@@ -38,8 +39,8 @@ func avx512SmallFloat16Parallel( //alt:f16
 	// Split work by batch items.
 	// For small matrices, we only parallelize along the batch dimension if it's large enough.
 	maxWorkers := 1
-	if backend.Workers != nil {
-		maxWorkers = backend.Workers.AdjustedMaxParallelism()
+	if backend.Scheduler != nil {
+		maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
 	}
 
 	if maxWorkers <= 1 || batchSize <= 1 {
@@ -71,7 +72,7 @@ func avx512SmallFloat16Parallel( //alt:f16
 	}
 	close(work)
 
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		for chunk := range work {
 			if layout == dot.LayoutNonTransposed {
 				//alt:f32 avx512SmallFloat32(

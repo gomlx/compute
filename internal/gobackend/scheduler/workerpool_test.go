@@ -1,4 +1,4 @@
-package workerpool
+package scheduler
 
 import (
 	"runtime"

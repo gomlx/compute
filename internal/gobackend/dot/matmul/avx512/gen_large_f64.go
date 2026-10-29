@@ -49,7 +49,7 @@ func avx512LargeFloat64( //alt:f64
 	//alt:bf16  params := AVX512ParamsBFloat16
 	//alt:f16  params := AVX512ParamsFloat16
 	params := AVX512ParamsFloat64 //alt:f64
-	maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -206,7 +206,7 @@ func avx512LargeFloat64( //alt:f64
 	})
 
 	// 2. Saturate (fan-out workers) on workItems.
-	backend.Workers.Saturate(func() {
+	backend.Scheduler.Saturate(func() {
 		var (
 			packedLHSRef *gobackend.Buffer
 			//alt:f32 packedLHS    []float32

@@ -1,6 +1,6 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-package workerpool
+package scheduler
 
 import (
 	"runtime"
@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 )
 
-type Pool struct {
+type Scheduler struct {
 	// maxParallelism is a soft target on the limit of parallel work to do.
 	// The actual number of goroutines is higher than that -- because of waits and such.
 	maxParallelism int
@@ -21,27 +21,27 @@ type Pool struct {
 }
 
 // New return a new Pool of workers with the default parallelism (2 * runtime.GOMAXPROCS()).
-func New() *Pool {
-	w := &Pool{}
+func New() *Scheduler {
+	w := &Scheduler{}
 	w.maxParallelism = 2 * runtime.GOMAXPROCS(0)
 	w.cond = sync.Cond{L: &w.mu}
 	return w
 }
 
 // IsEnabled returns whether parallelism is enabled (maxParallelism is != 0)
-func (w *Pool) IsEnabled() bool {
+func (w *Scheduler) IsEnabled() bool {
 	return w.maxParallelism != 0
 }
 
 // IsUnlimited returns whether parallelism is unlimited (maxParallelism < 0)
-func (w *Pool) IsUnlimited() bool {
+func (w *Scheduler) IsUnlimited() bool {
 	return w.maxParallelism < 0
 }
 
 // MaxParallelism returns the soft-target for parallelism.
 // If set to 0 parallelism is disabled.
 // If set to -1 parallelism is unlimited.
-func (w *Pool) MaxParallelism() int {
+func (w *Scheduler) MaxParallelism() int {
 	return w.maxParallelism
 }
 
@@ -51,7 +51,7 @@ func (w *Pool) MaxParallelism() int {
 // If the target is 0 (no parallelism) it returns 1.
 //
 // Also, it limits the number of workers to runtime.GOMAXPROCS.
-func (w *Pool) AdjustedMaxParallelism() int {
+func (w *Scheduler) AdjustedMaxParallelism() int {
 	if w.maxParallelism < 0 {
 		return runtime.GOMAXPROCS(0)
 	}
@@ -62,7 +62,7 @@ func (w *Pool) AdjustedMaxParallelism() int {
 //
 // You should only change the parallelism before any workers start running. If changed during the execution
 // the behavior is undefined.
-func (w *Pool) SetMaxParallelism(maxParallelism int) {
+func (w *Scheduler) SetMaxParallelism(maxParallelism int) {
 	w.maxParallelism = maxParallelism
 }
 
@@ -71,7 +71,7 @@ const goroutineToParallelismRatio = 2
 // lockedIsFull returns whether all available workers are in use.
 //
 // It must be called with workerPool.mu acquired.
-func (w *Pool) lockedIsFull() bool {
+func (w *Scheduler) lockedIsFull() bool {
 	if w.maxParallelism == 0 {
 		return true
 	} else if w.maxParallelism < 0 {
@@ -85,7 +85,7 @@ func (w *Pool) lockedIsFull() bool {
 // If parallelism is disabled (maxParallelism is 0), it runs the task inline and returns when it is finished.
 // This is risky if one is relying on concurrency, and it can lead to deadlocks.
 // Avoid using this function if the parallelism is disabled.
-func (w *Pool) WaitToStart(task func()) {
+func (w *Scheduler) WaitToStart(task func()) {
 	if w.IsUnlimited() {
 		go task()
 		return
@@ -107,7 +107,7 @@ func (w *Pool) WaitToStart(task func()) {
 // lockedRunTaskInGoroutine and keep tabs on w.numRunning.
 //
 // It must be called with workerPool.mu acquired.
-func (w *Pool) lockedRunTaskInGoroutine(task func()) {
+func (w *Scheduler) lockedRunTaskInGoroutine(task func()) {
 	w.numRunning++
 	go func() {
 		task()
@@ -122,7 +122,7 @@ func (w *Pool) lockedRunTaskInGoroutine(task func()) {
 // It returns true if it found workers to run the function, false otherwise.
 //
 // It's up to the client to synchronize the end of the function execution.
-func (w *Pool) StartIfAvailable(task func()) bool {
+func (w *Scheduler) StartIfAvailable(task func()) bool {
 	if w.IsUnlimited() {
 		go task()
 		return true
@@ -144,7 +144,7 @@ func (w *Pool) StartIfAvailable(task func()) bool {
 // immediately stops spawning new tasks.
 //
 // It returns when all started tasks have finished.
-func (w *Pool) Saturate(task func()) {
+func (w *Scheduler) Saturate(task func()) {
 	if w.maxParallelism == 0 {
 		task()
 		return
@@ -191,7 +191,7 @@ func (w *Pool) Saturate(task func()) {
 // Call WorkerRestarted when the worker is ready to run again.
 //
 // It wakes up one goroutine waiting for a free slot (in Saturate or WaitToStart), since a slot just became available.
-func (w *Pool) WorkerIsAsleep() {
+func (w *Scheduler) WorkerIsAsleep() {
 	w.extraParallelism.Add(1)
 	w.mu.Lock()
 	w.cond.Signal()
@@ -202,6 +202,6 @@ func (w *Pool) WorkerIsAsleep() {
 // It should only be called after WorkerIsAsleep.
 //
 // It returns the temporary number of extra available workers.
-func (w *Pool) WorkerRestarted() {
+func (w *Scheduler) WorkerRestarted() {
 	w.extraParallelism.Add(-1)
 }

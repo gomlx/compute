@@ -122,15 +122,15 @@ func fusedSoftmax[T float32 | float64](backend *gobackend.Backend, input, output
 		}
 	}
 
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && outerSize > 1 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		numWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		targetChunks := min(outerSize, max(1, numWorkers*2))
 		outerPerChunk := max(1, (outerSize+targetChunks-1)/targetChunks)
 		var wg sync.WaitGroup
 		for start := 0; start < outerSize; start += outerPerChunk {
 			end := min(start+outerPerChunk, outerSize)
 			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
+			backend.Scheduler.WaitToStart(func() {
 				processOuter(start, end)
 				wg.Done()
 			})

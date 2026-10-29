@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/internal/gobackend/workerpool"
+	"github.com/gomlx/compute/internal/gobackend/scheduler"
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
@@ -86,7 +86,7 @@ func New(config string) (compute.Backend, error) {
 				return nil, errors.Wrapf(err,
 					"invalid value for %q in Go backend config: needs an int, got %q", key, value)
 			}
-			b.Workers.SetMaxParallelism(vInt)
+			b.Scheduler.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
@@ -135,7 +135,7 @@ func newDefaultBackend() *Backend {
 	b := &Backend{
 		NumExecutors: DefaultNumExecutors,
 	}
-	b.Workers = workerpool.New()
+	b.Scheduler = scheduler.New()
 	return b
 }
 
@@ -144,7 +144,7 @@ type Backend struct {
 	// bufferPools are a map to pools of buffers that can be reused.
 	// The underlying type is map[bufferPoolKey]*sync.Pool.
 	bufferPools sync.Map
-	Workers     *workerpool.Pool
+	Scheduler   *scheduler.Scheduler
 
 	NumLiveExecutions atomic.Int32
 
@@ -177,7 +177,7 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return fmt.Sprintf("Go Portable Compute Backend (parallelism=%d)", b.Workers.MaxParallelism())
+	return fmt.Sprintf("Go Portable Compute Backend (parallelism=%d)", b.Scheduler.MaxParallelism())
 }
 
 // NumDevices return the number of devices available for this Backend.
