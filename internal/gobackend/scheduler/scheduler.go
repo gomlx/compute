@@ -12,6 +12,8 @@
 // the calling goroutine immediately participates in executing its own op's subtasks (work-helping)
 // before waiting on the completion barrier. This guarantees forward progress and prevents deadlocks
 // even under nested inter-op and intra-op parallelism.
+//
+// See design details in https://github.com/gomlx/compute/blob/main/docs/GoBackendScheduler.md
 package scheduler
 
 import (
@@ -163,18 +165,18 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 
 	// Number of helper workers to recruit (the caller is 1 worker itself).
 	numHelpers := min(n-1, eff-1)
+	helperFn := func() {
+		defer wg.Done()
+		for {
+			idx := int(nextIdx.Add(1) - 1)
+			if idx >= n {
+				return
+			}
+			tasks[idx]()
+		}
+	}
 	for range numHelpers {
 		wg.Add(1)
-		helperFn := func() {
-			defer wg.Done()
-			for {
-				idx := int(nextIdx.Add(1) - 1)
-				if idx >= n {
-					return
-				}
-				tasks[idx]()
-			}
-		}
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
@@ -220,7 +222,7 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	}
 
 	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize
-	numChunks := min(maxChunksBySize, numWorkers*2)
+	numChunks := min(maxChunksBySize, numWorkers)
 	if numChunks <= 1 {
 		fn(0, totalItems)
 		return
@@ -239,20 +241,20 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	var wg sync.WaitGroup
 
 	numHelpers := min(actualChunks-1, numWorkers-1)
+	helperFn := func() {
+		defer wg.Done()
+		for {
+			c := int(nextChunk.Add(1) - 1)
+			if c >= actualChunks {
+				return
+			}
+			start := c * chunkSize
+			end := min(start+chunkSize, totalItems)
+			fn(start, end)
+		}
+	}
 	for range numHelpers {
 		wg.Add(1)
-		helperFn := func() {
-			defer wg.Done()
-			for {
-				c := int(nextChunk.Add(1) - 1)
-				if c >= actualChunks {
-					return
-				}
-				start := c * chunkSize
-				end := min(start+chunkSize, totalItems)
-				fn(start, end)
-			}
-		}
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
@@ -313,19 +315,19 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	var doneFanningOut atomic.Bool
 
 	numHelpers := limit - 1
+	helperFn := func() {
+		defer wg.Done()
+		if doneFanningOut.Load() {
+			return
+		}
+		workerFn()
+		doneFanningOut.Store(true)
+	}
 	for range numHelpers {
 		if doneFanningOut.Load() {
 			break
 		}
 		wg.Add(1)
-		helperFn := func() {
-			defer wg.Done()
-			if doneFanningOut.Load() {
-				return
-			}
-			workerFn()
-			doneFanningOut.Store(true)
-		}
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:

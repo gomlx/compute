@@ -156,6 +156,10 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 // instances to finish before returning.
 func (s *Scheduler) Saturate(workerFn func())
 
+// SaturateUpTo is like Saturate, but caps the total number of participating workers
+// (including the calling goroutine) to maxWorkers when maxWorkers > 0.
+func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func())
+
 // SubmitInterOp enqueues an inter-op task (a ready graph branch when ops_parallel is enabled).
 func (s *Scheduler) SubmitInterOp(task func())
 ```
