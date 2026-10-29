@@ -89,12 +89,12 @@ func TestFloat32Math(t *testing.T) {
 	inf32 := float32(math.Inf(1))
 	nan32 := float32(math.NaN())
 	edgeIn32 := []float32{-inf32, -104.0, -95.0, 88.3, 88.72, 89.0, inf32, nan32}
-	vEdge32, nLoaded32 := simd.LoadFloat32sPart(edgeIn32)
-	outEdgeExp32 := make([]float32, nLoaded32)
-	simdmath.ExpFloat32(vEdge32).StorePart(outEdgeExp32)
-	for i, x := range edgeIn32[:nLoaded32] {
+	for _, x := range edgeIn32 {
+		vX := simd.BroadcastFloat32s(x)
+		out := make([]float32, vLen)
+		simdmath.ExpFloat32(vX).Store(out)
+		got := out[0]
 		want := float32(math.Exp(float64(x)))
-		got := outEdgeExp32[i]
 		if math.IsNaN(float64(want)) {
 			if !math.IsNaN(float64(got)) {
 				t.Errorf("ExpFloat32(%v) = %v, expected NaN", x, got)
@@ -116,10 +116,10 @@ func TestFloat32Math(t *testing.T) {
 			t.Errorf("ExpFloat32(%v) = %v, expected %v (relDelta: %v)", x, got, want, relDelta)
 		}
 	}
-	outEdgeTanh32 := make([]float32, nLoaded32)
-	simdmath.TanhFloat32(vEdge32).StorePart(outEdgeTanh32)
-	if !math.IsNaN(float64(outEdgeTanh32[nLoaded32-1])) {
-		t.Errorf("TanhFloat32(NaN) = %v, expected NaN", outEdgeTanh32[nLoaded32-1])
+	outTanhNaN32 := make([]float32, vLen)
+	simdmath.TanhFloat32(simd.BroadcastFloat32s(nan32)).Store(outTanhNaN32)
+	if !math.IsNaN(float64(outTanhNaN32[0])) {
+		t.Errorf("TanhFloat32(NaN) = %v, expected NaN", outTanhNaN32[0])
 	}
 }
 
