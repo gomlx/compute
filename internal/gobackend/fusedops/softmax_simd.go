@@ -52,7 +52,8 @@ func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inpu
 	}
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
-		backend.Scheduler.ParallelizeChunks(outerSize, 1, processOuter)
+		minOuter := max(1, 16384/max(1, axisSize))
+		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, processOuter)
 	} else {
 		processOuter(0, outerSize)
 	}

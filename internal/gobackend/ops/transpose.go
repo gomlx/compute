@@ -199,8 +199,9 @@ func dispatchTranspose4D_0213(backend *gobackend.Backend, operand, output *gobac
 func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim, hDim, dDim int) {
 	totalElements := bDim * sDim * hDim * dDim
 	totalOuter := bDim * hDim
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter > 1 && totalElements > 16384 {
-		backend.Scheduler.ParallelizeChunks(totalOuter, 1, func(start, end int) {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter > 1 && totalElements > 32768 {
+		minOuter := max(1, 32768/max(1, sDim*dDim))
+		backend.Scheduler.ParallelizeChunks(totalOuter, minOuter, func(start, end int) {
 			for outer := start; outer < end; outer++ {
 				b := outer / hDim
 				h := outer % hDim
@@ -214,8 +215,9 @@ func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim
 				}
 			}
 		})
-	} else if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter == 1 && sDim > 512 && totalElements > 16384 {
-		backend.Scheduler.ParallelizeChunks(sDim, 1, func(start, end int) {
+	} else if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter == 1 && sDim > 512 && totalElements > 32768 {
+		minS := max(1, 32768/max(1, hDim*dDim))
+		backend.Scheduler.ParallelizeChunks(sDim, minS, func(start, end int) {
 			strideIn := hDim * dDim
 			for s := start; s < end; s++ {
 				inOff := s * strideIn
@@ -276,9 +278,10 @@ func dispatchTranspose2D(backend *gobackend.Backend, operand, output *gobackend.
 func transpose2D[T any](backend *gobackend.Backend, in, out []T, H, W int) {
 	tileSize := 32
 	totalElements := H * W
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && H > 32 && totalElements > 16384 {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && H > 32 && totalElements > 32768 {
 		rTiles := (H + tileSize - 1) / tileSize
-		backend.Scheduler.ParallelizeChunks(rTiles, 1, func(t0, t1 int) {
+		minTiles := max(1, 32768/max(1, tileSize*W))
+		backend.Scheduler.ParallelizeChunks(rTiles, minTiles, func(t0, t1 int) {
 			tStart := t0 * tileSize
 			tEnd := min(t1*tileSize, H)
 			for r0 := tStart; r0 < tEnd; r0 += tileSize {

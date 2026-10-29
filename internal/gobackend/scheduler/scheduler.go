@@ -36,7 +36,6 @@ type Scheduler struct {
 
 	initOnce     sync.Once
 	intraOpQueue chan func()
-	interOpQueue chan func()
 }
 
 // New returns a new Scheduler with the default parallelism set to runtime.GOMAXPROCS(0).
@@ -50,7 +49,6 @@ func New() *Scheduler {
 func (s *Scheduler) ensureWorkersStarted() {
 	s.initOnce.Do(func() {
 		s.intraOpQueue = make(chan func(), defaultQueueSize)
-		s.interOpQueue = make(chan func(), defaultQueueSize)
 		// Start GOMAXPROCS persistent background workers.
 		// If SetMaxParallelism was called with a larger positive value before first use,
 		// start enough workers to cover it.
@@ -62,25 +60,11 @@ func (s *Scheduler) ensureWorkersStarted() {
 }
 
 // workerLoop is the main loop of each persistent worker goroutine.
-// It prioritizes intraOpQueue over interOpQueue so that in-flight operations complete as
-// quickly as possible (preserving L2/L3 cache locality and freeing intermediate buffers early).
+// Using a single channel receive (rather than a multi-channel select) enables Go's direct
+// channel handoff fast-path and avoids runtime.selectgo / runtime.sellock contention.
 func (s *Scheduler) workerLoop() {
-	for {
-		// Priority 1: Check intraOpQueue first via non-blocking select.
-		select {
-		case task := <-s.intraOpQueue:
-			task()
-			continue
-		default:
-		}
-
-		// Wait for either queue when intraOpQueue was empty.
-		select {
-		case task := <-s.intraOpQueue:
-			task()
-		case task := <-s.interOpQueue:
-			task()
-		}
+	for task := range s.intraOpQueue {
+		task()
 	}
 }
 
@@ -298,6 +282,12 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 // recruiting additional workers and waits for all already-running workerFn instances
 // to finish before returning.
 func (s *Scheduler) Saturate(workerFn func()) {
+	s.SaturateUpTo(0, workerFn)
+}
+
+// SaturateUpTo is like Saturate, but caps the total number of participating workers
+// (including the calling goroutine) to maxWorkers when maxWorkers > 0.
+func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	if !s.IsEnabled() {
 		workerFn()
 		return
@@ -308,6 +298,9 @@ func (s *Scheduler) Saturate(workerFn func()) {
 		limit = runtime.GOMAXPROCS(0)
 	} else if s.maxParallelism > 0 && int(s.numActiveCalls.Load()) <= 1 {
 		limit = s.maxParallelism
+	}
+	if maxWorkers > 0 && maxWorkers < limit {
+		limit = maxWorkers
 	}
 	if limit <= 1 {
 		workerFn()
@@ -351,15 +344,18 @@ func (s *Scheduler) Saturate(workerFn func()) {
 
 // SubmitInterOp enqueues a coarse-grained inter-op task (such as a ready branch in executeParallel)
 // to be executed by a persistent worker when no higher-priority intra-op tasks are waiting.
-// It returns true if the task was enqueued to the worker pool, or false if parallelism is disabled
-// or the queue is full.
+// It returns true if the task was enqueued to the worker pool, or false if parallelism is disabled,
+// intra-op tasks are already waiting in the queue, or the queue is full.
 func (s *Scheduler) SubmitInterOp(task func()) bool {
-	if !s.IsEnabled() {
+	if !s.IsEnabled() || s.EffectiveParallelism() <= 1 {
 		return false
 	}
 	s.ensureWorkersStarted()
+	if len(s.intraOpQueue) > 0 {
+		return false
+	}
 	select {
-	case s.interOpQueue <- task:
+	case s.intraOpQueue <- task:
 		return true
 	default:
 		return false

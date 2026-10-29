@@ -22,27 +22,12 @@ func smallNoSIMDGenericParallel[I, O gotype.NumericNotComplex]( //alt:generic
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O, matricesPerTask int) {
 
-	// Crate work that needs doing in a buffered channel.
-	type chunkData struct {
-		batchIdx, batchCount int
-	}
-	numChunks := (batchSize + matricesPerTask - 1) / matricesPerTask
-	work := make(chan chunkData, numChunks)
-	for batchIdx := 0; batchIdx < batchSize; batchIdx += matricesPerTask {
-		batchCount := min(matricesPerTask, batchSize-batchIdx)
-		work <- chunkData{batchIdx, batchCount}
-	}
-	close(work)
-
-	// Execute the work in as many workers as available.
-	backend.Workers.Saturate(func() {
-		for chunk := range work {
-			smallNoSIMDGeneric( //alt:generic
-				//alt:half smallNoSIMDHalfPrecision(
-				lhs, rhs,
-				chunk.batchIdx, chunk.batchCount, lhsCrossSize, rhsCrossSize, contractingSize,
-				output)
-		}
+	backend.Scheduler.ParallelizeChunks(batchSize, matricesPerTask, func(start, end int) {
+		smallNoSIMDGeneric( //alt:generic
+			//alt:half smallNoSIMDHalfPrecision(
+			lhs, rhs,
+			start, end-start, lhsCrossSize, rhsCrossSize, contractingSize,
+			output)
 	})
 }
 

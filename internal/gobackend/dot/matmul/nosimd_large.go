@@ -1,7 +1,7 @@
 package matmul
 
 import (
-	"sync"
+	"sync/atomic"
 
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
@@ -20,7 +20,11 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	nodeData *dot.NodeData) {
 
 	params := NoSIMDParams
-	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
+	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
+	maxWorkers := min(
+		backend.Scheduler.AdjustedMaxParallelism(),
+		max(1, (flops+MinLargeMatMulFlopsPerWorker-1)/MinLargeMatMulFlopsPerWorker),
+	)
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -59,6 +63,14 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 				cachedLHSPanels = p
 			}
 		}
+	}
+
+	var workBuf [128]WorkItem
+	var workItems []WorkItem
+	if maxWorkers > 1 {
+		workItems = AppendWorkItems(
+			workBuf[:0], batchSize, lhsCrossSize, rhsCrossSize, &params, maxWorkers)
+		maxWorkers = min(maxWorkers, len(workItems))
 	}
 
 	if maxWorkers <= 1 {
@@ -133,17 +145,13 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		return
 	}
 
-	// 1. Split work in workItems.
-	workChan := make(chan workItem, max(2000, 2*maxWorkers))
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		feedWorkItems(
-			batchSize, lhsCrossSize, rhsCrossSize,
-			&params, maxWorkers, workChan)
-	})
-
-	// 2. Saturate (fan-out workers) on workItems.
-	backend.Scheduler.Saturate(func() {
+	// 2. Fan-out up to maxWorkers workers on workItems.
+	var nextItem atomic.Int32
+	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
+		itemIdx := int(nextItem.Add(1) - 1)
+		if itemIdx >= len(workItems) {
+			return
+		}
 		var (
 			packedLHSRef *gobackend.Buffer
 			packedLHS    []I
@@ -179,7 +187,8 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 			return
 		}
 		defer ReleaseBuffer(accumOutputRef)
-		for item := range workChan {
+		for {
+			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				batchRHS := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
@@ -206,9 +215,12 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 					batchCachedLHSPanels, batchCachedRHSPanels,
 				)
 			}
+			itemIdx = int(nextItem.Add(1) - 1)
+			if itemIdx >= len(workItems) {
+				break
+			}
 		}
 	})
-	wg.Wait()
 }
 
 // largeNoSIMDMatrixSlice performs a slice of the matrix multiplication on one example: lhs, rhs an output
@@ -229,6 +241,9 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 	cachedLHSPanels, cachedRHSPanels [][]I,
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
+
+	lastPackedLHSRow := -1
+	lastPackedLHSK := -1
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; {
@@ -275,9 +290,11 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 					stripOffset := (lhsPanelRowIdx % params.LHSPanelCrossSize) / params.LHSL1KernelRows
 					stripSize := contractingPanelWidth * params.LHSL1KernelRows
 					packedLHS = panel[stripOffset*stripSize:]
-				} else {
+				} else if lhsPanelRowIdx != lastPackedLHSRow || contractingPanelIdx != lastPackedLHSK {
 					unsafePackLHS(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize,
 						lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows)
+					lastPackedLHSRow = lhsPanelRowIdx
+					lastPackedLHSK = contractingPanelIdx
 				}
 
 				isFirstContractingPanel := contractingPanelIdx == 0

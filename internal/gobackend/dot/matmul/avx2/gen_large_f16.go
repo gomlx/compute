@@ -11,14 +11,13 @@ package avx2
 import (
 	"runtime"
 	"simd/archsimd"
-	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/pkg/errors"
-
 	//alt:bf16  "github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16" //alt:f16
 )
@@ -44,7 +43,11 @@ func avx2LargeFloat16( //alt:f16
 	//alt:bf16  params := AVX2ParamsBFloat16
 	params := AVX2ParamsFloat16 //alt:f16
 	//alt:f64  params := AVX2ParamsFloat64
-	maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
+	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
+	maxWorkers := min(
+		backend.Scheduler.AdjustedMaxParallelism(),
+		max(1, (flops+matmul.MinLargeMatMulFlopsPerWorker-1)/matmul.MinLargeMatMulFlopsPerWorker),
+	)
 
 	// Strides for each matrix in the batch.
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -99,6 +102,14 @@ func avx2LargeFloat16( //alt:f16
 				cachedLHSPanels = p
 			}
 		}
+	}
+
+	var workBuf [128]matmul.WorkItem
+	var workItems []matmul.WorkItem
+	if maxWorkers > 1 {
+		workItems = matmul.AppendWorkItems(
+			workBuf[:0], batchSize, lhsCrossSize, rhsCrossSize, &params, maxWorkers)
+		maxWorkers = min(maxWorkers, len(workItems))
 	}
 
 	if maxWorkers <= 1 {
@@ -195,17 +206,13 @@ func avx2LargeFloat16( //alt:f16
 		return
 	}
 
-	// 1. Split work in workItems.
-	workChan := make(chan matmul.WorkItem, max(2000, 2*maxWorkers))
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		matmul.FeedWorkItems(
-			batchSize, lhsCrossSize, rhsCrossSize,
-			&params, maxWorkers, workChan)
-	})
-
-	// 2. Saturate (fan-out workers) on workItems.
-	backend.Scheduler.Saturate(func() {
+	// 2. Fan-out up to maxWorkers workers on workItems.
+	var nextItem atomic.Int32
+	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
+		itemIdx := int(nextItem.Add(1) - 1)
+		if itemIdx >= len(workItems) {
+			return
+		}
 		var (
 			packedLHSRef *gobackend.Buffer
 			//alt:f32 packedLHS    []float32
@@ -255,7 +262,8 @@ func avx2LargeFloat16( //alt:f16
 			return
 		}
 		defer ReleaseBuffer(accumOutputRef)
-		for item := range workChan {
+		for {
+			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				batchRhs := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
@@ -290,9 +298,12 @@ func avx2LargeFloat16( //alt:f16
 					batchCachedLHSPanels, batchCachedRHSPanels,
 				)
 			}
+			itemIdx = int(nextItem.Add(1) - 1)
+			if itemIdx >= len(workItems) {
+				break
+			}
 		}
 	})
-	wg.Wait()
 }
 
 // avx2LargeMatrixSliceFloat32 performs a slice of the matrix multiplication on one example: lhs, rhs and output
@@ -331,6 +342,9 @@ func avx2LargeMatrixSliceFloat16( //alt:f16
 			//alt:f64  panic(errors.Errorf("unsupported kernel L1 block sizes for avx2 kernel: lhsL1BlockRows=%d, rhsL1BlockCols=%d, wanted 4 and 8 respectively (params=%+v)",
 			params.LHSL1KernelRows, params.RHSL1KernelCols, params))
 	}
+
+	lastPackedLHSRow := -1
+	lastPackedLHSK := -1
 
 	// Loop 5 (jc): Tiling RHS cross axis (N), the output columns.
 	for rhsPanelColIdx := colStart; rhsPanelColIdx < colEnd; {
@@ -377,8 +391,10 @@ func avx2LargeMatrixSliceFloat16( //alt:f16
 					stripOffset := (lhsPanelRowIdx % params.LHSPanelCrossSize) / params.LHSL1KernelRows
 					stripSize := contractingPanelWidth * params.LHSL1KernelRows
 					packedLHS = panel[stripOffset*stripSize:]
-				} else {
+				} else if lhsPanelRowIdx != lastPackedLHSRow || contractingPanelIdx != lastPackedLHSK {
 					avx2PackLHSKernelRows4(lhsMatrix, packedLHS, lhsPanelRowIdx, contractingPanelIdx, contractingSize, lhsPanelHeight, contractingPanelWidth, params.LHSL1KernelRows) //alt:f32|bf16|f16|f64
+					lastPackedLHSRow = lhsPanelRowIdx
+					lastPackedLHSK = contractingPanelIdx
 				}
 
 				isFirstContractingPanel := contractingPanelIdx == 0
