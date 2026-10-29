@@ -84,6 +84,43 @@ func TestFloat32Math(t *testing.T) {
 			t.Errorf("InvFloat32(%v) = %v, expected %v", x, outInv[i], expected)
 		}
 	}
+
+	// Edge cases for ExpFloat32 and TanhFloat32: near-overflow (88.03..88.72), subnormals, ±Inf, NaN.
+	inf32 := float32(math.Inf(1))
+	nan32 := float32(math.NaN())
+	edgeIn32 := []float32{-inf32, -104.0, -95.0, 88.3, 88.72, 89.0, inf32, nan32}
+	vEdge32, nLoaded32 := simd.LoadFloat32sPart(edgeIn32)
+	outEdgeExp32 := make([]float32, nLoaded32)
+	simdmath.ExpFloat32(vEdge32).StorePart(outEdgeExp32)
+	for i, x := range edgeIn32[:nLoaded32] {
+		want := float32(math.Exp(float64(x)))
+		got := outEdgeExp32[i]
+		if math.IsNaN(float64(want)) {
+			if !math.IsNaN(float64(got)) {
+				t.Errorf("ExpFloat32(%v) = %v, expected NaN", x, got)
+			}
+			continue
+		}
+		if math.IsInf(float64(want), 0) {
+			if got != want {
+				t.Errorf("ExpFloat32(%v) = %v, expected %v", x, got, want)
+			}
+			continue
+		}
+		delta := math.Abs(float64(got - want))
+		relDelta := 0.0
+		if want != 0 {
+			relDelta = delta / math.Abs(float64(want))
+		}
+		if relDelta > 1e-4 && delta > 1e-42 {
+			t.Errorf("ExpFloat32(%v) = %v, expected %v (relDelta: %v)", x, got, want, relDelta)
+		}
+	}
+	outEdgeTanh32 := make([]float32, nLoaded32)
+	simdmath.TanhFloat32(vEdge32).StorePart(outEdgeTanh32)
+	if !math.IsNaN(float64(outEdgeTanh32[nLoaded32-1])) {
+		t.Errorf("TanhFloat32(NaN) = %v, expected NaN", outEdgeTanh32[nLoaded32-1])
+	}
 }
 
 func TestFloat64Math(t *testing.T) {
@@ -129,6 +166,46 @@ func TestFloat64Math(t *testing.T) {
 		if delta > 1e-4 {
 			t.Errorf("ErfFloat64(%v) = %v, expected %v (delta: %v)", x, outErf[i], expected, delta)
 		}
+	}
+
+	// Edge cases for ExpFloat64 and TanhFloat64: near-overflow (709.4..709.78), subnormals, ±Inf, NaN.
+	edgeIn64 := []float64{math.Inf(-1), -746.0, -720.0, 709.4, 709.78, 710.0, math.Inf(1), math.NaN()}
+	for _, x := range edgeIn64 {
+		vX := simd.BroadcastFloat64s(x)
+		out := make([]float64, vLen)
+		simdmath.ExpFloat64(vX).Store(out)
+		got := out[0]
+		want := math.Exp(x)
+		if x > 709.4 && x < 709.7827 {
+			// Go's amd64 math.Exp assembly overflows early above 1023.5*ln(2) ≈ 709.436;
+			// compute the reference without overflowing math.Exp.
+			want = math.Exp(x-math.Ln2) * 2
+		}
+		if math.IsNaN(want) {
+			if !math.IsNaN(got) {
+				t.Errorf("ExpFloat64(%v) = %v, expected NaN", x, got)
+			}
+			continue
+		}
+		if math.IsInf(want, 0) {
+			if got != want {
+				t.Errorf("ExpFloat64(%v) = %v, expected %v", x, got, want)
+			}
+			continue
+		}
+		delta := math.Abs(got - want)
+		relDelta := 0.0
+		if want != 0 {
+			relDelta = delta / math.Abs(want)
+		}
+		if relDelta > 1e-5 && delta > 1e-315 {
+			t.Errorf("ExpFloat64(%v) = %v, expected %v (relDelta: %v)", x, got, want, relDelta)
+		}
+	}
+	outTanhNaN64 := make([]float64, vLen)
+	simdmath.TanhFloat64(simd.BroadcastFloat64s(math.NaN())).Store(outTanhNaN64)
+	if !math.IsNaN(outTanhNaN64[0]) {
+		t.Errorf("TanhFloat64(NaN) = %v, expected NaN", outTanhNaN64[0])
 	}
 }
 
