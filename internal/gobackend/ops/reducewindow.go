@@ -2,7 +2,6 @@ package ops
 
 import (
 	"slices"
-	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -243,22 +242,9 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	}
 
 	lenOutputs := outputShape.Size()
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenOutputs >= 512 {
-		maxWorkers := backend.Workers.AdjustedMaxParallelism()
-		if maxWorkers > 1 {
-			chunkSize := max(256, (lenOutputs+maxWorkers-1)/maxWorkers)
-			var wg sync.WaitGroup
-			for startIdx := 0; startIdx < lenOutputs; startIdx += chunkSize {
-				endIdx := min(startIdx+chunkSize, lenOutputs)
-				wg.Add(1)
-				backend.Workers.WaitToStart(func() {
-					defer wg.Done()
-					runChunk(startIdx, endIdx)
-				})
-			}
-			wg.Wait()
-			return output, nil
-		}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenOutputs >= 512 {
+		backend.Scheduler.ParallelizeChunks(lenOutputs, 256, runChunk)
+		return output, nil
 	}
 
 	runChunk(0, lenOutputs)

@@ -7,7 +7,6 @@ package fusedops
 import (
 	"math"
 	"simd"
-	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -52,20 +51,9 @@ func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inpu
 		}
 	}
 
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && outerSize > 1 && totalElements > 16384 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
-		targetChunks := min(outerSize, max(1, numWorkers*2))
-		outerPerChunk := max(1, (outerSize+targetChunks-1)/targetChunks)
-		var wg sync.WaitGroup
-		for start := 0; start < outerSize; start += outerPerChunk {
-			end := min(start+outerPerChunk, outerSize)
-			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
-				processOuter(start, end)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		minOuter := max(1, 16384/max(1, axisSize))
+		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, processOuter)
 	} else {
 		processOuter(0, outerSize)
 	}

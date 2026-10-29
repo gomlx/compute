@@ -23,27 +23,12 @@ func smallNoSIMDGenericParallelTransposed[I, O gotype.NumericNotComplex]( //alt:
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	output []O, matricesPerTask int) {
 
-	// Crate work that needs doing in a buffered channel.
-	type chunkData struct {
-		batchIdx, batchCount int
-	}
-	numChunks := (batchSize + matricesPerTask - 1) / matricesPerTask
-	work := make(chan chunkData, numChunks)
-	for batchIdx := 0; batchIdx < batchSize; batchIdx += matricesPerTask {
-		batchCount := min(matricesPerTask, batchSize-batchIdx)
-		work <- chunkData{batchIdx, batchCount}
-	}
-	close(work)
-
-	// Execute the work in as many workers as available.
-	backend.Workers.Saturate(func() {
-		for chunk := range work {
-			smallNoSIMDGenericTransposed( //alt:generic
-				//alt:half smallNoSIMDHalfPrecisionTransposed(
-				lhs, rhs,
-				chunk.batchIdx, chunk.batchCount, lhsCrossSize, rhsCrossSize, contractingSize,
-				output)
-		}
+	backend.Scheduler.ParallelizeChunks(batchSize, matricesPerTask, func(start, end int) {
+		smallNoSIMDGenericTransposed( //alt:generic
+			//alt:half smallNoSIMDHalfPrecisionTransposed(
+			lhs, rhs,
+			start, end-start, lhsCrossSize, rhsCrossSize, contractingSize,
+			output)
 	})
 }
 
@@ -399,8 +384,8 @@ func smallNoSIMDGenericTransposed[I, O gotype.NumericNotComplex]( //alt:generic
 					la1 := *(*I)(unsafe.Pointer(l0Idx + iSize)) //alt:generic
 					lb0 := *(*I)(unsafe.Pointer(l1Idx))         //alt:generic
 					lb1 := *(*I)(unsafe.Pointer(l1Idx + iSize)) //alt:generic
-					rk0 := *(*I)(unsafe.Pointer(rIdx))         //alt:generic
-					rk1 := *(*I)(unsafe.Pointer(rIdx + iSize)) //alt:generic
+					rk0 := *(*I)(unsafe.Pointer(rIdx))          //alt:generic
+					rk1 := *(*I)(unsafe.Pointer(rIdx + iSize))  //alt:generic
 
 					//alt:half la0 := (*(*I)(unsafe.Pointer(l0Idx))).Float32()
 					//alt:half la1 := (*(*I)(unsafe.Pointer(l0Idx + iSize))).Float32()

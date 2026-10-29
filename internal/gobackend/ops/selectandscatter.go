@@ -215,31 +215,21 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 	}
 
 	lenSource := len(sourceFlat)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
-		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		if maxWorkers > 1 {
 			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
 				batchCount := sourceDimensions[0]
 				elementsPerBatch := lenSource / batchCount
-				chunkBatches := max(1, (batchCount+maxWorkers-1)/maxWorkers)
-				var wg sync.WaitGroup
-				for startBatch := 0; startBatch < batchCount; startBatch += chunkBatches {
-					endBatch := min(startBatch+chunkBatches, batchCount)
-					startIdx := startBatch * elementsPerBatch
-					endIdx := endBatch * elementsPerBatch
-					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
-						defer wg.Done()
-						runChunk(startIdx, endIdx, outputFlat)
-					})
-				}
-				wg.Wait()
+				backend.Scheduler.ParallelizeChunks(batchCount, 1, func(startBatch, endBatch int) {
+					runChunk(startBatch*elementsPerBatch, endBatch*elementsPerBatch, outputFlat)
+				})
 				return
 			} else {
 				numChunks := min(maxWorkers, (lenSource+255)/256)
 				chunkSize := (lenSource + numChunks - 1) / numChunks
-				var wg sync.WaitGroup
 				var mu sync.Mutex
+				tasks := make([]func(), 0, numChunks)
 				for c := 0; c < numChunks; c++ {
 					startIdx := c * chunkSize
 					if startIdx >= lenSource {
@@ -247,9 +237,7 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 					}
 					endIdx := min(startIdx+chunkSize, lenSource)
 					isMain := (c == 0)
-					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
-						defer wg.Done()
+					tasks = append(tasks, func() {
 						if isMain {
 							runChunk(startIdx, endIdx, outputFlat)
 						} else {
@@ -265,7 +253,7 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 						}
 					})
 				}
-				wg.Wait()
+				backend.Scheduler.RunIntraOpTasks(tasks)
 				return
 			}
 		}
@@ -359,31 +347,21 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 	}
 
 	lenSource := len(sourceFlat)
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && lenSource >= 512 {
-		maxWorkers := backend.Workers.AdjustedMaxParallelism()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && lenSource >= 512 {
+		maxWorkers := backend.Scheduler.AdjustedMaxParallelism()
 		if maxWorkers > 1 {
 			if rank >= 2 && effWindowDimensions[0] == 1 && effStrides[0] >= 1 && effPaddings[0][0] == 0 && effPaddings[0][1] == 0 && sourceDimensions[0] > 1 {
 				batchCount := sourceDimensions[0]
 				elementsPerBatch := lenSource / batchCount
-				chunkBatches := max(1, (batchCount+maxWorkers-1)/maxWorkers)
-				var wg sync.WaitGroup
-				for startBatch := 0; startBatch < batchCount; startBatch += chunkBatches {
-					endBatch := min(startBatch+chunkBatches, batchCount)
-					startIdx := startBatch * elementsPerBatch
-					endIdx := endBatch * elementsPerBatch
-					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
-						defer wg.Done()
-						runChunk(startIdx, endIdx, outputFlat)
-					})
-				}
-				wg.Wait()
+				backend.Scheduler.ParallelizeChunks(batchCount, 1, func(startBatch, endBatch int) {
+					runChunk(startBatch*elementsPerBatch, endBatch*elementsPerBatch, outputFlat)
+				})
 				return
 			} else {
 				numChunks := min(maxWorkers, (lenSource+255)/256)
 				chunkSize := (lenSource + numChunks - 1) / numChunks
-				var wg sync.WaitGroup
 				var mu sync.Mutex
+				tasks := make([]func(), 0, numChunks)
 				for c := 0; c < numChunks; c++ {
 					startIdx := c * chunkSize
 					if startIdx >= lenSource {
@@ -391,9 +369,7 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 					}
 					endIdx := min(startIdx+chunkSize, lenSource)
 					isMain := (c == 0)
-					wg.Add(1)
-					backend.Workers.WaitToStart(func() {
-						defer wg.Done()
+					tasks = append(tasks, func() {
 						if isMain {
 							runChunk(startIdx, endIdx, outputFlat)
 						} else {
@@ -410,7 +386,7 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 						}
 					})
 				}
-				wg.Wait()
+				backend.Scheduler.RunIntraOpTasks(tasks)
 				return
 			}
 		}
@@ -418,4 +394,3 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 
 	runChunk(0, lenSource, outputFlat)
 }
-

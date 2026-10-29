@@ -14,6 +14,7 @@ import (
 
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
+	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	//alt:bf16  "github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16" //alt:f16
 )
@@ -37,12 +38,10 @@ func avx512SmallFloat16Parallel( //alt:f16
 
 	// Split work by batch items.
 	// For small matrices, we only parallelize along the batch dimension if it's large enough.
-	maxWorkers := 1
-	if backend.Workers != nil {
-		maxWorkers = backend.Workers.AdjustedMaxParallelism()
-	}
+	flopsPerMatrix := max(1, lhsCrossSize*rhsCrossSize*contractingSize)
+	matricesPerWorker := max(1, (matmul.MinMatMulFlopsPerWorker+flopsPerMatrix-1)/flopsPerMatrix)
 
-	if maxWorkers <= 1 || batchSize <= 1 {
+	if backend.Scheduler == nil || !backend.Scheduler.IsEnabled() || batchSize <= matricesPerWorker {
 		if layout == dot.LayoutNonTransposed {
 			//alt:f32 avx512SmallFloat32(
 			//alt:bf16  avx512SmallBFloat16(
@@ -59,33 +58,20 @@ func avx512SmallFloat16Parallel( //alt:f16
 		return
 	}
 
-	type chunkData struct {
-		batchIdx, batchCount int
-	}
-	numChunks := min(batchSize, maxWorkers*2)
-	batchPerChunk := (batchSize + numChunks - 1) / numChunks
-	work := make(chan chunkData, numChunks)
-	for batchIdx := 0; batchIdx < batchSize; batchIdx += batchPerChunk {
-		count := min(batchPerChunk, batchSize-batchIdx)
-		work <- chunkData{batchIdx, count}
-	}
-	close(work)
-
-	backend.Workers.Saturate(func() {
-		for chunk := range work {
-			if layout == dot.LayoutNonTransposed {
-				//alt:f32 avx512SmallFloat32(
-				//alt:bf16  avx512SmallBFloat16(
-				avx512SmallFloat16( //alt:f16
-					//alt:f64  avx512SmallFloat64(
-					lhs, rhs, chunk.batchIdx, chunk.batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
-			} else {
-				//alt:f32 avx512SmallFloat32Transposed(
-				//alt:bf16  avx512SmallBFloat16Transposed(
-				avx512SmallFloat16Transposed( //alt:f16
-					//alt:f64  avx512SmallFloat64Transposed(
-					lhs, rhs, chunk.batchIdx, chunk.batchCount, lhsCrossSize, rhsCrossSize, contractingSize, output)
-			}
+	backend.Scheduler.ParallelizeChunks(batchSize, matricesPerWorker, func(start, end int) {
+		count := end - start
+		if layout == dot.LayoutNonTransposed {
+			//alt:f32 avx512SmallFloat32(
+			//alt:bf16  avx512SmallBFloat16(
+			avx512SmallFloat16( //alt:f16
+				//alt:f64  avx512SmallFloat64(
+				lhs, rhs, start, count, lhsCrossSize, rhsCrossSize, contractingSize, output)
+		} else {
+			//alt:f32 avx512SmallFloat32Transposed(
+			//alt:bf16  avx512SmallBFloat16Transposed(
+			avx512SmallFloat16Transposed( //alt:f16
+				//alt:f64  avx512SmallFloat64Transposed(
+				lhs, rhs, start, count, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		}
 	})
 }

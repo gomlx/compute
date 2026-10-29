@@ -19,8 +19,8 @@ import (
 // polynomial with range reduction.
 func ExpFloat32(x simd.Float32s) simd.Float32s {
 	const (
-		maxLogF = 88.02969187150841
-		minLogF = -88.02969187150841
+		maxLogF = 89.0
+		minLogF = -104.0
 		log2E   = 1.44269504088896341
 		ln2Hi   = 0.693359375
 		ln2Lo   = -2.12194440e-4
@@ -46,9 +46,10 @@ func ExpFloat32(x simd.Float32s) simd.Float32s {
 	vP3 := simd.BroadcastFloat32s(p3)
 	vP2 := simd.BroadcastFloat32s(p2)
 	vOne := simd.BroadcastFloat32s(1.0)
-	v127 := simd.BroadcastUint32s(127)
+	v254 := simd.BroadcastUint32s(254)
 
-	xClamped := x.Max(vMinLog).Min(vMaxLog)
+	// Clamp to [minLogF, maxLogF] while preserving NaN (comparisons with NaN are false).
+	xClamped := vMinLog.IfElse(x.Less(vMinLog), vMaxLog.IfElse(x.Greater(vMaxLog), x))
 	z := xClamped.MulAdd(vLog2E, vHalf)
 	intZ := z.ConvertToInt32()
 	floatZ := intZ.ConvertToFloat32()
@@ -57,7 +58,15 @@ func ExpFloat32(x simd.Float32s) simd.Float32s {
 	intFloor := intZ.Sub(simd.BroadcastInt32s(1).Masked(adjMask))
 
 	g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
-	n := intFloor.ToBits().Add(v127).ShiftAllLeft(23).BitsToFloat32()
+
+	// Split 2^n into 2^n1 * 2^n2 (biased exponents e1 + e2 = n + 254) so that
+	// n = 128 (for x in [88.38, 88.72]) and n in [-150, -127] (subnormals) keep both
+	// scale factors as normal float32 numbers.
+	sumExp := intFloor.ToBits().Add(v254)
+	e1 := sumExp.ShiftAllRight(1)
+	e2 := sumExp.Sub(e1)
+	scale1 := e1.ShiftAllLeft(23).BitsToFloat32()
+	scale2 := e2.ShiftAllLeft(23).BitsToFloat32()
 
 	poly := vP7.MulAdd(g, vP6)
 	poly = poly.MulAdd(g, vP5)
@@ -66,7 +75,7 @@ func ExpFloat32(x simd.Float32s) simd.Float32s {
 	poly = poly.MulAdd(g, vP2)
 	poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
 
-	return n.Mul(poly)
+	return poly.Mul(scale1).Mul(scale2)
 }
 
 // InvFloat32 computes element-wise reciprocal 1 / x.
@@ -101,12 +110,12 @@ func TanhFloat32(x simd.Float32s) simd.Float32s {
 	vOne := simd.BroadcastFloat32s(1.0)
 	vNegOne := simd.BroadcastFloat32s(-1.0)
 
-	clamped := x.Max(vNegNine).Min(vNine)
-	exp2x := ExpFloat32(clamped.Mul(vTwo))
-	res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
-
 	isGeNine := x.GreaterEqual(vNine)
 	isLeNegNine := x.LessEqual(vNegNine)
+
+	clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, x))
+	exp2x := ExpFloat32(clamped.Mul(vTwo))
+	res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
 
 	res = vOne.IfElse(isGeNine, res)
 	res = vNegOne.IfElse(isLeNegNine, res)
@@ -161,8 +170,8 @@ func GeluApproxFloat32(x simd.Float32s) simd.Float32s {
 // branchless SIMD range reduction and a degree-11 Horner polynomial.
 func ExpFloat64(x simd.Float64s) simd.Float64s {
 	const (
-		maxLogF    = 709.7827128933840
-		minLogF    = -708.3964185322641
+		maxLogF    = 710.0
+		minLogF    = -746.0
 		log2E      = 1.442695040888963407359924681001892137
 		ln2Hi      = 0.693147180559945309417232121458176568
 		ln2Lo      = 2.31904681384629955841777123493867e-17
@@ -188,7 +197,7 @@ func ExpFloat64(x simd.Float64s) simd.Float64s {
 	vMagic := simd.BroadcastFloat64s(magicRound)
 	vMagicBits := simd.BroadcastUint64s(magicBits)
 	vOne := simd.BroadcastFloat64s(1.0)
-	v1023 := simd.BroadcastUint64s(1023)
+	v2046 := simd.BroadcastUint64s(2046)
 
 	vC11 := simd.BroadcastFloat64s(c11)
 	vC10 := simd.BroadcastFloat64s(c10)
@@ -201,16 +210,22 @@ func ExpFloat64(x simd.Float64s) simd.Float64s {
 	vC3 := simd.BroadcastFloat64s(c3)
 	vC2 := simd.BroadcastFloat64s(c2)
 
-	xClamped := x.Max(vMinLog).Min(vMaxLog)
+	// Clamp to [minLogF, maxLogF] while preserving NaN (comparisons with NaN are false).
+	xClamped := vMinLog.IfElse(x.Less(vMinLog), vMaxLog.IfElse(x.Greater(vMaxLog), x))
 	z := xClamped.Mul(vLog2E)
 
 	// Round to nearest integer using IEEE-754 mantissa alignment.
 	zRound := z.Add(vMagic)
 	nFloat := zRound.Sub(vMagic)
 
-	// Integer n in bits via two's complement subtraction.
+	// Integer n in bits via two's complement subtraction, split into two normal scale factors
+	// (biased exponents e1 + e2 = n + 2046) so n = 1024 and subnormals don't overflow/underflow early.
 	nInt := zRound.ToBits().Sub(vMagicBits)
-	scale := nInt.Add(v1023).ShiftAllLeft(52).BitsToFloat64()
+	sumExp := nInt.Add(v2046)
+	e1 := sumExp.ShiftAllRight(1)
+	e2 := sumExp.Sub(e1)
+	scale1 := e1.ShiftAllLeft(52).BitsToFloat64()
+	scale2 := e2.ShiftAllLeft(52).BitsToFloat64()
 
 	// Reduced argument g = x - n*ln(2).
 	g := xClamped.Sub(nFloat.Mul(vLn2Hi)).Sub(nFloat.Mul(vLn2Lo))
@@ -227,7 +242,7 @@ func ExpFloat64(x simd.Float64s) simd.Float64s {
 	poly = poly.MulAdd(g, vC2)
 	poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
 
-	return scale.Mul(poly)
+	return poly.Mul(scale1).Mul(scale2)
 }
 
 // InvFloat64 computes element-wise reciprocal 1 / x.
@@ -262,12 +277,12 @@ func TanhFloat64(x simd.Float64s) simd.Float64s {
 	vOne := simd.BroadcastFloat64s(1.0)
 	vNegOne := simd.BroadcastFloat64s(-1.0)
 
-	clamped := x.Max(vNegNine).Min(vNine)
-	exp2x := ExpFloat64(clamped.Mul(vTwo))
-	res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
-
 	isGeNine := x.GreaterEqual(vNine)
 	isLeNegNine := x.LessEqual(vNegNine)
+
+	clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, x))
+	exp2x := ExpFloat64(clamped.Mul(vTwo))
+	res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
 
 	res = vOne.IfElse(isGeNine, res)
 	res = vNegOne.IfElse(isLeNegNine, res)

@@ -2,7 +2,6 @@ package ops
 
 import (
 	"slices"
-	"sync"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -77,7 +76,7 @@ func dispatchWhereParallel(backend *gobackend.Backend, conditionBuf, onTrueBuf, 
 	}
 	outputShape := outputBuf.RawShape
 	n := outputShape.Size()
-	if backend == nil || backend.Workers == nil || !backend.Workers.IsEnabled() || n < 8192 {
+	if backend == nil || backend.Scheduler == nil || !backend.Scheduler.IsEnabled() || n < 8192 {
 		return false
 	}
 	if !conditionBuf.RawShape.Equal(outputShape) {
@@ -137,75 +136,63 @@ func parallelWhere[T any](backend *gobackend.Backend, cond []bool, onTrueBuf, on
 		onFalseScalar = onFalseFlat[0]
 	}
 
-	numWorkers := backend.Workers.AdjustedMaxParallelism()
-	targetChunks := min(n, max(1, numWorkers*2))
-	chunkSize := max(16384, (n+targetChunks-1)/targetChunks)
-	var wg sync.WaitGroup
-
 	_, isFloat32 := any(onTrueScalar).(float32)
 
-	for start := 0; start < n; start += chunkSize {
-		end := min(start+chunkSize, n)
-		wg.Add(1)
-		backend.Workers.WaitToStart(func() {
-			if isFloat32 {
-				var onTrueChunk, onFalseChunk []float32
-				condChunk := cond[start:end]
-				outChunk := any(out[start:end]).([]float32)
-				if onTrueIsScalar {
-					onTrueChunk = any(onTrueFlat[:1]).([]float32)
-				} else {
-					onTrueChunk = any(onTrueFlat[start:end]).([]float32)
-				}
-				if onFalseIsScalar {
-					onFalseChunk = any(onFalseFlat[:1]).([]float32)
-				} else {
-					onFalseChunk = any(onFalseFlat[start:end]).([]float32)
-				}
-				if whereFloat32Arch(condChunk, onTrueChunk, onFalseChunk, outChunk, onTrueIsScalar, onFalseIsScalar) {
-					wg.Done()
-					return
-				}
+	backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+		if isFloat32 {
+			var onTrueChunk, onFalseChunk []float32
+			condChunk := cond[start:end]
+			outChunk := any(out[start:end]).([]float32)
+			if onTrueIsScalar {
+				onTrueChunk = any(onTrueFlat[:1]).([]float32)
+			} else {
+				onTrueChunk = any(onTrueFlat[start:end]).([]float32)
 			}
+			if onFalseIsScalar {
+				onFalseChunk = any(onFalseFlat[:1]).([]float32)
+			} else {
+				onFalseChunk = any(onFalseFlat[start:end]).([]float32)
+			}
+			if whereFloat32Arch(condChunk, onTrueChunk, onFalseChunk, outChunk, onTrueIsScalar, onFalseIsScalar) {
+				return
+			}
+		}
 
-			switch {
-			case !onTrueIsScalar && onFalseIsScalar:
-				for i := start; i < end; i++ {
-					if cond[i] {
-						out[i] = onTrueFlat[i]
-					} else {
-						out[i] = onFalseScalar
-					}
-				}
-			case onTrueIsScalar && !onFalseIsScalar:
-				for i := start; i < end; i++ {
-					if cond[i] {
-						out[i] = onTrueScalar
-					} else {
-						out[i] = onFalseFlat[i]
-					}
-				}
-			case !onTrueIsScalar && !onFalseIsScalar:
-				for i := start; i < end; i++ {
-					if cond[i] {
-						out[i] = onTrueFlat[i]
-					} else {
-						out[i] = onFalseFlat[i]
-					}
-				}
-			default:
-				for i := start; i < end; i++ {
-					if cond[i] {
-						out[i] = onTrueScalar
-					} else {
-						out[i] = onFalseScalar
-					}
+		switch {
+		case !onTrueIsScalar && onFalseIsScalar:
+			for i := start; i < end; i++ {
+				if cond[i] {
+					out[i] = onTrueFlat[i]
+				} else {
+					out[i] = onFalseScalar
 				}
 			}
-			wg.Done()
-		})
-	}
-	wg.Wait()
+		case onTrueIsScalar && !onFalseIsScalar:
+			for i := start; i < end; i++ {
+				if cond[i] {
+					out[i] = onTrueScalar
+				} else {
+					out[i] = onFalseFlat[i]
+				}
+			}
+		case !onTrueIsScalar && !onFalseIsScalar:
+			for i := start; i < end; i++ {
+				if cond[i] {
+					out[i] = onTrueFlat[i]
+				} else {
+					out[i] = onFalseFlat[i]
+				}
+			}
+		default:
+			for i := start; i < end; i++ {
+				if cond[i] {
+					out[i] = onTrueScalar
+				} else {
+					out[i] = onFalseScalar
+				}
+			}
+		}
+	})
 }
 
 // ternaryZipIterator iterates over the flat indices of three broadcast operands and the target buffer.

@@ -208,6 +208,10 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 	// Keep the live executions count.
 	e.backend.NumLiveExecutions.Add(1)
 	defer e.backend.NumLiveExecutions.Add(-1)
+	if e.backend.Scheduler != nil {
+		exitExec := e.backend.Scheduler.EnterExecution()
+		defer exitExec()
+	}
 
 	// Check inputs length
 	params := e.builder.MainFn.Parameters

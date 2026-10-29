@@ -33,7 +33,8 @@ func avx2RouterFloat64( //alt:f64
 	output []float64, //alt:f64
 	nodeData *dot.NodeData) {
 
-	if !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || (lhsCrossSize*rhsCrossSize*contractingSize < matmul.SmallMatMulSizeThreshold)) {
+	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
+	if !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || flops < matmul.SmallMatMulSizeThreshold) {
 		//alt:f32 avx2SmallFloat32Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		//alt:bf16  avx2SmallBFloat16Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		//alt:f16  avx2SmallFloat16Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)

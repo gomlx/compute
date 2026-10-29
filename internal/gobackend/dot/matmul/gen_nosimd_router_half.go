@@ -59,8 +59,8 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 		matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
 		matricesPerWorker = min(matricesPerWorker, batchSize)
 		maxWorkers := 1
-		if backend.Workers != nil {
-			maxWorkers = backend.Workers.AdjustedMaxParallelism()
+		if backend.Scheduler != nil {
+			maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
 		}
 		if maxWorkers == 1 || matricesPerWorker > batchSize/2 {
 			if layout == dot.LayoutNonTransposed {

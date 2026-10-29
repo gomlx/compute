@@ -141,6 +141,11 @@ Normal code files are prefixed with the following copyright line:
 
 Auto-generated files don't need a copyright, but should include a comment with the tool use to generate them.
 
+### Keep AI Agent Files Up-to-date
+
+For every new feature, refactoring or API change, update `.agents/AGENTS.md` and the files 
+under `.agents/skills/golang-gomlx/` accordingly.
+
 ## How to use SIMD in Go with archsimd and simd
 
 Go 1.26 introduced experimental SIMD support, and Go 1.27 updated it with the `simd` (high-level, architecture-independent) and `simd/archsimd` (low-level, direct hardware registers) packages.
@@ -436,5 +441,4 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
   - On AVX-512 (`Float32x16`): $D=32$ unrolls into exactly 2 vector registers, $D=64$ into 4 vectors, $D=128$ into 8 vectors.
   - On AVX2 (`Float32x8`): $D=32$ unrolls into 4 vector registers, $D=64$ into 8 vectors, $D=128$ into 16 vectors.
   - Completely unrolling the inner dimension eliminates loop overhead and allows optimal compiler/assembler instruction scheduling across FMA execution ports.
-
 

@@ -3,8 +3,6 @@
 package dense
 
 import (
-	"sync"
-
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -238,24 +236,17 @@ func reduceBiasFloat[T float32 | float64](backend *gobackend.Backend, dZ []T, m,
 
 	const minParallelChunk = 4096
 	totalWork := m * n
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && totalWork > minParallelChunk && n > 1 {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelChunk && n > 1 {
 		colsPerChunk := max(minParallelChunk/m, 1)
-		var wg sync.WaitGroup
-		for c0 := 0; c0 < n; c0 += colsPerChunk {
-			cEnd := min(c0+colsPerChunk, n)
-			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
-				for c := c0; c < cEnd; c++ {
-					var sum T
-					for r := range m {
-						sum += dZ[r*n+c]
-					}
-					dBias[c] = sum
+		backend.Scheduler.ParallelizeChunks(n, colsPerChunk, func(c0, cEnd int) {
+			for c := c0; c < cEnd; c++ {
+				var sum T
+				for r := range m {
+					sum += dZ[r*n+c]
 				}
-				wg.Done()
-			})
-		}
-		wg.Wait()
+				dBias[c] = sum
+			}
+		})
 	} else {
 		for c := range n {
 			var sum T

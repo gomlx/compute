@@ -159,13 +159,13 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 
 	switch combined.RawShape.DType {
 	case dtypes.Float32:
-		qkvSplitBiasFloat32(combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasFloat32(backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	case dtypes.Float64:
-		qkvSplitBiasFloat64(combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasFloat64(backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	case dtypes.Float16:
-		qkvSplitBiasHalf[float16.Float16](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasHalf[float16.Float16](backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	case dtypes.BFloat16:
-		qkvSplitBiasHalf[bfloat16.BFloat16](combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		qkvSplitBiasHalf[bfloat16.BFloat16](backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
 	default:
 		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.RawShape.DType)
 	}
@@ -173,7 +173,7 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 	return []*gobackend.Buffer{qBuf, kBuf, vBuf}, nil
 }
 
-func qkvSplitBiasFloat32(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+func qkvSplitBiasFloat32(backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
 	src := combined.Flat.([]float32)
 	q := qBuf.Flat.([]float32)
 	k := kBuf.Flat.([]float32)
@@ -191,18 +191,25 @@ func qkvSplitBiasFloat32(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBu
 
 	totalOut := qDim + 2*kvDim
 	batchSize := len(src) / totalOut
-	for batchIdx := range batchSize {
-		srcBase := batchIdx * totalOut
-		qBase := batchIdx * qDim
-		kBase := batchIdx * kvDim
-		vBase := batchIdx * kvDim
+	processRange := func(start, end int) {
+		for batchIdx := start; batchIdx < end; batchIdx++ {
+			srcBase := batchIdx * totalOut
+			qBase := batchIdx * qDim
+			kBase := batchIdx * kvDim
+			vBase := batchIdx * kvDim
 
-		// Q projection
-		projectSliceFloat32(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
-		// K projection
-		projectSliceFloat32(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
-		// V projection
-		projectSliceFloat32(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+			// Q projection
+			projectSliceFloat32(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
+			// K projection
+			projectSliceFloat32(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
+			// V projection
+			projectSliceFloat32(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+		}
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(src) >= 32768 {
+		backend.Scheduler.ParallelizeChunks(batchSize, max(1, 16384/max(1, totalOut)), processRange)
+	} else {
+		processRange(0, batchSize)
 	}
 }
 
@@ -210,7 +217,7 @@ func projectSliceFloat32(dst, src, bias []float32) {
 	matmul.CopyAndAddBiasFloat32(dst, src, bias)
 }
 
-func qkvSplitBiasFloat64(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+func qkvSplitBiasFloat64(backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
 	src := combined.Flat.([]float64)
 	q := qBuf.Flat.([]float64)
 	k := kBuf.Flat.([]float64)
@@ -228,18 +235,25 @@ func qkvSplitBiasFloat64(combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBu
 
 	totalOut := qDim + 2*kvDim
 	batchSize := len(src) / totalOut
-	for batchIdx := range batchSize {
-		srcBase := batchIdx * totalOut
-		qBase := batchIdx * qDim
-		kBase := batchIdx * kvDim
-		vBase := batchIdx * kvDim
+	processRange := func(start, end int) {
+		for batchIdx := start; batchIdx < end; batchIdx++ {
+			srcBase := batchIdx * totalOut
+			qBase := batchIdx * qDim
+			kBase := batchIdx * kvDim
+			vBase := batchIdx * kvDim
 
-		// Q projection
-		projectSliceFloat64(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
-		// K projection
-		projectSliceFloat64(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
-		// V projection
-		projectSliceFloat64(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+			// Q projection
+			projectSliceFloat64(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
+			// K projection
+			projectSliceFloat64(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
+			// V projection
+			projectSliceFloat64(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+		}
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(src) >= 32768 {
+		backend.Scheduler.ParallelizeChunks(batchSize, max(1, 16384/max(1, totalOut)), processRange)
+	} else {
+		processRange(0, batchSize)
 	}
 }
 
@@ -247,7 +261,7 @@ func projectSliceFloat64(dst, src, bias []float64) {
 	matmul.CopyAndAddBiasFloat64(dst, src, bias)
 }
 
-func qkvSplitBiasHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
+func qkvSplitBiasHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
 	src := combined.Flat.([]T)
 	q := qBuf.Flat.([]T)
 	k := kBuf.Flat.([]T)

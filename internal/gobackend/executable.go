@@ -356,13 +356,17 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 
 // nodeCompleted records completion of nodeIdx and its sub-outputs (for multi-output ops),
 // updates dependencies of dependent nodes, enqueues newly ready nodes, and checks if execution is done.
-// If exactly one dependent node becomes ready and localContinuation is not nil and currently -1,
-// it sets *localContinuation to that node so the caller executor can immediately continue executing it.
+// If a dependent node becomes ready and localContinuation is not nil and currently -1,
+// it sets *localContinuation to the first ready dependent so the caller executor can immediately
+// continue executing it locally without routing through the channel. Any additional ready
+// dependents (when a graph branches) are enqueued to readyQueue and spawned as on-demand
+// inter-op tasks via spawnBranchExecutorFn.
 //
 // This function is fully lock-free. It operates in three phases:
 //  1. Atomic dependency decrements — uses atomic.Int32.Add(-1) on remainingDeps to determine
 //     which dependent nodes have all their inputs satisfied (newReady).
-//  2. Dispatch ready nodes — sends newly-ready nodes to readyQueue or sets localContinuation.
+//  2. Dispatch ready nodes — sets localContinuation for the first ready node and sends any
+//     additional ready nodes to readyQueue (spawning an on-demand branch executor).
 //     This MUST happen before phase 3, which may close the channel.
 //  3. Atomic completion count — increments the completed counter atomically. If the total
 //     reaches expected, calls stopExecutionFn to close readyQueue and signal termination.
@@ -370,7 +374,8 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 // Memory ordering: the atomic Add on remainingDeps provides happens-before edges that guarantee
 // result writes from producer goroutines are visible to consumer goroutines (per Go's memory model).
 func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx int,
-	completed *atomic.Int32, expected int32, stopExecutionFn func(), localContinuation *int, spec *ShapeSpecialization) {
+	completed *atomic.Int32, expected int32, stopExecutionFn func(), spawnBranchExecutorFn func(),
+	localContinuation *int, spec *ShapeSpecialization) {
 	node := fe.Function.Nodes[nodeIdx]
 	if spec != nil {
 		node = spec.resolvedNodes[nodeIdx]
@@ -411,6 +416,9 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 			*localContinuation = depIdx
 		} else {
 			execBuf.readyQueue <- depIdx
+			if spawnBranchExecutorFn != nil {
+				spawnBranchExecutorFn()
+			}
 		}
 	}
 
@@ -430,31 +438,29 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 	}
 }
 
-// runExecutor loops executing nodes until the readyQueue is closed or an error occurs.
+// runExecutor loops executing nodes until the readyQueue is closed (for the main caller)
+// or empty (for on-demand branch executors), or an error occurs.
 // When executing a node unlocks another node, it preferentially continues executing it
 // locally without routing through the channel.
 func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization,
-	completed *atomic.Int32, expected int32, stopExecutionFn func(), appendErrorFn func(error), isPoolWorker bool) {
+	completed *atomic.Int32, expected int32, stopExecutionFn func(), spawnBranchExecutorFn func(),
+	appendErrorFn func(error), isBranchWorker bool) {
 	currNode := -1
 
 	for {
 		if currNode == -1 {
 			var ok bool
-			select {
-			case currNode, ok = <-execBuf.readyQueue:
-			default:
-				// Nothing ready: this executor is about to block. If it holds a slot of the workers pool, it
-				// declares itself asleep while blocked, so the slot can be used by the ops being executed (e.g.:
-				// a large MatMul fanning out with Workers.Saturate). Otherwise, in graphs that are mostly a chain
-				// of dependent nodes (e.g.: transformer layers) the idle executors hold all the slots, and
-				// the only executor with work gets no parallelism inside its ops.
-				if isPoolWorker {
-					backend.Workers.WorkerIsAsleep()
+			if isBranchWorker {
+				// On-demand branch workers never block passively on an empty readyQueue:
+				// once their branch finishes or merges and no ready nodes remain in the queue,
+				// they return immediately to the scheduler pool.
+				select {
+				case currNode, ok = <-execBuf.readyQueue:
+				default:
+					return
 				}
+			} else {
 				currNode, ok = <-execBuf.readyQueue
-				if isPoolWorker {
-					backend.Workers.WorkerRestarted()
-				}
 			}
 			if !ok {
 				// readyQueue closed: computation completed or errored out.
@@ -481,14 +487,14 @@ func (fe *FunctionExecutable) runExecutor(backend *Backend, execBuf *funcExecBuf
 		}
 
 		// Update dependents. If currNode is still -1, nodeCompleted will set it if a dependent is ready.
-		fe.nodeCompleted(execBuf, nodeIdx, completed, expected, stopExecutionFn, &currNode, spec)
+		fe.nodeCompleted(execBuf, nodeIdx, completed, expected, stopExecutionFn, spawnBranchExecutorFn, &currNode, spec)
 	}
 }
 
-// executeParallel executes nodes concurrently across a fixed pool of persistent worker executors.
+// executeParallel executes nodes concurrently across on-demand inter-op worker executors.
 // When an executor finishes a node and only one dependent becomes ready, it continues executing it
 // directly on the same goroutine (preserving CPU cache locality), only pushing to the ready channel
-// when branching causes multiple nodes to become ready simultaneously.
+// and submitting an on-demand inter-op task when branching causes multiple nodes to become ready simultaneously.
 func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExecBuffers, spec *ShapeSpecialization) error {
 	var (
 		collectErrors   []error
@@ -496,6 +502,7 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		wg              sync.WaitGroup
 		expected        int32
 		completed       atomic.Int32
+		activeExecutors atomic.Int32
 		stopExecutionFn func()
 	)
 
@@ -533,39 +540,60 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 		return nil
 	}
 
-	// Determine number of executor goroutines to launch:
-	// Use backend.NumExecutors, but cap it at maxParallelism and at least 1.
-	numExecutors := backend.NumExecutors
-	if numExecutors <= 0 {
-		numExecutors = DefaultNumExecutors
+	// Determine maximum number of concurrent inter-op executor goroutines:
+	// Use backend.NumExecutors, but cap it at EffectiveParallelism and at least 1.
+	maxExecutors := backend.NumExecutors
+	if maxExecutors <= 0 {
+		maxExecutors = DefaultNumExecutors
 	}
-	if maxP := backend.Workers.MaxParallelism(); maxP > 0 {
-		numExecutors = min(numExecutors, maxP)
+	if backend.Scheduler != nil {
+		maxExecutors = min(maxExecutors, backend.Scheduler.EffectiveParallelism())
 	}
+	maxExecutors = max(maxExecutors, 1)
 
-	// Enqueue initial ready nodes.
-	for _, nodeIdx := range initialReady {
-		execBuf.readyQueue <- nodeIdx
-	}
+	// The caller goroutine counts as 1 active executor.
+	activeExecutors.Store(1)
 
-	// Launch background executors via backend.Workers (numExecutors - 1 workers).
-	// The current caller goroutine serves as one of the executors.
-	for range numExecutors - 1 {
+	var spawnBranchExecutorFn func()
+	spawnBranchExecutorFn = func() {
+		if backend.Scheduler == nil || !backend.Scheduler.IsEnabled() {
+			return
+		}
+		for {
+			curr := activeExecutors.Load()
+			if int(curr) >= maxExecutors {
+				return
+			}
+			if activeExecutors.CompareAndSwap(curr, curr+1) {
+				break
+			}
+		}
 		wg.Add(1)
-		started := backend.Workers.StartIfAvailable(func() {
-			defer wg.Done()
-			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn, true)
+		submitted := backend.Scheduler.SubmitInterOp(func() {
+			defer func() {
+				activeExecutors.Add(-1)
+				wg.Done()
+			}()
+			fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, spawnBranchExecutorFn, appendErrorFn, true)
 		})
-		if !started {
+		if !submitted {
+			activeExecutors.Add(-1)
 			wg.Done()
-			break
 		}
 	}
 
-	// Run the current caller goroutine as an executor as well. It doesn't hold a slot of the workers pool.
-	fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, appendErrorFn, false)
+	// Enqueue initial ready nodes and spawn branch executors if there are multiple roots.
+	for i, nodeIdx := range initialReady {
+		execBuf.readyQueue <- nodeIdx
+		if i > 0 {
+			spawnBranchExecutorFn()
+		}
+	}
 
-	// Wait for all background executors to finish.
+	// Run the current caller goroutine as the primary executor.
+	fe.runExecutor(backend, execBuf, spec, &completed, expected, stopExecutionFn, spawnBranchExecutorFn, appendErrorFn, false)
+
+	// Wait for all background branch executors to finish.
 	wg.Wait()
 
 	if len(collectErrors) > 0 {

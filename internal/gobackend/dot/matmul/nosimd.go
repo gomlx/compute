@@ -46,8 +46,13 @@ var (
 
 	// MinMatMulFlopsPerWorker is the minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	MinMatMulFlopsPerWorker = 32 * 1024
+	MinMatMulFlopsPerWorker = 96 * 1024
 	noSIMDMinMatMulFlopsPerWorker = MinMatMulFlopsPerWorker
+
+	// MinLargeMatMulFlopsPerWorker is the minimum number of multiply-adds per worker for the tiled/packed
+	// large matrix multiplication kernels so each worker receives enough compute to amortize panel packing
+	// and thread scheduling.
+	MinLargeMatMulFlopsPerWorker = 256 * 1024
 )
 
 func init() {
@@ -196,20 +201,32 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 	minRow := max(1, params.LHSL1KernelRows)
 	targetRow := minRow
 	targetCol := max(minCol, params.RHSPanelCrossSize)
+	maxPossibleM := max(1, M/minRow)
 
-	bestNumM := targetWorkers
+	bestNumM := min(targetWorkers, maxPossibleM)
 	bestNumN := 1
 	bestScore := -1.0
 
 	// Consider candidate numN values: powers of 2 from 1 up to targetWorkers
 	for candN := 1; candN <= targetWorkers; candN *= 2 {
 		candM := (targetWorkers + candN - 1) / candN
+		if candM > maxPossibleM {
+			candM = maxPossibleM
+		}
 
 		colChunk := (N + candN - 1) / candN
 		rowChunk := (M + candM - 1) / candM
 
 		if colChunk < minCol || rowChunk < minRow {
 			continue
+		}
+		if candN > 1 {
+			if colChunk < 8*minCol {
+				continue
+			}
+			if params.LHSPanelCrossSize > 0 && rowChunk < params.LHSPanelCrossSize && candM < maxPossibleM {
+				continue
+			}
 		}
 
 		// Score components:
@@ -220,17 +237,23 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		}
 		utilPenalty := (workerRatio - 1.0) * 100.0
 
-		// 2. Row panel reuse: rowChunk should be at least targetRow (LHSPanelCrossSize)
+		// 2. Row panel reuse: rowChunk should be at least targetRow
 		// so that packed RHS in L2/L3 cache is reused across multiple LHS panels.
 		rowPenalty := 0.0
 		if rowChunk < targetRow {
 			rowPenalty = float64(targetRow-rowChunk) / float64(targetRow) * 500.0
 		}
 
-		// 3. Col panel size: colChunk <= targetCol avoids re-packing LHS multiple times per worker.
-		// Also colChunk >= 2 * minCol ensures efficient SIMD loop unrolling.
+		// 3. Col panel size and LHS re-packing:
+		// When rowChunk <= LHSPanelCrossSize, the worker's entire row range fits in a single packedLHS
+		// panel and is reused across column panels without re-packing (nPanels == 1).
+		// Only when rowChunk > LHSPanelCrossSize does colChunk > targetCol require re-packing LHS.
+		nPanels := 1
+		if params.LHSPanelCrossSize > 0 && rowChunk > params.LHSPanelCrossSize {
+			nPanels = (colChunk + targetCol - 1) / targetCol
+		}
 		colPenalty := 0.0
-		if colChunk > targetCol {
+		if nPanels > 1 && colChunk > targetCol {
 			colPenalty = float64(colChunk-targetCol) / float64(targetCol) * 100.0
 		} else if colChunk < 2*minCol && N >= 4*minCol {
 			colPenalty = 50.0
@@ -238,18 +261,11 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 
 		// 4. Memory traffic estimation:
 		// RHS packing traffic is proportional to candM * N.
-		// LHS packing traffic is proportional to candN * M * ceil(colChunk / targetCol).
-		nPanels := (colChunk + targetCol - 1) / targetCol
+		// LHS packing traffic is proportional to candN * M * nPanels.
 		traffic := float64(candM*N + candN*M*nPanels)
 		trafficScore := traffic / float64(M+N)
 
 		totalScore := trafficScore + utilPenalty + rowPenalty + colPenalty
-		// Bonus for candN == 1 if rowChunk is large enough:
-		// When rowChunk is already >= targetRow, splitting along M alone avoids
-		// multiple workers having to write to different columns of the same row.
-		if candN == 1 && rowChunk >= targetRow {
-			totalScore -= 200.0
-		}
 		if bestScore < 0 || totalScore < bestScore {
 			bestScore = totalScore
 			bestNumM = candM
@@ -262,68 +278,59 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 
 var choose2DSplit = Choose2DSplit
 
-// FeedWorkItems splits the matrix-multiplication tasks into "WorkItem"s optimized
-// for maxWorkers (>=1).
-// It closes workChan on exit.
-//
-// FeedWorkItems is typically called on a separate goroutine, and it uses almost no CPU.
-func FeedWorkItems(
+// AppendWorkItems appends the matrix-multiplication WorkItems optimized for maxWorkers (>=1) to dst
+// and returns the resulting slice. Passing a stack-allocated backing slice avoids heap allocations.
+func AppendWorkItems(
+	dst []WorkItem,
 	batchSize, lhsCrossSize, rhsCrossSize int,
 	params *CacheParams,
 	maxWorkers int,
-	workChan chan<- WorkItem) {
-	defer func() {
-		// Invariant: it closes the channel on exit.
-		close(workChan)
-	}()
-
+) []WorkItem {
 	if maxWorkers <= 1 {
-		workChan <- WorkItem{
+		return append(dst, WorkItem{
 			0, batchSize,
 			0, lhsCrossSize,
 			0, rhsCrossSize,
-		}
-		return
+		})
 	}
 
 	if batchSize >= 2*maxWorkers {
 		// Split the work on the batch dimension only.
 		batchStep := (batchSize + maxWorkers - 1) / maxWorkers
 		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
-			workChan <- WorkItem{
+			dst = append(dst, WorkItem{
 				batchIdx, min(batchSize, batchIdx+batchStep),
 				0, lhsCrossSize,
 				0, rhsCrossSize,
-			}
+			})
 		}
-		return
+		return dst
 	}
 
 	if batchSize >= maxWorkers {
 		// Plenty of batch items: each worker gets whole batch items dynamically.
 		for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
-			workChan <- WorkItem{
+			dst = append(dst, WorkItem{
 				batchIdx, batchIdx + 1,
 				0, lhsCrossSize,
 				0, rhsCrossSize,
-			}
+			})
 		}
-		return
+		return dst
 	}
 
 	// batchSize < maxWorkers: distribute workers across the batch items,
 	// using 2D grid partitioning on each matrix slice.
-	// Target 2 * maxWorkers to saturate the worker pool (2 workers per GOMAXPROCS).
-	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
+	targetWorkersPerBatch := (maxWorkers + batchSize - 1) / batchSize
 	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
 
 	rhsSplitSize := (rhsCrossSize + numN - 1) / numN
 	if params.RHSL1KernelCols > 0 {
-		rhsSplitSize = max(params.RHSL1KernelCols, (rhsSplitSize/params.RHSL1KernelCols)*params.RHSL1KernelCols)
+		rhsSplitSize = ((rhsSplitSize + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols) * params.RHSL1KernelCols
 	}
 	lhsSplitSize := (lhsCrossSize + numM - 1) / numM
 	if params.LHSL1KernelRows > 0 {
-		lhsSplitSize = max(params.LHSL1KernelRows, (lhsSplitSize/params.LHSL1KernelRows)*params.LHSL1KernelRows)
+		lhsSplitSize = ((lhsSplitSize + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
 	}
 
 	for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
@@ -331,13 +338,29 @@ func FeedWorkItems(
 		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
 			colEnd := min(rhsCrossSize, rhsColIdx+rhsSplitSize)
 			for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
-				workChan <- WorkItem{
+				dst = append(dst, WorkItem{
 					batchIdx, batchIdx + 1,
 					lhsRowIdx, rowEnd,
 					rhsColIdx, colEnd,
-				}
+				})
 			}
 		}
+	}
+	return dst
+}
+
+// FeedWorkItems splits the matrix-multiplication tasks into "WorkItem"s optimized
+// for maxWorkers (>=1) and sends them to workChan, closing workChan on exit.
+func FeedWorkItems(
+	batchSize, lhsCrossSize, rhsCrossSize int,
+	params *CacheParams,
+	maxWorkers int,
+	workChan chan<- WorkItem) {
+	defer close(workChan)
+	var stackBuf [128]WorkItem
+	items := AppendWorkItems(stackBuf[:0], batchSize, lhsCrossSize, rhsCrossSize, params, maxWorkers)
+	for _, item := range items {
+		workChan <- item
 	}
 }
 

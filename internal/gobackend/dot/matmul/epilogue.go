@@ -3,8 +3,6 @@
 package matmul
 
 import (
-	"sync"
-
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
@@ -48,21 +46,10 @@ func ApplyEpilogue[T any](
 
 	// Fast path: No bias, only activation. We can apply activation on the whole buffer or in chunks.
 	if !hasBias && act != nil {
-		if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && len(output) > 32768 {
-			numWorkers := backend.Workers.AdjustedMaxParallelism()
-			targetChunks := max(1, numWorkers*2)
-			chunkSize := max(16384, (len(output)+targetChunks-1)/targetChunks)
-			var wg sync.WaitGroup
-			for i := 0; i < len(output); i += chunkSize {
-				end := min(i+chunkSize, len(output))
-				chunk := output[i:end]
-				wg.Add(1)
-				backend.Workers.WaitToStart(func() {
-					act(chunk)
-					wg.Done()
-				})
-			}
-			wg.Wait()
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(output) > 32768 {
+			backend.Scheduler.ParallelizeChunks(len(output), 16384, func(start, end int) {
+				act(output[start:end])
+			})
 		} else {
 			act(output)
 		}
@@ -83,22 +70,9 @@ func ApplyEpilogue[T any](
 	}
 
 	totalElements := numRows * rowSize
-	if backend != nil && backend.Workers != nil && backend.Workers.IsEnabled() && numRows > 1 && totalElements > 32768 {
-		numWorkers := backend.Workers.AdjustedMaxParallelism()
-		targetChunks := max(1, numWorkers*2)
-		chunkSize := max(16384, (totalElements+targetChunks-1)/targetChunks)
-		rowsPerChunk := max(1, chunkSize/rowSize)
-		var wg sync.WaitGroup
-		for r := 0; r < numRows; r += rowsPerChunk {
-			rStart := r
-			rEnd := min(r+rowsPerChunk, numRows)
-			wg.Add(1)
-			backend.Workers.WaitToStart(func() {
-				applyRows(rStart, rEnd)
-				wg.Done()
-			})
-		}
-		wg.Wait()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && numRows > 1 && totalElements > 32768 {
+		minRows := max(1, 16384/rowSize)
+		backend.Scheduler.ParallelizeChunks(numRows, minRows, applyRows)
 	} else {
 		applyRows(0, numRows)
 	}
@@ -163,5 +137,3 @@ func CopyAndAddBiasFloat64(dst, src, bias []float64) {
 		dst[i] = src[i] + val
 	}
 }
-
-
