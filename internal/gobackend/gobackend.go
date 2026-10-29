@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/internal/gobackend/workerspool"
+	"github.com/gomlx/compute/internal/gobackend/workerpool"
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/pkg/errors"
@@ -135,7 +135,7 @@ func newDefaultBackend() *Backend {
 	b := &Backend{
 		NumExecutors: DefaultNumExecutors,
 	}
-	b.Workers = workerspool.New()
+	b.Workers = workerpool.New()
 	return b
 }
 
@@ -144,7 +144,7 @@ type Backend struct {
 	// bufferPools are a map to pools of buffers that can be reused.
 	// The underlying type is map[bufferPoolKey]*sync.Pool.
 	bufferPools sync.Map
-	Workers     *workerspool.Pool
+	Workers     *workerpool.Pool
 
 	NumLiveExecutions atomic.Int32
 
