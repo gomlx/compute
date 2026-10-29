@@ -36,6 +36,15 @@ type Scheduler struct {
 	// for inter-call parallelism scaling.
 	numActiveCalls atomic.Int32
 
+	// maxInterOpWorkers tracks the maximum number of persistent background workers that
+	// may concurrently execute inter-op tasks, reserving at least 1 persistent worker
+	// (when numWorkers > 1) exclusively for intra-op tasks.
+	maxInterOpWorkers int32
+
+	// activeInterOpWorkers tracks the number of persistent workers currently executing
+	// an inter-op task submitted via SubmitInterOp.
+	activeInterOpWorkers atomic.Int32
+
 	initOnce     sync.Once
 	intraOpQueue chan func()
 }
@@ -54,7 +63,12 @@ func (s *Scheduler) ensureWorkersStarted() {
 		// Start GOMAXPROCS persistent background workers.
 		// If SetMaxParallelism was called with a larger positive value before first use,
 		// start enough workers to cover it.
-		numWorkers := max(runtime.GOMAXPROCS(0), s.maxParallelism)
+		numWorkers := max(runtime.GOMAXPROCS(0), s.maxParallelism, 1)
+		if numWorkers > 1 {
+			s.maxInterOpWorkers = int32(numWorkers - 1)
+		} else {
+			s.maxInterOpWorkers = 1
+		}
 		for range numWorkers {
 			go s.workerLoop()
 		}
@@ -62,8 +76,8 @@ func (s *Scheduler) ensureWorkersStarted() {
 }
 
 // workerLoop is the main loop of each persistent worker goroutine.
-// Using a single channel receive (rather than a multi-channel select) enables Go's direct
-// channel handoff fast-path and avoids runtime.selectgo / runtime.sellock contention.
+// Using a single channel receive on intraOpQueue enables Go's direct channel handoff fast-path
+// and avoids runtime.selectgo / runtime.sellock contention on the critical intra-op path.
 func (s *Scheduler) workerLoop() {
 	for task := range s.intraOpQueue {
 		task()
@@ -148,8 +162,6 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 	eff := s.EffectiveParallelism()
 	if s.IsUnlimited() {
 		eff = runtime.GOMAXPROCS(0)
-	} else if s.maxParallelism > 0 && int(s.numActiveCalls.Load()) <= 1 {
-		eff = s.maxParallelism
 	}
 	if eff <= 1 {
 		for _, task := range tasks {
@@ -161,12 +173,16 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 	s.ensureWorkersStarted()
 
 	var nextIdx atomic.Int32
+	var activeHelpers atomic.Int32
 	var wg sync.WaitGroup
 
 	// Number of helper workers to recruit (the caller is 1 worker itself).
 	numHelpers := min(n-1, eff-1)
 	helperFn := func() {
-		defer wg.Done()
+		defer func() {
+			activeHelpers.Add(-1)
+			wg.Done()
+		}()
 		for {
 			idx := int(nextIdx.Add(1) - 1)
 			if idx >= n {
@@ -176,12 +192,14 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 		}
 	}
 	for range numHelpers {
+		activeHelpers.Add(1)
 		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
 			// Queue full: skip recruiting more helpers; the caller and already-queued helpers
 			// will drain all tasks via nextIdx.
+			activeHelpers.Add(-1)
 			wg.Done()
 		}
 	}
@@ -195,6 +213,17 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 		tasks[idx]()
 	}
 
+	// If any recruited helper is still pending in intraOpQueue (e.g. if background workers
+	// are busy with other concurrent ops), drain queued intra-op helpers before blocking.
+	for activeHelpers.Load() > 0 {
+		select {
+		case task := <-s.intraOpQueue:
+			task()
+		default:
+			goto waitDone
+		}
+	}
+waitDone:
 	wg.Wait()
 }
 
@@ -238,11 +267,15 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	}
 
 	var nextChunk atomic.Int32
+	var activeHelpers atomic.Int32
 	var wg sync.WaitGroup
 
 	numHelpers := min(actualChunks-1, numWorkers-1)
 	helperFn := func() {
-		defer wg.Done()
+		defer func() {
+			activeHelpers.Add(-1)
+			wg.Done()
+		}()
 		for {
 			c := int(nextChunk.Add(1) - 1)
 			if c >= actualChunks {
@@ -254,10 +287,12 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 		}
 	}
 	for range numHelpers {
+		activeHelpers.Add(1)
 		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
+			activeHelpers.Add(-1)
 			wg.Done()
 		}
 	}
@@ -273,6 +308,15 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 		fn(start, end)
 	}
 
+	for activeHelpers.Load() > 0 {
+		select {
+		case task := <-s.intraOpQueue:
+			task()
+		default:
+			goto waitDone
+		}
+	}
+waitDone:
 	wg.Wait()
 }
 
@@ -298,8 +342,6 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	limit := s.EffectiveParallelism()
 	if s.IsUnlimited() {
 		limit = runtime.GOMAXPROCS(0)
-	} else if s.maxParallelism > 0 && int(s.numActiveCalls.Load()) <= 1 {
-		limit = s.maxParallelism
 	}
 	if maxWorkers > 0 && maxWorkers < limit {
 		limit = maxWorkers
@@ -312,11 +354,15 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	s.ensureWorkersStarted()
 
 	var wg sync.WaitGroup
+	var activeHelpers atomic.Int32
 	var doneFanningOut atomic.Bool
 
 	numHelpers := limit - 1
 	helperFn := func() {
-		defer wg.Done()
+		defer func() {
+			activeHelpers.Add(-1)
+			wg.Done()
+		}()
 		if doneFanningOut.Load() {
 			return
 		}
@@ -327,10 +373,12 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 		if doneFanningOut.Load() {
 			break
 		}
+		activeHelpers.Add(1)
 		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
+			activeHelpers.Add(-1)
 			wg.Done()
 		}
 	}
@@ -341,13 +389,23 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 		doneFanningOut.Store(true)
 	}
 
+	for activeHelpers.Load() > 0 {
+		select {
+		case task := <-s.intraOpQueue:
+			task()
+		default:
+			goto waitDone
+		}
+	}
+waitDone:
 	wg.Wait()
 }
 
 // SubmitInterOp enqueues a coarse-grained inter-op task (such as a ready branch in executeParallel)
-// to be executed by a persistent worker when no higher-priority intra-op tasks are waiting.
-// It returns true if the task was enqueued to the worker pool, or false if parallelism is disabled,
-// intra-op tasks are already waiting in the queue, or the queue is full.
+// to be executed by an available persistent worker when no higher-priority intra-op tasks are waiting.
+// It returns true if an inter-op worker slot was claimed and the task was enqueued, or false if
+// parallelism is disabled, the inter-op worker budget is full, intra-op tasks are already waiting,
+// or the queue is full (so the caller can execute the branch locally or leave it in readyQueue).
 func (s *Scheduler) SubmitInterOp(task func()) bool {
 	if !s.IsEnabled() || s.EffectiveParallelism() <= 1 {
 		return false
@@ -356,10 +414,25 @@ func (s *Scheduler) SubmitInterOp(task func()) bool {
 	if len(s.intraOpQueue) > 0 {
 		return false
 	}
+	maxInterOp := min(s.maxInterOpWorkers, int32(max(s.EffectiveParallelism()-1, 1)))
+	for {
+		curr := s.activeInterOpWorkers.Load()
+		if curr >= maxInterOp {
+			return false
+		}
+		if s.activeInterOpWorkers.CompareAndSwap(curr, curr+1) {
+			break
+		}
+	}
+	wrapped := func() {
+		defer s.activeInterOpWorkers.Add(-1)
+		task()
+	}
 	select {
-	case s.intraOpQueue <- task:
+	case s.intraOpQueue <- wrapped:
 		return true
 	default:
+		s.activeInterOpWorkers.Add(-1)
 		return false
 	}
 }

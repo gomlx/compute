@@ -16,7 +16,7 @@ import (
 func TestScheduler_Saturate(t *testing.T) {
 	// Test saturation where all workers (caller + helpers) participate.
 	sched := New()
-	wantTasks := 5
+	wantTasks := min(5, runtime.GOMAXPROCS(0))
 	sched.SetMaxParallelism(wantTasks)
 
 	var count atomic.Int32
