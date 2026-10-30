@@ -45,7 +45,8 @@ auto-differentiation, use GoMLX instead.
 - `internal/gobackend`: the implementation of the "go" backend. It consists of
   buffer and execution logic, and "registration" of ops during build and
   execution. The implementation of each op is (or is being moved to) in its
-  sub-packages `ops`, `dot`, `conv` and `fusedops` (in works).
+  sub-packages `ops`, `activations`, `dot`, `conv`, `fusedops`, and `scheduler`
+  (see `docs/GoBackendScheduler.md`).
 - `support`: generic support libraries.
   - `support/testutil`: test utilities that can be used by any `compute.Backend`
     implementation to test. 
@@ -409,22 +410,20 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
 - **Group by KV-Head**: Partition the workload into $N_{tasks} = Batch \times N_{kv}$ chunks.
 - Each worker processes an entire $(batch, kv\_head)$ unit, iterating through all $G = N_{query} / N_{kv}$ query heads sequentially. This guarantees that the key and value sequences ($S_{kv} \times D$) are loaded once and stay resident in the core's private L1/L2 cache across all $G$ query heads.
 
-### 3. Dynamic Work-Stealing with Atomic Counters
-- **Channel vs Atomic Counter**: Avoid distributing tasks via Go channels. In tight compute loops, channel send/receive operations introduce channel lock contention, context switching, and runtime scheduler latency.
-- **Static Slicing Pitfall**: Evenly dividing $N_{tasks}$ across $W$ workers upfront leads to thread imbalance if sequence lengths vary (due to padding) or if task counts do not divide evenly by worker count.
-- **Optimal Pattern**:
-  1. Spawn $W = \min(N_{tasks}, \text{backend.Workers})$ goroutines using `backend.Workers.Saturate` or the worker pool.
-  2. Use an `atomic.Int64` task counter shared across workers:
-     ```go
-     for {
-         taskIdx := int(taskCounter.Add(1) - 1)
-         if taskIdx >= numTasks {
-             break
-         }
-         // execute taskIdx
-     }
-     ```
-  3. This provides lock-free, zero-allocation dynamic load balancing where faster cores naturally process more tasks.
+### 3. Intra-Op Parallelization with `backend.Scheduler`
+- **Scheduler Overview** (`internal/gobackend/scheduler`, documented in [`docs/GoBackendScheduler.md`](../docs/GoBackendScheduler.md)):
+  - `backend.Scheduler` manages a persistent pool of worker goroutines (sized to `runtime.GOMAXPROCS(0)` by default, configurable via `parallelism=N`) with a strict priority hierarchy: **Inter-Call > Intra-Op > Inter-Op**.
+  - **Automatic Inter-Call Scaling**: `FunctionExecutable.Execute` registers active executions via `Scheduler.EnterExecution()` / `LeaveExecution()`. `Scheduler.EffectiveParallelism()` automatically divides available parallelism across concurrent `Execute()` calls ($\max(1, \lfloor P / C \rfloor)$). When $C \ge P$, `EffectiveParallelism() == 1`, and ops run inline on the caller goroutine with zero synchronization or scheduling overhead.
+  - **Deadlock-Free Work-Helping**: When an op fans out intra-op tasks via `ParallelizeChunks` or `RunIntraOpTasks`, the calling goroutine actively drains and executes its own op's tasks before waiting on the `sync.WaitGroup`, guaranteeing forward progress without deadlocks even when nested inside `ops_parallel` inter-op tasks.
+- **Contiguous Chunk Partitioning (`ParallelizeChunks`)**:
+  - Prefer `backend.Scheduler.ParallelizeChunks(totalItems, minChunkSize, func(start, end int) { ... })` to partition outer dimensions (`[0, totalItems)`) into contiguous ranges `[start, end)`.
+  - `ParallelizeChunks` splits work into at most $2 \times \text{EffectiveParallelism}()$ contiguous chunks (each at least `minChunkSize`), preventing false sharing (64-byte cache line bouncing) and amortizing scheduling overhead.
+  - If `totalItems <= minChunkSize` or `!backend.Scheduler.IsEnabled()` (including when `EffectiveParallelism() <= 1`), `ParallelizeChunks` executes `fn(0, totalItems)` directly inline with zero allocations.
+- **Kernel Metadata for Adaptive Chunking**:
+  - Different kernel implementations (e.g., scalar `nosimd` vs. `simd` vs. `avx2`/`avx512`, or simple ReLU vs. transcendental GeLU/Erf) have vastly different per-element costs.
+  - Rather than hardcoding chunk sizes in the executor or inferring SIMD support from registration priority, kernels register associated metadata (e.g., `activations.KernelMetadata{MinParallelChunk: ...}`) so each kernel specifies its own minimum parallel chunk size (and package-level metadata structs can be tuned per platform at runtime).
+- **Custom Multi-Worker Loops (`RunIntraOpTasks`)**:
+  - When workers require per-worker state (e.g., per-worker scratch buffers or panel buffers in `MatMul`) or dynamic work-stealing over irregular tasks, use `backend.Scheduler.RunIntraOpTasks(numWorkers, func(workerIdx int) { ... })` combined with a shared `atomic.Int64` counter over contiguous tiles/chunks.
 
 ### 4. In-Cache Reductions & Register Accumulation
 - **Never Materialize Intermediate Full Matrices**: Materializing $S_q \times S_{kv}$ attention logit matrices in DRAM creates severe memory-bandwidth bottlenecks for sequence lengths $S \ge 512$.
