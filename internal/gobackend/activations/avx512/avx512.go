@@ -194,47 +194,55 @@ func initAVX512Constants() {
 	bf16_512MaskHi = archsimd.BroadcastUint32x16(0xFFFF0000)
 }
 
+var (
+	// AVX512SimpleMetadata holds metadata for lightweight element-wise AVX-512 kernels.
+	AVX512SimpleMetadata = activations.KernelMetadata{MinParallelChunk: 32768}
+
+	// AVX512TranscendentalMetadata holds metadata for transcendental AVX-512 kernels.
+	AVX512TranscendentalMetadata = activations.KernelMetadata{MinParallelChunk: 16384}
+)
+
 func registerAVX512() {
 	// Float32
-	activations.Register[float32]("avx512:relu", compute.ActivationRelu, ReluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:sigmoid", compute.ActivationSigmoid, SigmoidAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:hardsigmoid", compute.ActivationHardSigmoid, HardSigmoidAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:leakyrelu", compute.ActivationLeakyRelu, LeakyReluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:selu", compute.ActivationSelu, SeluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:silu", compute.ActivationSilu, SiluAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishAVX512, PriorityAVX512)
-	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, TanhAVX512, PriorityAVX512)
-	activations.RegisterKernel[float32]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512, PriorityAVX512)
-	activations.RegisterKernel[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluAVX512, PriorityAVX512)
-	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512)
+	activations.Register[float32]("avx512:relu", compute.ActivationRelu, ReluAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float32]("avx512:sigmoid", compute.ActivationSigmoid, SigmoidAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float32]("avx512:hardsigmoid", compute.ActivationHardSigmoid, HardSigmoidAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float32]("avx512:leakyrelu", compute.ActivationLeakyRelu, LeakyReluAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float32]("avx512:selu", compute.ActivationSelu, SeluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float32]("avx512:silu", compute.ActivationSilu, SiluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, TanhAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// Float64
-	activations.RegisterKernel[float64]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512Float64, PriorityAVX512)
-	activations.RegisterKernel[float64]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512Float64, PriorityAVX512)
+	activations.RegisterKernel[float64]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float64]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// BFloat16
-	activations.Register[bfloat16.BFloat16]("avx512:relu", compute.ActivationRelu, reluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:selu", compute.ActivationSelu, seluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:silu", compute.ActivationSilu, siluBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX512, PriorityAVX512)
-	activations.Register[bfloat16.BFloat16]("avx512:tanh", compute.ActivationTanh, tanhBF16AVX512, PriorityAVX512)
-	activations.RegisterKernel[bfloat16.BFloat16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512BF16, PriorityAVX512)
-	activations.RegisterKernel[bfloat16.BFloat16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512BF16, PriorityAVX512)
+	activations.Register[bfloat16.BFloat16]("avx512:relu", compute.ActivationRelu, reluBF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidBF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidBF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluBF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:selu", compute.ActivationSelu, seluBF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:silu", compute.ActivationSilu, siluBF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[bfloat16.BFloat16]("avx512:tanh", compute.ActivationTanh, tanhBF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[bfloat16.BFloat16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[bfloat16.BFloat16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// Float16
-	activations.Register[float16.Float16]("avx512:relu", compute.ActivationRelu, reluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:selu", compute.ActivationSelu, seluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:silu", compute.ActivationSilu, siluF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishF16AVX512, PriorityAVX512)
-	activations.Register[float16.Float16]("avx512:tanh", compute.ActivationTanh, tanhF16AVX512, PriorityAVX512)
-	activations.RegisterKernel[float16.Float16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512F16, PriorityAVX512)
-	activations.RegisterKernel[float16.Float16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512F16, PriorityAVX512)
+	activations.Register[float16.Float16]("avx512:relu", compute.ActivationRelu, reluF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float16.Float16]("avx512:sigmoid", compute.ActivationSigmoid, sigmoidF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float16.Float16]("avx512:hardsigmoid", compute.ActivationHardSigmoid, hardSigmoidF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float16.Float16]("avx512:leakyrelu", compute.ActivationLeakyRelu, leakyReluF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float16.Float16]("avx512:selu", compute.ActivationSelu, seluF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float16.Float16]("avx512:silu", compute.ActivationSilu, siluF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.Register[float16.Float16]("avx512:hardswish", compute.ActivationHardSwish, hardSwishF16AVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.Register[float16.Float16]("avx512:tanh", compute.ActivationTanh, tanhF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float16.Float16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float16.Float16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
 }
 
 func ReluAVX512(data []float32) {

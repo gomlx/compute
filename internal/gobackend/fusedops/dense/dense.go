@@ -170,15 +170,19 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 		var actFn activations.InPlaceFn[float32]
+		var actMinChunk int
 		if data.options.Activation.Type != compute.ActivationNone {
-			actFn = activations.Get[float32](data.options.Activation.Type)
+			var actMeta *activations.KernelMetadata
+			actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
 			if actFn == nil {
 				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
 			}
+			actMinChunk = actMeta.EffectiveMinParallelChunk()
 		}
 		epilogue := matmul.Epilogue[float32]{
-			Bias:       biasFlat,
-			Activation: actFn,
+			Bias:                       biasFlat,
+			Activation:                 actFn,
+			ActivationMinParallelChunk: actMinChunk,
 		}
 
 		err = matmul.ExecuteWithEpilogue(
@@ -202,15 +206,19 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 		var actFn activations.InPlaceFn[float64]
+		var actMinChunk int
 		if data.options.Activation.Type != compute.ActivationNone {
-			actFn = activations.Get[float64](data.options.Activation.Type)
+			var actMeta *activations.KernelMetadata
+			actFn, actMeta = activations.GetWithMetadata[float64](data.options.Activation.Type)
 			if actFn == nil {
 				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
 			}
+			actMinChunk = actMeta.EffectiveMinParallelChunk()
 		}
 		epilogue := matmul.Epilogue[float64]{
-			Bias:       biasFlat,
-			Activation: actFn,
+			Bias:                       biasFlat,
+			Activation:                 actFn,
+			ActivationMinParallelChunk: actMinChunk,
 		}
 
 		err = matmul.ExecuteWithEpilogue(
@@ -244,15 +252,19 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 		var actFn activations.InPlaceFn[float32]
+		var actMinChunk int
 		if data.options.Activation.Type != compute.ActivationNone {
-			actFn = activations.Get[float32](data.options.Activation.Type)
+			var actMeta *activations.KernelMetadata
+			actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
 			if actFn == nil {
 				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
 			}
+			actMinChunk = actMeta.EffectiveMinParallelChunk()
 		}
 		epilogue := matmul.Epilogue[float32]{
-			Bias:       biasF32,
-			Activation: actFn,
+			Bias:                       biasF32,
+			Activation:                 actFn,
+			ActivationMinParallelChunk: actMinChunk,
 		}
 
 		err = matmul.ExecuteWithEpilogue(
@@ -289,15 +301,19 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 		var actFn activations.InPlaceFn[float32]
+		var actMinChunk int
 		if data.options.Activation.Type != compute.ActivationNone {
-			actFn = activations.Get[float32](data.options.Activation.Type)
+			var actMeta *activations.KernelMetadata
+			actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
 			if actFn == nil {
 				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
 			}
+			actMinChunk = actMeta.EffectiveMinParallelChunk()
 		}
 		epilogue := matmul.Epilogue[float32]{
-			Bias:       biasF32,
-			Activation: actFn,
+			Bias:                       biasF32,
+			Activation:                 actFn,
+			ActivationMinParallelChunk: actMinChunk,
 		}
 
 		err = matmul.ExecuteWithEpilogue(

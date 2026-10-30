@@ -92,17 +92,19 @@ func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs
 
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		layerNorm[float32](input, output, gamma, beta, data.axes, data.epsilon)
+		layerNorm[float32](backend, input, output, gamma, beta, data.axes, data.epsilon)
 	case dtypes.Float64:
-		layerNorm[float64](input, output, gamma, beta, data.axes, data.epsilon)
+		layerNorm[float64](backend, input, output, gamma, beta, data.axes, data.epsilon)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedLayerNorm: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
 }
 
+const minLayerNormParallelElements = 4096
+
 // layerNorm dispatches to the trailing-axes fast path or the general case.
-func layerNorm[T float32 | float64](input, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {
+func layerNorm[T float32 | float64](backend *gobackend.Backend, input, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {
 	inData := input.Flat.([]T)
 	outData := output.Flat.([]T)
 	dims := input.RawShape.Dimensions
@@ -131,7 +133,18 @@ func layerNorm[T float32 | float64](input, output, gamma, beta *gobackend.Buffer
 	}
 
 	if isTrailingAxes {
-		layerNormTrailingAxes(inData, outData, gammaData, betaData, normSize, epsilon)
+		outerSize := len(inData) / normSize
+		totalElements := len(inData)
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > minLayerNormParallelElements {
+			minOuter := max(1, minLayerNormParallelElements/max(1, normSize))
+			backend.Scheduler.ParallelizeChunks(outerSize, minOuter, func(rStart, rEnd int) {
+				rowOffset := rStart * normSize
+				endOffset := rEnd * normSize
+				layerNormTrailingAxes(inData[rowOffset:endOffset], outData[rowOffset:endOffset], gammaData, betaData, normSize, epsilon)
+			})
+		} else {
+			layerNormTrailingAxes(inData, outData, gammaData, betaData, normSize, epsilon)
+		}
 	} else {
 		layerNormArbitraryAxes(inData, outData, gammaData, betaData, dims, axes, normSize, epsilon)
 	}
@@ -149,33 +162,47 @@ func layerNormTrailingAxes[T float32 | float64](
 
 	for outer := range outerSize {
 		base := outer * normSize
+		inRow := inData[base : base+normSize]
+		outRow := outData[base : base+normSize]
 
 		// Compute mean.
 		var sum T
-		for i := range normSize {
-			sum += inData[base+i]
+		for _, v := range inRow {
+			sum += v
 		}
 		mean := sum / normSizeF
 
 		// Compute variance.
 		var varSum T
-		for i := range normSize {
-			diff := inData[base+i] - mean
+		for _, v := range inRow {
+			diff := v - mean
 			varSum += diff * diff
 		}
 		variance := varSum / normSizeF
 		invStd := T(1.0 / math.Sqrt(float64(variance)+epsilon))
 
 		// Normalize and apply scale/offset.
-		for i := range normSize {
-			normalized := (inData[base+i] - mean) * invStd
-			if gammaData != nil {
-				normalized *= gammaData[i]
+		switch {
+		case gammaData != nil && betaData != nil:
+			_ = gammaData[normSize-1]
+			_ = betaData[normSize-1]
+			for i, v := range inRow {
+				outRow[i] = (v-mean)*invStd*gammaData[i] + betaData[i]
 			}
-			if betaData != nil {
-				normalized += betaData[i]
+		case gammaData != nil:
+			_ = gammaData[normSize-1]
+			for i, v := range inRow {
+				outRow[i] = (v - mean) * invStd * gammaData[i]
 			}
-			outData[base+i] = normalized
+		case betaData != nil:
+			_ = betaData[normSize-1]
+			for i, v := range inRow {
+				outRow[i] = (v-mean)*invStd + betaData[i]
+			}
+		default:
+			for i, v := range inRow {
+				outRow[i] = (v - mean) * invStd
+			}
 		}
 	}
 }

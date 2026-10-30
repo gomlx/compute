@@ -23,7 +23,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
 	maxWorkers := min(
 		backend.Scheduler.AdjustedMaxParallelism(),
-		max(1, (flops+MinLargeMatMulFlopsPerWorker-1)/MinLargeMatMulFlopsPerWorker),
+		max(1, (flops+noSIMDMinLargeMatMulFlopsPerWorker-1)/noSIMDMinLargeMatMulFlopsPerWorker),
 	)
 
 	// Strides for each matrix in the batch.
@@ -73,6 +73,13 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		maxWorkers = min(maxWorkers, len(workItems))
 	}
 
+	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
+	lhsAllocPanels := 1
+	if numColPanels > 1 {
+		lhsAllocPanels = max(1, min(16, numRowPanels*numKPanels))
+	}
+	needTempOutput := (lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)
+
 	if maxWorkers <= 1 {
 		// No parallelism, do each matrix multiplication in the batch sequentially.
 		var (
@@ -81,7 +88,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		)
 		if len(cachedLHSPanels) == 0 {
 			var ok bool
-			packedLHSRef, packedLHS, ok = GetBuffer[I](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+			packedLHSRef, packedLHS, ok = GetBuffer[I](backend, lhsAllocPanels*lhsPanelBufSize)
 			if !ok {
 				return
 			}
@@ -99,17 +106,26 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 			}
 			defer ReleaseBuffer(packedRHSRef)
 		}
-		packedOutputRef, packedOutput, ok := GetBuffer[O](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
-		if !ok {
-			return
+		var (
+			packedOutputRef, accumOutputRef *gobackend.Buffer
+			packedOutput, accumOutput       []O
+		)
+		if needTempOutput {
+			var ok bool
+			packedOutputRef, packedOutput, ok = GetBuffer[O](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+			if !ok {
+				return
+			}
+			defer ReleaseBuffer(packedOutputRef)
+			if numKPanels > 1 {
+				const maxAccumPanels = 64
+				accumOutputRef, accumOutput, ok = GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+				if !ok {
+					return
+				}
+				defer ReleaseBuffer(accumOutputRef)
+			}
 		}
-		defer ReleaseBuffer(packedOutputRef)
-		const maxAccumPanels = 64
-		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
-		if !ok {
-			return
-		}
-		defer ReleaseBuffer(accumOutputRef)
 		lhsFlatIdx := 0
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
@@ -158,7 +174,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		)
 		if len(cachedLHSPanels) == 0 {
 			var ok bool
-			packedLHSRef, packedLHS, ok = GetBuffer[I](backend, params.LHSPanelCrossSize*params.PanelContractingSize)
+			packedLHSRef, packedLHS, ok = GetBuffer[I](backend, lhsAllocPanels*lhsPanelBufSize)
 			if !ok {
 				return
 			}
@@ -176,17 +192,26 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 			}
 			defer ReleaseBuffer(packedRHSRef)
 		}
-		packedOutputRef, packedOutput, ok := GetBuffer[O](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
-		if !ok {
-			return
+		var (
+			packedOutputRef, accumOutputRef *gobackend.Buffer
+			packedOutput, accumOutput       []O
+		)
+		if needTempOutput {
+			var ok bool
+			packedOutputRef, packedOutput, ok = GetBuffer[O](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+			if !ok {
+				return
+			}
+			defer ReleaseBuffer(packedOutputRef)
+			if numKPanels > 1 {
+				const maxAccumPanels = 64
+				accumOutputRef, accumOutput, ok = GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+				if !ok {
+					return
+				}
+				defer ReleaseBuffer(accumOutputRef)
+			}
 		}
-		defer ReleaseBuffer(packedOutputRef)
-		const maxAccumPanels = 64
-		accumOutputRef, accumOutput, ok := GetBuffer[O](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
-		if !ok {
-			return
-		}
-		defer ReleaseBuffer(accumOutputRef)
 		for {
 			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
@@ -305,8 +330,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 
 				isFirstContractingPanel := contractingPanelIdx == 0
 				accumulate := !isFirstContractingPanel
-				canDirectOutput := (contractingSize <= params.PanelContractingSize) &&
-					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
+				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) &&
 					(rhsPanelWidth%params.RHSL1KernelCols == 0)
 
 				if canDirectOutput {
@@ -361,8 +385,7 @@ func largeNoSIMDMatrixSlice[I, O gotype.NumericNotComplex]( //alt:generic
 				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
-				if (contractingSize <= params.PanelContractingSize) &&
-					(lhsPanelHeight%params.LHSL1KernelRows == 0) &&
+				if (lhsPanelHeight%params.LHSL1KernelRows == 0) &&
 					(rhsPanelWidth%params.RHSL1KernelCols == 0) {
 					lhsPanelRowIdx += lhsPanelHeight
 					continue

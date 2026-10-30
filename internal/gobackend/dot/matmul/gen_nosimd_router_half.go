@@ -35,8 +35,12 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 	// Check if small matrix multiplication kernel can be used.
 	flopsPerMatrix := lhsCrossSize * rhsCrossSize * contractingSize
 	flops := batchSize * flopsPerMatrix
-	_ = flops
-	useSmallVariant := !ForceLargeVariant && (ForceSmallVariant || flops < noSIMDSmallMatMulSizeThreshold)
+	maxWorkers := 1
+	if backend != nil && backend.Scheduler != nil {
+		maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
+	}
+	useSmallVariant := !ForceLargeVariant && (ForceSmallVariant ||
+		(flops < noSIMDSmallMatMulSizeThreshold && (batchSize > 1 || maxWorkers <= 1 || flops < noSIMDMinLargeMatMulFlopsPerWorker)))
 	if klog.V(1).Enabled() {
 		variant := "large"
 		if useSmallVariant {
@@ -58,10 +62,6 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 
 		matricesPerWorker := (noSIMDMinMatMulFlopsPerWorker + (flopsPerMatrix - 1)) / flopsPerMatrix
 		matricesPerWorker = min(matricesPerWorker, batchSize)
-		maxWorkers := 1
-		if backend.Scheduler != nil {
-			maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
-		}
 		if maxWorkers == 1 || matricesPerWorker > batchSize/2 {
 			if layout == dot.LayoutNonTransposed {
 				// Only 1 worker, or the overhead of distributing the processing is not worth it.
