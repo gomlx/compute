@@ -34,6 +34,31 @@ type VJPKernelFn[T any] func(y, x, dOutput, dx []T)
 // dx: resulting gradient of shape [numRows, 2*hiddenDim]
 type SwiGLUVJPFn[T any] func(x, dOutput, dx []T, numRows, hiddenDim int)
 
+// DefaultMinParallelChunk is the default minimum number of elements per parallel worker chunk.
+const DefaultMinParallelChunk = 32768
+
+// KernelMetadata holds properties and platform-tunable parameters for a registered activation kernel.
+// Because registrations store a *KernelMetadata pointer, package-level metadata structs can be
+// initialized or adjusted at runtime for the target platform without re-registering kernels.
+type KernelMetadata struct {
+	// MinParallelChunk is the minimum number of elements per parallel worker chunk.
+	// If <= 0, DefaultMinParallelChunk is used.
+	MinParallelChunk int
+}
+
+// EffectiveMinParallelChunk returns MinParallelChunk if positive, or DefaultMinParallelChunk.
+func (m *KernelMetadata) EffectiveMinParallelChunk() int {
+	if m != nil && m.MinParallelChunk > 0 {
+		return m.MinParallelChunk
+	}
+	return DefaultMinParallelChunk
+}
+
+// DefaultKernelMetadata is the default metadata used when nil is passed to Register*.
+var DefaultKernelMetadata = KernelMetadata{
+	MinParallelChunk: DefaultMinParallelChunk,
+}
+
 type registrationKey struct {
 	act   compute.ActivationType
 	dtype dtypes.DType
@@ -44,45 +69,55 @@ type registeredImpl struct {
 	inPlace  any
 	kernel   any
 	priority gobackend.RegisterPriority
+	meta     *KernelMetadata
 }
 
 type registeredVJPImpl struct {
 	name     string
 	kernel   any
 	priority gobackend.RegisterPriority
+	meta     *KernelMetadata
+}
+
+type registeredSwiGLUImpl struct {
+	name     string
+	kernel   any
+	priority gobackend.RegisterPriority
+	meta     *KernelMetadata
 }
 
 var (
-	registryMu          sync.RWMutex
-	registry            = make(map[registrationKey]*registeredImpl)
-	swigluRegistry      = make(map[dtypes.DType]any)
-	swigluPriorities    = make(map[dtypes.DType]gobackend.RegisterPriority)
-	vjpRegistry         = make(map[registrationKey]*registeredVJPImpl)
-	swigluVJPRegistry   = make(map[dtypes.DType]any)
-	swigluVJPPriorities = make(map[dtypes.DType]gobackend.RegisterPriority)
+	registryMu        sync.RWMutex
+	registry          = make(map[registrationKey]*registeredImpl)
+	swigluRegistry    = make(map[dtypes.DType]*registeredSwiGLUImpl)
+	vjpRegistry       = make(map[registrationKey]*registeredVJPImpl)
+	swigluVJPRegistry = make(map[dtypes.DType]*registeredSwiGLUImpl)
 )
 
 // Register registers an in-place activation function for a specific activation type and data type.
 // If an implementation is already registered with a higher priority, this call is ignored.
-func Register[T gotype.Supported](name string, act compute.ActivationType, fn InPlaceFn[T], priority gobackend.RegisterPriority) {
+func Register[T gotype.Supported](name string, act compute.ActivationType, fn InPlaceFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
 	kernel := func(in, out []T) {
 		if len(in) > 0 && &in[0] != &out[0] {
 			copy(out, in)
 		}
 		fn(out)
 	}
-	registerInternal[T](name, act, fn, kernel, priority)
+	registerInternal[T](name, act, fn, kernel, priority, meta)
 }
 
 // RegisterKernel registers a kernel function (supporting both in-place and out-of-place).
-func RegisterKernel[T gotype.Supported](name string, act compute.ActivationType, fn KernelFn[T], priority gobackend.RegisterPriority) {
+func RegisterKernel[T gotype.Supported](name string, act compute.ActivationType, fn KernelFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
 	inPlace := func(data []T) {
 		fn(data, data)
 	}
-	registerInternal[T](name, act, inPlace, fn, priority)
+	registerInternal[T](name, act, inPlace, fn, priority, meta)
 }
 
-func registerInternal[T gotype.Supported](name string, act compute.ActivationType, inPlace InPlaceFn[T], kernel KernelFn[T], priority gobackend.RegisterPriority) {
+func registerInternal[T gotype.Supported](name string, act compute.ActivationType, inPlace InPlaceFn[T], kernel KernelFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
+	if meta == nil {
+		meta = &DefaultKernelMetadata
+	}
 	dtype := dtypes.FromGenericsType[T]()
 	key := registrationKey{act: act, dtype: dtype}
 
@@ -100,30 +135,45 @@ func registerInternal[T gotype.Supported](name string, act compute.ActivationTyp
 		inPlace:  inPlace,
 		kernel:   kernel,
 		priority: priority,
+		meta:     meta,
 	}
 	klog.V(2).Infof("Registered activation %s/%s: %q (priority %d)", act, dtype, name, priority)
 }
 
 // RegisterSwiGLU registers a SwiGLU kernel for a specific data type.
-func RegisterSwiGLU[T gotype.Supported](name string, fn SwiGLUFn[T], priority gobackend.RegisterPriority) {
+func RegisterSwiGLU[T gotype.Supported](name string, fn SwiGLUFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
+	if meta == nil {
+		meta = &DefaultKernelMetadata
+	}
 	dtype := dtypes.FromGenericsType[T]()
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
-	currPriority, exists := swigluPriorities[dtype]
-	if exists && priority < currPriority {
+	current, exists := swigluRegistry[dtype]
+	if exists && priority < current.priority {
 		return
 	}
-	swigluRegistry[dtype] = fn
-	swigluPriorities[dtype] = priority
+	swigluRegistry[dtype] = &registeredSwiGLUImpl{
+		name:     name,
+		kernel:   fn,
+		priority: priority,
+		meta:     meta,
+	}
 	klog.V(2).Infof("Registered SwiGLU/%s: %q (priority %d)", dtype, name, priority)
 }
 
 // Get returns the registered in-place activation function for the given activation type and data type T.
 // Returns nil if activation is ActivationNone or if no implementation is registered.
 func Get[T gotype.Supported](act compute.ActivationType) InPlaceFn[T] {
+	fn, _ := GetWithMetadata[T](act)
+	return fn
+}
+
+// GetWithMetadata returns the registered in-place activation function and its metadata.
+// Returns (nil, nil) if activation is ActivationNone or if no implementation is registered.
+func GetWithMetadata[T gotype.Supported](act compute.ActivationType) (InPlaceFn[T], *KernelMetadata) {
 	if act == compute.ActivationNone {
-		return nil
+		return nil, nil
 	}
 	dtype := dtypes.FromGenericsType[T]()
 	key := registrationKey{act: act, dtype: dtype}
@@ -133,15 +183,21 @@ func Get[T gotype.Supported](act compute.ActivationType) InPlaceFn[T] {
 	registryMu.RUnlock()
 
 	if !exists || impl == nil {
-		return nil
+		return nil, nil
 	}
-	return impl.inPlace.(InPlaceFn[T])
+	return impl.inPlace.(InPlaceFn[T]), impl.meta
 }
 
 // GetKernel returns the registered kernel function for the given activation type and data type T.
 func GetKernel[T gotype.Supported](act compute.ActivationType) KernelFn[T] {
+	fn, _ := GetKernelWithMetadata[T](act)
+	return fn
+}
+
+// GetKernelWithMetadata returns the registered kernel function and its metadata.
+func GetKernelWithMetadata[T gotype.Supported](act compute.ActivationType) (KernelFn[T], *KernelMetadata) {
 	if act == compute.ActivationNone {
-		return nil
+		return nil, nil
 	}
 	dtype := dtypes.FromGenericsType[T]()
 	key := registrationKey{act: act, dtype: dtype}
@@ -151,24 +207,28 @@ func GetKernel[T gotype.Supported](act compute.ActivationType) KernelFn[T] {
 	registryMu.RUnlock()
 
 	if !exists || impl == nil {
-		return nil
+		return nil, nil
 	}
-	return impl.kernel.(KernelFn[T])
+	return impl.kernel.(KernelFn[T]), impl.meta
 }
 
 // GetSwiGLU returns the registered SwiGLU function for data type T.
 func GetSwiGLU[T gotype.Supported]() SwiGLUFn[T] {
-	dtype := dtypes.FromGenericsType[T]()
-	registryMu.RLock()
-	fn, exists := swigluRegistry[dtype]
-	registryMu.RUnlock()
-	if !exists || fn == nil {
-		return nil
-	}
-	return fn.(SwiGLUFn[T])
+	fn, _ := GetSwiGLUWithMetadata[T]()
+	return fn
 }
 
-const minParallelizeChunk = 32768
+// GetSwiGLUWithMetadata returns the registered SwiGLU function and its metadata for data type T.
+func GetSwiGLUWithMetadata[T gotype.Supported]() (SwiGLUFn[T], *KernelMetadata) {
+	dtype := dtypes.FromGenericsType[T]()
+	registryMu.RLock()
+	impl, exists := swigluRegistry[dtype]
+	registryMu.RUnlock()
+	if !exists || impl == nil {
+		return nil, nil
+	}
+	return impl.kernel.(SwiGLUFn[T]), impl.meta
+}
 
 // Apply applies the given activation function in-place across the slice.
 // If the slice is large and workers are available, work is parallelized in chunks.
@@ -187,7 +247,7 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 		}
 		return
 	}
-	fn := GetKernel[T](act)
+	fn, meta := GetKernelWithMetadata[T](act)
 	if fn == nil {
 		klog.Warningf("No registered activation implementation for act=%s dtype=%s",
 			act, dtypes.FromGenericsType[T]())
@@ -195,8 +255,9 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 	}
 
 	n := len(in)
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
-		backend.Scheduler.ParallelizeChunks(n, minParallelizeChunk, func(start, end int) {
+	minChunk := meta.EffectiveMinParallelChunk()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minChunk {
+		backend.Scheduler.ParallelizeChunks(n, minChunk, func(start, end int) {
 			fn(in[start:end], out[start:end])
 		})
 	} else {
@@ -206,15 +267,16 @@ func Execute[T gotype.Supported](backend *gobackend.Backend, act compute.Activat
 
 // ExecuteSwiGLU applies SwiGLU activation across numRows rows of width 2*hiddenDim to out of width hiddenDim.
 func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, numRows, hiddenDim int) {
-	fn := GetSwiGLU[T]()
+	fn, meta := GetSwiGLUWithMetadata[T]()
 	if fn == nil {
 		klog.Warningf("No registered SwiGLU implementation for dtype=%s", dtypes.FromGenericsType[T]())
 		return
 	}
 
 	totalWork := numRows * hiddenDim
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		minRows := max(minParallelizeChunk/hiddenDim, 1)
+	minChunk := meta.EffectiveMinParallelChunk()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minChunk && numRows > 1 {
+		minRows := max(minChunk/hiddenDim, 1)
 		backend.Scheduler.ParallelizeChunks(numRows, minRows, func(rStart, rEnd int) {
 			chunkRows := rEnd - rStart
 			inOffset := rStart * 2 * hiddenDim
@@ -227,7 +289,10 @@ func ExecuteSwiGLU[T gotype.Supported](backend *gobackend.Backend, in, out []T, 
 }
 
 // RegisterVJPKernel registers a VJP kernel function for a specific activation type and data type.
-func RegisterVJPKernel[T gotype.Supported](name string, act compute.ActivationType, fn VJPKernelFn[T], priority gobackend.RegisterPriority) {
+func RegisterVJPKernel[T gotype.Supported](name string, act compute.ActivationType, fn VJPKernelFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
+	if meta == nil {
+		meta = &DefaultKernelMetadata
+	}
 	dtype := dtypes.FromGenericsType[T]()
 	key := registrationKey{act: act, dtype: dtype}
 
@@ -242,31 +307,45 @@ func RegisterVJPKernel[T gotype.Supported](name string, act compute.ActivationTy
 		name:     name,
 		kernel:   fn,
 		priority: priority,
+		meta:     meta,
 	}
 	klog.V(2).Infof("Registered activation VJP %s/%s: %q (priority %d)", act, dtype, name, priority)
 }
 
 // RegisterSwiGLUVJP registers a SwiGLU VJP kernel for a specific data type.
-func RegisterSwiGLUVJP[T gotype.Supported](name string, fn SwiGLUVJPFn[T], priority gobackend.RegisterPriority) {
+func RegisterSwiGLUVJP[T gotype.Supported](name string, fn SwiGLUVJPFn[T], priority gobackend.RegisterPriority, meta *KernelMetadata) {
+	if meta == nil {
+		meta = &DefaultKernelMetadata
+	}
 	dtype := dtypes.FromGenericsType[T]()
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
-	currPriority, exists := swigluVJPPriorities[dtype]
-	if exists && priority < currPriority {
+	current, exists := swigluVJPRegistry[dtype]
+	if exists && priority < current.priority {
 		return
 	}
-	swigluVJPRegistry[dtype] = fn
-	swigluVJPPriorities[dtype] = priority
+	swigluVJPRegistry[dtype] = &registeredSwiGLUImpl{
+		name:     name,
+		kernel:   fn,
+		priority: priority,
+		meta:     meta,
+	}
 	klog.V(2).Infof("Registered SwiGLU VJP/%s: %q (priority %d)", dtype, name, priority)
 }
 
 // GetVJPKernel returns the registered VJP kernel function for the given activation type and data type T.
 func GetVJPKernel[T gotype.Supported](act compute.ActivationType) VJPKernelFn[T] {
+	fn, _ := GetVJPKernelWithMetadata[T](act)
+	return fn
+}
+
+// GetVJPKernelWithMetadata returns the registered VJP kernel function and its metadata.
+func GetVJPKernelWithMetadata[T gotype.Supported](act compute.ActivationType) (VJPKernelFn[T], *KernelMetadata) {
 	if act == compute.ActivationNone {
 		return func(y, x, dOutput, dx []T) {
 			copy(dx, dOutput)
-		}
+		}, &DefaultKernelMetadata
 	}
 	dtype := dtypes.FromGenericsType[T]()
 	key := registrationKey{act: act, dtype: dtype}
@@ -276,21 +355,27 @@ func GetVJPKernel[T gotype.Supported](act compute.ActivationType) VJPKernelFn[T]
 	registryMu.RUnlock()
 
 	if !exists || impl == nil {
-		return nil
+		return nil, nil
 	}
-	return impl.kernel.(VJPKernelFn[T])
+	return impl.kernel.(VJPKernelFn[T]), impl.meta
 }
 
 // GetSwiGLUVJP returns the registered SwiGLU VJP function for data type T.
 func GetSwiGLUVJP[T gotype.Supported]() SwiGLUVJPFn[T] {
+	fn, _ := GetSwiGLUVJPWithMetadata[T]()
+	return fn
+}
+
+// GetSwiGLUVJPWithMetadata returns the registered SwiGLU VJP function and its metadata for data type T.
+func GetSwiGLUVJPWithMetadata[T gotype.Supported]() (SwiGLUVJPFn[T], *KernelMetadata) {
 	dtype := dtypes.FromGenericsType[T]()
 	registryMu.RLock()
-	fn, exists := swigluVJPRegistry[dtype]
+	impl, exists := swigluVJPRegistry[dtype]
 	registryMu.RUnlock()
-	if !exists || fn == nil {
-		return nil
+	if !exists || impl == nil {
+		return nil, nil
 	}
-	return fn.(SwiGLUVJPFn[T])
+	return impl.kernel.(SwiGLUVJPFn[T]), impl.meta
 }
 
 // ExecuteVJP applies the VJP of the given activation function:
@@ -310,7 +395,7 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 		}
 		return
 	}
-	fn := GetVJPKernel[T](act)
+	fn, meta := GetVJPKernelWithMetadata[T](act)
 	if fn == nil {
 		klog.Warningf("No registered activation VJP implementation for act=%s dtype=%s",
 			act, dtypes.FromGenericsType[T]())
@@ -318,8 +403,9 @@ func ExecuteVJP[T gotype.Supported](backend *gobackend.Backend, act compute.Acti
 	}
 
 	n := len(dOutput)
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minParallelizeChunk {
-		backend.Scheduler.ParallelizeChunks(n, minParallelizeChunk, func(start, end int) {
+	minChunk := meta.EffectiveMinParallelChunk()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n > minChunk {
+		backend.Scheduler.ParallelizeChunks(n, minChunk, func(start, end int) {
 			var yChunk, xChunk []T
 			if len(y) > 0 {
 				yChunk = y[start:end]
@@ -359,15 +445,16 @@ func ExecuteVJPFromOutput[T gotype.Supported](backend *gobackend.Backend, act co
 
 // ExecuteSwiGLUVJP applies SwiGLU VJP across numRows rows.
 func ExecuteSwiGLUVJP[T gotype.Supported](backend *gobackend.Backend, x, dOutput, dx []T, numRows, hiddenDim int) {
-	fn := GetSwiGLUVJP[T]()
+	fn, meta := GetSwiGLUVJPWithMetadata[T]()
 	if fn == nil {
 		klog.Warningf("No registered SwiGLU VJP implementation for dtype=%s", dtypes.FromGenericsType[T]())
 		return
 	}
 
 	totalWork := numRows * hiddenDim
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelizeChunk && numRows > 1 {
-		minRows := max(minParallelizeChunk/hiddenDim, 1)
+	minChunk := meta.EffectiveMinParallelChunk()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minChunk && numRows > 1 {
+		minRows := max(minChunk/hiddenDim, 1)
 		backend.Scheduler.ParallelizeChunks(numRows, minRows, func(rStart, rEnd int) {
 			chunkRows := rEnd - rStart
 			xOffset := rStart * 2 * hiddenDim

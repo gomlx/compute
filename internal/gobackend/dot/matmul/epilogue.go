@@ -18,6 +18,10 @@ type Epilogue[T any] struct {
 	// Activation is an optional in-place activation function applied to a row or slice.
 	// Matmul remains completely agnostic to the specific activation implementation.
 	Activation func(data []T)
+
+	// ActivationMinParallelChunk is the minimum element chunk size from the activation's KernelMetadata.
+	// When <= 0, defaults to 16384.
+	ActivationMinParallelChunk int
 }
 
 // HasWork returns true if the epilogue contains either a bias or an activation.
@@ -44,10 +48,16 @@ func ApplyEpilogue[T any](
 	hasBias := len(bias) > 0
 	act := epilogue.Activation
 
+	minChunkElements := 16384
+	if act != nil && epilogue.ActivationMinParallelChunk > 0 {
+		minChunkElements = epilogue.ActivationMinParallelChunk
+	}
+	minElementsThreshold := minChunkElements * 2
+
 	// Fast path: No bias, only activation. We can apply activation on the whole buffer or in chunks.
 	if !hasBias && act != nil {
-		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(output) > 32768 {
-			backend.Scheduler.ParallelizeChunks(len(output), 16384, func(start, end int) {
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(output) > minElementsThreshold {
+			backend.Scheduler.ParallelizeChunks(len(output), minChunkElements, func(start, end int) {
 				act(output[start:end])
 			})
 		} else {
@@ -70,8 +80,8 @@ func ApplyEpilogue[T any](
 	}
 
 	totalElements := numRows * rowSize
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && numRows > 1 && totalElements > 32768 {
-		minRows := max(1, 16384/rowSize)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && numRows > 1 && totalElements > minElementsThreshold {
+		minRows := max(1, minChunkElements/max(1, rowSize))
 		backend.Scheduler.ParallelizeChunks(numRows, minRows, applyRows)
 	} else {
 		applyRows(0, numRows)

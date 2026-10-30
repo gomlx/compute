@@ -32,7 +32,7 @@ var (
 		RHSL1KernelCols: 4, // Nr: Cols of RHS in local registers (4).
 
 		PanelContractingSize: 512, // Kc: L1 Block contracting "depth".
-		LHSPanelCrossSize:    2,   // Mc: Block Height fitting L2/L3 cache.
+		LHSPanelCrossSize:    2,   // Mc: Block Height fitting L1/L2 cache.
 		RHSPanelCrossSize:    512, // Nc: Block Width fitting L2/L3 cache.
 	}
 
@@ -41,18 +41,19 @@ var (
 	// matrix multiplication kernel is used instead of the tiled implementation.
 	// This is a heuristic and may need to be tuned for different architectures.
 	// Expressed in number of bytes.
-	SmallMatMulSizeThreshold = 4 * 1024 * 1024
+	SmallMatMulSizeThreshold       = 4 * 1024 * 1024
 	noSIMDSmallMatMulSizeThreshold = SmallMatMulSizeThreshold
 
 	// MinMatMulFlopsPerWorker is the minimum number of flops per worker: above this number, if possible we should
 	// parallelize computation on separate goroutines.
-	MinMatMulFlopsPerWorker = 96 * 1024
-	noSIMDMinMatMulFlopsPerWorker = MinMatMulFlopsPerWorker
+	MinMatMulFlopsPerWorker       = 96 * 1024
+	noSIMDMinMatMulFlopsPerWorker = 8 * 1024
 
 	// MinLargeMatMulFlopsPerWorker is the minimum number of multiply-adds per worker for the tiled/packed
 	// large matrix multiplication kernels so each worker receives enough compute to amortize panel packing
 	// and thread scheduling.
-	MinLargeMatMulFlopsPerWorker = 256 * 1024
+	MinLargeMatMulFlopsPerWorker       = 256 * 1024
+	noSIMDMinLargeMatMulFlopsPerWorker = 32 * 1024
 )
 
 func init() {
@@ -215,7 +216,13 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		}
 
 		colChunk := (N + candN - 1) / candN
+		if minCol > 1 {
+			colChunk = ((colChunk + minCol - 1) / minCol) * minCol
+		}
 		rowChunk := (M + candM - 1) / candM
+		if minRow > 1 {
+			rowChunk = ((rowChunk + minRow - 1) / minRow) * minRow
+		}
 
 		if colChunk < minCol || rowChunk < minRow {
 			continue
@@ -224,14 +231,14 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 			if colChunk < 8*minCol {
 				continue
 			}
-			if params.LHSPanelCrossSize > 0 && rowChunk < params.LHSPanelCrossSize && candM < maxPossibleM {
-				continue
-			}
 		}
 
+		actualM := max(1, (M+rowChunk-1)/rowChunk)
+		actualN := max(1, (N+colChunk-1)/colChunk)
+
 		// Score components:
-		// 1. Worker utilization: penalize if candM * candN != targetWorkers
-		workerRatio := float64(candM*candN) / float64(targetWorkers)
+		// 1. Worker utilization: penalize if actualM * actualN != targetWorkers
+		workerRatio := float64(actualM*actualN) / float64(targetWorkers)
 		if workerRatio < 1.0 {
 			workerRatio = 1.0 / workerRatio
 		}
