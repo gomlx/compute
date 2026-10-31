@@ -43,6 +43,7 @@ const (
 	OpTypeConvGeneral
 	OpTypeConvertDType
 	OpTypeCos
+	OpTypeCumMax
 	OpTypeCumSum
 	OpTypeDiv
 	OpTypeDot

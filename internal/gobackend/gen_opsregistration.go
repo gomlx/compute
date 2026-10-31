@@ -201,6 +201,14 @@ func (f *Function) Cos(x compute.Value) (compute.Value, error) {
 	return RegisterCos.Fn(f, x)
 }
 
+func (f *Function) CumMax(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
+	if RegisterCumMax.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.CumMax(operand, axis, options)
+	}
+	return RegisterCumMax.Fn(f, operand, axis, options)
+}
+
 func (f *Function) CumSum(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
 	if RegisterCumSum.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1050,6 +1058,9 @@ var (
 	}
 	RegisterCos = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Cos",
+	}
+	RegisterCumMax = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error)]{
+		Method: "CumMax",
 	}
 	RegisterCumSum = OpHandlerRegistration[func(f *Function, operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error)]{
 		Method: "CumSum",

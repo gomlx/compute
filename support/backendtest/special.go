@@ -582,6 +582,204 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 	})
 
+	t.Run("CumMax", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeCumMax)
+
+		t.Run("1D_Int32", func(t *testing.T) {
+			input := []int32{3, 1, 4, 2}
+
+			// Standard (inclusive, forward)
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 1D standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{3, 3, 4, 4}, got); !ok {
+				t.Errorf("CumMax 1D standard mismatch:\n%s", diff)
+			}
+
+			// Exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 1D exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{math.MinInt32, 3, 3, 4}, got); !ok {
+				t.Errorf("CumMax 1D exclusive mismatch:\n%s", diff)
+			}
+
+			// Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 1D reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{4, 4, 4, 2}, got); !ok {
+				t.Errorf("CumMax 1D reverse mismatch:\n%s", diff)
+			}
+
+			// Exclusive + Reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 1D exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{4, 4, 2, math.MinInt32}, got); !ok {
+				t.Errorf("CumMax 1D exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_Float32", func(t *testing.T) {
+			negInf := float32(math.Inf(-1))
+			input := [][]float32{{-2, 5, 1}, {4, -3, 6}}
+
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 1 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{-2, 5, 5}, {4, 4, 6}}, got); !ok {
+				t.Errorf("CumMax 2D axis 1 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 0, standard
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 0 standard failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{-2, 5, 1}, {4, 5, 6}}, got); !ok {
+				t.Errorf("CumMax 2D axis 0 standard mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 1, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 1 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{negInf, -2, 5}, {negInf, 4, 4}}, got); !ok {
+				t.Errorf("CumMax 2D axis 1 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Exclusive: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 0 exclusive failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{negInf, negInf, negInf}, {-2, 5, 1}}, got); !ok {
+				t.Errorf("CumMax 2D axis 0 exclusive mismatch:\n%s", diff)
+			}
+
+			// Axis 1, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 1, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 1 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 5, 1}, {6, 6, 6}}, got); !ok {
+				t.Errorf("CumMax 2D axis 1 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 0 reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{4, 5, 6}, {4, -3, 6}}, got); !ok {
+				t.Errorf("CumMax 2D axis 0 reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 1, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 1, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 1 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{5, 1, negInf}, {6, 6, negInf}}, got); !ok {
+				t.Errorf("CumMax 2D axis 1 exclusive+reverse mismatch:\n%s", diff)
+			}
+
+			// Axis 0, exclusive + reverse
+			got, err = testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 0, compute.CumSumOptions{Exclusive: true, Reverse: true})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 2D axis 0 exclusive+reverse failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{4, -3, 6}, {negInf, negInf, negInf}}, got); !ok {
+				t.Errorf("CumMax 2D axis 0 exclusive+reverse mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("3D_Int64", func(t *testing.T) {
+			input := [][][]int64{
+				{{5, 2}, {3, 8}},
+				{{7, 6}, {1, 4}},
+			}
+			// Axis 1, standard
+			got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.CumMax(params[0], 1, compute.CumSumOptions{})
+			})
+			if err != nil {
+				t.Fatalf("CumMax 3D axis 1 failed: %v", err)
+			}
+			want := [][][]int64{
+				{{5, 2}, {5, 8}},
+				{{7, 6}, {7, 6}},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("CumMax 3D axis 1 mismatch:\n%s", diff)
+			}
+		})
+
+		if b.Capabilities().DTypes[dtypes.Float16] {
+			t.Run("1D_Float16", func(t *testing.T) {
+				input := []float16.Float16{f16(3), f16(1), f16(4)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumMax(params[0], 0, compute.CumSumOptions{})
+				})
+				if err != nil {
+					t.Fatalf("CumMax Float16 failed: %v", err)
+				}
+				want := []float16.Float16{f16(3), f16(3), f16(4)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumMax Float16 mismatch:\n%s", diff)
+				}
+			})
+		}
+
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			t.Run("1D_BFloat16", func(t *testing.T) {
+				input := []bfloat16.BFloat16{bf16(3), bf16(1), bf16(4)}
+				got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.CumMax(params[0], 0, compute.CumSumOptions{Exclusive: true})
+				})
+				if err != nil {
+					t.Fatalf("CumMax BFloat16 failed: %v", err)
+				}
+				want := []bfloat16.BFloat16{bfloat16.Inf(-1), bf16(3), bf16(3)}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("CumMax BFloat16 mismatch:\n%s", diff)
+				}
+			})
+		}
+	})
+
 	t.Run("CumSum", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeCumSum)
 

@@ -140,6 +140,22 @@ func init() {
 	convNoDilationDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execConvNoDilationHalf[bfloat16.BFloat16])
 	convNoDilationDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execConvNoDilationHalf[float16.Float16])
 
+	// DTypeMap: cumMaxDTypeMap
+	cumMaxDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execCumMaxGeneric[float32])
+	cumMaxDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execCumMaxGeneric[float64])
+	cumMaxDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execCumMaxGeneric[int16])
+	cumMaxDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execCumMaxGeneric[int32])
+	cumMaxDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execCumMaxGeneric[int64])
+	cumMaxDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execCumMaxGeneric[int8])
+	cumMaxDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execCumMaxGeneric[uint16])
+	cumMaxDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execCumMaxGeneric[uint32])
+	cumMaxDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execCumMaxGeneric[uint64])
+	cumMaxDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execCumMaxGeneric[uint8])
+
+	// DTypeMap: cumMaxDTypeMap
+	cumMaxDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execCumMaxHalfPrecision[bfloat16.BFloat16])
+	cumMaxDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execCumMaxHalfPrecision[float16.Float16])
+
 	// DTypeMap: cumSumDTypeMap
 	cumSumDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execCumSumGeneric[float32])
 	cumSumDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execCumSumGeneric[float64])
