@@ -60,14 +60,19 @@ When allocating CPU workers (`maxParallelism`, typically `GOMAXPROCS`), `backend
 
 1. **Priority 1 — Inter-Call**: Concurrent calls to `Executable.Execute()` get first claim on parallelism.
    - If $C$ calls are executing concurrently on a scheduler of size $P$, available parallelism is divided among the active calls:
-     $$\text{effectiveParallelismPerCall} = \max\left(1, \left\lfloor \frac{P}{C} \right\rfloor\right)$$
+$$
+\text{effectiveParallelismPerCall} = \max\left(1, \left\lfloor \frac{P}{C} \right\rfloor\right)
+$$
    - When $C \ge P$ (e.g., 8 concurrent calls on an 8-core CPU), $\text{effectiveParallelismPerCall} = 1$. Every call automatically executes its graph and ops sequentially on its own goroutine with **zero intra-op or inter-op task creation or synchronization overhead**—no manual configuration required.
    - When $1 < C < P$ (e.g., 2 concurrent calls on 8 cores), each call runs concurrently and shares the remaining cores ($\approx 4$ workers per call) for intra-op parallelism.
    - When $C = 1$ (single-stream inference), all $P$ workers are available for intra-op parallelism.
 2. **Priority 2 — Intra-Op**: Within a call, finishing the currently executing operation as quickly as possible takes priority over starting other independent graph nodes.
    - Cooperating on a single op keeps its weights and tiles hot in shared L2/L3 caches and allows input buffers to be freed earlier.
-3. **Priority 3 — Inter-Op**: Only when `ops_parallel` is enabled *and* idle workers remain that are not needed by active intra-op tasks will workers pick up ready branch nodes from the inter-op queue.
-   - By default, graph execution uses **`OpsExecutionSequential`** (like ONNX Runtime's `ExecutionModeSequential`), avoiding atomic dependency tracking and channel overhead for the common sequential-model case. Users can opt into inter-op parallelism via `ops_parallel` (or a priority option) for heavily branching graphs with small ops.
+3. **Priority 3 — Inter-Op**: When `ops_parallel` or `ops_dynamic` (the default when `NumLiveExecutions <= 1`) is active, ready graph branches are submitted to `interOpQueue` only when idle workers remain and no intra-op tasks are waiting (`len(s.intraOpQueue) == 0`).
+   - By default, the Go backend uses **`OpsExecutionDynamic`**:
+     - When a single execution is running (`NumLiveExecutions <= 1`), it uses `executeParallel` so independent graph branches (e.g., multi-scale attention branches, Q/K/V projections, RoPE sin/cos branches, gated MLP branches) can overlap single-threaded or partially-parallel ops across idle cores.
+     - When multiple `Execute()` calls run concurrently (`NumLiveExecutions > 1`), it automatically switches to `executeSequential`, avoiding inter-op task creation and cross-call contention.
+   - Crucially, `SubmitInterOp` refuses to launch a new inter-op branch worker while `len(s.intraOpQueue) > 0`. Allowing inter-op branches to launch while an intra-op fan-out is in progress causes multiple heavy ops (such as `MatMul`) to run simultaneously and contend on shared L2/L3 caches, increasing total CPU time.
 
 ### Invariant 2: Persistent Worker Pool with Priority Queues
 
@@ -80,30 +85,45 @@ When allocating CPU workers (`maxParallelism`, typically `GOMAXPROCS`), `backend
 
 - An **Inter-Op Task** (or the main `Execute()` caller goroutine running a node) may either:
   1. Execute its chunks directly inline (when tensor size is small or $\text{effectiveParallelismPerCall} == 1$), or
-  2. Spawn **Intra-Op Tasks** required for its completion and wait for them via `Scheduler.WaitIntraOpTasks` / `Scheduler.RunIntraOpTasks`.
+  2. Spawn **Intra-Op Tasks** required for its completion and wait for them via `Scheduler.RunIntraOpTasks`, `Scheduler.ParallelizeChunks`, or `Scheduler.SaturateUpTo`.
 - An **Intra-Op Task** is strictly a leaf computation: it executes its assigned chunk(s) and returns immediately. It must never spawn nested tasks or block waiting on other tasks.
 
-### Invariant 4: Deadlock-Free Work-Helping (`WaitIntraOpTasks`)
+### Invariant 4: Deadlock-Free Work-Helping & Scoped Helper Cancellation
 
 - When an op spawns intra-op tasks and waits for their completion, **the calling goroutine never blocks passively while unstarted chunks of its op remain**.
-- Instead, calling `WaitIntraOpTasks` (or `RunIntraOpTasks`) causes the calling goroutine to immediately execute **its own op's intra-op tasks** at highest priority until no unstarted tasks for that op remain.
+- Instead, calling `RunIntraOpTasks`, `ParallelizeChunks`, or `SaturateUpTo` causes the calling goroutine to immediately pull and execute **its own op's chunks** from a shared atomic index (`nextIdx.Add(1)`) until no unstarted chunks for that op remain.
+- **Scoped Atomic Cancellation (No Cross-Op Queue Draining)**:
+  - Once an op's work is exhausted, any helper closures that were enqueued in `s.intraOpQueue` for this op but have not yet been popped by a persistent worker are cancelled in-place via an op-local atomic counter (`unstarted.Swap(0)`). When a persistent worker later dequeues a cancelled helper, it immediately decrements the op's `WaitGroup` and returns without executing `workerFn`.
+  - **Why not drain `s.intraOpQueue` in the caller?** When `OpsExecutionDynamic` / `OpsExecutionParallel` is active, two independent graph branches (Branch A and Branch B) may execute parallel ops concurrently. If Branch A's caller drained the shared `s.intraOpQueue` while waiting for its own last helper to finish, it could pop a helper belonging to Branch B—dragging Branch A's thread into Branch B's computation and delaying Branch A's downstream `localContinuation`. Using op-scoped atomic `unstarted` cancellation avoids touching other ops' tasks while still freeing the caller as soon as its own op completes.
 - **Guaranteed Forward Progress (Zero Deadlock)**:
   - Once an op starts executing, it always has at least one worker (the caller itself) actively draining its chunks, even if all persistent workers in `Scheduler` are busy with other calls or ops.
-  - Only after all of the op's chunks have been started does the caller wait on the op's `sync.WaitGroup` for any helper workers finishing the last in-flight chunk(s). Because intra-op tasks are non-blocking leaf tasks, helper completion is guaranteed in bounded CPU time.
+  - Only after all of the op's chunks have been started (and any unstarted helpers atomically cancelled) does the caller wait on the op's `sync.WaitGroup` for in-flight helpers to finish their current leaf chunk.
 
 ---
 
-## 4. Memory Locality & Chunk Partitioning
+## 4. Memory Locality, Chunk Partitioning & Wave Quantization
 
-To maximize memory bandwidth and cache efficiency when splitting an operation into chunks:
+To maximize memory bandwidth, cache efficiency, and multi-core utilization when splitting an operation into chunks:
 
 1. **Disjoint Contiguous Memory Regions**:
-   - Different workers must write to well-separated, contiguous slices of the output tensor (e.g., partitioning the outer/batch dimension `[0, outerSize)` into contiguous ranges `[start, end)` per worker) rather than interleaved indices.
+   - Different workers must write to well-separated, contiguous slices of the output tensor (e.g., partitioning the outer/batch dimension `[0, outerSize)` into contiguous ranges `[start, end)` per worker, or iterating output tiles in contiguous output order) rather than interleaved indices.
    - This prevents false sharing (multiple cores writing to the same 64-byte cache line) and allows each core's hardware prefetcher to stream linearly.
-2. **Adaptive Granularity**:
-   - Ops query `backend.Scheduler.EffectiveParallelism()` (or `AdjustedMaxParallelism()`, accounting for `NumLiveExecutions` / active calls) to determine how many chunks to create.
-   - If the tensor is smaller than `minParallelizeChunk` or effective parallelism is 1, the op executes inline without allocating closures or touching the scheduler.
-   - When parallelizing across $W$ target workers, work is split into a small multiple of $W$ contiguous chunks (e.g., $W$ or $2W$ chunks, or per-worker contiguous sub-ranges) to avoid creating giant queues of tiny tasks.
+2. **Over-Partitioning by $2 \times W$ to Prevent Wave Quantization**:
+   - Splitting work into only $1 \times W$ chunks (where $W = \text{EffectiveParallelism()}$) causes severe **wave quantization** and **core starvation**:
+     - *Ceiling-Division Starvation*: If `totalItems = 40` on a 32-core CPU and uniform chunk size `ceil(40 / 32) = 2` is used, only `40 / 2 = 20` chunks are created—leaving **12 of 32 cores completely idle**!
+     - *Batched Tail-Wave Stalls*: In batched `MatMul` with `batchSize = 20` on 32 cores, targeting $1 \times W$ (`ceil(32 / 20) = 2` splits per batch) creates `40` work items: Wave 1 runs 32 items on 32 cores, and Wave 2 runs the remaining **8 items on 8 cores while 24 cores sit idle**.
+     - *Inter-Op Interference*: When `OpsExecutionDynamic` runs a lightweight branch on 1–2 cores concurrently with a parallel op, having only $W$ uniform chunks forces the remaining chunks into a second full-latency wave.
+   - Therefore, both `ParallelizeChunks` and `MatMul.AppendWorkItems` target **$2 \times W$ chunks** (`targetChunks := min(2*numWorkers, totalItems / minChunkSize)`), while recruiting at most $W - 1$ helper workers from the pool:
+     - Workers dynamically pull from the $2W$ chunks via an atomic index (`nextChunk.Add(1)`), smoothing out uneven chunk execution times and tail waves with zero extra goroutines or scratch buffer allocations.
+3. **Proportional Ceiling-First Boundaries (No Round-Up Starvation)**:
+   - Instead of computing a single rounded-up `chunkSize` and stepping by `chunkSize`, chunk boundaries for chunk $c \in [0, K)$ are computed proportionally:
+$$
+\text{start}(c) = \left\lfloor \frac{c \cdot N + K - 1}{K} \right\rfloor, \quad \text{end}(c) = \left\lfloor \frac{(c + 1) \cdot N + K - 1}{K} \right\rfloor
+$$
+   - Every chunk differs in size by at most 1 item (or 1 register block `mr`/`nr` in `MatMul`), and the exact target number of chunks $K$ is always produced.
+4. **MatMul 1D vs. 2D Split Selection (`Choose2DSplit`)**:
+   - In `MatMul`, workers allocate per-worker LHS panel caches (`lhsAllocPanels = 64` panels, holding up to 128 rows in L2 cache).
+   - `Choose2DSplit` accounts for this per-worker LHS cache capacity (`maxCachedLHSRows`) and prefers 1D row splits (`candN == 1`) whenever `rowChunk >= LHSPanelCrossSize`. Splitting only along $M$ (`candN == 1`) ensures each worker packs its assigned LHS rows once and writes to completely disjoint output rows, avoiding redundant LHS re-packing across column workers.
 
 ---
 
@@ -160,31 +180,26 @@ func (s *Scheduler) Saturate(workerFn func())
 // (including the calling goroutine) to maxWorkers when maxWorkers > 0.
 func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func())
 
-// SubmitInterOp enqueues an inter-op task (a ready graph branch when ops_parallel is enabled).
-func (s *Scheduler) SubmitInterOp(task func())
+// SubmitInterOp enqueues an inter-op task (a ready graph branch when ops_parallel/ops_dynamic is enabled)
+// if an idle worker is available and no intra-op tasks are waiting. Returns false if the caller
+// should execute the task later via its local ready queue.
+func (s *Scheduler) SubmitInterOp(task func()) bool
 ```
 
 ---
 
-## 7. Implementation Plan
+## 7. Implementation Summary
 
-### Step 1: Refactor `scheduler.Scheduler` (`internal/gobackend/scheduler`)
-- Change the default `maxParallelism` in `scheduler.New()` from `2 * runtime.GOMAXPROCS(0)` to `runtime.GOMAXPROCS(0)`.
-- Replace per-task `go func()` creation with persistent worker goroutines.
-- Add `EnterExecution()` / `EffectiveParallelism()` tracking so concurrent `Execute()` calls automatically scale down intra-op fan-out.
-- Implement `intraOpQueue` and `interOpQueue` with priority selection (`Intra-Op` > `Inter-Op` by default, configurable if desired).
-- Implement `RunIntraOpTasks`, `ParallelizeChunks`, and `Saturate` using the work-helping pattern where the caller executes its own op's tasks before waiting on in-flight helpers.
-- Remove `WorkerIsAsleep`, `WorkerRestarted`, and `extraParallelism`.
-- Add comprehensive tests in `internal/gobackend/scheduler`:
-  - Single-call intra-op saturation across all cores.
-  - Multi-call (`Inter-Call`) scaling verifying automatic reduction of intra-op tasks when `numActiveCalls >= maxParallelism`.
-  - Priority ordering between `Intra-Op` and `Inter-Op` tasks.
-  - Deadlock freedom under nested `SubmitInterOp` + `RunIntraOpTasks` with `maxParallelism = 1, 2, 8`.
+### Step 1: `scheduler.Scheduler` (`internal/gobackend/scheduler`)
+- Default `maxParallelism` in `scheduler.New()` is `runtime.GOMAXPROCS(0)`.
+- Persistent worker goroutines pull from `intraOpQueue` and `interOpQueue` with priority selection (`Intra-Op` > `Inter-Op` by default).
+- `EnterExecution()` / `EffectiveParallelism()` tracking automatically scales down intra-op fan-out when multiple `Execute()` calls run concurrently.
+- `RunIntraOpTasks`, `ParallelizeChunks`, and `SaturateUpTo` use work-helping with op-scoped atomic `unstarted` helper cancellation and $2 \times W$ proportional chunking.
 
-### Step 2: Update Graph Execution (`internal/gobackend/executable.go` & `gobackend.go`)
-- Use `backend.Scheduler.EnterExecution()` in `FunctionExecutable.Execute()`.
-- Default `OpsExecutionType` to `OpsExecutionSequential` (matching ORT's `ExecutionModeSequential`), while keeping `ops_parallel` available for branching graphs.
-- Refactor `executeParallel` to use on-demand `SubmitInterOp` tasks on graph branches + `localContinuation` on linear chains, removing the pre-spawned `numExecutors` loop that blocked on `readyQueue`.
+### Step 2: Graph Execution (`internal/gobackend/executable.go` & `gobackend.go`)
+- Uses `backend.Scheduler.EnterExecution()` in `FunctionExecutable.Execute()`.
+- Defaults `OpsExecutionType` to `OpsExecutionDynamic` (`ops_dynamic`): uses on-demand inter-op parallelism (`executeParallel`) when a single execution is active (`NumLiveExecutions <= 1`), and automatically switches to `executeSequential` under concurrent `Execute()` calls (`NumLiveExecutions > 1`).
+- `executeParallel` uses on-demand `SubmitInterOp` tasks on graph branches (gated on `len(s.intraOpQueue) == 0`) + `localContinuation` on linear chains, with no parked background executors.
 
 ### Step 3: Migrate Op Call Sites to Cache-Friendly Chunking
 - Update `WaitToStart` loops in `ops/`, `fusedops/`, and `activations/` to use `backend.Scheduler.ParallelizeChunks` (or `RunIntraOpTasks` with contiguous per-worker ranges).
