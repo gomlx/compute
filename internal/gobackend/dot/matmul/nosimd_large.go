@@ -65,7 +65,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 		}
 	}
 
-	var workBuf [128]WorkItem
+	var workBuf [256]WorkItem
 	var workItems []WorkItem
 	if maxWorkers > 1 {
 		workItems = AppendWorkItems(
@@ -76,7 +76,7 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
 	lhsAllocPanels := 1
 	if numColPanels > 1 {
-		lhsAllocPanels = max(1, min(16, numRowPanels*numKPanels))
+		lhsAllocPanels = max(1, min(64, numRowPanels*numKPanels))
 	}
 	needTempOutput := (lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)
 

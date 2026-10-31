@@ -104,7 +104,7 @@ func avx2LargeBFloat16( //alt:bf16
 		}
 	}
 
-	var workBuf [128]matmul.WorkItem
+	var workBuf [256]matmul.WorkItem
 	var workItems []matmul.WorkItem
 	if maxWorkers > 1 {
 		workItems = matmul.AppendWorkItems(
