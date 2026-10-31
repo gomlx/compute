@@ -1,3 +1,6 @@
+- 2026-10-31:
+  - Added `CumMax` backend operator to `StandardOps` (with `OpTypeCumMax`, `shapeinference.CumMax`, Go backend implementation in `internal/gobackend/ops/cummax.go`, and compliance tests in `support/backendtest`), reusing `CumSumOptions` (`Exclusive` and `Reverse`).
+
 - 2026-10-14:
   - Documented `compute.Executable.Finalize()` lifecycle contract: callers must ensure no executions (`Execute()`) are in-flight before calling `Finalize()` to avoid undefined behavior/crashes, or alternatively leave cleanup to the GC or coordinate via higher-level objects (`graph.Exec` / `model.Exec`).
 

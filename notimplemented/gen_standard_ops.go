@@ -206,6 +206,24 @@ func (f Function) Cos(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeCos)
 }
 
+// CumMax returns the cumulative maximum of the elements along the given axis.
+//
+// Parameters:
+//   - operand: input value to compute the cumulative maximum on.
+//   - axis: axis along which to compute the cumulative maximum. It must be in the range 0 <= axis < rank.
+//   - options: CumSumOptions with Exclusive and Reverse flags. When Exclusive is true, the identity element is
+//     operand.DType().LowestValue() (-Inf for float types, MinInt* for signed ints, 0 for unsigned ints).
+//
+// Examples:
+//
+//	CumMax([3, 1, 4, 2], 0, CumSumOptions{}) -> [3, 3, 4, 4]
+//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Exclusive: true}) -> [-Inf, 3, 3, 4]
+//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Reverse: true}) -> [4, 4, 4, 2]
+//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Exclusive: true, Reverse: true}) -> [4, 4, 2, -Inf]
+func (f Function) CumMax(operand compute.Value, axis int, options compute.CumSumOptions) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeCumMax)
+}
+
 // CumSum returns the cumulative sum of the elements along the given axis.
 //
 // Parameters:

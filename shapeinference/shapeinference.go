@@ -694,6 +694,20 @@ func Reduce(operand shapes.Shape, axes []int) (output shapes.Shape, err error) {
 	return
 }
 
+// CumMax returns the output shape for a CumMax operation.
+func CumMax(operand shapes.Shape, axis int) (output shapes.Shape, err error) {
+	if !operand.DType.IsFloat() && !operand.DType.IsInt() {
+		return shapes.Invalid(), errors.Errorf("CumMax requires float or int dtype, got %s", operand.DType)
+	}
+	if operand.IsScalar() {
+		return shapes.Invalid(), errors.Errorf("CumMax requires tensor with rank >= 1, got scalar shape %s", operand)
+	}
+	if axis < 0 || axis >= operand.Rank() {
+		return shapes.Invalid(), errors.Errorf("CumMax requires 0 <= axis < rank (%d), but got invalid axis %d for shape %s", operand.Rank(), axis, operand)
+	}
+	return operand.Clone(), nil
+}
+
 // CumSum returns the output shape for a CumSum operation.
 func CumSum(operand shapes.Shape, axis int) (output shapes.Shape, err error) {
 	if !operand.DType.IsFloat() && !operand.DType.IsInt() {

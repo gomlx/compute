@@ -99,6 +99,7 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeDynamicBroadcastInDim: true,
 		compute.OpTypeConcatenate:           true,
 		compute.OpTypeConvertDType:          true,
+		compute.OpTypeCumMax:                true,
 		compute.OpTypeCumSum:                true,
 		compute.OpTypeDot:                   true,
 		compute.OpTypeDotGeneral:            true,

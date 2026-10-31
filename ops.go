@@ -108,13 +108,14 @@ type DotGeneralConfig struct {
 	OutputDType dtypes.DType
 }
 
-// CumSumOptions are options for the CumSum operation.
+// CumSumOptions are options for the CumSum and CumMax operations.
 type CumSumOptions struct {
-	// Exclusive if not to include the current element in the sum:
+	// Exclusive if not to include the current element in the cumulative operation:
 	// CumSum([1, 2, 3], 0, CumSumOptions{Exclusive:true}) -> [0, 1, 3].
+	// CumMax([3, 1, 4], 0, CumSumOptions{Exclusive:true}) -> [-Inf, 3, 3].
 	Exclusive bool
 
-	// Reverse to sum on the reverse direction.
+	// Reverse to accumulate in the reverse direction.
 	Reverse bool
 }
 
@@ -322,6 +323,22 @@ type StandardOps interface {
 
 	// Cos returns the Op that represents the output of the corresponding operation.
 	Cos(x Value) (Value, error)
+
+	// CumMax returns the cumulative maximum of the elements along the given axis.
+	//
+	// Parameters:
+	//   - operand: input value to compute the cumulative maximum on.
+	//   - axis: axis along which to compute the cumulative maximum. It must be in the range 0 <= axis < rank.
+	//   - options: CumSumOptions with Exclusive and Reverse flags. When Exclusive is true, the identity element is
+	//     operand.DType().LowestValue() (-Inf for float types, MinInt* for signed ints, 0 for unsigned ints).
+	//
+	// Examples:
+	//
+	//	CumMax([3, 1, 4, 2], 0, CumSumOptions{}) -> [3, 3, 4, 4]
+	//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Exclusive: true}) -> [-Inf, 3, 3, 4]
+	//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Reverse: true}) -> [4, 4, 4, 2]
+	//	CumMax([3, 1, 4, 2], 0, CumSumOptions{Exclusive: true, Reverse: true}) -> [4, 4, 2, -Inf]
+	CumMax(operand Value, axis int, options CumSumOptions) (Value, error)
 
 	// CumSum returns the cumulative sum of the elements along the given axis.
 	//
