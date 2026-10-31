@@ -66,6 +66,26 @@ func TestTransposeFastPaths(t *testing.T) {
 			permutations: []int{0, 2, 1, 3, 4},
 		},
 		{
+			name:         "trailing_preserved_5D_large",
+			shape:        shapes.Make(dtypes.Float32, 2, 10, 15, 27, 64),
+			permutations: []int{0, 2, 1, 3, 4},
+		},
+		{
+			name:         "3D_021_batched_matrix_transpose",
+			shape:        shapes.Make(dtypes.Float32, 20, 405, 64),
+			permutations: []int{0, 2, 1},
+		},
+		{
+			name:         "5D_20143_collapsed_to_4D_1032",
+			shape:        shapes.Make(dtypes.Float32, 2, 405, 3, 64, 10),
+			permutations: []int{2, 0, 1, 4, 3},
+		},
+		{
+			name:         "size1_axes_dropped",
+			shape:        shapes.Make(dtypes.Float32, 1, 16, 1, 8, 1),
+			permutations: []int{4, 3, 2, 1, 0},
+		},
+		{
 			name:         "identity_4D",
 			shape:        shapes.Make(dtypes.Float32, 2, 3, 4, 5),
 			permutations: []int{0, 1, 2, 3},

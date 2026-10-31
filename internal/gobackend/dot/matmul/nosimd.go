@@ -252,11 +252,12 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		}
 
 		// 3. Col panel size and LHS re-packing:
-		// When rowChunk <= LHSPanelCrossSize, the worker's entire row range fits in a single packedLHS
-		// panel and is reused across column panels without re-packing (nPanels == 1).
-		// Only when rowChunk > LHSPanelCrossSize does colChunk > targetCol require re-packing LHS.
+		// Each worker caches multiple packedLHS panels across column panels (up to 16 panels in SIMD
+		// and 64 panels in NoSIMD). Only when rowChunk exceeds the cached LHS capacity does
+		// colChunk > targetCol require re-packing LHS across column panels.
+		maxCachedLHSRows := max(16*params.LHSPanelCrossSize, 128)
 		nPanels := 1
-		if params.LHSPanelCrossSize > 0 && rowChunk > params.LHSPanelCrossSize {
+		if rowChunk > maxCachedLHSRows {
 			nPanels = (colChunk + targetCol - 1) / targetCol
 		}
 		colPenalty := 0.0
@@ -273,6 +274,12 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 		trafficScore := traffic / float64(M+N)
 
 		totalScore := trafficScore + utilPenalty + rowPenalty + colPenalty
+		// Bonus for candN == 1 if rowChunk is large enough:
+		// When rowChunk is already >= targetRow, splitting along M alone avoids
+		// multiple workers having to pack the same LHS rows and write to the same output rows.
+		if candN == 1 && rowChunk >= targetRow {
+			totalScore -= 200.0
+		}
 		if bestScore < 0 || totalScore < bestScore {
 			bestScore = totalScore
 			bestNumM = candM
@@ -302,11 +309,13 @@ func AppendWorkItems(
 	}
 
 	if batchSize >= 2*maxWorkers {
-		// Split the work on the batch dimension only.
-		batchStep := (batchSize + maxWorkers - 1) / maxWorkers
-		for batchIdx := 0; batchIdx < batchSize; batchIdx += batchStep {
+		// Split the work on the batch dimension only, targeting 2*maxWorkers items for load balancing.
+		numItems := min(batchSize, 2*maxWorkers)
+		for i := range numItems {
+			batchStart := (i*batchSize + numItems - 1) / numItems
+			batchEnd := ((i+1)*batchSize + numItems - 1) / numItems
 			dst = append(dst, WorkItem{
-				batchIdx, min(batchSize, batchIdx+batchStep),
+				batchStart, batchEnd,
 				0, lhsCrossSize,
 				0, rhsCrossSize,
 			})
@@ -328,27 +337,28 @@ func AppendWorkItems(
 
 	// batchSize < maxWorkers: distribute workers across the batch items,
 	// using 2D grid partitioning on each matrix slice.
-	targetWorkersPerBatch := (maxWorkers + batchSize - 1) / batchSize
+	// Target 2 * maxWorkers total work items to avoid tail-wave stalls and allow dynamic load balancing.
+	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
 	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
 
-	rhsSplitSize := (rhsCrossSize + numN - 1) / numN
-	if params.RHSL1KernelCols > 0 {
-		rhsSplitSize = ((rhsSplitSize + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols) * params.RHSL1KernelCols
-	}
-	lhsSplitSize := (lhsCrossSize + numM - 1) / numM
-	if params.LHSL1KernelRows > 0 {
-		lhsSplitSize = ((lhsSplitSize + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
-	}
+	mr := max(1, params.LHSL1KernelRows)
+	nr := max(1, params.RHSL1KernelCols)
+	totalMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
+	totalNBlocks := max(1, (rhsCrossSize+nr-1)/nr)
+	actualM := min(max(1, numM), totalMBlocks)
+	actualN := min(max(1, numN), totalNBlocks)
 
-	for lhsRowIdx := 0; lhsRowIdx < lhsCrossSize; lhsRowIdx += lhsSplitSize {
-		rowEnd := min(lhsCrossSize, lhsRowIdx+lhsSplitSize)
-		for rhsColIdx := 0; rhsColIdx < rhsCrossSize; rhsColIdx += rhsSplitSize {
-			colEnd := min(rhsCrossSize, rhsColIdx+rhsSplitSize)
+	for m := range actualM {
+		lhsRowStart := ((m*totalMBlocks + actualM - 1) / actualM) * mr
+		lhsRowEnd := min(lhsCrossSize, (((m+1)*totalMBlocks+actualM-1)/actualM)*mr)
+		for n := range actualN {
+			rhsColStart := ((n*totalNBlocks + actualN - 1) / actualN) * nr
+			rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualN-1)/actualN)*nr)
 			for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
 				dst = append(dst, WorkItem{
 					batchIdx, batchIdx + 1,
-					lhsRowIdx, rowEnd,
-					rhsColIdx, colEnd,
+					lhsRowStart, lhsRowEnd,
+					rhsColStart, rhsColEnd,
 				})
 			}
 		}
@@ -364,7 +374,7 @@ func FeedWorkItems(
 	maxWorkers int,
 	workChan chan<- WorkItem) {
 	defer close(workChan)
-	var stackBuf [128]WorkItem
+	var stackBuf [256]WorkItem
 	items := AppendWorkItems(stackBuf[:0], batchSize, lhsCrossSize, rhsCrossSize, params, maxWorkers)
 	for _, item := range items {
 		workChan <- item

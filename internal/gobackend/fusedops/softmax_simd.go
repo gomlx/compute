@@ -10,6 +10,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/support/simdmath"
 )
@@ -18,7 +19,7 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeFusedSoftmax, PrioritySIMD, execFusedSoftmaxSIMD)
 }
 
-func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedSoftmax)
 	input := inputs[0]
 	if input.RawShape.DType != dtypes.Float32 {
@@ -30,9 +31,16 @@ func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inpu
 		return nil, gobackend.ErrFallback
 	}
 
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
+	var output *gobackend.Buffer
+	var err error
+	if len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+		output = input
+		inputs[0] = nil
+	} else {
+		output, err = backend.GetBuffer(node.Shape)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if backend.NoOps {
 		return output, nil
@@ -51,8 +59,8 @@ func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inpu
 		}
 	}
 
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
-		minOuter := max(1, 16384/max(1, axisSize))
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements >= 8192 {
+		minOuter := max(1, 8192/max(1, axisSize))
 		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, processOuter)
 	} else {
 		processOuter(0, outerSize)
@@ -68,6 +76,25 @@ func fusedSoftmaxRowFloat32(inRow, outRow []float32) {
 	}
 	if n == 1 {
 		outRow[0] = 1.0
+		return
+	}
+	if n < 8 {
+		maxVal := inRow[0]
+		for j := 1; j < n; j++ {
+			if inRow[j] > maxVal {
+				maxVal = inRow[j]
+			}
+		}
+		var sumVal float32
+		for j := range n {
+			e := fastmath.Exp32(inRow[j] - maxVal)
+			outRow[j] = e
+			sumVal += e
+		}
+		invSum := float32(1.0) / sumVal
+		for j := range n {
+			outRow[j] *= invSum
+		}
 		return
 	}
 

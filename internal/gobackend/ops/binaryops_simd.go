@@ -1592,7 +1592,13 @@ func simdMinVSFloat16(lhs []float16.Float16, c float16.Float16, out []float16.Fl
 	}
 }
 
+const (
+	minBinarySIMDParallelElements = 65536
+	binarySIMDChunkElements       = 32768
+)
+
 func dispatchBinarySIMD[T any](
+	backend *gobackend.Backend,
 	lhs, rhs, output []T,
 	bcastCfg gobackend.BroadcastConfig,
 	vv func(lhs, rhs, out []T),
@@ -1601,16 +1607,54 @@ func dispatchBinarySIMD[T any](
 	v2v1 func(lhs, rhs, out []T, A, B int),
 	v1v2 func(lhs, rhs, out []T, A, B int),
 ) error {
+	totalElements := len(output)
+	canParallelize := totalElements >= minBinarySIMDParallelElements &&
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
-		vs(lhs, rhs[0], output)
+		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
+				vs(lhs[start:end], c, output[start:end])
+			})
+		} else {
+			vs(lhs, c, output)
+		}
 	case len(lhs) == 1:
-		sv(lhs[0], rhs, output)
+		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
+				sv(c, rhs[start:end], output[start:end])
+			})
+		} else {
+			sv(c, rhs, output)
+		}
 	case bcastCfg.Pattern == gobackend.BroadcastNone:
-		vv(lhs, rhs, output)
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
+				vv(lhs[start:end], rhs[start:end], output[start:end])
+			})
+		} else {
+			vv(lhs, rhs, output)
+		}
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		if v2v1 != nil {
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				off := aStart * B
+				count := aEnd - aStart
+				if v2v1 != nil {
+					v2v1(lhs[off:off+count*B], rhs[:B], output[off:off+count*B], count, B)
+				} else {
+					for a := aStart; a < aEnd; a++ {
+						o := a * B
+						vv(lhs[o:o+B], rhs[:B], output[o:o+B])
+					}
+				}
+			})
+		} else if v2v1 != nil {
 			v2v1(lhs, rhs, output, A, B)
 		} else {
 			for a := range A {
@@ -1620,7 +1664,21 @@ func dispatchBinarySIMD[T any](
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		if v1v2 != nil {
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				off := aStart * B
+				count := aEnd - aStart
+				if v1v2 != nil {
+					v1v2(lhs[:B], rhs[off:off+count*B], output[off:off+count*B], count, B)
+				} else {
+					for a := aStart; a < aEnd; a++ {
+						o := a * B
+						vv(lhs[:B], rhs[o:o+B], output[o:o+B])
+					}
+				}
+			})
+		} else if v1v2 != nil {
 			v1v2(lhs, rhs, output, A, B)
 		} else {
 			for a := range A {
@@ -1630,27 +1688,155 @@ func dispatchBinarySIMD[T any](
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			vs(lhs[offset:offset+B], rhs[a], output[offset:offset+B])
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					vs(lhs[offset:offset+B], rhs[a], output[offset:offset+B])
+				}
+			})
+		} else {
+			for a := range A {
+				offset := a * B
+				vs(lhs[offset:offset+B], rhs[a], output[offset:offset+B])
+			}
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			sv(lhs[a], rhs[offset:offset+B], output[offset:offset+B])
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					sv(lhs[a], rhs[offset:offset+B], output[offset:offset+B])
+				}
+			})
+		} else {
+			for a := range A {
+				offset := a * B
+				sv(lhs[a], rhs[offset:offset+B], output[offset:offset+B])
+			}
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			sv(lhs[a], rhs[:B], output[offset:offset+B])
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					sv(lhs[a], rhs[:B], output[offset:offset+B])
+				}
+			})
+		} else {
+			for a := range A {
+				offset := a * B
+				sv(lhs[a], rhs[:B], output[offset:offset+B])
+			}
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
-		for a := range A {
-			offset := a * B
-			vs(lhs[:B], rhs[a], output[offset:offset+B])
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					vs(lhs[:B], rhs[a], output[offset:offset+B])
+				}
+			})
+		} else {
+			for a := range A {
+				offset := a * B
+				vs(lhs[:B], rhs[a], output[offset:offset+B])
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A >= 8 && bc <= 4096 {
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					lOff := a * bc
+					rOff := a * C
+					if v2v1 != nil {
+						v2v1(lhs[lOff:lOff+bc], rhs[rOff:rOff+C], output[lOff:lOff+bc], B, C)
+					} else {
+						for b := range B {
+							o := lOff + b*C
+							vv(lhs[o:o+C], rhs[rOff:rOff+C], output[o:o+C])
+						}
+					}
+				}
+			})
+		} else if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[lOff:lOff+C])
+				}
+			})
+		} else {
+			for a := range A {
+				lOff := a * bc
+				rOff := a * C
+				if v2v1 != nil {
+					v2v1(lhs[lOff:lOff+bc], rhs[rOff:rOff+C], output[lOff:lOff+bc], B, C)
+				} else {
+					for b := range B {
+						o := lOff + b*C
+						vv(lhs[o:o+C], rhs[rOff:rOff+C], output[o:o+C])
+					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A >= 8 && bc <= 4096 {
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					lOff := a * C
+					rOff := a * bc
+					if v1v2 != nil {
+						v1v2(lhs[lOff:lOff+C], rhs[rOff:rOff+bc], output[rOff:rOff+bc], B, C)
+					} else {
+						for b := range B {
+							o := rOff + b*C
+							vv(lhs[lOff:lOff+C], rhs[o:o+C], output[o:o+C])
+						}
+					}
+				}
+			})
+		} else if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[rOff:rOff+C])
+				}
+			})
+		} else {
+			for a := range A {
+				lOff := a * C
+				rOff := a * bc
+				if v1v2 != nil {
+					v1v2(lhs[lOff:lOff+C], rhs[rOff:rOff+bc], output[rOff:rOff+bc], B, C)
+				} else {
+					for b := range B {
+						o := rOff + b*C
+						vv(lhs[lOff:lOff+C], rhs[o:o+C], output[o:o+C])
+					}
+				}
+			}
 		}
 	default:
 		return gobackend.ErrFallback
@@ -1704,37 +1890,37 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdAddVVFloat32, simdAddVSFloat32, func(c float32, r []float32, out []float32) { simdAddVSFloat32(r, c, out) },
 			simdV2V1AddFloat32, simdV1V2AddFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdAddVVFloat64, simdAddVSFloat64, func(c float64, r []float64, out []float64) { simdAddVSFloat64(r, c, out) },
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdAddVVBFloat16, simdAddVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
 				simdAddVSBFloat16(r, c, out)
 			},
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdAddVVFloat16, simdAddVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdAddVSFloat16(r, c, out) },
 			nil, nil)
 	case dtypes.Int32:
-		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
 			simdAddVVInt32, simdAddVSInt32, func(c int32, r []int32, out []int32) { simdAddVSInt32(r, c, out) },
 			nil, nil)
 	case dtypes.Uint32:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
 			simdAddVVUint32, simdAddVSUint32, func(c uint32, r []uint32, out []uint32) { simdAddVSUint32(r, c, out) },
 			nil, nil)
 	case dtypes.Int64:
-		err = dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
 			simdAddVVInt64, simdAddVSInt64, func(c int64, r []int64, out []int64) { simdAddVSInt64(r, c, out) },
 			nil, nil)
 	case dtypes.Uint64:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
 			simdAddVVUint64, simdAddVSUint64, func(c uint64, r []uint64, out []uint64) { simdAddVSUint64(r, c, out) },
 			nil, nil)
 	default:
@@ -1759,35 +1945,35 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdSubVVFloat32, simdSubVSFloat32, simdSubSVFloat32,
 			simdV2V1SubFloat32, simdV1V2SubFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdSubVVFloat64, simdSubVSFloat64, simdSubSVFloat64,
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdSubVVBFloat16, simdSubVSBFloat16, simdSubSVBFloat16,
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdSubVVFloat16, simdSubVSFloat16, simdSubSVFloat16,
 			nil, nil)
 	case dtypes.Int32:
-		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
 			simdSubVVInt32, simdSubVSInt32, simdSubSVInt32,
 			nil, nil)
 	case dtypes.Uint32:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
 			simdSubVVUint32, simdSubVSUint32, simdSubSVUint32,
 			nil, nil)
 	case dtypes.Int64:
-		err = dispatchBinarySIMD(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), bcastCfg,
 			simdSubVVInt64, simdSubVSInt64, simdSubSVInt64,
 			nil, nil)
 	case dtypes.Uint64:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), bcastCfg,
 			simdSubVVUint64, simdSubVSUint64, simdSubSVUint64,
 			nil, nil)
 	default:
@@ -1815,29 +2001,29 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdMulVVFloat32, simdMulVSFloat32, func(c float32, r []float32, out []float32) { simdMulVSFloat32(r, c, out) },
 			simdV2V1MulFloat32, simdV1V2MulFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdMulVVFloat64, simdMulVSFloat64, func(c float64, r []float64, out []float64) { simdMulVSFloat64(r, c, out) },
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdMulVVBFloat16, simdMulVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
 				simdMulVSBFloat16(r, c, out)
 			},
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdMulVVFloat16, simdMulVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMulVSFloat16(r, c, out) },
 			nil, nil)
 	case dtypes.Int32:
-		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
 			simdMulVVInt32, simdMulVSInt32, func(c int32, r []int32, out []int32) { simdMulVSInt32(r, c, out) },
 			nil, nil)
 	case dtypes.Uint32:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
 			simdMulVVUint32, simdMulVSUint32, func(c uint32, r []uint32, out []uint32) { simdMulVSUint32(r, c, out) },
 			nil, nil)
 	default:
@@ -1862,19 +2048,19 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdDivVVFloat32, simdDivVSFloat32, simdDivSVFloat32,
 			simdV2V1DivFloat32, simdV1V2DivFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdDivVVFloat64, simdDivVSFloat64, simdDivSVFloat64,
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdDivVVBFloat16, simdDivVSBFloat16, simdDivSVBFloat16,
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdDivVVFloat16, simdDivVSFloat16, simdDivSVFloat16,
 			nil, nil)
 	default:
@@ -1902,29 +2088,29 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdMaxVVFloat32, simdMaxVSFloat32, func(c float32, r []float32, out []float32) { simdMaxVSFloat32(r, c, out) },
 			simdV2V1MaxFloat32, simdV1V2MaxFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdMaxVVFloat64, simdMaxVSFloat64, func(c float64, r []float64, out []float64) { simdMaxVSFloat64(r, c, out) },
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdMaxVVBFloat16, simdMaxVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
 				simdMaxVSBFloat16(r, c, out)
 			},
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdMaxVVFloat16, simdMaxVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMaxVSFloat16(r, c, out) },
 			nil, nil)
 	case dtypes.Int32:
-		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
 			simdMaxVVInt32, simdMaxVSInt32, func(c int32, r []int32, out []int32) { simdMaxVSInt32(r, c, out) },
 			nil, nil)
 	case dtypes.Uint32:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
 			simdMaxVVUint32, simdMaxVSUint32, func(c uint32, r []uint32, out []uint32) { simdMaxVSUint32(r, c, out) },
 			nil, nil)
 	default:
@@ -1952,29 +2138,29 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	var err error
 	switch lhs.RawShape.DType {
 	case dtypes.Float32:
-		err = dispatchBinarySIMD(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), bcastCfg,
 			simdMinVVFloat32, simdMinVSFloat32, func(c float32, r []float32, out []float32) { simdMinVSFloat32(r, c, out) },
 			simdV2V1MinFloat32, simdV1V2MinFloat32)
 	case dtypes.Float64:
-		err = dispatchBinarySIMD(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), bcastCfg,
 			simdMinVVFloat64, simdMinVSFloat64, func(c float64, r []float64, out []float64) { simdMinVSFloat64(r, c, out) },
 			nil, nil)
 	case dtypes.BFloat16:
-		err = dispatchBinarySIMD(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), bcastCfg,
 			simdMinVVBFloat16, simdMinVSBFloat16, func(c bfloat16.BFloat16, r []bfloat16.BFloat16, out []bfloat16.BFloat16) {
 				simdMinVSBFloat16(r, c, out)
 			},
 			nil, nil)
 	case dtypes.Float16:
-		err = dispatchBinarySIMD(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), bcastCfg,
 			simdMinVVFloat16, simdMinVSFloat16, func(c float16.Float16, r []float16.Float16, out []float16.Float16) { simdMinVSFloat16(r, c, out) },
 			nil, nil)
 	case dtypes.Int32:
-		err = dispatchBinarySIMD(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), bcastCfg,
 			simdMinVVInt32, simdMinVSInt32, func(c int32, r []int32, out []int32) { simdMinVSInt32(r, c, out) },
 			nil, nil)
 	case dtypes.Uint32:
-		err = dispatchBinarySIMD(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
+		err = dispatchBinarySIMD(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), bcastCfg,
 			simdMinVVUint32, simdMinVSUint32, func(c uint32, r []uint32, out []uint32) { simdMinVSUint32(r, c, out) },
 			nil, nil)
 	default:

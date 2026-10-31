@@ -4,9 +4,6 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -57,142 +54,186 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return output, nil
 	}
 
-	if dispatchWhereParallel(backend, condition, onTrue, onFalse, output) {
-		return output, nil
-	}
-
 	tmpAny, tmpErr := whereDTypeMap.Get(outputShape.DType)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
-	fn := tmpAny.(func(conditionBuf, onTrueBuf, onFalseBuf, outputBuf *gobackend.Buffer))
-	fn(condition, onTrue, onFalse, output)
+	fn := tmpAny.(func(backend *gobackend.Backend, conditionBuf, onTrueBuf, onFalseBuf, outputBuf *gobackend.Buffer))
+	fn(backend, condition, onTrue, onFalse, output)
 	return output, nil
 }
 
-func dispatchWhereParallel(backend *gobackend.Backend, conditionBuf, onTrueBuf, onFalseBuf, outputBuf *gobackend.Buffer) bool {
-	if conditionBuf.RawShape.IsScalar() {
-		return false
-	}
-	outputShape := outputBuf.RawShape
-	n := outputShape.Size()
-	if backend == nil || backend.Scheduler == nil || !backend.Scheduler.IsEnabled() || n < 8192 {
-		return false
-	}
-	if !conditionBuf.RawShape.Equal(outputShape) {
-		return false
-	}
-	if !onTrueBuf.RawShape.Equal(outputShape) && !onTrueBuf.RawShape.IsScalar() {
-		return false
-	}
-	if !onFalseBuf.RawShape.Equal(outputShape) && !onFalseBuf.RawShape.IsScalar() {
-		return false
-	}
-	cond := conditionBuf.Flat.([]bool)
-	switch outputBuf.RawShape.DType {
-	case dtypes.Float32:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]float32))
-	case dtypes.Float64:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]float64))
-	case dtypes.BFloat16:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]float16.Float16))
-	case dtypes.Int32:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]int32))
-	case dtypes.Int64:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]int64))
-	case dtypes.Int16:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]int16))
-	case dtypes.Int8:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]int8))
-	case dtypes.Uint32:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]uint32))
-	case dtypes.Uint64:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]uint64))
-	case dtypes.Uint16:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]uint16))
-	case dtypes.Uint8:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]uint8))
-	case dtypes.Bool:
-		parallelWhere(backend, cond, onTrueBuf, onFalseBuf, outputBuf.Flat.([]bool))
-	default:
-		return false
-	}
-	return true
+// where2DConfig describes a Where operation whose axes collapse into at most 2 broadcast segments
+// [outerSize, innerSize].
+type where2DConfig struct {
+	numSegs         int // 1 (1D flat) or 2 (2D [outerSize, innerSize])
+	outerSize       int
+	innerSize       int
+	condBcastOuter  bool
+	trueBcastOuter  bool
+	falseBcastOuter bool
+	condBcastInner  bool
+	trueBcastInner  bool
+	falseBcastInner bool
 }
 
-func parallelWhere[T any](backend *gobackend.Backend, cond []bool, onTrueBuf, onFalseBuf *gobackend.Buffer, out []T) {
-	n := len(cond)
-	onTrueIsScalar := onTrueBuf.RawShape.IsScalar()
-	onFalseIsScalar := onFalseBuf.RawShape.IsScalar()
-	onTrueFlat := onTrueBuf.Flat.([]T)
-	onFalseFlat := onFalseBuf.Flat.([]T)
-	var onTrueScalar, onFalseScalar T
-	if onTrueIsScalar {
-		onTrueScalar = onTrueFlat[0]
+func determineWhere2DConfig(condShape, trueShape, falseShape, tgtShape shapes.Shape) (where2DConfig, bool) {
+	n := tgtShape.Size()
+	if n == 0 {
+		return where2DConfig{numSegs: 1, outerSize: 1, innerSize: 0}, true
 	}
-	if onFalseIsScalar {
-		onFalseScalar = onFalseFlat[0]
+	var segDims [2]int
+	var segMasks [2]int
+	numSegs := 0
+
+	condScalar := condShape.IsScalar()
+	trueScalar := trueShape.IsScalar()
+	falseScalar := falseShape.IsScalar()
+
+	for axis, d := range tgtShape.Dimensions {
+		if d <= 1 {
+			continue
+		}
+		mask := 0
+		if condScalar || condShape.Dimensions[axis] == 1 {
+			mask |= 4
+		}
+		if trueScalar || trueShape.Dimensions[axis] == 1 {
+			mask |= 2
+		}
+		if falseScalar || falseShape.Dimensions[axis] == 1 {
+			mask |= 1
+		}
+		if numSegs > 0 && segMasks[numSegs-1] == mask {
+			segDims[numSegs-1] *= d
+		} else if numSegs < 2 {
+			segDims[numSegs] = d
+			segMasks[numSegs] = mask
+			numSegs++
+		} else {
+			return where2DConfig{}, false
+		}
 	}
 
-	_, isFloat32 := any(onTrueScalar).(float32)
+	if numSegs == 0 {
+		return where2DConfig{
+			numSegs:         1,
+			outerSize:       1,
+			innerSize:       1,
+			condBcastInner:  false,
+			trueBcastInner:  true,
+			falseBcastInner: true,
+		}, true
+	}
+	if numSegs == 1 {
+		m := segMasks[0]
+		return where2DConfig{
+			numSegs:         1,
+			outerSize:       1,
+			innerSize:       segDims[0],
+			condBcastInner:  (m & 4) != 0,
+			trueBcastInner:  (m & 2) != 0,
+			falseBcastInner: (m & 1) != 0,
+		}, true
+	}
+	m0, m1 := segMasks[0], segMasks[1]
+	return where2DConfig{
+		numSegs:         2,
+		outerSize:       segDims[0],
+		innerSize:       segDims[1],
+		condBcastOuter:  (m0 & 4) != 0,
+		trueBcastOuter:  (m0 & 2) != 0,
+		falseBcastOuter: (m0 & 1) != 0,
+		condBcastInner:  (m1 & 4) != 0,
+		trueBcastInner:  (m1 & 2) != 0,
+		falseBcastInner: (m1 & 1) != 0,
+	}, true
+}
 
-	backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
-		if isFloat32 {
-			var onTrueChunk, onFalseChunk []float32
-			condChunk := cond[start:end]
-			outChunk := any(out[start:end]).([]float32)
-			if onTrueIsScalar {
-				onTrueChunk = any(onTrueFlat[:1]).([]float32)
-			} else {
-				onTrueChunk = any(onTrueFlat[start:end]).([]float32)
-			}
-			if onFalseIsScalar {
-				onFalseChunk = any(onFalseFlat[:1]).([]float32)
-			} else {
-				onFalseChunk = any(onFalseFlat[start:end]).([]float32)
-			}
-			if whereFloat32Arch(condChunk, onTrueChunk, onFalseChunk, outChunk, onTrueIsScalar, onFalseIsScalar) {
-				return
+func whereRow[T any](
+	cond []bool,
+	trueSlice, falseSlice, out []T,
+	trueIsScalar, falseIsScalar bool,
+	outAliasesTrue, outAliasesFalse bool,
+	isFloat32 bool,
+) {
+	if isFloat32 {
+		if whereFloat32Arch(
+			cond,
+			any(trueSlice).([]float32),
+			any(falseSlice).([]float32),
+			any(out).([]float32),
+			trueIsScalar,
+			falseIsScalar,
+		) {
+			return
+		}
+	}
+
+	switch {
+	case outAliasesFalse && trueIsScalar:
+		tVal := trueSlice[0]
+		for i, c := range cond {
+			if c {
+				out[i] = tVal
 			}
 		}
-
-		switch {
-		case !onTrueIsScalar && onFalseIsScalar:
-			for i := start; i < end; i++ {
-				if cond[i] {
-					out[i] = onTrueFlat[i]
-				} else {
-					out[i] = onFalseScalar
-				}
-			}
-		case onTrueIsScalar && !onFalseIsScalar:
-			for i := start; i < end; i++ {
-				if cond[i] {
-					out[i] = onTrueScalar
-				} else {
-					out[i] = onFalseFlat[i]
-				}
-			}
-		case !onTrueIsScalar && !onFalseIsScalar:
-			for i := start; i < end; i++ {
-				if cond[i] {
-					out[i] = onTrueFlat[i]
-				} else {
-					out[i] = onFalseFlat[i]
-				}
-			}
-		default:
-			for i := start; i < end; i++ {
-				if cond[i] {
-					out[i] = onTrueScalar
-				} else {
-					out[i] = onFalseScalar
-				}
+	case outAliasesFalse && !trueIsScalar:
+		for i, c := range cond {
+			if c {
+				out[i] = trueSlice[i]
 			}
 		}
-	})
+	case outAliasesTrue && falseIsScalar:
+		fVal := falseSlice[0]
+		for i, c := range cond {
+			if !c {
+				out[i] = fVal
+			}
+		}
+	case outAliasesTrue && !falseIsScalar:
+		for i, c := range cond {
+			if !c {
+				out[i] = falseSlice[i]
+			}
+		}
+	case !trueIsScalar && falseIsScalar:
+		fVal := falseSlice[0]
+		for i, c := range cond {
+			if c {
+				out[i] = trueSlice[i]
+			} else {
+				out[i] = fVal
+			}
+		}
+	case trueIsScalar && !falseIsScalar:
+		tVal := trueSlice[0]
+		for i, c := range cond {
+			if c {
+				out[i] = tVal
+			} else {
+				out[i] = falseSlice[i]
+			}
+		}
+	case !trueIsScalar && !falseIsScalar:
+		for i, c := range cond {
+			if c {
+				out[i] = trueSlice[i]
+			} else {
+				out[i] = falseSlice[i]
+			}
+		}
+	default:
+		tVal := trueSlice[0]
+		fVal := falseSlice[0]
+		for i, c := range cond {
+			if c {
+				out[i] = tVal
+			} else {
+				out[i] = fVal
+			}
+		}
+	}
 }
 
 // ternaryZipIterator iterates over the flat indices of three broadcast operands and the target buffer.
@@ -246,9 +287,9 @@ func newTernaryZipIterator(condShape, trueShape, falseShape, tgtShape shapes.Sha
 //gobackend:dtypemap execWhereGeneric ints,uints,floats,half,bool
 var whereDTypeMap = gobackend.NewDTypeMap("Where")
 
-func execWhereGeneric[T gobackend.SupportedTypesConstraints](conditionBuf, onTrueBuf, onFalseBuf, outputBuf *gobackend.Buffer) {
-	if conditionBuf.RawShape.IsScalar() {
-		// Case 1: condition is a scalar, either we take onTrue or onFalse as a whole (with potential broadcast).
+func execWhereGeneric[T gobackend.SupportedTypesConstraints](backend *gobackend.Backend, conditionBuf, onTrueBuf, onFalseBuf, outputBuf *gobackend.Buffer) {
+	if conditionBuf.RawShape.Size() == 1 {
+		// Case 1: condition has a single boolean element, either we take onTrue or onFalse as a whole (with potential broadcast).
 		if conditionBuf.Flat.([]bool)[0] {
 			execWhereSetOutputWithValue[T](outputBuf, onTrueBuf)
 		} else {
@@ -262,65 +303,147 @@ func execWhereGeneric[T gobackend.SupportedTypesConstraints](conditionBuf, onTru
 	falseShape := onFalseBuf.RawShape
 	tgtShape := outputBuf.RawShape
 
-	// Fast path: condition matches target shape and value operands match or are scalar.
-	if condShape.Equal(tgtShape) &&
-		(trueShape.Equal(tgtShape) || trueShape.IsScalar()) &&
-		(falseShape.Equal(tgtShape) || falseShape.IsScalar()) {
-		condFlat := conditionBuf.Flat.([]bool)
-		trueFlat := onTrueBuf.Flat.([]T)
-		falseFlat := onFalseBuf.Flat.([]T)
-		outputFlat := outputBuf.Flat.([]T)
-		trueIsScalar := trueShape.IsScalar()
-		falseIsScalar := falseShape.IsScalar()
-
-		if _, ok := any(trueFlat[0]).(float32); ok {
-			var trueChunk, falseChunk []float32
-			if trueIsScalar {
-				trueChunk = any(trueFlat[:1]).([]float32)
-			} else {
-				trueChunk = any(trueFlat).([]float32)
-			}
-			if falseIsScalar {
-				falseChunk = any(falseFlat[:1]).([]float32)
-			} else {
-				falseChunk = any(falseFlat).([]float32)
-			}
-			if whereFloat32Arch(condFlat, trueChunk, falseChunk, any(outputFlat).([]float32), trueIsScalar, falseIsScalar) {
-				return
-			}
-		}
-
-		var tVal, fVal T
-		if trueIsScalar {
-			tVal = trueFlat[0]
-		}
-		if falseIsScalar {
-			fVal = falseFlat[0]
-		}
-		for i, c := range condFlat {
-			if c {
-				if trueIsScalar {
-					outputFlat[i] = tVal
-				} else {
-					outputFlat[i] = trueFlat[i]
-				}
-			} else {
-				if falseIsScalar {
-					outputFlat[i] = fVal
-				} else {
-					outputFlat[i] = falseFlat[i]
-				}
-			}
-		}
-		return
-	}
-
-	// General multi-dimensional broadcasting:
-	zi := newTernaryZipIterator(condShape, trueShape, falseShape, tgtShape)
 	condFlat := conditionBuf.Flat.([]bool)
 	trueFlat := onTrueBuf.Flat.([]T)
 	falseFlat := onFalseBuf.Flat.([]T)
 	outFlat := outputBuf.Flat.([]T)
+	if len(outFlat) == 0 {
+		return
+	}
+	_, isFloat32 := any(trueFlat[0]).(float32)
+	outAliasesTrue := outputBuf == onTrueBuf
+	outAliasesFalse := outputBuf == onFalseBuf
+
+	// Fast path: 1D flat or 2D-collapsible broadcast [outerSize, innerSize].
+	if cfg, ok := determineWhere2DConfig(condShape, trueShape, falseShape, tgtShape); ok {
+		canParallel := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(outFlat) >= 8192
+		if cfg.numSegs == 1 {
+			n := cfg.innerSize
+			runChunk := func(start, end int) {
+				var tChunk, fChunk []T
+				if cfg.trueBcastInner {
+					tChunk = trueFlat[:1]
+				} else {
+					tChunk = trueFlat[start:end]
+				}
+				if cfg.falseBcastInner {
+					fChunk = falseFlat[:1]
+				} else {
+					fChunk = falseFlat[start:end]
+				}
+				whereRow(condFlat[start:end], tChunk, fChunk, outFlat[start:end],
+					cfg.trueBcastInner, cfg.falseBcastInner, outAliasesTrue, outAliasesFalse, isFloat32)
+			}
+			if canParallel {
+				backend.Scheduler.ParallelizeChunks(n, 16384, runChunk)
+			} else {
+				runChunk(0, n)
+			}
+			return
+		}
+
+		// 2-segment [outerSize, innerSize] broadcast.
+		outerSize, innerSize := cfg.outerSize, cfg.innerSize
+		if canParallel && outerSize < 4 && innerSize >= 16384 && !cfg.condBcastInner {
+			// Few large rows: parallelize within each row.
+			for r := range outerSize {
+				condR0, trueR0, falseR0 := r, r, r
+				if cfg.condBcastOuter {
+					condR0 = 0
+				}
+				if cfg.trueBcastOuter {
+					trueR0 = 0
+				}
+				if cfg.falseBcastOuter {
+					falseR0 = 0
+				}
+				condBase := condR0 * innerSize
+				outBase := r * innerSize
+				backend.Scheduler.ParallelizeChunks(innerSize, 16384, func(start, end int) {
+					var tChunk, fChunk []T
+					if cfg.trueBcastInner {
+						tChunk = trueFlat[trueR0 : trueR0+1]
+					} else {
+						tChunk = trueFlat[trueR0*innerSize+start : trueR0*innerSize+end]
+					}
+					if cfg.falseBcastInner {
+						fChunk = falseFlat[falseR0 : falseR0+1]
+					} else {
+						fChunk = falseFlat[falseR0*innerSize+start : falseR0*innerSize+end]
+					}
+					whereRow(condFlat[condBase+start:condBase+end], tChunk, fChunk, outFlat[outBase+start:outBase+end],
+						cfg.trueBcastInner, cfg.falseBcastInner, outAliasesTrue, outAliasesFalse, isFloat32)
+				})
+			}
+			return
+		}
+
+		runRows := func(startRow, endRow int) {
+			for r := startRow; r < endRow; r++ {
+				condR0, trueR0, falseR0 := r, r, r
+				if cfg.condBcastOuter {
+					condR0 = 0
+				}
+				if cfg.trueBcastOuter {
+					trueR0 = 0
+				}
+				if cfg.falseBcastOuter {
+					falseR0 = 0
+				}
+				outRow := outFlat[r*innerSize : (r+1)*innerSize]
+				if cfg.condBcastInner {
+					if condFlat[condR0] {
+						if !outAliasesTrue {
+							if cfg.trueBcastInner {
+								tVal := trueFlat[trueR0]
+								for j := range outRow {
+									outRow[j] = tVal
+								}
+							} else {
+								copy(outRow, trueFlat[trueR0*innerSize:(trueR0+1)*innerSize])
+							}
+						}
+					} else {
+						if !outAliasesFalse {
+							if cfg.falseBcastInner {
+								fVal := falseFlat[falseR0]
+								for j := range outRow {
+									outRow[j] = fVal
+								}
+							} else {
+								copy(outRow, falseFlat[falseR0*innerSize:(falseR0+1)*innerSize])
+							}
+						}
+					}
+					continue
+				}
+
+				var tRow, fRow []T
+				if cfg.trueBcastInner {
+					tRow = trueFlat[trueR0 : trueR0+1]
+				} else {
+					tRow = trueFlat[trueR0*innerSize : (trueR0+1)*innerSize]
+				}
+				if cfg.falseBcastInner {
+					fRow = falseFlat[falseR0 : falseR0+1]
+				} else {
+					fRow = falseFlat[falseR0*innerSize : (falseR0+1)*innerSize]
+				}
+				whereRow(condFlat[condR0*innerSize:(condR0+1)*innerSize], tRow, fRow, outRow,
+					cfg.trueBcastInner, cfg.falseBcastInner, outAliasesTrue, outAliasesFalse, isFloat32)
+			}
+		}
+		if canParallel && outerSize > 1 {
+			rowsPerChunk := max(1, 16384/innerSize)
+			backend.Scheduler.ParallelizeChunks(outerSize, rowsPerChunk, runRows)
+		} else {
+			runRows(0, outerSize)
+		}
+		return
+	}
+
+	// General multi-dimensional broadcasting (>2 segments):
+	zi := newTernaryZipIterator(condShape, trueShape, falseShape, tgtShape)
 
 	rank := len(zi.tgtDims)
 	trailingLen := 1
@@ -338,7 +461,6 @@ func execWhereGeneric[T gobackend.SupportedTypesConstraints](conditionBuf, onTru
 
 	trueIsScalar := zi.trueIsScalar
 	falseIsScalar := zi.falseIsScalar
-	_, isFloat32 := any(trueFlat[0]).(float32)
 
 	perAxesIdx := make([]int, rank)
 	for dstIdx := 0; dstIdx < zi.tgtSize; dstIdx += trailingLen {

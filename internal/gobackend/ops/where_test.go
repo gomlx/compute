@@ -128,4 +128,66 @@ func TestWhere(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("TrailingBroadcast5D", func(t *testing.T) {
+		tgtShape := shapes.Make(dtypes.Float32, 2, 4, 5, 7, 64)
+		condShape := shapes.Make(dtypes.Bool, 2, 4, 5, 7, 64)
+		trueShape := shapes.Make(dtypes.Float32, 2, 4, 5, 7, 1)
+		falseShape := tgtShape
+
+		outerSize := 2 * 4 * 5 * 7
+		innerSize := 64
+		n := outerSize * innerSize
+
+		condData := make([]bool, n)
+		for i := range n {
+			condData[i] = (i%5 == 0)
+		}
+		trueData := make([]float32, outerSize)
+		for r := range outerSize {
+			trueData[r] = float32(r + 100)
+		}
+		falseData := make([]float32, n)
+		for i := range n {
+			falseData[i] = float32(-i - 1)
+		}
+
+		builder := backend.Builder("test_where_5d").(*gobackend.Builder)
+		main := builder.Main().(*gobackend.Function)
+		condNode, _ := main.Parameter("cond", condShape, nil)
+		onTrueNode, _ := main.Parameter("onTrue", trueShape, nil)
+		onFalseNode, _ := main.Parameter("onFalse", falseShape, nil)
+		outNode, err := ops.Where(main, condNode, onTrueNode, onFalseNode)
+		if err != nil {
+			t.Fatalf("Where failed: %+v", err)
+		}
+		_ = main.Return([]compute.Value{outNode}, nil)
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %+v", err)
+		}
+		defer exec.Finalize()
+
+		condBuf := makeBuffer(t, condShape, condData)
+		onTrueBuf := makeBuffer(t, trueShape, trueData)
+		onFalseBuf := makeBuffer(t, falseShape, falseData)
+		// Donate onFalseBuf (index 2) to exercise in-place outAliasesFalse path.
+		outputs, err := exec.Execute([]compute.Buffer{condBuf, onTrueBuf, onFalseBuf}, []bool{false, false, true}, 0)
+		if err != nil {
+			t.Fatalf("Execute failed: %+v", err)
+		}
+		outFlat := outputs[0].(*gobackend.Buffer).Flat.([]float32)
+		for r := range outerSize {
+			for c := range innerSize {
+				idx := r*innerSize + c
+				want := float32(-idx - 1)
+				if condData[idx] {
+					want = float32(r + 100)
+				}
+				if outFlat[idx] != want {
+					t.Fatalf("idx=%d (r=%d, c=%d): got %v, want %v", idx, r, c, outFlat[idx], want)
+				}
+			}
+		}
+	})
 }

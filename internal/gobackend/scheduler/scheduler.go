@@ -173,16 +173,43 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 	s.ensureWorkersStarted()
 
 	var nextIdx atomic.Int32
-	var activeHelpers atomic.Int32
+	var unstarted atomic.Int32
 	var wg sync.WaitGroup
 
 	// Number of helper workers to recruit (the caller is 1 worker itself).
 	numHelpers := min(n-1, eff-1)
+	unstarted.Store(int32(numHelpers))
+	wg.Add(numHelpers)
+
+	decrementUnstarted := func() bool {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return false
+			}
+			if unstarted.CompareAndSwap(u, u-1) {
+				return true
+			}
+		}
+	}
+	cancelUnstarted := func() {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return
+			}
+			if unstarted.CompareAndSwap(u, 0) {
+				wg.Add(-int(u))
+				return
+			}
+		}
+	}
+
 	helperFn := func() {
-		defer func() {
-			activeHelpers.Add(-1)
-			wg.Done()
-		}()
+		if !decrementUnstarted() {
+			return
+		}
+		defer wg.Done()
 		for {
 			idx := int(nextIdx.Add(1) - 1)
 			if idx >= n {
@@ -192,15 +219,14 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 		}
 	}
 	for range numHelpers {
-		activeHelpers.Add(1)
-		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
-			// Queue full: skip recruiting more helpers; the caller and already-queued helpers
+			// Queue full: skip recruiting this helper; the caller and already-queued helpers
 			// will drain all tasks via nextIdx.
-			activeHelpers.Add(-1)
-			wg.Done()
+			if decrementUnstarted() {
+				wg.Done()
+			}
 		}
 	}
 
@@ -213,17 +239,7 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 		tasks[idx]()
 	}
 
-	// If any recruited helper is still pending in intraOpQueue (e.g. if background workers
-	// are busy with other concurrent ops), drain queued intra-op helpers before blocking.
-	for activeHelpers.Load() > 0 {
-		select {
-		case task := <-s.intraOpQueue:
-			task()
-		default:
-			goto waitDone
-		}
-	}
-waitDone:
+	cancelUnstarted()
 	wg.Wait()
 }
 
@@ -251,7 +267,7 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	}
 
 	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize
-	numChunks := min(maxChunksBySize, numWorkers)
+	numChunks := min(maxChunksBySize, 2*numWorkers)
 	if numChunks <= 1 {
 		fn(0, totalItems)
 		return
@@ -259,64 +275,75 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 
 	s.ensureWorkersStarted()
 
-	chunkSize := (totalItems + numChunks - 1) / numChunks
-	actualChunks := (totalItems + chunkSize - 1) / chunkSize
-	if actualChunks <= 1 {
-		fn(0, totalItems)
-		return
-	}
-
 	var nextChunk atomic.Int32
-	var activeHelpers atomic.Int32
+	var unstarted atomic.Int32
 	var wg sync.WaitGroup
 
-	numHelpers := min(actualChunks-1, numWorkers-1)
-	helperFn := func() {
-		defer func() {
-			activeHelpers.Add(-1)
-			wg.Done()
-		}()
+	numHelpers := min(numChunks-1, numWorkers-1)
+	unstarted.Store(int32(numHelpers))
+	wg.Add(numHelpers)
+
+	decrementUnstarted := func() bool {
 		for {
-			c := int(nextChunk.Add(1) - 1)
-			if c >= actualChunks {
+			u := unstarted.Load()
+			if u <= 0 {
+				return false
+			}
+			if unstarted.CompareAndSwap(u, u-1) {
+				return true
+			}
+		}
+	}
+	cancelUnstarted := func() {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
 				return
 			}
-			start := c * chunkSize
-			end := min(start+chunkSize, totalItems)
+			if unstarted.CompareAndSwap(u, 0) {
+				wg.Add(-int(u))
+				return
+			}
+		}
+	}
+
+	helperFn := func() {
+		if !decrementUnstarted() {
+			return
+		}
+		defer wg.Done()
+		for {
+			c := int(nextChunk.Add(1) - 1)
+			if c >= numChunks {
+				return
+			}
+			start := (c*totalItems + numChunks - 1) / numChunks
+			end := ((c+1)*totalItems + numChunks - 1) / numChunks
 			fn(start, end)
 		}
 	}
 	for range numHelpers {
-		activeHelpers.Add(1)
-		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
-			activeHelpers.Add(-1)
-			wg.Done()
+			if decrementUnstarted() {
+				wg.Done()
+			}
 		}
 	}
 
 	// Work-helping: caller drains chunks alongside helpers.
 	for {
 		c := int(nextChunk.Add(1) - 1)
-		if c >= actualChunks {
+		if c >= numChunks {
 			break
 		}
-		start := c * chunkSize
-		end := min(start+chunkSize, totalItems)
+		start := (c*totalItems + numChunks - 1) / numChunks
+		end := ((c+1)*totalItems + numChunks - 1) / numChunks
 		fn(start, end)
 	}
 
-	for activeHelpers.Load() > 0 {
-		select {
-		case task := <-s.intraOpQueue:
-			task()
-		default:
-			goto waitDone
-		}
-	}
-waitDone:
+	cancelUnstarted()
 	wg.Wait()
 }
 
@@ -354,32 +381,61 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	s.ensureWorkersStarted()
 
 	var wg sync.WaitGroup
-	var activeHelpers atomic.Int32
+	var unstarted atomic.Int32
 	var doneFanningOut atomic.Bool
 
 	numHelpers := limit - 1
+	unstarted.Store(int32(numHelpers))
+	wg.Add(numHelpers)
+
+	decrementUnstarted := func() bool {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return false
+			}
+			if unstarted.CompareAndSwap(u, u-1) {
+				return true
+			}
+		}
+	}
+	cancelUnstarted := func() {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return
+			}
+			if unstarted.CompareAndSwap(u, 0) {
+				wg.Add(-int(u))
+				return
+			}
+		}
+	}
+
 	helperFn := func() {
-		defer func() {
-			activeHelpers.Add(-1)
-			wg.Done()
-		}()
-		if doneFanningOut.Load() {
+		if doneFanningOut.Load() || !decrementUnstarted() {
 			return
 		}
-		workerFn()
-		doneFanningOut.Store(true)
+		defer wg.Done()
+		if !doneFanningOut.Load() {
+			workerFn()
+			doneFanningOut.Store(true)
+			cancelUnstarted()
+		}
 	}
 	for range numHelpers {
 		if doneFanningOut.Load() {
-			break
+			if decrementUnstarted() {
+				wg.Done()
+			}
+			continue
 		}
-		activeHelpers.Add(1)
-		wg.Add(1)
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
-			activeHelpers.Add(-1)
-			wg.Done()
+			if decrementUnstarted() {
+				wg.Done()
+			}
 		}
 	}
 
@@ -389,15 +445,7 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 		doneFanningOut.Store(true)
 	}
 
-	for activeHelpers.Load() > 0 {
-		select {
-		case task := <-s.intraOpQueue:
-			task()
-		default:
-			goto waitDone
-		}
-	}
-waitDone:
+	cancelUnstarted()
 	wg.Wait()
 }
 
