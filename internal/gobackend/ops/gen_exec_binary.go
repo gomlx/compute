@@ -56,40 +56,40 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execAddNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execAddNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execAddNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execAddNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execAddNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execAddNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execAddNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execAddNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execAddNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAddNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAddNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAddNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAddNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -97,24 +97,57 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execAddNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input + c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input + c
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input + rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input + rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] + rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -124,6 +157,18 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] + rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -133,6 +178,19 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] + c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -143,6 +201,19 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c + rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -153,6 +224,19 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c + rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -163,11 +247,76 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] + c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] + c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] + rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] + rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] + rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] + rhs[rOff+c]
 			}
 		}
 		return
@@ -183,8 +332,9 @@ func execAddNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execAddNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -268,6 +418,32 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -282,8 +458,9 @@ func execAddNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execAddNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -367,6 +544,32 @@ func execAddNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(aF32 + bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -400,40 +603,40 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMulNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMulNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMulNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMulNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMulNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMulNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMulNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMulNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMulNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMulNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMulNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMulNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMulNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -441,24 +644,57 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMulNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input * c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input * c
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input * rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input * rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] * rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -468,6 +704,18 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] * rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -477,6 +725,19 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] * c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -487,6 +748,19 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c * rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -497,6 +771,19 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c * rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -507,11 +794,76 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] * c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] * c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] * rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] * rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] * rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] * rhs[rOff+c]
 			}
 		}
 		return
@@ -527,8 +879,9 @@ func execMulNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMulNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -612,6 +965,32 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -626,8 +1005,9 @@ func execMulNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMulNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -711,6 +1091,32 @@ func execMulNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(aF32 * bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -740,40 +1146,40 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execSubNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execSubNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execSubNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execSubNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execSubNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execSubNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execSubNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execSubNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execSubNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execSubNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execSubNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execSubNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execSubNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -781,12 +1187,24 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execSubNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input - c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input - c
 		}
@@ -794,18 +1212,48 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c - input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c - input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input - rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input - rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] - rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -815,6 +1263,18 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] - rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -824,6 +1284,19 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] - c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -834,6 +1307,19 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c - rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -844,6 +1330,19 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c - rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -854,11 +1353,76 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] - c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] - c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] - rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] - rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] - rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] - rhs[rOff+c]
 			}
 		}
 		return
@@ -874,8 +1438,9 @@ func execSubNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execSubNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -967,6 +1532,32 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -981,8 +1572,9 @@ func execSubNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execSubNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1074,6 +1666,32 @@ func execSubNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(aF32 - bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -1103,40 +1721,40 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execDivNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execDivNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execDivNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execDivNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execDivNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execDivNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execDivNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execDivNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execDivNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execDivNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execDivNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execDivNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execDivNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1144,12 +1762,24 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execDivNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input / c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input / c
 		}
@@ -1157,18 +1787,48 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c / input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c / input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input / rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input / rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] / rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1178,6 +1838,18 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] / rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1187,6 +1859,19 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] / c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -1197,6 +1882,19 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c / rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1207,6 +1905,19 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c / rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1217,11 +1928,76 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] / c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] / c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] / rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] / rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] / rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] / rhs[rOff+c]
 			}
 		}
 		return
@@ -1237,8 +2013,9 @@ func execDivNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execDivNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1330,6 +2107,32 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -1344,8 +2147,9 @@ func execDivNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execDivNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1437,6 +2241,32 @@ func execDivNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(aF32 / bF32)
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -1466,40 +2296,40 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execRemIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execRemIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execRemIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execRemIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execRemIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execRemIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execRemIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execRemIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemIntegerGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execRemFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execRemFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemFloatGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execRemFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemFloatBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execRemFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execRemFloatFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1507,12 +2337,24 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input % c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input % c
 		}
@@ -1520,18 +2362,48 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c % input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c % input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input % rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input % rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] % rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1541,6 +2413,18 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] % rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1550,6 +2434,19 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] % c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -1560,6 +2457,19 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c % rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1570,6 +2480,19 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c % rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1580,11 +2503,76 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] % c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] % c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] % rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] % rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] % rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] % rhs[rOff+c]
 			}
 		}
 		return
@@ -1601,12 +2589,24 @@ func execRemIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 	}
 }
 
-func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execRemFloatGeneric[T gobackend.PODFloatConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Mod(float64(input), float64(c)))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Mod(float64(input), float64(c)))
 		}
@@ -1614,18 +2614,48 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = T(math.Mod(float64(c), float64(input)))
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = T(math.Mod(float64(c), float64(input)))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Mod(float64(input), float64(rhs[ii])))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Mod(float64(input), float64(rhs[ii])))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(lhs[offset+b]), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1635,6 +2665,18 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(lhs[b]), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1644,6 +2686,19 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(lhs[offset+b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -1654,6 +2709,19 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(c), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1664,6 +2732,19 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(c), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -1674,11 +2755,76 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Mod(float64(lhs[b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = T(math.Mod(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = T(math.Mod(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = T(math.Mod(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = T(math.Mod(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = T(math.Mod(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
 			}
 		}
 		return
@@ -1694,8 +2840,9 @@ func execRemFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	}
 }
-func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execRemFloatBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1787,6 +2934,32 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -1801,8 +2974,9 @@ func execRemFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	}
 }
-func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execRemFloatFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -1894,6 +3068,32 @@ func execRemFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(float32(math.Mod(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -1923,40 +3123,40 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execPowIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execPowIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execPowIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execPowIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execPowIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execPowIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execPowIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execPowIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowIntegerGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execPowFloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execPowFloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowFloatGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execPowFloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowFloatBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execPowFloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execPowFloatFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -1964,12 +3164,24 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = execScalarPowIntGeneric(input, c)
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = execScalarPowIntGeneric(input, c)
 		}
@@ -1977,18 +3189,48 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = execScalarPowIntGeneric(c, input)
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = execScalarPowIntGeneric(c, input)
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = execScalarPowIntGeneric(input, rhs[ii])
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = execScalarPowIntGeneric(input, rhs[ii])
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(lhs[offset+b], rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -1998,6 +3240,18 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(lhs[b], rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2007,6 +3261,19 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(lhs[offset+b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -2017,6 +3284,19 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(c, rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2027,6 +3307,19 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(c, rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2037,11 +3330,76 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = execScalarPowIntGeneric(lhs[b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = execScalarPowIntGeneric(lhs[b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = execScalarPowIntGeneric(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = execScalarPowIntGeneric(lhs[lOff+c], rhs[rOff+c])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = execScalarPowIntGeneric(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = execScalarPowIntGeneric(lhs[lOff+c], rhs[rOff+c])
 			}
 		}
 		return
@@ -2058,12 +3416,24 @@ func execPowIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, outp
 	}
 }
 
-func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execPowFloatGeneric[T gobackend.PODFloatConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Pow(float64(input), float64(c)))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Pow(float64(input), float64(c)))
 		}
@@ -2071,18 +3441,48 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = T(math.Pow(float64(c), float64(input)))
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = T(math.Pow(float64(c), float64(input)))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Pow(float64(input), float64(rhs[ii])))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Pow(float64(input), float64(rhs[ii])))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(lhs[offset+b]), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2092,6 +3492,18 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(lhs[b]), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2101,6 +3513,19 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(lhs[offset+b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -2111,6 +3536,19 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(c), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2121,6 +3559,19 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(c), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2131,11 +3582,76 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Pow(float64(lhs[b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = T(math.Pow(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = T(math.Pow(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = T(math.Pow(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = T(math.Pow(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = T(math.Pow(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
 			}
 		}
 		return
@@ -2151,8 +3667,9 @@ func execPowFloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output [
 		return
 	}
 }
-func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execPowFloatBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2244,6 +3761,32 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -2258,8 +3801,9 @@ func execPowFloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat
 		return
 	}
 }
-func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execPowFloatFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2351,6 +3895,32 @@ func execPowFloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(float32(math.Pow(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -2380,16 +3950,16 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Float32:
-		execAtan2FloatGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execAtan2FloatGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execAtan2FloatBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execAtan2FloatFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execAtan2FloatFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2397,12 +3967,24 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	return output, nil
 }
 
-func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output []T,
+func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Atan2(float64(input), float64(c)))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Atan2(float64(input), float64(c)))
 		}
@@ -2410,18 +3992,48 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = T(math.Atan2(float64(c), float64(input)))
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = T(math.Atan2(float64(c), float64(input)))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = T(math.Atan2(float64(input), float64(rhs[ii])))
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = T(math.Atan2(float64(input), float64(rhs[ii])))
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(lhs[offset+b]), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2431,6 +4043,18 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(lhs[b]), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2440,6 +4064,19 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(lhs[offset+b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -2450,6 +4087,19 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(c), float64(rhs[offset+b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2460,6 +4110,19 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(c), float64(rhs[b])))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2470,11 +4133,76 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = T(math.Atan2(float64(lhs[b]), float64(c)))
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = T(math.Atan2(float64(lhs[b]), float64(c)))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = T(math.Atan2(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = T(math.Atan2(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = T(math.Atan2(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = T(math.Atan2(float64(lhs[lOff+c]), float64(rhs[rOff+c])))
 			}
 		}
 		return
@@ -2490,8 +4218,9 @@ func execAtan2FloatGeneric[T gobackend.PODFloatConstraints](lhs, rhs []T, output
 		return
 	}
 }
-func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execAtan2FloatBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2583,6 +4312,32 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -2597,8 +4352,9 @@ func execAtan2FloatBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execAtan2FloatFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2690,6 +4446,32 @@ func execAtan2FloatFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(float32(math.Atan2(float64(aF32), float64(bF32))))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -2723,40 +4505,40 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMaxNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMaxNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMaxNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMaxNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMaxNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMaxNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMaxNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMaxNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMaxNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMaxNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMaxNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMaxNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMaxNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -2764,24 +4546,57 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMaxNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = max(input, c)
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = max(input, c)
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = max(input, rhs[ii])
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = max(input, rhs[ii])
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = max(lhs[offset+b], rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2791,6 +4606,18 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = max(lhs[b], rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -2800,6 +4627,19 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = max(lhs[offset+b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -2810,6 +4650,19 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = max(c, rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2820,6 +4673,19 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = max(c, rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -2830,11 +4696,76 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = max(lhs[b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = max(lhs[b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = max(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = max(lhs[lOff+c], rhs[rOff+c])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = max(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = max(lhs[lOff+c], rhs[rOff+c])
 			}
 		}
 		return
@@ -2850,8 +4781,9 @@ func execMaxNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMaxNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -2935,6 +4867,32 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -2949,8 +4907,9 @@ func execMaxNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMaxNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -3034,6 +4993,32 @@ func execMaxNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(max(aF32, bF32))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -3067,40 +5052,40 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execMinNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execMinNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execMinNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execMinNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execMinNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execMinNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execMinNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execMinNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execMinNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]float32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execMinNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]float64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execMinNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execMinNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execMinNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]float16.Float16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -3108,24 +5093,57 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	return output, nil
 }
 
-func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []T,
+func execMinNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = min(input, c)
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = min(input, c)
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = min(input, rhs[ii])
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = min(input, rhs[ii])
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = min(lhs[offset+b], rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3135,6 +5153,18 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = min(lhs[b], rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3144,6 +5174,19 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = min(lhs[offset+b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3154,6 +5197,19 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = min(c, rhs[offset+b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3164,6 +5220,19 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = min(c, rhs[b])
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3174,11 +5243,76 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = min(lhs[b], c)
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = min(lhs[b], c)
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = min(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = min(lhs[lOff+c], rhs[rOff+c])
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = min(lhs[lOff+c], rhs[rOff+c])
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = min(lhs[lOff+c], rhs[rOff+c])
 			}
 		}
 		return
@@ -3194,8 +5328,9 @@ func execMinNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, outp
 		return
 	}
 }
-func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
+func execMinNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFloat16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -3279,6 +5414,32 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = bfloat16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -3293,8 +5454,9 @@ func execMinNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bfloat16.BFlo
 		return
 	}
 }
-func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
+func execMinNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []float16.Float16,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -3378,6 +5540,32 @@ func execMinNumericFloat16(lhs, rhs []float16.Float16, output []float16.Float16,
 			}
 		}
 		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = float16.FromFloat32(min(aF32, bF32))
+			}
+		}
+		return
 	default:
 		// Case 3: with general broadcasting non-scalar tensors:
 		zipIter := bcastCfg.ZipIter
@@ -3407,28 +5595,28 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseAndIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseAndIntegerGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -3436,12 +5624,24 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input & c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input & c
 		}
@@ -3449,18 +5649,48 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c & input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c & input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input & rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input & rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] & rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3470,6 +5700,18 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] & rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3479,6 +5721,19 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] & c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3489,6 +5744,19 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c & rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3499,6 +5767,19 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c & rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3509,11 +5790,76 @@ func execBitwiseAndIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] & c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] & c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] & rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] & rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] & rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] & rhs[rOff+c]
 			}
 		}
 		return
@@ -3544,28 +5890,28 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseOrIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseOrIntegerGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -3573,12 +5919,24 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	return output, nil
 }
 
-func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input | c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input | c
 		}
@@ -3586,18 +5944,48 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c | input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c | input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input | rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input | rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] | rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3607,6 +5995,18 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] | rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3616,6 +6016,19 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] | c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3626,6 +6039,19 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c | rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3636,6 +6062,19 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c | rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3646,11 +6085,76 @@ func execBitwiseOrIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] | c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] | c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] | rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] | rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] | rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] | rhs[rOff+c]
 			}
 		}
 		return
@@ -3681,28 +6185,28 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]uint8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]uint16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]uint32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]uint64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]int8), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]int16), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]int32), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execBitwiseXorIntegerGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execBitwiseXorIntegerGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]int64), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -3710,12 +6214,24 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []T, output []T,
+func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input ^ c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input ^ c
 		}
@@ -3723,18 +6239,48 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c ^ input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c ^ input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input ^ rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input ^ rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] ^ rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3744,6 +6290,18 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] ^ rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3753,6 +6311,19 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] ^ c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3763,6 +6334,19 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c ^ rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3773,6 +6357,19 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c ^ rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3783,11 +6380,76 @@ func execBitwiseXorIntegerGeneric[T gobackend.PODIntegerConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] ^ c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] ^ c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] ^ rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] ^ rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] ^ rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] ^ rhs[rOff+c]
 			}
 		}
 		return
@@ -3818,7 +6480,7 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalAndBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalAndBooleanGeneric(backend, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -3827,12 +6489,24 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input && c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input && c
 		}
@@ -3840,18 +6514,48 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c && input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c && input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input && rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input && rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] && rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3861,6 +6565,18 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] && rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3870,6 +6586,19 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] && c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3880,6 +6609,19 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c && rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3890,6 +6632,19 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c && rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -3900,11 +6655,76 @@ func execLogicalAndBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] && c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] && c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] && rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] && rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] && rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] && rhs[rOff+c]
 			}
 		}
 		return
@@ -3935,7 +6755,7 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalOrBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalOrBooleanGeneric(backend, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -3944,12 +6764,24 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	return output, nil
 }
 
-func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input || c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input || c
 		}
@@ -3957,18 +6789,48 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c || input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c || input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input || rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input || rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] || rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3978,6 +6840,18 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] || rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -3987,6 +6861,19 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] || c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -3997,6 +6884,19 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c || rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4007,6 +6907,19 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c || rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4017,11 +6930,76 @@ func execLogicalOrBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] || c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] || c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] || rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] || rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] || rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] || rhs[rOff+c]
 			}
 		}
 		return
@@ -4052,7 +7030,7 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	switch lhs.RawShape.DType { //nolint:exhaustive
 	// Boolean:
 	case dtypes.Bool:
-		execLogicalXorBooleanGeneric(lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
+		execLogicalXorBooleanGeneric(backend, lhs.Flat.([]bool), rhs.Flat.([]bool), output.Flat.([]bool),
 			lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
@@ -4061,12 +7039,24 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
-func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []T, output []T,
+func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](backend *gobackend.Backend, lhs, rhs []T, output []T,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input != c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input != c
 		}
@@ -4074,18 +7064,48 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c != input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c != input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input != rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input != rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] != rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4095,6 +7115,18 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] != rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4104,6 +7136,19 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] != c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -4114,6 +7159,19 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c != rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4124,6 +7182,19 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c != rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4134,11 +7205,76 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](lhs, rhs []
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] != c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] != c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] != rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] != rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] != rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] != rhs[rOff+c]
 			}
 		}
 		return
@@ -4178,40 +7314,40 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execEqualNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -4219,24 +7355,57 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	return output, nil
 }
 
-func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execEqualNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input == c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input == c
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input == rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input == rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] == rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4246,6 +7415,18 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] == rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4255,6 +7436,19 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] == c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -4265,6 +7459,19 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c == rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4275,6 +7482,19 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c == rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4285,11 +7505,76 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] == c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] == c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] == rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] == rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] == rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] == rhs[rOff+c]
 			}
 		}
 		return
@@ -4305,8 +7590,9 @@ func execEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, ou
 		return
 	}
 }
-func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execEqualNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -4387,6 +7673,32 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 == bF32
 			}
 		}
 		return
@@ -4404,8 +7716,9 @@ func execEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -4486,6 +7799,32 @@ func execEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 == bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 == bF32
 			}
 		}
 		return
@@ -4527,40 +7866,40 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execNotEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execNotEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execNotEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execNotEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execNotEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execNotEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execNotEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execNotEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execNotEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execNotEqualNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -4568,24 +7907,57 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	return output, nil
 }
 
-func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input != c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input != c
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input != rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input != rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] != rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4595,6 +7967,18 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] != rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4604,6 +7988,19 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] != c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -4614,6 +8011,19 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c != rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4624,6 +8034,19 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c != rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4634,11 +8057,76 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] != c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] != c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] != rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] != rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] != rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] != rhs[rOff+c]
 			}
 		}
 		return
@@ -4654,8 +8142,9 @@ func execNotEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	}
 }
-func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execNotEqualNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -4736,6 +8225,32 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 != bF32
 			}
 		}
 		return
@@ -4753,8 +8268,9 @@ func execNotEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execNotEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -4835,6 +8351,32 @@ func execNotEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 != bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 != bF32
 			}
 		}
 		return
@@ -4872,40 +8414,40 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterOrEqualNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -4913,12 +8455,24 @@ func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs
 	return output, nil
 }
 
-func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input >= c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input >= c
 		}
@@ -4926,18 +8480,48 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c >= input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c >= input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input >= rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input >= rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] >= rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4947,6 +8531,18 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] >= rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -4956,6 +8552,19 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] >= c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -4966,6 +8575,19 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c >= rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4976,6 +8598,19 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c >= rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -4986,11 +8621,76 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] >= c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] >= c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] >= rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] >= rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] >= rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] >= rhs[rOff+c]
 			}
 		}
 		return
@@ -5006,8 +8706,9 @@ func execGreaterOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rh
 		return
 	}
 }
-func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execGreaterOrEqualNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5096,6 +8797,32 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 >= bF32
 			}
 		}
 		return
@@ -5113,8 +8840,9 @@ func execGreaterOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bo
 		return
 	}
 }
-func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execGreaterOrEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5203,6 +8931,32 @@ func execGreaterOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 >= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 >= bF32
 			}
 		}
 		return
@@ -5240,40 +8994,40 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execGreaterThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execGreaterThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execGreaterThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execGreaterThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execGreaterThanNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -5281,12 +9035,24 @@ func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	return output, nil
 }
 
-func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input > c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input > c
 		}
@@ -5294,18 +9060,48 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c > input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c > input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input > rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input > rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] > rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -5315,6 +9111,18 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] > rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -5324,6 +9132,19 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] > c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -5334,6 +9155,19 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c > rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -5344,6 +9178,19 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c > rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -5354,11 +9201,76 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] > c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] > c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] > rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] > rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] > rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] > rhs[rOff+c]
 			}
 		}
 		return
@@ -5374,8 +9286,9 @@ func execGreaterThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	}
 }
-func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execGreaterThanNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5464,6 +9377,32 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 > bF32
 			}
 		}
 		return
@@ -5481,8 +9420,9 @@ func execGreaterThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execGreaterThanNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5571,6 +9511,32 @@ func execGreaterThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 > bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 > bF32
 			}
 		}
 		return
@@ -5608,40 +9574,40 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessOrEqualNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessOrEqualNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessOrEqualNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessOrEqualNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -5649,12 +9615,24 @@ func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	return output, nil
 }
 
-func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input <= c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input <= c
 		}
@@ -5662,18 +9640,48 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c <= input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c <= input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input <= rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input <= rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] <= rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -5683,6 +9691,18 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] <= rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -5692,6 +9712,19 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] <= c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -5702,6 +9735,19 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c <= rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -5712,6 +9758,19 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c <= rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -5722,11 +9781,76 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] <= c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] <= c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] <= rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] <= rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] <= rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] <= rhs[rOff+c]
 			}
 		}
 		return
@@ -5742,8 +9866,9 @@ func execLessOrEqualNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs [
 		return
 	}
 }
-func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execLessOrEqualNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5832,6 +9957,32 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 <= bF32
 			}
 		}
 		return
@@ -5849,8 +10000,9 @@ func execLessOrEqualNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execLessOrEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -5939,6 +10091,32 @@ func execLessOrEqualNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 <= bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 <= bF32
 			}
 		}
 		return
@@ -5976,40 +10154,40 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	switch lhs.RawShape.DType { //nolint:exhaustive
 
 	case dtypes.Uint8:
-		execLessThanNumericGeneric(lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]uint8), rhs.Flat.([]uint8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint16:
-		execLessThanNumericGeneric(lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]uint16), rhs.Flat.([]uint16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint32:
-		execLessThanNumericGeneric(lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]uint32), rhs.Flat.([]uint32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Uint64:
-		execLessThanNumericGeneric(lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]uint64), rhs.Flat.([]uint64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int8:
-		execLessThanNumericGeneric(lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]int8), rhs.Flat.([]int8), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int16:
-		execLessThanNumericGeneric(lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]int16), rhs.Flat.([]int16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int32:
-		execLessThanNumericGeneric(lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]int32), rhs.Flat.([]int32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Int64:
-		execLessThanNumericGeneric(lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]int64), rhs.Flat.([]int64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float32:
-		execLessThanNumericGeneric(lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]float32), rhs.Flat.([]float32), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float64:
-		execLessThanNumericGeneric(lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericGeneric(backend, lhs.Flat.([]float64), rhs.Flat.([]float64), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.BFloat16:
-		execLessThanNumericBFloat16(lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericBFloat16(backend, lhs.Flat.([]bfloat16.BFloat16), rhs.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	case dtypes.Float16:
-		execLessThanNumericFloat16(lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
+		execLessThanNumericFloat16(backend, lhs.Flat.([]float16.Float16), rhs.Flat.([]float16.Float16), output.Flat.([]bool), lhs.RawShape, rhs.RawShape, output.RawShape, bcastCfg) //nolint:errcheck // if nok, it would panic
 
 	default:
 		return nil, errors.Errorf("unsupported data type %s for %s", output.RawShape.DType, node.OpType)
@@ -6017,12 +10195,24 @@ func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	return output, nil
 }
 
-func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T, output []bool,
+func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](backend *gobackend.Backend, lhs, rhs []T, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	totalElements := len(output)
+	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
 	switch {
 	case len(rhs) == 1:
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input < c
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input < c
 		}
@@ -6030,18 +10220,48 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 	case len(lhs) == 1:
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := rhs[ii]
+					output[ii] = c < input
+				}
+			})
+			return
+		}
 		for ii, input := range rhs {
 			output[ii] = c < input
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+				for ii := start; ii < end; ii++ {
+					input := lhs[ii]
+					output[ii] = input < rhs[ii]
+				}
+			})
+			return
+		}
 		for ii, input := range lhs {
 			output[ii] = input < rhs[ii]
 		}
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[offset+b] < rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -6051,6 +10271,18 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					for b := range B {
+						output[offset+b] = lhs[b] < rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			for b := range B {
@@ -6060,6 +10292,19 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[offset+b] < c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
@@ -6070,6 +10315,19 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c < rhs[offset+b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -6080,6 +10338,19 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := lhs[a]
+					for b := range B {
+						output[offset+b] = c < rhs[b]
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := lhs[a]
@@ -6090,11 +10361,76 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
+		if canParallelize && A > 1 {
+			minA := max(1, 65536/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					offset := a * B
+					c := rhs[a]
+					for b := range B {
+						output[offset+b] = lhs[b] < c
+					}
+				}
+			})
+			return
+		}
 		for a := range A {
 			offset := a * B
 			c := rhs[a]
 			for b := range B {
 				output[offset+b] = lhs[b] < c
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := ab * C
+					rOff := a * C
+					for c := range C {
+						output[lOff+c] = lhs[lOff+c] < rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				output[lOff+c] = lhs[lOff+c] < rhs[rOff+c]
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 65536/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					rOff := ab * C
+					for c := range C {
+						output[rOff+c] = lhs[lOff+c] < rhs[rOff+c]
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				output[rOff+c] = lhs[lOff+c] < rhs[rOff+c]
 			}
 		}
 		return
@@ -6110,8 +10446,9 @@ func execLessThanNumericGeneric[T gobackend.PODNumericConstraints](lhs, rhs []T,
 		return
 	}
 }
-func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
+func execLessThanNumericBFloat16(backend *gobackend.Backend, lhs, rhs []bfloat16.BFloat16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -6200,6 +10537,32 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 < bF32
 			}
 		}
 		return
@@ -6217,8 +10580,9 @@ func execLessThanNumericBFloat16(lhs, rhs []bfloat16.BFloat16, output []bool,
 		return
 	}
 }
-func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
+func execLessThanNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Float16, output []bool,
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
+	_ = backend
 	switch {
 	case len(rhs) == 1:
 		// One side (rhs) is a scalar: only iterate over the lhs.
@@ -6307,6 +10671,32 @@ func execLessThanNumericFloat16(lhs, rhs []float16.Float16, output []bool,
 			for b := range B {
 				aF32 := lhs[b].Float32()
 				output[offset+b] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := ab * C
+			rOff := a * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[lOff+c] = aF32 < bF32
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			rOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+				output[rOff+c] = aF32 < bF32
 			}
 		}
 		return

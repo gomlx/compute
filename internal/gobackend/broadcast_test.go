@@ -62,3 +62,55 @@ func TestBroadcastIterator(t *testing.T) {
 		}
 	})
 }
+
+func TestDetermineBroadcastConfig(t *testing.T) {
+	S := func(dims ...int) shapes.Shape {
+		return shapes.Make(dtypes.Float32, dims...)
+	}
+
+	testCases := []struct {
+		name string
+		lhs  shapes.Shape
+		rhs  shapes.Shape
+		tgt  shapes.Shape
+		want BroadcastConfig
+	}{
+		{
+			name: "MidRHS_4D_attention_mask",
+			lhs:  S(2, 10, 378, 378),
+			rhs:  S(2, 1, 378, 378),
+			tgt:  S(2, 10, 378, 378),
+			want: BroadcastConfig{Pattern: BroadcastMidRHS, A: 2, B: 10, C: 378 * 378},
+		},
+		{
+			name: "MidRHS_4D_rope",
+			lhs:  S(2, 405, 10, 64),
+			rhs:  S(2, 405, 1, 64),
+			tgt:  S(2, 405, 10, 64),
+			want: BroadcastConfig{Pattern: BroadcastMidRHS, A: 810, B: 10, C: 64},
+		},
+		{
+			name: "MidLHS_4D",
+			lhs:  S(2, 1, 10, 64),
+			rhs:  S(2, 4, 10, 64),
+			tgt:  S(2, 4, 10, 64),
+			want: BroadcastConfig{Pattern: BroadcastMidLHS, A: 2, B: 4, C: 640},
+		},
+		{
+			name: "LeadingRHS_with_leading_1s_on_both",
+			lhs:  S(1, 64, 1, 32),
+			rhs:  S(1, 1, 1, 32),
+			tgt:  S(1, 64, 1, 32),
+			want: BroadcastConfig{Pattern: BroadcastLeadingRHS, A: 64, B: 32},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DetermineBroadcastConfig(tc.lhs, tc.rhs, tc.tgt)
+			if !got.EqualNodeData(&tc.want) {
+				t.Fatalf("DetermineBroadcastConfig(%s, %s, %s) = %+v, want %+v", tc.lhs, tc.rhs, tc.tgt, got, tc.want)
+			}
+		})
+	}
+}

@@ -207,6 +207,12 @@ const (
 	// BroadcastColRow indicates LHS is collapsed into [1, B] and RHS into [A, 1], producing [A, B].
 	BroadcastColRow
 
+	// BroadcastMidRHS indicates LHS is collapsed into [A, B, C] and RHS into [A, 1, C], producing [A, B, C].
+	BroadcastMidRHS
+
+	// BroadcastMidLHS indicates LHS is collapsed into [A, 1, C] and RHS into [A, B, C], producing [A, B, C].
+	BroadcastMidLHS
+
 	// BroadcastGeneral indicates arbitrary multi-axis broadcasting.
 	BroadcastGeneral
 )
@@ -214,7 +220,7 @@ const (
 // BroadcastConfig contains pre-computed broadcast pattern metadata.
 type BroadcastConfig struct {
 	Pattern BroadcastPattern
-	A, B    int
+	A, B, C int
 	ZipIter *ZipIterator
 }
 
@@ -236,7 +242,7 @@ func (c *BroadcastConfig) EqualNodeData(other NodeDataComparable) bool {
 	if !ok {
 		return false
 	}
-	if c.Pattern != otherC.Pattern || c.A != otherC.A || c.B != otherC.B {
+	if c.Pattern != otherC.Pattern || c.A != otherC.A || c.B != otherC.B || c.C != otherC.C {
 		return false
 	}
 	if c.ZipIter != nil || otherC.ZipIter != nil {
@@ -280,225 +286,89 @@ func DetermineBroadcastConfig(lhsShape, rhsShape, tgtShape shapes.Shape) Broadca
 		}
 	}
 
-	// 1. Check BroadcastLeadingRHS: rhs has leading 1s, matching suffix.
-	kLeadingRHS := -1
+	const (
+		modeMatch uint8 = iota + 1
+		modeBcastRHS
+		modeBcastLHS
+	)
+	var segModes [4]uint8
+	var segLens [4]int
+	numSegs := 0
+
 	for axis := range rank {
-		if rhsShape.Dimensions[axis] > 1 {
-			kLeadingRHS = axis
-			break
+		tDim := tgtShape.Dimensions[axis]
+		if tDim == 0 {
+			return BroadcastConfig{Pattern: BroadcastNone}
 		}
-	}
-	if kLeadingRHS > 0 {
-		isMatch := true
-		for axis := range kLeadingRHS {
-			if rhsShape.Dimensions[axis] != 1 || lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-				isMatch = false
-				break
-			}
+		if tDim == 1 {
+			// Neutral axis (both lhs and rhs have dimension 1): skip so it merges into surrounding segments.
+			continue
 		}
-		if isMatch {
-			for axis := kLeadingRHS; axis < rank; axis++ {
-				if rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-					isMatch = false
-					break
-				}
-			}
-		}
-		if isMatch {
-			a := 1
-			for axis := range kLeadingRHS {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := kLeadingRHS; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 1 && b > 0 {
-				return BroadcastConfig{Pattern: BroadcastLeadingRHS, A: a, B: b}
+		lDim := lhsShape.Dimensions[axis]
+		rDim := rhsShape.Dimensions[axis]
+		var m uint8
+		switch {
+		case lDim == tDim && rDim == tDim:
+			m = modeMatch
+		case lDim == tDim && rDim == 1:
+			m = modeBcastRHS
+		case lDim == 1 && rDim == tDim:
+			m = modeBcastLHS
+		default:
+			return BroadcastConfig{
+				Pattern: BroadcastGeneral,
+				ZipIter: NewZippedBroadcastIterator(lhsShape, rhsShape, tgtShape),
 			}
 		}
-	}
-
-	// 2. Check BroadcastLeadingLHS: lhs has leading 1s, matching suffix.
-	kLeadingLHS := -1
-	for axis := range rank {
-		if lhsShape.Dimensions[axis] > 1 {
-			kLeadingLHS = axis
-			break
-		}
-	}
-	if kLeadingLHS > 0 {
-		isMatch := true
-		for axis := range kLeadingLHS {
-			if lhsShape.Dimensions[axis] != 1 || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-				isMatch = false
-				break
-			}
-		}
-		if isMatch {
-			for axis := kLeadingLHS; axis < rank; axis++ {
-				if lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-					isMatch = false
-					break
-				}
-			}
-		}
-		if isMatch {
-			a := 1
-			for axis := range kLeadingLHS {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := kLeadingLHS; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 1 && b > 0 {
-				return BroadcastConfig{Pattern: BroadcastLeadingLHS, A: a, B: b}
+		if numSegs > 0 && segModes[numSegs-1] == m {
+			segLens[numSegs-1] *= tDim
+		} else if numSegs < len(segModes) {
+			segModes[numSegs] = m
+			segLens[numSegs] = tDim
+			numSegs++
+		} else {
+			return BroadcastConfig{
+				Pattern: BroadcastGeneral,
+				ZipIter: NewZippedBroadcastIterator(lhsShape, rhsShape, tgtShape),
 			}
 		}
 	}
 
-	// 3. Check BroadcastTrailingRHS: rhs has trailing 1s, matching prefix.
-	kTrailingRHS := -1
-	for axis := rank - 1; axis >= 0; axis-- {
-		if rhsShape.Dimensions[axis] > 1 {
-			kTrailingRHS = axis
-			break
+	switch numSegs {
+	case 0:
+		return BroadcastConfig{Pattern: BroadcastNone}
+	case 1:
+		switch segModes[0] {
+		case modeMatch:
+			return BroadcastConfig{Pattern: BroadcastNone}
+		case modeBcastRHS:
+			return BroadcastConfig{Pattern: BroadcastScalarRHS}
+		case modeBcastLHS:
+			return BroadcastConfig{Pattern: BroadcastScalarLHS}
 		}
-	}
-	if kTrailingRHS >= 0 && kTrailingRHS < rank-1 {
-		split := kTrailingRHS + 1
-		isMatch := true
-		for axis := range split {
-			if lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-				isMatch = false
-				break
-			}
+	case 2:
+		a, b := segLens[0], segLens[1]
+		switch {
+		case segModes[0] == modeBcastRHS && segModes[1] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastLeadingRHS, A: a, B: b}
+		case segModes[0] == modeBcastLHS && segModes[1] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastLeadingLHS, A: a, B: b}
+		case segModes[0] == modeMatch && segModes[1] == modeBcastRHS:
+			return BroadcastConfig{Pattern: BroadcastTrailingRHS, A: a, B: b}
+		case segModes[0] == modeMatch && segModes[1] == modeBcastLHS:
+			return BroadcastConfig{Pattern: BroadcastTrailingLHS, A: a, B: b}
+		case segModes[0] == modeBcastRHS && segModes[1] == modeBcastLHS:
+			return BroadcastConfig{Pattern: BroadcastRowCol, A: a, B: b}
+		case segModes[0] == modeBcastLHS && segModes[1] == modeBcastRHS:
+			return BroadcastConfig{Pattern: BroadcastColRow, A: a, B: b}
 		}
-		if isMatch {
-			for axis := split; axis < rank; axis++ {
-				if rhsShape.Dimensions[axis] != 1 || lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-					isMatch = false
-					break
-				}
-			}
-		}
-		if isMatch {
-			a := 1
-			for axis := range split {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := split; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 0 && b > 1 {
-				return BroadcastConfig{Pattern: BroadcastTrailingRHS, A: a, B: b}
-			}
-		}
-	}
-
-	// 4. Check BroadcastTrailingLHS: lhs has trailing 1s, matching prefix.
-	kTrailingLHS := -1
-	for axis := rank - 1; axis >= 0; axis-- {
-		if lhsShape.Dimensions[axis] > 1 {
-			kTrailingLHS = axis
-			break
-		}
-	}
-	if kTrailingLHS >= 0 && kTrailingLHS < rank-1 {
-		split := kTrailingLHS + 1
-		isMatch := true
-		for axis := range split {
-			if lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-				isMatch = false
-				break
-			}
-		}
-		if isMatch {
-			for axis := split; axis < rank; axis++ {
-				if lhsShape.Dimensions[axis] != 1 || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-					isMatch = false
-					break
-				}
-			}
-		}
-		if isMatch {
-			a := 1
-			for axis := range split {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := split; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 0 && b > 1 {
-				return BroadcastConfig{Pattern: BroadcastTrailingLHS, A: a, B: b}
-			}
-		}
-	}
-
-	// 5. Check BroadcastRowCol: LHS is [A, 1] and RHS is [1, B], producing [A, B].
-	for split := 1; split < rank; split++ {
-		isRowCol := true
-		for axis := range split {
-			if lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || rhsShape.Dimensions[axis] != 1 {
-				isRowCol = false
-				break
-			}
-		}
-		if isRowCol {
-			for axis := split; axis < rank; axis++ {
-				if lhsShape.Dimensions[axis] != 1 || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-					isRowCol = false
-					break
-				}
-			}
-		}
-		if isRowCol {
-			a := 1
-			for axis := range split {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := split; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 1 && b > 1 {
-				return BroadcastConfig{Pattern: BroadcastRowCol, A: a, B: b}
-			}
-		}
-	}
-
-	// 6. Check BroadcastColRow: LHS is [1, B] and RHS is [A, 1], producing [A, B].
-	for split := 1; split < rank; split++ {
-		isColRow := true
-		for axis := range split {
-			if lhsShape.Dimensions[axis] != 1 || rhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] {
-				isColRow = false
-				break
-			}
-		}
-		if isColRow {
-			for axis := split; axis < rank; axis++ {
-				if lhsShape.Dimensions[axis] != tgtShape.Dimensions[axis] || rhsShape.Dimensions[axis] != 1 {
-					isColRow = false
-					break
-				}
-			}
-		}
-		if isColRow {
-			a := 1
-			for axis := range split {
-				a *= tgtShape.Dimensions[axis]
-			}
-			b := 1
-			for axis := split; axis < rank; axis++ {
-				b *= tgtShape.Dimensions[axis]
-			}
-			if a > 1 && b > 1 {
-				return BroadcastConfig{Pattern: BroadcastColRow, A: a, B: b}
-			}
+	case 3:
+		a, b, c := segLens[0], segLens[1], segLens[2]
+		switch {
+		case segModes[0] == modeMatch && segModes[1] == modeBcastRHS && segModes[2] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastMidRHS, A: a, B: b, C: c}
+		case segModes[0] == modeMatch && segModes[1] == modeBcastLHS && segModes[2] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastMidLHS, A: a, B: b, C: c}
 		}
 	}
 
