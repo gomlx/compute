@@ -1592,7 +1592,10 @@ func simdMinVSFloat16(lhs []float16.Float16, c float16.Float16, out []float16.Fl
 	}
 }
 
-const minBinarySIMDParallelElements = 65536
+const (
+	minBinarySIMDParallelElements = 65536
+	binarySIMDChunkElements       = 32768
+)
 
 func dispatchBinarySIMD[T any](
 	backend *gobackend.Backend,
@@ -1612,7 +1615,7 @@ func dispatchBinarySIMD[T any](
 	case len(rhs) == 1:
 		c := rhs[0]
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, minBinarySIMDParallelElements, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
 				vs(lhs[start:end], c, output[start:end])
 			})
 		} else {
@@ -1621,7 +1624,7 @@ func dispatchBinarySIMD[T any](
 	case len(lhs) == 1:
 		c := lhs[0]
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, minBinarySIMDParallelElements, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
 				sv(c, rhs[start:end], output[start:end])
 			})
 		} else {
@@ -1629,7 +1632,7 @@ func dispatchBinarySIMD[T any](
 		}
 	case bcastCfg.Pattern == gobackend.BroadcastNone:
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, minBinarySIMDParallelElements, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, binarySIMDChunkElements, func(start, end int) {
 				vv(lhs[start:end], rhs[start:end], output[start:end])
 			})
 		} else {
@@ -1638,7 +1641,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				off := aStart * B
 				count := aEnd - aStart
@@ -1662,7 +1665,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				off := aStart * B
 				count := aEnd - aStart
@@ -1686,7 +1689,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -1702,7 +1705,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -1718,7 +1721,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -1734,7 +1737,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, B))
+			minA := max(1, binarySIMDChunkElements/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -1751,7 +1754,7 @@ func dispatchBinarySIMD[T any](
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		bc := B * C
 		if canParallelize && A >= 8 && bc <= 4096 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, bc))
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					lOff := a * bc
@@ -1768,7 +1771,7 @@ func dispatchBinarySIMD[T any](
 			})
 		} else if canParallelize && A*B > 1 {
 			abTotal := A * B
-			minAB := max(1, minBinarySIMDParallelElements/max(1, C))
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
 				for ab := abStart; ab < abEnd; ab++ {
 					a := ab / B
@@ -1795,7 +1798,7 @@ func dispatchBinarySIMD[T any](
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		bc := B * C
 		if canParallelize && A >= 8 && bc <= 4096 {
-			minA := max(1, minBinarySIMDParallelElements/max(1, bc))
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					lOff := a * C
@@ -1812,7 +1815,7 @@ func dispatchBinarySIMD[T any](
 			})
 		} else if canParallelize && A*B > 1 {
 			abTotal := A * B
-			minAB := max(1, minBinarySIMDParallelElements/max(1, C))
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
 				for ab := abStart; ab < abEnd; ab++ {
 					a := ab / B

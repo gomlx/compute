@@ -48,13 +48,23 @@ func FusedSoftmax(f *gobackend.Function, x compute.Value, axis int) (compute.Val
 // execFusedSoftmax implements optimized softmax with better cache locality.
 // Three passes over the axis: find max, compute exp(x-max) and sum, then normalize.
 // Float32 uses fastmath.Exp32; float64 uses math.Exp.
-func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedSoftmax)
 	axis := data.axis
 	input := inputs[0]
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
+	var output *gobackend.Buffer
+	var err error
+	if len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+		output = input
+		inputs[0] = nil
+	} else {
+		output, err = backend.GetBuffer(node.Shape)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if backend.NoOps {
+		return output, nil
 	}
 
 	switch input.RawShape.DType {

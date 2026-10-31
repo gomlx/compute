@@ -48,18 +48,25 @@ func FusedActivation(f *gobackend.Function, x compute.Value, cfg compute.Activat
 	return node, nil
 }
 
-func execFusedActivation(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+func execFusedActivation(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedActivation)
 	input := inputs[0]
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
+	act := data.cfg.Type
+	var output *gobackend.Buffer
+	var err error
+	if act != compute.ActivationSwiGLU && len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+		output = input
+		inputs[0] = nil
+	} else {
+		output, err = backend.GetBuffer(node.Shape)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if backend.NoOps {
 		return output, nil
 	}
 
-	act := data.cfg.Type
 	if act == compute.ActivationSwiGLU {
 		rank := input.RawShape.Rank()
 		lastDim := input.RawShape.Dimensions[rank-1]

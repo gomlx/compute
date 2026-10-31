@@ -108,25 +108,36 @@ func execNeg(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	if err != nil {
 		return nil, err
 	}
-	switch input.RawShape.DType {
-	case dtypes.Int8:
-		execNegGeneric(input.Flat.([]int8), output.Flat.([]int8))
-	case dtypes.Int16:
-		execNegGeneric(input.Flat.([]int16), output.Flat.([]int16))
-	case dtypes.Int32:
-		execNegGeneric(input.Flat.([]int32), output.Flat.([]int32))
-	case dtypes.Int64:
-		execNegGeneric(input.Flat.([]int64), output.Flat.([]int64))
-	case dtypes.Float32:
-		execNegGeneric(input.Flat.([]float32), output.Flat.([]float32))
-	case dtypes.Float64:
-		execNegGeneric(input.Flat.([]float64), output.Flat.([]float64))
-	case dtypes.BFloat16:
-		execNegHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
-	case dtypes.Float16:
-		execNegHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
-	default:
-		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+	if backend.NoOps {
+		return output, nil
+	}
+	n := input.RawShape.Size()
+	runRange := func(start, end int) {
+		switch input.RawShape.DType {
+		case dtypes.Int8:
+			execNegGeneric(input.Flat.([]int8)[start:end], output.Flat.([]int8)[start:end])
+		case dtypes.Int16:
+			execNegGeneric(input.Flat.([]int16)[start:end], output.Flat.([]int16)[start:end])
+		case dtypes.Int32:
+			execNegGeneric(input.Flat.([]int32)[start:end], output.Flat.([]int32)[start:end])
+		case dtypes.Int64:
+			execNegGeneric(input.Flat.([]int64)[start:end], output.Flat.([]int64)[start:end])
+		case dtypes.Float32:
+			execNegGeneric(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end])
+		case dtypes.Float64:
+			execNegGeneric(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end])
+		case dtypes.BFloat16:
+			execNegHalfPrecision(input.Flat.([]bfloat16.BFloat16)[start:end], output.Flat.([]bfloat16.BFloat16)[start:end])
+		case dtypes.Float16:
+			execNegHalfPrecision(input.Flat.([]float16.Float16)[start:end], output.Flat.([]float16.Float16)[start:end])
+		default:
+			exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
+		}
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 65536 {
+		backend.Scheduler.ParallelizeChunks(n, 32768, runRange)
+	} else {
+		runRange(0, n)
 	}
 	return output, nil
 }

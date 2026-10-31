@@ -158,7 +158,7 @@ var sliceDTypeMap = gobackend.NewDTypeMap("Slice")
 
 const (
 	minParallelSliceElements      = 64 * 1024
-	minParallelSliceChunkElements = 16 * 1024
+	minParallelSliceChunkElements = 32 * 1024
 )
 
 // execSliceGeneric implements the actual slice data copying. It is called via sliceDTypeMap.Dispatch.
@@ -249,6 +249,24 @@ func execSliceGeneric[T gobackend.SupportedTypesConstraints](backend *gobackend.
 	if numOuter == 1 {
 		count := outerDims[0]
 		step := outerSteps[0]
+		if canParallelize && count < 8 && blockSize >= minParallelSliceElements {
+			// Few large blocks (e.g., [2, 405, 10, 64] -> [2, 378, 10, 64] with count=2, blockSize=241920):
+			// split each block into sub-chunks so all workers can participate.
+			subChunksPerBlock := (blockSize + minParallelSliceChunkElements - 1) / minParallelSliceChunkElements
+			totalSubChunks := count * subChunksPerBlock
+			backend.Scheduler.ParallelizeChunks(totalSubChunks, 1, func(startSub, endSub int) {
+				for sc := startSub; sc < endSub; sc++ {
+					b := sc / subChunksPerBlock
+					sub := sc % subChunksPerBlock
+					subStart := sub * minParallelSliceChunkElements
+					subLen := min(minParallelSliceChunkElements, blockSize-subStart)
+					srcIdx := baseOffset + b*step + subStart
+					dstIdx := b*blockSize + subStart
+					copy(outputFlat[dstIdx:dstIdx+subLen], operandFlat[srcIdx:srcIdx+subLen])
+				}
+			})
+			return
+		}
 		runRange := func(start, end int) {
 			srcIdx := baseOffset + start*step
 			if blockSize == 1 {

@@ -144,7 +144,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 		// Case 1: One side (rhs) is a scalar: only iterate over the lhs.
 		c := rhs[0]
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, 32768, func(start, end int) {
 				for ii := start; ii < end; ii++ {
 					input := lhs[ii]
 					output[ii] = {{ CallOp .Format "input" "c" }}
@@ -161,7 +161,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 		// Case 1b: One side (lhs) is a scalar: only iterate over the rhs.
 		c := lhs[0]
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, 32768, func(start, end int) {
 				for ii := start; ii < end; ii++ {
 					input := rhs[ii]
 					output[ii] = {{ CallOp .Format "c" "input" }}
@@ -177,7 +177,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastNone || lhsShape.Equal(rhsShape):
 		// Case 2: Exact same shapes, no broadcasting.
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(totalElements, 65536, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalElements, 32768, func(start, end int) {
 				for ii := start; ii < end; ii++ {
 					input := lhs[ii]
 					output[ii] = {{ CallOp .Format "input" "rhs[ii]" }}
@@ -192,7 +192,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -213,7 +213,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastLeadingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -234,7 +234,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingRHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -257,7 +257,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastTrailingLHS:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -280,7 +280,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastRowCol:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -303,7 +303,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 	case bcastCfg.Pattern == gobackend.BroadcastColRow:
 		A, B := bcastCfg.A, bcastCfg.B
 		if canParallelize && A > 1 {
-			minA := max(1, 65536/max(1, B))
+			minA := max(1, 32768/max(1, B))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
 					offset := a * B
@@ -327,7 +327,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		abTotal := A * B
 		if canParallelize && abTotal > 1 {
-			minAB := max(1, 65536/max(1, C))
+			minAB := max(1, 32768/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
 				for ab := abStart; ab < abEnd; ab++ {
 					a := ab / B
@@ -353,7 +353,7 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		abTotal := A * B
 		if canParallelize && abTotal > 1 {
-			minAB := max(1, 65536/max(1, C))
+			minAB := max(1, 32768/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
 				for ab := abStart; ab < abEnd; ab++ {
 					a := ab / B

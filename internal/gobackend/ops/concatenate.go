@@ -98,41 +98,55 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	// This is the stride needed to jump from one outer block to the next in the output.
 	outputConcatAxisStrideBytes := outputShape.Dimensions[axis] * innerBlockBytes
 
-	// Current offset in bytes along the concatenation axis *within* an outer block in the output buffer.
-	// This accumulates as we process each input tensor.
-	outputAxisOffsetBytes := 0
+	type inputInfo struct {
+		bytes      []byte
+		blockBytes int
+		outOffset  int
+	}
+	var stackInfos [8]inputInfo
+	var infos []inputInfo
+	if len(inputs) <= len(stackInfos) {
+		infos = stackInfos[:len(inputs)]
+	} else {
+		infos = make([]inputInfo, len(inputs))
+	}
 
-	for _, inputBuf := range inputs {
-		inputShape := inputBuf.RawShape
-		inputDims := inputShape.Dimensions
-		inputBytes, err := inputBuf.MutableBytes() // Use mutableBytes() for input
+	outputAxisOffsetBytes := 0
+	for i, inputBuf := range inputs {
+		inputBytes, err := inputBuf.MutableBytes()
 		if err != nil {
 			return nil, err
 		}
-
-		// Size of the concatenation axis for this specific input.
-		inputConcatAxisSize := inputDims[axis]
-
-		// Total size in bytes to copy from this input *per outer block*.
-		inputBlockBytes := inputConcatAxisSize * innerBlockBytes
-
-		// Iterate through all outer dimension blocks.
-		for outerIdx := range outerBlockSize {
-			// Calculate the starting byte position for the current outer block in the input.
-			// This is simply the outer block index times the size of the block to copy for this input.
-			inputStartOffset := outerIdx * inputBlockBytes
-
-			// Calculate the starting byte position for the current outer block in the output.
-			// This is the outer block index times the total output stride along the concat axis,
-			// plus the accumulated offset from previous inputs along the concat axis.
-			outputStartOffset := outerIdx*outputConcatAxisStrideBytes + outputAxisOffsetBytes
-
-			// Copy the relevant block of bytes for the current outer block.
-			copy(outputBytes[outputStartOffset:outputStartOffset+inputBlockBytes], inputBytes[inputStartOffset:inputStartOffset+inputBlockBytes])
+		inputBlockBytes := inputBuf.RawShape.Dimensions[axis] * innerBlockBytes
+		infos[i] = inputInfo{
+			bytes:      inputBytes,
+			blockBytes: inputBlockBytes,
+			outOffset:  outputAxisOffsetBytes,
 		}
-
-		// Update the offset for the next input along the concatenation axis.
 		outputAxisOffsetBytes += inputBlockBytes
+	}
+
+	copyOuterRange := func(startOuter, endOuter int) {
+		for outerIdx := startOuter; outerIdx < endOuter; outerIdx++ {
+			outBase := outerIdx * outputConcatAxisStrideBytes
+			for _, info := range infos {
+				if info.blockBytes == 0 {
+					continue
+				}
+				inStart := outerIdx * info.blockBytes
+				outStart := outBase + info.outOffset
+				copy(outputBytes[outStart:outStart+info.blockBytes], info.bytes[inStart:inStart+info.blockBytes])
+			}
+		}
+	}
+
+	totalElements := outputShape.Size()
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalElements >= 65536 && outerBlockSize > 1 {
+		elementsPerOuter := max(1, totalElements/outerBlockSize)
+		minOuterChunk := max(1, 32768/elementsPerOuter)
+		backend.Scheduler.ParallelizeChunks(outerBlockSize, minOuterChunk, copyOuterRange)
+	} else {
+		copyOuterRange(0, outerBlockSize)
 	}
 
 	return output, nil

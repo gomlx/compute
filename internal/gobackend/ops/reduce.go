@@ -357,10 +357,11 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 
 	var it *ReduceOutputIterator
 	if (node.OpType == compute.OpTypeReduceSum || node.OpType == compute.OpTypeReduceMax || node.OpType == compute.OpTypeReduceMin) && cfg.Pattern != ReduceGeneral {
-		it = &ReduceOutputIterator{Config: cfg}
+		it = &ReduceOutputIterator{Config: cfg, Backend: backend}
 	} else {
 		it = NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
 		it.Config = cfg
+		it.Backend = backend
 	}
 	dtype := output.RawShape.DType
 
@@ -428,7 +429,8 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 // for the corresponding flat index on the input operand, assuming the operand flat index is moving
 // incrementally.
 type ReduceOutputIterator struct {
-	Config ReduceConfig
+	Config  ReduceConfig
+	Backend *gobackend.Backend
 
 	flatIdx int // On the output tensor.
 
@@ -558,14 +560,21 @@ func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			}
 			return nil
 		}
-		for a := range A {
-			offset := a * B
-			row := operandFlat[offset : offset+B]
-			m := row[0]
-			for _, v := range row[1:] {
-				m = max(m, v)
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				offset := a * B
+				row := operandFlat[offset : offset+B]
+				m := row[0]
+				for _, v := range row[1:] {
+					m = max(m, v)
+				}
+				outputFlat[a] = m
 			}
-			outputFlat[a] = m
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/B), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
@@ -597,18 +606,25 @@ func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			}
 			return nil
 		}
-		for a := range A {
-			outOffset := a * C
-			outSlice := outputFlat[outOffset : outOffset+C]
-			inOffset0 := a * B * C
-			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
-			for b := 1; b < B; b++ {
-				inOffset := inOffset0 + b*C
-				inSlice := operandFlat[inOffset : inOffset+C]
-				for c, v := range inSlice {
-					outSlice[c] = max(outSlice[c], v)
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outOffset := a * C
+				outSlice := outputFlat[outOffset : outOffset+C]
+				inOffset0 := a * B * C
+				copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+				for b := 1; b < B; b++ {
+					inOffset := inOffset0 + b*C
+					inSlice := operandFlat[inOffset : inOffset+C]
+					for c, v := range inSlice {
+						outSlice[c] = max(outSlice[c], v)
+					}
 				}
 			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/(B*C)), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
@@ -835,14 +851,21 @@ func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			}
 			return nil
 		}
-		for a := range A {
-			offset := a * B
-			row := operandFlat[offset : offset+B]
-			m := row[0]
-			for _, v := range row[1:] {
-				m = min(m, v)
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				offset := a * B
+				row := operandFlat[offset : offset+B]
+				m := row[0]
+				for _, v := range row[1:] {
+					m = min(m, v)
+				}
+				outputFlat[a] = m
 			}
-			outputFlat[a] = m
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/B), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
@@ -874,18 +897,25 @@ func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			}
 			return nil
 		}
-		for a := range A {
-			outOffset := a * C
-			outSlice := outputFlat[outOffset : outOffset+C]
-			inOffset0 := a * B * C
-			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
-			for b := 1; b < B; b++ {
-				inOffset := inOffset0 + b*C
-				inSlice := operandFlat[inOffset : inOffset+C]
-				for c, v := range inSlice {
-					outSlice[c] = min(outSlice[c], v)
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outOffset := a * C
+				outSlice := outputFlat[outOffset : outOffset+C]
+				inOffset0 := a * B * C
+				copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+				for b := 1; b < B; b++ {
+					inOffset := inOffset0 + b*C
+					inSlice := operandFlat[inOffset : inOffset+C]
+					for c, v := range inSlice {
+						outSlice[c] = min(outSlice[c], v)
+					}
 				}
 			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/(B*C)), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
@@ -1092,9 +1122,17 @@ func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *go
 
 	switch it.Config.Pattern {
 	case ReduceAll:
-		var sum T
-		for _, v := range operandFlat {
-			sum += v
+		var s0, s1, s2, s3 T
+		i := 0
+		for ; i+4 <= len(operandFlat); i += 4 {
+			s0 += operandFlat[i]
+			s1 += operandFlat[i+1]
+			s2 += operandFlat[i+2]
+			s3 += operandFlat[i+3]
+		}
+		sum := (s0 + s1) + (s2 + s3)
+		for ; i < len(operandFlat); i++ {
+			sum += operandFlat[i]
 		}
 		outputFlat[0] = sum
 		return nil
@@ -1105,14 +1143,29 @@ func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			clear(outputFlat)
 			return nil
 		}
-		for a := range A {
-			offset := a * B
-			row := operandFlat[offset : offset+B]
-			var sum T
-			for _, v := range row {
-				sum += v
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				offset := a * B
+				row := operandFlat[offset : offset+B]
+				var s0, s1, s2, s3 T
+				i := 0
+				for ; i+4 <= B; i += 4 {
+					s0 += row[i]
+					s1 += row[i+1]
+					s2 += row[i+2]
+					s3 += row[i+3]
+				}
+				sum := (s0 + s1) + (s2 + s3)
+				for ; i < B; i++ {
+					sum += row[i]
+				}
+				outputFlat[a] = sum
 			}
-			outputFlat[a] = sum
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/B), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
@@ -1138,18 +1191,25 @@ func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *go
 			clear(outputFlat)
 			return nil
 		}
-		for a := range A {
-			outOffset := a * C
-			outSlice := outputFlat[outOffset : outOffset+C]
-			inOffset0 := a * B * C
-			copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
-			for b := 1; b < B; b++ {
-				inOffset := inOffset0 + b*C
-				inSlice := operandFlat[inOffset : inOffset+C]
-				for c, v := range inSlice {
-					outSlice[c] += v
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outOffset := a * C
+				outSlice := outputFlat[outOffset : outOffset+C]
+				inOffset0 := a * B * C
+				copy(outSlice, operandFlat[inOffset0 : inOffset0+C])
+				for b := 1; b < B; b++ {
+					inOffset := inOffset0 + b*C
+					inSlice := operandFlat[inOffset : inOffset+C]
+					for c, v := range inSlice {
+						outSlice[c] += v
+					}
 				}
 			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/(B*C)), runA)
+		} else {
+			runA(0, A)
 		}
 		return nil
 
