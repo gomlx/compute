@@ -50,17 +50,85 @@ func init() {
 
 // ExecuteTranspose transposes operand into output given permutations, using fast paths if available.
 func ExecuteTranspose(backend *gobackend.Backend, operand, output *gobackend.Buffer, permutations []int) {
-	if dispatchFastTranspose(backend, operand, output, permutations) {
+	dims := operand.RawShape.Dimensions
+	if len(dims) == 0 || operand.RawShape.Size() == 0 {
 		return
 	}
-	it := NewTransposeIterator(operand.RawShape, permutations)
+	sDims, sPerm := simplifyTranspose(dims, permutations)
+	if dispatchFastTranspose(backend, operand, output, sDims, sPerm) {
+		return
+	}
 	dtype := output.RawShape.DType
+	it := NewTransposeIterator(shapes.Make(dtype, sDims...), sPerm)
 	tmpAny, tmpErr := TransposeDTypeMap.Get(dtype)
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
 	transposeFn := tmpAny.(func(operand, output *gobackend.Buffer, it *TransposeIterator))
 	transposeFn(operand, output, it)
+}
+
+// simplifyTranspose canonicalizes a transpose operation by:
+//  1. Dropping axes of dimension 1.
+//  2. Merging any pair of axes (a, a+1) that are adjacent in both the input and output layout
+//     (i.e. where sPerm[i+1] == sPerm[i] + 1).
+func simplifyTranspose(dims, permutations []int) (sDims, sPerm []int) {
+	rank := len(dims)
+	var dimsBuf, permBuf, remapBuf [8]int
+	if rank <= 8 {
+		sDims = dimsBuf[:0]
+		sPerm = permBuf[:0]
+	} else {
+		sDims = make([]int, 0, rank)
+		sPerm = make([]int, 0, rank)
+	}
+
+	// Step 1: Drop size-1 axes and remap remaining axis indices.
+	remap := remapBuf[:rank]
+	if rank > 8 {
+		remap = make([]int, rank)
+	}
+	for a, d := range dims {
+		if d > 1 {
+			remap[a] = len(sDims)
+			sDims = append(sDims, d)
+		} else {
+			remap[a] = -1
+		}
+	}
+	for _, p := range permutations {
+		if r := remap[p]; r >= 0 {
+			sPerm = append(sPerm, r)
+		}
+	}
+
+	// Step 2: Repeatedly merge consecutive axes where sPerm[i+1] == sPerm[i] + 1.
+	for {
+		merged := false
+		for i := 0; i < len(sPerm)-1; i++ {
+			if sPerm[i+1] == sPerm[i]+1 {
+				a := sPerm[i]
+				sDims[a] *= sDims[a+1]
+				copy(sDims[a+1:], sDims[a+2:])
+				sDims = sDims[:len(sDims)-1]
+
+				copy(sPerm[i+1:], sPerm[i+2:])
+				sPerm = sPerm[:len(sPerm)-1]
+
+				for j := range sPerm {
+					if sPerm[j] > a {
+						sPerm[j]--
+					}
+				}
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			break
+		}
+	}
+	return sDims, sPerm
 }
 
 // execTranspose implements Transpose.
@@ -91,19 +159,25 @@ func isIdentityPermutation(permutations []int) bool {
 	return true
 }
 
-func dispatchFastTranspose(backend *gobackend.Backend, operand, output *gobackend.Buffer, permutations []int) bool {
-	dims := operand.RawShape.Dimensions
+func dispatchFastTranspose(backend *gobackend.Backend, operand, output *gobackend.Buffer, dims, permutations []int) bool {
 	rank := len(dims)
-	if rank == 0 || operand.RawShape.Size() == 0 {
-		return true
-	}
 
-	// Case 0: Identity permutation
-	if isIdentityPermutation(permutations) {
+	// Case 0: Identity permutation (collapses to rank <= 1 after simplifyTranspose)
+	if rank <= 1 || isIdentityPermutation(permutations) {
 		return dispatchIdentity(operand, output)
 	}
 
-	// Case 1: 4D permutation [0, 2, 1, 3] or 3D [1, 0, 2] (multi-head attention transpose)
+	// Case 1: 2D transpose [1, 0]
+	if rank == 2 && permutations[0] == 1 && permutations[1] == 0 {
+		return dispatchTranspose2D(backend, operand, output, dims[0], dims[1])
+	}
+
+	// Case 2: 3D batched matrix transpose [0, 2, 1] ([B, H, W] -> [B, W, H])
+	if rank == 3 && permutations[0] == 0 && permutations[1] == 2 && permutations[2] == 1 {
+		return dispatchTranspose3D_021(backend, operand, output, dims[0], dims[1], dims[2])
+	}
+
+	// Case 3: 4D permutation [0, 2, 1, 3] or 3D [1, 0, 2] (multi-head attention transpose)
 	if (rank == 4 && permutations[0] == 0 && permutations[1] == 2 && permutations[2] == 1 && permutations[3] == 3) ||
 		(rank == 3 && permutations[0] == 1 && permutations[1] == 0 && permutations[2] == 2) {
 		var bDim, sDim, hDim, dDim int
@@ -115,12 +189,12 @@ func dispatchFastTranspose(backend *gobackend.Backend, operand, output *gobacken
 		return dispatchTranspose4D_0213(backend, operand, output, bDim, sDim, hDim, dDim)
 	}
 
-	// Case 2: 2D transpose [1, 0]
-	if rank == 2 && permutations[0] == 1 && permutations[1] == 0 {
-		return dispatchTranspose2D(backend, operand, output, dims[0], dims[1])
+	// Case 4: 4D permutation [1, 0, 3, 2] ([D0, D1, H, W] -> [D1, D0, W, H], e.g. collapsed 5D [2, 0, 1, 4, 3])
+	if rank == 4 && permutations[0] == 1 && permutations[1] == 0 && permutations[2] == 3 && permutations[3] == 2 {
+		return dispatchTranspose4D_1032(backend, operand, output, dims[0], dims[1], dims[2], dims[3])
 	}
 
-	// Case 3: Any rank where trailing dimension is preserved (permutations[rank-1] == rank-1)
+	// Case 5: Any rank where trailing dimension is preserved (permutations[rank-1] == rank-1)
 	if rank > 2 && permutations[rank-1] == rank-1 {
 		return dispatchTransposeTrailing(backend, operand, output, dims, permutations)
 	}
@@ -297,15 +371,142 @@ func transpose2D[T any](backend *gobackend.Backend, in, out []T, H, W int) {
 			}
 		})
 	} else {
-		for r0 := 0; r0 < H; r0 += tileSize {
-			rLimit := min(r0+tileSize, H)
-			for c0 := 0; c0 < W; c0 += tileSize {
-				cLimit := min(c0+tileSize, W)
-				for r := r0; r < rLimit; r++ {
-					for c := c0; c < cLimit; c++ {
-						out[c*H+r] = in[r*W+c]
-					}
+		transposeSlice2D(in, out, H, W)
+	}
+}
+
+func transposeSlice2D[T any](in, out []T, H, W int) {
+	if H*W <= 1024 {
+		for r := range H {
+			inRow := in[r*W : (r+1)*W]
+			for c, v := range inRow {
+				out[c*H+r] = v
+			}
+		}
+		return
+	}
+	const tileSize = 32
+	for r0 := 0; r0 < H; r0 += tileSize {
+		rLimit := min(r0+tileSize, H)
+		for c0 := 0; c0 < W; c0 += tileSize {
+			cLimit := min(c0+tileSize, W)
+			for r := r0; r < rLimit; r++ {
+				for c := c0; c < cLimit; c++ {
+					out[c*H+r] = in[r*W+c]
 				}
+			}
+		}
+	}
+}
+
+func dispatchTranspose3D_021(backend *gobackend.Backend, operand, output *gobackend.Buffer, B, H, W int) bool {
+	switch in := operand.Flat.(type) {
+	case []float32:
+		transpose3D_021(backend, in, output.Flat.([]float32), B, H, W)
+	case []float64:
+		transpose3D_021(backend, in, output.Flat.([]float64), B, H, W)
+	case []bfloat16.BFloat16:
+		transpose3D_021(backend, in, output.Flat.([]bfloat16.BFloat16), B, H, W)
+	case []float16.Float16:
+		transpose3D_021(backend, in, output.Flat.([]float16.Float16), B, H, W)
+	case []int32:
+		transpose3D_021(backend, in, output.Flat.([]int32), B, H, W)
+	case []int64:
+		transpose3D_021(backend, in, output.Flat.([]int64), B, H, W)
+	case []int16:
+		transpose3D_021(backend, in, output.Flat.([]int16), B, H, W)
+	case []int8:
+		transpose3D_021(backend, in, output.Flat.([]int8), B, H, W)
+	case []uint32:
+		transpose3D_021(backend, in, output.Flat.([]uint32), B, H, W)
+	case []uint64:
+		transpose3D_021(backend, in, output.Flat.([]uint64), B, H, W)
+	case []uint16:
+		transpose3D_021(backend, in, output.Flat.([]uint16), B, H, W)
+	case []uint8:
+		transpose3D_021(backend, in, output.Flat.([]uint8), B, H, W)
+	case []bool:
+		transpose3D_021(backend, in, output.Flat.([]bool), B, H, W)
+	default:
+		return false
+	}
+	return true
+}
+
+func transpose3D_021[T any](backend *gobackend.Backend, in, out []T, B, H, W int) {
+	hw := H * W
+	totalElements := B * hw
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && B > 1 && totalElements > 32768 {
+		minB := max(1, 32768/max(1, hw))
+		backend.Scheduler.ParallelizeChunks(B, minB, func(bStart, bEnd int) {
+			for b := bStart; b < bEnd; b++ {
+				off := b * hw
+				transposeSlice2D(in[off:off+hw], out[off:off+hw], H, W)
+			}
+		})
+	} else {
+		for b := range B {
+			off := b * hw
+			transposeSlice2D(in[off:off+hw], out[off:off+hw], H, W)
+		}
+	}
+}
+
+func dispatchTranspose4D_1032(backend *gobackend.Backend, operand, output *gobackend.Buffer, d0Dim, d1Dim, H, W int) bool {
+	switch in := operand.Flat.(type) {
+	case []float32:
+		transpose4D_1032(backend, in, output.Flat.([]float32), d0Dim, d1Dim, H, W)
+	case []float64:
+		transpose4D_1032(backend, in, output.Flat.([]float64), d0Dim, d1Dim, H, W)
+	case []bfloat16.BFloat16:
+		transpose4D_1032(backend, in, output.Flat.([]bfloat16.BFloat16), d0Dim, d1Dim, H, W)
+	case []float16.Float16:
+		transpose4D_1032(backend, in, output.Flat.([]float16.Float16), d0Dim, d1Dim, H, W)
+	case []int32:
+		transpose4D_1032(backend, in, output.Flat.([]int32), d0Dim, d1Dim, H, W)
+	case []int64:
+		transpose4D_1032(backend, in, output.Flat.([]int64), d0Dim, d1Dim, H, W)
+	case []int16:
+		transpose4D_1032(backend, in, output.Flat.([]int16), d0Dim, d1Dim, H, W)
+	case []int8:
+		transpose4D_1032(backend, in, output.Flat.([]int8), d0Dim, d1Dim, H, W)
+	case []uint32:
+		transpose4D_1032(backend, in, output.Flat.([]uint32), d0Dim, d1Dim, H, W)
+	case []uint64:
+		transpose4D_1032(backend, in, output.Flat.([]uint64), d0Dim, d1Dim, H, W)
+	case []uint16:
+		transpose4D_1032(backend, in, output.Flat.([]uint16), d0Dim, d1Dim, H, W)
+	case []uint8:
+		transpose4D_1032(backend, in, output.Flat.([]uint8), d0Dim, d1Dim, H, W)
+	case []bool:
+		transpose4D_1032(backend, in, output.Flat.([]bool), d0Dim, d1Dim, H, W)
+	default:
+		return false
+	}
+	return true
+}
+
+func transpose4D_1032[T any](backend *gobackend.Backend, in, out []T, d0Dim, d1Dim, H, W int) {
+	hw := H * W
+	totalOuter := d1Dim * d0Dim
+	totalElements := totalOuter * hw
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter > 1 && totalElements > 32768 {
+		minOuter := max(1, 32768/max(1, hw))
+		backend.Scheduler.ParallelizeChunks(totalOuter, minOuter, func(start, end int) {
+			for outer := start; outer < end; outer++ {
+				d1 := outer / d0Dim
+				d0 := outer % d0Dim
+				inOff := (d0*d1Dim + d1) * hw
+				outOff := outer * hw
+				transposeSlice2D(in[inOff:inOff+hw], out[outOff:outOff+hw], H, W)
+			}
+		})
+	} else {
+		for d1 := range d1Dim {
+			for d0 := range d0Dim {
+				inOff := (d0*d1Dim + d1) * hw
+				outOff := (d1*d0Dim + d0) * hw
+				transposeSlice2D(in[inOff:inOff+hw], out[outOff:outOff+hw], H, W)
 			}
 		}
 	}
