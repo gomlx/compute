@@ -148,46 +148,176 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	if tmpErr != nil {
 		panic(tmpErr)
 	}
-	fn := tmpAny.(func(operand, output *gobackend.Buffer, params *sliceNode)) //nolint:errcheck
-	fn(operand, output, sliceParams)
+	fn := tmpAny.(func(backend *gobackend.Backend, operand, output *gobackend.Buffer, params *sliceNode)) //nolint:errcheck
+	fn(backend, operand, output, sliceParams)
 	return output, nil
 }
 
 //gobackend:dtypemap execSliceGeneric ints,uints,floats,half,bool
 var sliceDTypeMap = gobackend.NewDTypeMap("Slice")
 
+const (
+	minParallelSliceElements      = 64 * 1024
+	minParallelSliceChunkElements = 16 * 1024
+)
+
 // execSliceGeneric implements the actual slice data copying. It is called via sliceDTypeMap.Dispatch.
-// It iterates through the output buffer coordinates, calculates the corresponding coordinate
-// in the operand buffer using starts and strides, and copies the value.
-func execSliceGeneric[T gobackend.SupportedTypesConstraints](operand, output *gobackend.Buffer, params *sliceNode) {
-	rank := operand.RawShape.Rank()
+// It collapses contiguous trailing dimensions with stride == 1 into block copies and merges
+// contiguous outer dimensions, parallelizing across chunks for large slices.
+func execSliceGeneric[T gobackend.SupportedTypesConstraints](backend *gobackend.Backend, operand, output *gobackend.Buffer, params *sliceNode) {
 	outputFlat := output.Flat.([]T)
+	if len(outputFlat) == 0 {
+		return
+	}
 	operandFlat := operand.Flat.([]T)
-
-	outputDimensions := output.RawShape.Dimensions
-	operandFlatStrides := operand.RawShape.Strides()
-	outputAxisIdxs := make([]int, rank)
-
-	// Find operandFlatIdx start value.
-	var operandFlatIdx int
-	for axis, start := range params.starts {
-		operandFlatIdx += start * operandFlatStrides[axis]
+	rank := operand.RawShape.Rank()
+	if rank == 0 {
+		outputFlat[0] = operandFlat[0]
+		return
 	}
 
-	for outputFlatIdx := 0; outputFlatIdx < len(outputFlat); outputFlatIdx++ {
-		// Copy value at current position.
-		outputFlat[outputFlatIdx] = operandFlat[operandFlatIdx]
+	operandDimensions := operand.RawShape.Dimensions
+	outputDimensions := output.RawShape.Dimensions
+	operandFlatStrides := operand.RawShape.Strides()
 
-		// Iterate to the next position.
-		for axis := rank - 1; axis >= 0; axis-- {
-			outputAxisIdxs[axis]++
-			if outputAxisIdxs[axis] < outputDimensions[axis] {
-				operandFlatIdx += params.strides[axis] * operandFlatStrides[axis]
-				break
-			}
-			// Reset axis
-			operandFlatIdx -= (outputDimensions[axis] - 1) * params.strides[axis] * operandFlatStrides[axis]
-			outputAxisIdxs[axis] = 0
+	// Find operandFlatIdx start value.
+	var baseOffset int
+	for axis, start := range params.starts {
+		baseOffset += start * operandFlatStrides[axis]
+	}
+
+	// Collapse trailing axes that are contiguous (stride == 1) into a single block copy size.
+	blockSize := 1
+	outerRank := rank
+	for outerRank > 0 {
+		axis := outerRank - 1
+		if params.strides[axis] != 1 {
+			break
 		}
+		blockSize *= outputDimensions[axis]
+		outerRank--
+		if params.starts[axis] != 0 || outputDimensions[axis] != operandDimensions[axis] {
+			break
+		}
+	}
+
+	// Build collapsed outer dimensions and operand steps, dropping size-1 axes and
+	// merging adjacent axes where step[prev] == dim[curr] * step[curr].
+	var dimsBuf, stepsBuf [8]int
+	var outerDims, outerSteps []int
+	if outerRank <= len(dimsBuf) {
+		outerDims = dimsBuf[:0]
+		outerSteps = stepsBuf[:0]
+	} else {
+		outerDims = make([]int, 0, outerRank)
+		outerSteps = make([]int, 0, outerRank)
+	}
+	for axis := range outerRank {
+		dim := outputDimensions[axis]
+		if dim <= 1 {
+			continue
+		}
+		step := params.strides[axis] * operandFlatStrides[axis]
+		n := len(outerDims)
+		if n > 0 && outerSteps[n-1] == dim*step {
+			outerDims[n-1] *= dim
+			outerSteps[n-1] = step
+		} else {
+			outerDims = append(outerDims, dim)
+			outerSteps = append(outerSteps, step)
+		}
+	}
+
+	numOuter := len(outerDims)
+	canParallelize := len(outputFlat) >= minParallelSliceElements &&
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
+	// Fast path 0: entire output is a single contiguous block in the operand.
+	if numOuter == 0 {
+		src := operandFlat[baseOffset : baseOffset+blockSize]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(blockSize, minParallelSliceChunkElements, func(start, end int) {
+				copy(outputFlat[start:end], src[start:end])
+			})
+		} else {
+			copy(outputFlat, src)
+		}
+		return
+	}
+
+	// Fast path 1: single outer dimension of contiguous blocks (covers most 2D/3D/4D slices).
+	if numOuter == 1 {
+		count := outerDims[0]
+		step := outerSteps[0]
+		runRange := func(start, end int) {
+			srcIdx := baseOffset + start*step
+			if blockSize == 1 {
+				for b := start; b < end; b++ {
+					outputFlat[b] = operandFlat[srcIdx]
+					srcIdx += step
+				}
+			} else {
+				dstIdx := start * blockSize
+				for b := start; b < end; b++ {
+					copy(outputFlat[dstIdx:dstIdx+blockSize], operandFlat[srcIdx:srcIdx+blockSize])
+					dstIdx += blockSize
+					srcIdx += step
+				}
+			}
+		}
+		if canParallelize {
+			minBlocks := max(1, (minParallelSliceChunkElements+blockSize-1)/blockSize)
+			backend.Scheduler.ParallelizeChunks(count, minBlocks, runRange)
+		} else {
+			runRange(0, count)
+		}
+		return
+	}
+
+	// General path: N-D outer coordinates over contiguous inner blocks of size blockSize.
+	totalBlocks := len(outputFlat) / blockSize
+	runBlocks := func(startBlock, endBlock int) {
+		var coordsBuf [8]int
+		var coords []int
+		if numOuter <= len(coordsBuf) {
+			coords = coordsBuf[:numOuter]
+		} else {
+			coords = make([]int, numOuter)
+		}
+		rem := startBlock
+		srcIdx := baseOffset
+		for axis := numOuter - 1; axis >= 0; axis-- {
+			d := outerDims[axis]
+			c := rem % d
+			rem /= d
+			coords[axis] = c
+			srcIdx += c * outerSteps[axis]
+		}
+
+		dstIdx := startBlock * blockSize
+		for b := startBlock; b < endBlock; b++ {
+			if blockSize == 1 {
+				outputFlat[dstIdx] = operandFlat[srcIdx]
+			} else {
+				copy(outputFlat[dstIdx:dstIdx+blockSize], operandFlat[srcIdx:srcIdx+blockSize])
+			}
+			dstIdx += blockSize
+
+			for axis := numOuter - 1; axis >= 0; axis-- {
+				coords[axis]++
+				if coords[axis] < outerDims[axis] {
+					srcIdx += outerSteps[axis]
+					break
+				}
+				srcIdx -= (outerDims[axis] - 1) * outerSteps[axis]
+				coords[axis] = 0
+			}
+		}
+	}
+	if canParallelize {
+		minBlocks := max(1, (minParallelSliceChunkElements+blockSize-1)/blockSize)
+		backend.Scheduler.ParallelizeChunks(totalBlocks, minBlocks, runBlocks)
+	} else {
+		runBlocks(0, totalBlocks)
 	}
 }
