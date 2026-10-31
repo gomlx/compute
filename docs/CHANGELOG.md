@@ -1,5 +1,7 @@
 - 2026-10-31:
   - Added `CumMax` backend operator to `StandardOps` (with `OpTypeCumMax`, `shapeinference.CumMax`, Go backend implementation in `internal/gobackend/ops/cummax.go`, and compliance tests in `support/backendtest`), reusing `CumSumOptions` (`Exclusive` and `Reverse`).
+  - Replaced `workerspool` with a hierarchical 3-level parallel scheduler (`internal/gobackend/scheduler`, documented in `docs/GoBackendScheduler.md`) featuring inter-call, intra-op, and inter-op priority queues, persistent workers, deadlock-free work-helping, dynamic graph execution (`OpsExecutionDynamic`), and $2 \times W$ proportional chunking (#44, #45, #47).
+  - Instrumented and optimized Go backend operations for cache-friendly intra-op parallelization (`ParallelizeChunks` / `SaturateUpTo`), including `DotGeneral` (`matmul` 2D split & LHS panel caching), `Slice`, `Transpose`, binary/comparison ops (with 3-part `BroadcastMidRHS`/`BroadcastMidLHS`), unary ops, `Where`, `Concatenate`, `Reduce` (`ReduceSum`/`ReduceMax`/`ReduceMin`), `ReduceWindow`, `ConvGeneral`, `Gather`, `QuantizedDense`, `FusedLayerNorm`, `FusedSoftmax`, `FusedDense` epilogues, and activations (with adaptive `activations.KernelMetadata`) (#45, #46, #47).
 
 - 2026-10-14:
   - Documented `compute.Executable.Finalize()` lifecycle contract: callers must ensure no executions (`Execute()`) are in-flight before calling `Finalize()` to avoid undefined behavior/crashes, or alternatively leave cleanup to the GC or coordinate via higher-level objects (`graph.Exec` / `model.Exec`).
