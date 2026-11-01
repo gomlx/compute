@@ -37,7 +37,11 @@ func avx512RouterFloat64( //alt:f64
 
 	// Check if small matrix multiplication kernel can be used.
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
-	useSmallVariant := !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || flops < matmul.SmallMatMulSizeThreshold)
+	hasPackedCache := nodeData != nil && (nodeData.LHSConstantData.CachedForm() != nil || nodeData.RHSConstantData.CachedForm() != nil)
+	mustUseLarge := (lhs == nil && nodeData != nil && nodeData.LHSConstantData != nil) ||
+		(rhs == nil && nodeData != nil && nodeData.RHSConstantData != nil)
+	forcePack := nodeData != nil && (nodeData.LHSConstantData.ForceCache() || nodeData.RHSConstantData.ForceCache())
+	useSmallVariant := !mustUseLarge && !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || (!hasPackedCache && !forcePack && flops < matmul.SmallMatMulSizeThreshold))
 	if klog.V(1).Enabled() {
 		variant := "large (avx512)"
 		if useSmallVariant {

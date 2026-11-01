@@ -58,6 +58,12 @@ type Capabilities struct {
 	// When true, libraries like onnx-gomlx should use graph.Const() instead of
 	// Variable.ValueGraph() for model weights.
 	PreferConstantsForVariables bool
+
+	// SharedConstants indicates that constant Values created with Function.Constant
+	// can be reused across multiple Functions and Builders created on the same Backend.
+	// When true, model variables converted to constants (e.g., when donating a model.Store
+	// for inference) can be cached as a compute.Value and shared across graph recompilations.
+	SharedConstants bool
 }
 
 // Clone makes a deep copy of the Capabilities.

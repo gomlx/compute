@@ -42,6 +42,10 @@ type FunctionExecutable struct {
 	// MaxInputs is the maximum number of inputs any node has.
 	MaxInputs int
 
+	// skipIfCachedConstant optionally maps intermediate constant-subgraph node indices to a
+	// *ConstantData. Once its CachedForm() is populated, executing the intermediate node can be skipped.
+	skipIfCachedConstant []*ConstantData
+
 	// ExecutionBuffersPool allows reuse of execution buffers.
 	ExecutionBuffersPool sync.Pool
 }
@@ -87,6 +91,10 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 	// Recursively count uses for each node starting from outputs.
 	for _, output := range f.Outputs {
 		fe.countNodeUsesAndDependents(output)
+	}
+
+	if err := fe.setupConstantSubgraphCaching(); err != nil {
+		return nil, err
 	}
 
 	// Initialize execution buffers pool
@@ -609,8 +617,18 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	// Handle constants specially
 	if node.OpType == compute.OpTypeConstant {
 		execBuf.owned[nodeIdx] = false
-		execBuf.results[nodeIdx] = node.Data.(*Buffer)
+		execBuf.results[nodeIdx] = node.Data.(*ConstantData).Buffer()
 		return nil
+	}
+
+	// Skip intermediate nodes in a constant transformation sub-graph once their downstream
+	// cached constant form has been populated.
+	if fe.skipIfCachedConstant != nil {
+		if cd := fe.skipIfCachedConstant[nodeIdx]; cd != nil && cd.CachedForm() != nil {
+			execBuf.owned[nodeIdx] = false
+			execBuf.results[nodeIdx] = nil
+			return nil
+		}
 	}
 
 	// Note: OpTypeParameter and OpTypeCapturedValue nodes have their results
@@ -637,6 +655,10 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		inputIdx := input.Index
 		inputBuffers[i] = execBuf.results[inputIdx]
 		if inputBuffers[i] == nil {
+			if cacher, ok := node.Data.(ConstantCacheNodeData); ok && cacher.IsInputCached(i) {
+				inputsOwned[i] = false
+				continue
+			}
 			return errors.Errorf("input %d for node %s not computed yet", i, node.OpType)
 		}
 		if !inputBuffers[i].InUse {
@@ -811,23 +833,25 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 				i, node.OpType)
 		}
 		newCount := execBuf.numUsed[inputIdx].Add(1) // Mark this input as used.
-		if int(newCount) == fe.NumUses[inputIdx] && execBuf.owned[inputIdx] {
-			// Check if it is reused as one of the outputs -- common for in-place operations, like in exec_binary.go.
-			// The contract is that if the input is reused, the operator must set the input buffer to nil in the input slice.
-			// If we find the input buffer reused as an output but it is not nil here, it is a bug in the operator implementation.
-			if node.IsMultiOutputs() {
-				for outIdx, outputNode := range node.MultiOutputsNodes {
-					if execBuf.results[outputNode.Index] == inputBuffers[i] {
-						return errors.Errorf("op %s (output %d) reused input %d as output but didn't set input to nil in buffer slice", node.OpType, outIdx, i)
+		if int(newCount) == fe.NumUses[inputIdx] {
+			if execBuf.owned[inputIdx] {
+				// Check if it is reused as one of the outputs -- common for in-place operations, like in exec_binary.go.
+				// The contract is that if the input is reused, the operator must set the input buffer to nil in the input slice.
+				// If we find the input buffer reused as an output but it is not nil here, it is a bug in the operator implementation.
+				if node.IsMultiOutputs() {
+					for outIdx, outputNode := range node.MultiOutputsNodes {
+						if execBuf.results[outputNode.Index] == inputBuffers[i] {
+							return errors.Errorf("op %s (output %d) reused input %d as output but didn't set input to nil in buffer slice", node.OpType, outIdx, i)
+						}
 					}
+				} else if execBuf.results[nodeIdx] == inputBuffers[i] {
+					return errors.Errorf("op %s reused input %d as output but didn't set input to nil in buffer slice",
+						node.OpType, i)
 				}
-			} else if execBuf.results[nodeIdx] == inputBuffers[i] {
-				return errors.Errorf("op %s reused input %d as output but didn't set input to nil in buffer slice",
-					node.OpType, i)
-			}
 
-			// Release the input buffer - all users have finished.
-			backend.PutBuffer(inputBuffers[i])
+				// Release the input buffer - all users have finished.
+				backend.PutBuffer(inputBuffers[i])
+			}
 			execBuf.results[inputIdx] = nil
 		}
 	}

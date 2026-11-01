@@ -41,6 +41,30 @@ func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool 
 		d.contractingSize == o.contractingSize
 }
 
+// Compile-time check that *nodeFusedDense implements gobackend.ConstantCacheNodeData.
+var _ gobackend.ConstantCacheNodeData = (*nodeFusedDense)(nil)
+
+func (d *nodeFusedDense) CacheSignature(inputIdx int) string {
+	if d == nil || (inputIdx != 0 && inputIdx != 1) {
+		return ""
+	}
+	return d.dotNodeData.CacheSignature(inputIdx)
+}
+
+func (d *nodeFusedDense) BindConstantData(inputIdx int, cd *gobackend.ConstantData) {
+	if d == nil || (inputIdx != 0 && inputIdx != 1) {
+		return
+	}
+	d.dotNodeData.BindConstantData(inputIdx, cd)
+}
+
+func (d *nodeFusedDense) IsInputCached(inputIdx int) bool {
+	if d == nil || (inputIdx != 0 && inputIdx != 1) {
+		return false
+	}
+	return d.dotNodeData.IsInputCached(inputIdx)
+}
+
 // Recompute implements gobackend.RecomputableNodeData for nodeFusedDense.
 func (d *nodeFusedDense) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
 	resolvedX := resolvedNodes[originalNode.Inputs[0].Index].Shape
@@ -110,7 +134,13 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	rhsCrossSize := wNode.Shape.Size() / inFeatures
 	contractingSize := inFeatures
 
+	dotOutDType := outShape.DType
+	if wNode.Shape.DType.IsHalfPrecision() {
+		dotOutDType = dtypes.Float32
+	}
 	dotNodeData := &dot.NodeData{
+		InputDType:      wNode.Shape.DType,
+		OutputDType:     dotOutDType,
 		Layout:          layout,
 		BatchSize:       1,
 		LHSCrossSize:    lhsCrossSize,
@@ -118,10 +148,10 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 		ContractingSize: contractingSize,
 	}
 	if xNode.IsConstant() {
-		dotNodeData.PackedLHSCache = &dot.PackedMatrixCache{}
+		dotNodeData.LHSConstantData = gobackend.NewAnonymousConstantData()
 	}
 	if wNode.IsConstant() {
-		dotNodeData.PackedRHSCache = &dot.PackedMatrixCache{}
+		dotNodeData.RHSConstantData = gobackend.NewAnonymousConstantData()
 	}
 
 	data := &nodeFusedDense{
@@ -160,8 +190,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 
 	switch output.RawShape.DType {
 	case dtypes.Float32:
-		xFlat := x.Flat.([]float32)
-		wFlat := weight.Flat.([]float32)
+		var xFlat, wFlat []float32
+		if x != nil && x.Flat != nil {
+			xFlat = x.Flat.([]float32)
+		}
+		if weight != nil && weight.Flat != nil {
+			wFlat = weight.Flat.([]float32)
+		}
 		outFlat := output.Flat.([]float32)
 
 		var biasFlat []float32
@@ -196,8 +231,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 	case dtypes.Float64:
-		xFlat := x.Flat.([]float64)
-		wFlat := weight.Flat.([]float64)
+		var xFlat, wFlat []float64
+		if x != nil && x.Flat != nil {
+			xFlat = x.Flat.([]float64)
+		}
+		if weight != nil && weight.Flat != nil {
+			wFlat = weight.Flat.([]float64)
+		}
 		outFlat := output.Flat.([]float64)
 
 		var biasFlat []float64
@@ -232,8 +272,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 	case dtypes.BFloat16:
-		xFlat := x.Flat.([]bfloat16.BFloat16)
-		wFlat := weight.Flat.([]bfloat16.BFloat16)
+		var xFlat, wFlat []bfloat16.BFloat16
+		if x != nil && x.Flat != nil {
+			xFlat = x.Flat.([]bfloat16.BFloat16)
+		}
+		if weight != nil && weight.Flat != nil {
+			wFlat = weight.Flat.([]bfloat16.BFloat16)
+		}
 		outBF16 := output.Flat.([]bfloat16.BFloat16)
 
 		// Matmul for BFloat16 accumulates into Float32.
@@ -282,8 +327,13 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 	case dtypes.Float16:
-		xFlat := x.Flat.([]float16.Float16)
-		wFlat := weight.Flat.([]float16.Float16)
+		var xFlat, wFlat []float16.Float16
+		if x != nil && x.Flat != nil {
+			xFlat = x.Flat.([]float16.Float16)
+		}
+		if weight != nil && weight.Flat != nil {
+			wFlat = weight.Flat.([]float16.Float16)
+		}
 		outF16 := output.Flat.([]float16.Float16)
 
 		tmpF32 := make([]float32, output.RawShape.Size())

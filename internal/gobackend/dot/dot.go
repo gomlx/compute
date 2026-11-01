@@ -22,6 +22,7 @@
 package dot
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/gomlx/compute"
@@ -54,11 +55,11 @@ type NodeData struct {
 	// implementation for current layout.
 	implementation *ImplementationRegistration
 
-	// PackedLHSCache and PackedRHSCache store pre-packed panel representations
+	// LHSConstantData and RHSConstantData store the ConstantData (and its opaque cachedForm of packed panels)
 	// for LHS and RHS matrices when they are constant. They are non-nil if and only if
 	// the corresponding matrix input is constant and eligible for panel caching.
-	PackedLHSCache *PackedMatrixCache
-	PackedRHSCache *PackedMatrixCache
+	LHSConstantData *gobackend.ConstantData
+	RHSConstantData *gobackend.ConstantData
 }
 
 // SetSizes computes and sets the internal sizes (BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize)
@@ -68,6 +69,9 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 	d.BatchSize = 1
 	for i := range numBatchAxes {
 		dim := lhsShape.Dimensions[d.LHSBatchAxes[i]]
+		if dim == shapes.DynamicDim && i < len(d.RHSBatchAxes) {
+			dim = rhsShape.Dimensions[d.RHSBatchAxes[i]]
+		}
 		if dim == shapes.DynamicDim {
 			d.BatchSize = shapes.DynamicDim
 			break
@@ -76,8 +80,11 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 	}
 
 	d.ContractingSize = 1
-	for _, axis := range d.LHSContractingAxes {
+	for i, axis := range d.LHSContractingAxes {
 		dim := lhsShape.Dimensions[axis]
+		if dim == shapes.DynamicDim && i < len(d.RHSContractingAxes) {
+			dim = rhsShape.Dimensions[d.RHSContractingAxes[i]]
+		}
 		if dim == shapes.DynamicDim {
 			d.ContractingSize = shapes.DynamicDim
 			break
@@ -133,8 +140,8 @@ func (d *NodeData) EqualNodeData(other gobackend.NodeDataComparable) bool {
 		d.LHSCrossSize != o.LHSCrossSize ||
 		d.RHSCrossSize != o.RHSCrossSize ||
 		d.ContractingSize != o.ContractingSize ||
-		(d.PackedLHSCache != nil) != (o.PackedLHSCache != nil) ||
-		(d.PackedRHSCache != nil) != (o.PackedRHSCache != nil) {
+		(d.LHSConstantData != nil) != (o.LHSConstantData != nil) ||
+		(d.RHSConstantData != nil) != (o.RHSConstantData != nil) {
 		return false
 	}
 	return slices.Equal(d.LHSContractingAxes, o.LHSContractingAxes) &&
@@ -154,8 +161,8 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 		LHSBatchAxes:       slices.Clone(d.LHSBatchAxes),
 		RHSContractingAxes: slices.Clone(d.RHSContractingAxes),
 		RHSBatchAxes:       slices.Clone(d.RHSBatchAxes),
-		PackedLHSCache:     d.PackedLHSCache,
-		PackedRHSCache:     d.PackedRHSCache,
+		LHSConstantData:    d.LHSConstantData,
+		RHSConstantData:    d.RHSConstantData,
 	}
 
 	// Get resolved (concrete) input shapes.
@@ -173,6 +180,58 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 	}
 
 	return newData, nil
+}
+
+// Compile-time check that *NodeData implements gobackend.ConstantCacheNodeData.
+var _ gobackend.ConstantCacheNodeData = (*NodeData)(nil)
+
+// CacheSignature implements gobackend.ConstantCacheNodeData.
+func (d *NodeData) CacheSignature(inputIdx int) string {
+	if d == nil {
+		return ""
+	}
+	switch inputIdx {
+	case 0:
+		if d.LHSConstantData == nil || d.BatchSize <= 0 || d.LHSCrossSize <= 0 || d.ContractingSize <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("PackLHS(in=%s,out=%s,B=%d,M=%d,K=%d)",
+			d.InputDType, d.OutputDType, d.BatchSize, d.LHSCrossSize, d.ContractingSize)
+	case 1:
+		if d.RHSConstantData == nil || d.BatchSize <= 0 || d.RHSCrossSize <= 0 || d.ContractingSize <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("PackRHS(layout=%s,in=%s,out=%s,B=%d,N=%d,K=%d)",
+			d.Layout, d.InputDType, d.OutputDType, d.BatchSize, d.RHSCrossSize, d.ContractingSize)
+	}
+	return ""
+}
+
+// BindConstantData implements gobackend.ConstantCacheNodeData.
+func (d *NodeData) BindConstantData(inputIdx int, cd *gobackend.ConstantData) {
+	if d == nil || cd == nil {
+		return
+	}
+	switch inputIdx {
+	case 0:
+		d.LHSConstantData = cd
+	case 1:
+		d.RHSConstantData = cd
+	}
+}
+
+// IsInputCached implements gobackend.ConstantCacheNodeData.
+func (d *NodeData) IsInputCached(inputIdx int) bool {
+	if d == nil {
+		return false
+	}
+	switch inputIdx {
+	case 0:
+		return d.LHSConstantData.CachedForm() != nil
+	case 1:
+		return d.RHSConstantData.CachedForm() != nil
+	}
+	return false
 }
 
 // DotGeneral takes as input lhs (left-hand-side) and rhs (right-hand-side) specifications
@@ -288,10 +347,10 @@ func DotGeneral(f *gobackend.Function,
 		nodeOutputShape.DType = params.OutputDType
 	}
 	if lhs.IsConstant() {
-		params.PackedLHSCache = &PackedMatrixCache{}
+		params.LHSConstantData = gobackend.NewAnonymousConstantData()
 	}
 	if rhs.IsConstant() {
-		params.PackedRHSCache = &PackedMatrixCache{}
+		params.RHSConstantData = gobackend.NewAnonymousConstantData()
 	}
 	result, _ := f.GetOrCreateNode(compute.OpTypeDotGeneral, nodeOutputShape, inputs, params)
 

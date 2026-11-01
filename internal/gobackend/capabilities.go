@@ -37,6 +37,7 @@ var Capabilities = compute.Capabilities{
 	DynamicShapes:               compute.DynamicShapesNative,
 	DynamicDimDType:             dtypes.Int64,
 	PreferConstantsForVariables: true,
+	SharedConstants:             true,
 
 	Operations: map[compute.OpType]bool{
 		// Graph inputs (leaf nodes)

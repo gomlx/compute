@@ -178,6 +178,14 @@ func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (ref 
 	return
 }
 
+// GetExactBuffer allocates an exact-sized, non-pooled buffer for long-lived caches (e.g., PrepackRHS/PrepackLHS).
+func GetExactBuffer[T gotype.Supported](_ *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
+	ref = gobackend.NewBuffer(shapes.Make(dtypes.FromGenericsType[T](), length))
+	flat = ref.Flat.([]T)
+	success = true
+	return
+}
+
 // ReleaseBuffer releases a buffer obtained through GetBuffer.
 func ReleaseBuffer(ref *gobackend.Buffer) {
 	ref.Backend().(*gobackend.Backend).PutBuffer(ref)

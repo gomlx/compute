@@ -146,12 +146,44 @@ func (b *Builder) Compile() (compute.Executable, error) {
 
 // Finalize immediately releases the resources associated with the Builder.
 func (b *Builder) Finalize() {
-	if b.MainFn != nil {
-		b.MainFn.Nodes = nil
-		b.MainFn.nodeDedup = nil
-		b.MainFn.Parameters = nil
-		b.MainFn.Outputs = nil
+	if b == nil {
+		return
 	}
+	for _, fn := range b.Functions {
+		if fn != nil {
+			for _, node := range fn.Nodes {
+				node.Finalize()
+			}
+			fn.Nodes = nil
+			fn.nodeDedup = nil
+			fn.Parameters = nil
+			fn.Outputs = nil
+			fn.Compiled = nil
+		}
+	}
+	b.Functions = nil
+	b.MainFn = nil
+}
+
+// WithFinalize is implemented by Node.Data types that hold resources requiring cleanup when the Node is finalized.
+type WithFinalize interface {
+	Finalize()
+}
+
+// Finalize releases the resources associated with the Node, including its Data if it implements WithFinalize.
+func (node *Node) Finalize() {
+	if node == nil {
+		return
+	}
+	if withFinalize, ok := node.Data.(WithFinalize); ok {
+		withFinalize.Finalize()
+	}
+	node.Data = nil
+	node.Inputs = nil
+	node.CapturedInputs = nil
+	node.MultiOutputsNodes = nil
+	node.Function = nil
+	node.Builder = nil
 }
 
 // Node in the Go backend computation graph.
@@ -310,11 +342,20 @@ func (b *Builder) checkValues(opType string, values ...compute.Value) ([]*Node, 
 			)
 		}
 		if nodes[idx].Builder != b {
+			if nodes[idx].OpType == compute.OpTypeConstant {
+				if cd, ok := nodes[idx].Data.(*ConstantData); ok && cd.Backend() == b.Backend {
+					continue
+				}
+			}
+			otherBuilderName := "<finalized>"
+			if nodes[idx].Builder != nil {
+				otherBuilderName = nodes[idx].Builder.name
+			}
 			return nil, errors.Errorf(
 				"%s: input op #%d was created with a different builder (%q), cannot use it with builder %q",
 				opType,
 				idx,
-				nodes[idx].Builder.name,
+				otherBuilderName,
 				b.name,
 			)
 		}

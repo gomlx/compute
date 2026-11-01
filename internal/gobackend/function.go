@@ -263,34 +263,47 @@ func (f *Function) VerifyAndCastValues(name string, values ...compute.Value) ([]
 		return nil, err
 	}
 
-	// Check each node and handle parent scope references
+	// Check each node and handle parent scope references or shared constants
 	for idx, node := range nodes {
-		if node.Function == nil {
-			return nil, errors.Errorf(
-				"%s: input #%d has nil function (internal error)",
-				name, idx)
-		}
 		if node.Function == f {
 			continue // Same function, OK.
 		}
 
 		// Check if the node is from an ancestor function (closure capture)
 		isFromAncestor := false
-		for ancestor := f.RawParent; ancestor != nil; ancestor = ancestor.RawParent {
-			if node.Function == ancestor {
-				isFromAncestor = true
-				break
+		if node.Function != nil {
+			for ancestor := f.RawParent; ancestor != nil; ancestor = ancestor.RawParent {
+				if node.Function == ancestor {
+					isFromAncestor = true
+					break
+				}
 			}
 		}
 		if isFromAncestor {
 			// Create or reuse a capture node for this parent value
 			nodes[idx] = f.GetOrCreateCaptureNode(node)
-		} else {
-			// Node from a completely different function (not an ancestor)
+			continue
+		}
+
+		// Allow sharing OpTypeConstant across different Builders/Functions on the same Backend.
+		if node.OpType == compute.OpTypeConstant {
+			if cd, ok := node.Data.(*ConstantData); ok && cd.Backend() == f.RawBuilder.Backend {
+				localConst, _ := f.GetOrCreateNode(compute.OpTypeConstant, node.Shape, nil, cd)
+				nodes[idx] = localConst
+				continue
+			}
+		}
+
+		if node.Function == nil {
 			return nil, errors.Errorf(
-				"%s: input #%d uses a node from a different function scope",
+				"%s: input #%d has nil function (internal error)",
 				name, idx)
 		}
+
+		// Node from a completely different function (not an ancestor)
+		return nil, errors.Errorf(
+			"%s: input #%d uses a node from a different function scope",
+			name, idx)
 	}
 
 	return nodes, nil
@@ -365,11 +378,10 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 		return nil, errors.Errorf("flat ([%d]%s) and shape size (%d) mismatch for constant value",
 			flatLen, dtype, shape.Size())
 	}
-	data, err := f.RawBuilder.Backend.GetBuffer(shape)
+	data, err := NewConstantData(f.RawBuilder.Backend, shape, flat)
 	if err != nil {
-		return nil, errors.WithMessagef(err, "Failed to allocated a buffer for Contant")
+		return nil, errors.WithMessagef(err, "Failed to allocate ConstantData for Constant")
 	}
-	dtypes.CopyAnySlice(data.Flat, flat)
 	n, _ := f.GetOrCreateNode(compute.OpTypeConstant, shape, nil, data)
 	return n, nil
 }
