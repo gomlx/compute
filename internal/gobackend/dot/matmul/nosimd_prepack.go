@@ -34,7 +34,7 @@ func noSIMDPrepackRHS[I gotype.ScalarNotComplex](
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetBuffer[I](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements)
 	if !ok {
 		return nil, nil
 	}
@@ -94,7 +94,7 @@ func noSIMDPrepackLHS[I gotype.ScalarNotComplex](
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetBuffer[I](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements)
 	if !ok {
 		return nil, nil
 	}

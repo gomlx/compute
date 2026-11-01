@@ -141,7 +141,14 @@ func CallRegisteredImplementation(
 	rhsCrossSize := params.RHSCrossSize
 	contractingSize := params.ContractingSize
 
-	lhsFlat, rhsFlat, outputFlat := lhs.Flat, rhs.Flat, output.Flat
+	var lhsFlat, rhsFlat any
+	if lhs != nil {
+		lhsFlat = lhs.Flat
+	}
+	if rhs != nil {
+		rhsFlat = rhs.Flat
+	}
+	outputFlat := output.Flat
 	implFnAny := implementation.implFn
 	callFnAny, err := callImplementationDTypePairMap.Get(params.InputDType, params.OutputDType)
 	if err != nil {
@@ -172,8 +179,13 @@ func callImplementationGeneric[I, O interface {
 	lhsAny, rhsAny, outputAny any,
 	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
 	nodeData *NodeData) {
-	lhs := lhsAny.([]I)
-	rhs := rhsAny.([]I)
+	var lhs, rhs []I
+	if lhsAny != nil {
+		lhs = lhsAny.([]I)
+	}
+	if rhsAny != nil {
+		rhs = rhsAny.([]I)
+	}
 	output := outputAny.([]O)
 	implFn := implFnAny.(DotGeneralExecFn[I, O])
 	implFn(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nodeData)

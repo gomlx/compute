@@ -47,26 +47,18 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 		cachedLHSPanels [][]I
 	)
 	if nodeData != nil {
-		if nodeData.PackedRHSCache != nil {
-			nodeData.PackedRHSCache.Once.Do(func() {
-				ref, panels := noSIMDPrepackRHS(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				nodeData.PackedRHSCache.Buffer = ref
-				nodeData.PackedRHSCache.Panels = panels
+		if nodeData.RHSConstantData != nil {
+			cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]I {
+				_, panels := noSIMDPrepackRHS(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				return panels
 			})
-			if p, ok := nodeData.PackedRHSCache.Panels.([][]I); ok {
-				cachedRHSPanels = p
-			}
 		}
 
-		if nodeData.PackedLHSCache != nil {
-			nodeData.PackedLHSCache.Once.Do(func() {
-				ref, panels := noSIMDPrepackLHS(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				nodeData.PackedLHSCache.Buffer = ref
-				nodeData.PackedLHSCache.Panels = panels
+		if nodeData.LHSConstantData != nil {
+			cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]I {
+				_, panels := noSIMDPrepackLHS(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				return panels
 			})
-			if p, ok := nodeData.PackedLHSCache.Panels.([][]I); ok {
-				cachedLHSPanels = p
-			}
 		}
 	}
 
@@ -135,8 +127,13 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
 		for b := range batchSize {
-			batchLHS := lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
-			batchRHS := rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
+			var batchLHS, batchRHS []I
+			if len(cachedLHSPanels) == 0 {
+				batchLHS = lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
+			}
+			if len(cachedRHSPanels) == 0 {
+				batchRHS = rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
+			}
 			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			var (
 				batchCachedLHSPanels [][]I
@@ -220,8 +217,13 @@ func largeNoSIMDHalfPrecision[I gotype.HalfPrecision[I], O gotype.ScalarNotCompl
 		for {
 			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
-				batchLHS := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
-				batchRHS := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
+				var batchLHS, batchRHS []I
+				if len(cachedLHSPanels) == 0 {
+					batchLHS = lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
+				}
+				if len(cachedRHSPanels) == 0 {
+					batchRHS = rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
+				}
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
 				var (
 					batchCachedLHSPanels [][]I

@@ -29,7 +29,11 @@ func avx2RouterFloat32( //alt:f32
 	nodeData *dot.NodeData) {
 
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
-	if !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || flops < matmul.SmallMatMulSizeThreshold) {
+	hasPackedCache := nodeData != nil && (nodeData.LHSConstantData.CachedForm() != nil || nodeData.RHSConstantData.CachedForm() != nil)
+	mustUseLarge := (lhs == nil && nodeData != nil && nodeData.LHSConstantData != nil) ||
+		(rhs == nil && nodeData != nil && nodeData.RHSConstantData != nil)
+	forcePack := nodeData != nil && (nodeData.LHSConstantData.ForceCache() || nodeData.RHSConstantData.ForceCache())
+	if !mustUseLarge && !matmul.ForceLargeVariant && (matmul.ForceSmallVariant || (!hasPackedCache && !forcePack && flops < matmul.SmallMatMulSizeThreshold)) {
 		avx2SmallFloat32Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output) //alt:f32
 		//alt:bf16 avx2SmallBFloat16Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)
 		//alt:f16 avx2SmallFloat16Parallel(backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output)

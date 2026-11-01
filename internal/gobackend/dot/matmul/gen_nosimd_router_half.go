@@ -39,8 +39,12 @@ func noSIMDHalfPrecisionRouter[I gotype.HalfPrecision[I], O gotype.NumericNotCom
 	if backend != nil && backend.Scheduler != nil {
 		maxWorkers = backend.Scheduler.AdjustedMaxParallelism()
 	}
-	useSmallVariant := !ForceLargeVariant && (ForceSmallVariant ||
-		(flops < noSIMDSmallMatMulSizeThreshold && (batchSize > 1 || maxWorkers <= 1 || flops < noSIMDMinLargeMatMulFlopsPerWorker)))
+	hasPackedCache := nodeData != nil && (nodeData.LHSConstantData.CachedForm() != nil || nodeData.RHSConstantData.CachedForm() != nil)
+	mustUseLarge := (lhs == nil && nodeData != nil && nodeData.LHSConstantData != nil) ||
+		(rhs == nil && nodeData != nil && nodeData.RHSConstantData != nil)
+	forcePack := nodeData != nil && (nodeData.LHSConstantData.ForceCache() || nodeData.RHSConstantData.ForceCache())
+	useSmallVariant := !mustUseLarge && !ForceLargeVariant && (ForceSmallVariant ||
+		(!hasPackedCache && !forcePack && flops < noSIMDSmallMatMulSizeThreshold && (batchSize > 1 || maxWorkers <= 1 || flops < noSIMDMinLargeMatMulFlopsPerWorker)))
 	if klog.V(1).Enabled() {
 		variant := "large"
 		if useSmallVariant {

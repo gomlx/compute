@@ -71,38 +71,30 @@ func avx512LargeFloat64( //alt:f64
 	//alt:f16  var cachedRHSPanels, cachedLHSPanels [][]float16.Float16
 	var cachedRHSPanels, cachedLHSPanels [][]float64 //alt:f64
 	if nodeData != nil {
-		if nodeData.PackedRHSCache != nil {
-			nodeData.PackedRHSCache.Once.Do(func() {
-				//alt:f32 ref, panels := avx512PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				//alt:bf16  ref, panels := avx512PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				//alt:f16  ref, panels := avx512PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				ref, panels := avx512PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f64
-				nodeData.PackedRHSCache.Buffer = ref
-				nodeData.PackedRHSCache.Panels = panels
+		if nodeData.RHSConstantData != nil {
+			//alt:f32 cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]float32 {
+			//alt:bf16  cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]bfloat16.BFloat16 {
+			//alt:f16  cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]float16.Float16 {
+			cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]float64 { //alt:f64
+				//alt:f32 _, panels := avx512PrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				//alt:bf16  _, panels := avx512PrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				//alt:f16  _, panels := avx512PrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				_, panels := avx512PrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f64
+				return panels
 			})
-			//alt:f32 if p, ok := nodeData.PackedRHSCache.Panels.([][]float32); ok {
-			//alt:bf16  if p, ok := nodeData.PackedRHSCache.Panels.([][]bfloat16.BFloat16); ok {
-			//alt:f16  if p, ok := nodeData.PackedRHSCache.Panels.([][]float16.Float16); ok {
-			if p, ok := nodeData.PackedRHSCache.Panels.([][]float64); ok { //alt:f64
-				cachedRHSPanels = p
-			}
 		}
 
-		if nodeData.PackedLHSCache != nil {
-			nodeData.PackedLHSCache.Once.Do(func() {
-				//alt:f32 ref, panels := avx512PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				//alt:bf16  ref, panels := avx512PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				//alt:f16  ref, panels := avx512PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				ref, panels := avx512PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f64
-				nodeData.PackedLHSCache.Buffer = ref
-				nodeData.PackedLHSCache.Panels = panels
+		if nodeData.LHSConstantData != nil {
+			//alt:f32 cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]float32 {
+			//alt:bf16  cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]bfloat16.BFloat16 {
+			//alt:f16  cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]float16.Float16 {
+			cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]float64 { //alt:f64
+				//alt:f32 _, panels := avx512PrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				//alt:bf16  _, panels := avx512PrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				//alt:f16  _, panels := avx512PrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				_, panels := avx512PrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f64
+				return panels
 			})
-			//alt:f32 if p, ok := nodeData.PackedLHSCache.Panels.([][]float32); ok {
-			//alt:bf16  if p, ok := nodeData.PackedLHSCache.Panels.([][]bfloat16.BFloat16); ok {
-			//alt:f16  if p, ok := nodeData.PackedLHSCache.Panels.([][]float16.Float16); ok {
-			if p, ok := nodeData.PackedLHSCache.Panels.([][]float64); ok { //alt:f64
-				cachedLHSPanels = p
-			}
 		}
 	}
 
@@ -186,10 +178,11 @@ func avx512LargeFloat64( //alt:f64
 		rhsFlatIdx := 0
 		outputFlatIdx := 0
 		for b := range batchSize {
-			batchLHS := lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
-			batchRHS := rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
-			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			var (
+				//alt:f32 batchLHS, batchRHS               []float32
+				//alt:bf16  batchLHS, batchRHS []bfloat16.BFloat16
+				//alt:f16  batchLHS, batchRHS []float16.Float16
+				batchLHS, batchRHS []float64 //alt:f64
 				//alt:f32 batchCachedLHSPanels [][]float32
 				//alt:bf16  batchCachedLHSPanels [][]bfloat16.BFloat16
 				//alt:f16  batchCachedLHSPanels [][]float16.Float16
@@ -201,10 +194,15 @@ func avx512LargeFloat64( //alt:f64
 			)
 			if len(cachedLHSPanels) > 0 {
 				batchCachedLHSPanels = cachedLHSPanels[b*lhsPanelsPerBatch : (b+1)*lhsPanelsPerBatch]
+			} else {
+				batchLHS = lhs[lhsFlatIdx : lhsFlatIdx+lhsBatchStride]
 			}
 			if len(cachedRHSPanels) > 0 {
 				batchCachedRHSPanels = cachedRHSPanels[b*rhsPanelsPerBatch : (b+1)*rhsPanelsPerBatch]
+			} else {
+				batchRHS = rhs[rhsFlatIdx : rhsFlatIdx+rhsBatchStride]
 			}
+			batchOutput := output[outputFlatIdx : outputFlatIdx+outputBatchStride]
 			//alt:f32 avx512LargeMatrixSliceFloat32(
 			//alt:bf16  avx512LargeMatrixSliceBFloat16(
 			//alt:f16  avx512LargeMatrixSliceFloat16(
@@ -294,10 +292,11 @@ func avx512LargeFloat64( //alt:f64
 		for {
 			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
-				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
-				batchRhs := rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
-				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
 				var (
+					//alt:f32 batchLhs, batchRhs               []float32
+					//alt:bf16  batchLhs, batchRhs []bfloat16.BFloat16
+					//alt:f16  batchLhs, batchRhs []float16.Float16
+					batchLhs, batchRhs []float64 //alt:f64
 					//alt:f32 batchCachedLHSPanels [][]float32
 					//alt:bf16  batchCachedLHSPanels [][]bfloat16.BFloat16
 					//alt:f16  batchCachedLHSPanels [][]float16.Float16
@@ -309,10 +308,15 @@ func avx512LargeFloat64( //alt:f64
 				)
 				if len(cachedLHSPanels) > 0 {
 					batchCachedLHSPanels = cachedLHSPanels[batchIdx*lhsPanelsPerBatch : (batchIdx+1)*lhsPanelsPerBatch]
+				} else {
+					batchLhs = lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				}
 				if len(cachedRHSPanels) > 0 {
 					batchCachedRHSPanels = cachedRHSPanels[batchIdx*rhsPanelsPerBatch : (batchIdx+1)*rhsPanelsPerBatch]
+				} else {
+					batchRhs = rhs[batchIdx*rhsBatchStride : (batchIdx+1)*rhsBatchStride]
 				}
+				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
 				//alt:f32 avx512LargeMatrixSliceFloat32(
 				//alt:bf16  avx512LargeMatrixSliceBFloat16(
 				//alt:f16  avx512LargeMatrixSliceFloat16(
@@ -590,10 +594,10 @@ func avx512PrepackRHSFloat64( //alt:f64
 	}
 	totalElements *= batchSize
 
-	//alt:f32 ref, flatBuf, ok := GetBuffer[float32](backend, totalElements)
-	//alt:bf16  ref, flatBuf, ok := GetBuffer[bfloat16.BFloat16](backend, totalElements)
-	//alt:f16  ref, flatBuf, ok := GetBuffer[float16.Float16](backend, totalElements)
-	ref, flatBuf, ok := GetBuffer[float64](backend, totalElements) //alt:f64
+	//alt:f32 ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements)
+	//alt:bf16  ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements)
+	//alt:f16  ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements) //alt:f64
 	if !ok {
 		return nil, nil
 	}
@@ -666,10 +670,10 @@ func avx512PrepackLHSFloat64( //alt:f64
 	}
 	totalElements *= batchSize
 
-	//alt:f32 ref, flatBuf, ok := GetBuffer[float32](backend, totalElements)
-	//alt:bf16  ref, flatBuf, ok := GetBuffer[bfloat16.BFloat16](backend, totalElements)
-	//alt:f16  ref, flatBuf, ok := GetBuffer[float16.Float16](backend, totalElements)
-	ref, flatBuf, ok := GetBuffer[float64](backend, totalElements) //alt:f64
+	//alt:f32 ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements)
+	//alt:bf16  ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements)
+	//alt:f16  ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements) //alt:f64
 	if !ok {
 		return nil, nil
 	}
