@@ -32,8 +32,15 @@ var _ compute.DataInterface = (*Backend)(nil)
 // The flat data may be shared -- for temporary buffers from compiled graphs they are
 // taken from larger blobs of bytes allocated in one Go -- or owned by the buffer.
 type Buffer struct {
+	// RawBackend may be nil, for Buffers owning its own memory and not participating of the buffer pool.
 	RawBackend *Backend
-	RawShape   shapes.Shape
+
+	// RawShape holds the concrete runtime shape of the buffer.
+	// It is named RawShape because Buffer implements the compute.Buffer method Shape().
+	// Internal Go backend kernels read RawShape directly (avoiding the Clone() and error return of Shape()),
+	// and in-place operations (e.g., Reshape, Bitcast) update RawShape directly when reusing an owned input buffer.
+	// When a buffer is finalized or returned to the pool, RawShape is reset to shapes.Invalid().
+	RawShape shapes.Shape
 
 	// ShapeDimensionsBuffer provides inline storage for dimensions up to rank 8,
 	// avoiding heap allocation on shape cloning during buffer acquisition.
@@ -395,15 +402,19 @@ func (b *Backend) CloneBuffer(buffer *Buffer) (*Buffer, error) {
 	return newBuffer, nil
 }
 
-// NewBuffer creates the buffer with a newly allocated flat space.
-//
-// TODO: should we study the possibility to change the signature with an error?
-func (b *Backend) NewBuffer(shape shapes.Shape) *Buffer {
-	buffer, err := b.GetBuffer(shape)
-	if err != nil {
-		return nil
+// NewBuffer creates a buffer with an exact-sized newly allocated flat space, not owned by the buffer pool.
+func NewBuffer(shape shapes.Shape) *Buffer {
+	dtype := shape.DType
+	length := shape.Size()
+	requestedSizeInBytes := dtype.SizeForDimensions(length)
+	buf := &Buffer{
+		RawBytes:  make([]byte, requestedSizeInBytes),
+		InUse:     true,
+		isUserFed: true,
+		RawShape:  shape,
 	}
-	return buffer
+	buf.recast(dtype, length)
+	return buf
 }
 
 // Finalize allows the client to inform the backend that the buffer is no longer needed and associated resources
@@ -416,7 +427,7 @@ func (buffer *Buffer) Finalize() error {
 	if buffer == nil {
 		return errors.Errorf("Finalize(%p): buffer was nil", buffer)
 	}
-	if buffer.RawBackend.isFinalized {
+	if buffer.RawBackend != nil && buffer.RawBackend.isFinalized {
 		buffer.Flat = nil // Accelerates GC.
 		buffer.RawBytes = nil
 		buffer.RawShape = shapes.Invalid()
@@ -490,11 +501,8 @@ func (b *Backend) BufferFromFlatData(deviceNum compute.DeviceNum, flat any, shap
 		return nil, errors.Errorf("flat data type (%s) does not match shape DType (%s)",
 			reflect.TypeOf(flat).Elem(), shape.DType)
 	}
-	buffer := b.NewBuffer(shape)
-	if buffer == nil {
-		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
-	}
-	buffer.isUserFed = true
+	buffer := NewBuffer(shape)
+	buffer.RawBackend = b
 
 	CopyFlat(buffer.Flat, flat)
 	return buffer, nil
@@ -529,11 +537,8 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 			errors.Errorf("backend (%s) only supports deviceNum 0, cannot create buffer on deviceNum %d (shape=%s)",
 				b.Name(), deviceNum, shape)
 	}
-	goBuffer := b.NewBuffer(shape)
-	if goBuffer == nil {
-		return nil, nil, errors.WithStack(ErrBackendAlreadyFinalized)
-	}
-	goBuffer.isUserFed = true
+	goBuffer := NewBuffer(shape)
+	goBuffer.RawBackend = b
 	return goBuffer, goBuffer.Flat, nil
 }
 
@@ -545,7 +550,7 @@ func (b *Backend) NewSharedBuffer(deviceNum compute.DeviceNum, shape shapes.Shap
 // The returned slice becomes invalid after the buffer is destroyed.
 // Data returns a slice pointing to the buffer storage memory directly.
 func (buffer *Buffer) Data() (flat any, err error) {
-	if buffer.RawBackend.isFinalized {
+	if buffer.RawBackend != nil && buffer.RawBackend.isFinalized {
 		return nil, errors.Errorf("backend is already finalized")
 	}
 	return buffer.Flat, nil
