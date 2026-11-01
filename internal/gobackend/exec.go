@@ -44,8 +44,11 @@ var _ compute.Executable = (*Executable)(nil)
 //	without finishing. Finally, remove the `e.builder == nil` checks, that won't be necessary anymore,
 //	since e.builder will never be set to nil while there is an execution alive.
 func (e *Executable) Finalize() {
-	e.builder.Finalize()
-	e.builder = nil
+	if e.builder != nil {
+		e.builder.Finalize()
+		e.builder = nil
+	}
+	e.mainFn = nil
 	e.specializations.Clear()
 }
 
