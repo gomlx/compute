@@ -135,7 +135,10 @@ func GetOrSetCachedForm[T any](cd *ConstantData, computeFn func() T) T {
 	if !reflect.ValueOf(&typed).Elem().IsZero() {
 		cd.cachedForm.Store(typed)
 		if !cd.isRawBufferPinned {
-			cd.rawBuffer.Store(nil)
+			if oldBuf := cd.rawBuffer.Swap(nil); oldBuf != nil {
+				oldBuf.Flat = nil
+				oldBuf.RawBytes = nil
+			}
 		}
 	}
 	return typed
