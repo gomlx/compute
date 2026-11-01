@@ -310,3 +310,120 @@ Tracing what happens when a user finalizes tensors, executors, or the backend:
 | **Current + `GOMEMLIMIT=1350MiB` (Workaround)** | `1,279.0 MiB` (`1.34 GB`) | **`1.28 GB`** (`1,220 MiB`) | `0.342s` |
 | **After Proposals 1–7 (`"go"` Default)** | **`472.0 MiB`** (`0.49 GB`) | **`~0.68 GB`** (`~650 MiB`) | **`~0.155s`** |
 | **After Proposals 1–8 (`"go:low_memory"`)** | **`472.0 MiB`** (`0.49 GB`) | **`~0.55 GB`** (`~525 MiB`) | **`~0.185s`** |
+
+---
+
+## 6. Architectural Design Notes: Variables, Shared Constants, and Weight Packing
+
+Following design discussions, the core abstraction issue is **how to pass model variables (weights) efficiently during inference** while supporting graph recompilations across shapes and avoiding keeping multiple copies of weights in memory.
+
+### 6.1. Key Design Considerations (1–12)
+
+1. **Why Backends Prefer Constants for Inference**:
+   - Some backends (e.g., the Go backend) prefer model variables as constants during inference (`Capabilities.PreferConstantsForVariables`) so that ops like `DotGeneral` and `FusedDense` can pre-pack weights into `Packed{LHS,RHS}Cache` once and reuse them across executions. (This only applies to inference, not training.)
+2. **Multiple Graph Compilations**:
+   - `graph.Exec` and `model.Exec` dynamically recompile computation graphs whenever input shapes change (e.g., different batch sizes, sequence lengths, or forecast horizons).
+3. **Avoiding Variable Duplication Across Graphs**:
+   - Passing variables as side parameters (`Parameter`) naturally shares a single tensor/buffer across compilations, whereas traditional per-graph `Function.Constant(flat, dims...)` duplicates the weights inside every compiled graph *and* retains the original tensor in `model.Store`.
+4. **Cross-Graph Constant Reuse (`Capabilities.SharedConstants`)**:
+   - While XLA and ONNX Runtime bind constants strictly to a single compiled `Function`/`Builder`, the Go backend does not have this hardware/compiler limitation and can share constants across multiple `Function`s and `Builder`s on the same `Backend`.
+5. **Reusing Derived Representations (`Packed{LHS,RHS}Cache`) Across Graphs**:
+   - When a constant is reused across multiple compiled graphs in the same way (which is standard for model weights when only activation batch/sequence dimensions change), its derived `Packed{LHS,RHS}Cache` can also be stored on the shared constant and reused directly across graphs without repacking.
+6. **Transient Copies vs. Steady-State Single Copy**:
+   - Temporarily holding 2–3 copies of *a single variable at a time* while converting/packing it is completely fine (`~8–16 MiB` transient delta). Once packed, the raw unpacked weight buffer must be freed so that steady-state memory holds **only 1 copy** of each weight.
+7. **Reference Counting for Multi-Use Constants**:
+   - Although rare, a constant could be used by more than one operation (or in different ways). By tracking reference counts / consumer types, we only free the original unpacked constant data when all its consumers use the cached (packed) derived format.
+8. **Static Compile-Time Transforms on Constants (`Transpose`, `Reshape`, `ConvertDType`)**:
+   - If a variable undergoes static transforms that can be evaluated or absorbed at compile time and is only used once (#7), we can cache the final packed result and free the original constant.
+   - Otherwise, if a constant is used both by a packing op and a non-packing op (e.g., `Gather` on a shared embedding table), we can either:
+     - **(A)** Disable the packed cache and compute on-the-fly (`low_memory` mode), keeping only the original constant; or
+     - **(B)** Keep both the packed cache and the original constant for that specific multi-use variable.
+9. **Explicit Inference Donation Workflow (`model.Store` $\to$ `model.Exec` $\to$ Shared `compute.Value`)**:
+   - **(A) Training / General Mode**: The user passes variables as side inputs (`Parameter`s) as usual—no changes needed.
+   - **(B) Inference Donation Mode**: The user explicitly calls a method to donate the `model.Store` to `model.Exec` for inference.
+     - `model.Exec` / `model.Variable` donates each variable's contents to the backend as a constant (`compute.Value`), immediately finalizes the `Variable`'s `tensors.Tensor`, and caches the `compute.Value` inside `model.Variable` for reuse across future graph compilations (when `Capabilities.SharedConstants` is `true`).
+     - Any unused variables in the donated `model.Store` can also be finalized/freed.
+     - Once a `Variable` has been donated/converted to a backend constant, reading its value (`v.Value()`) returns an error—so we never need to invert/unpack `Packed{LHS,RHS}Cache`.
+10. **Decoupling `Packed{LHS,RHS}Cache` Lifetime from `graph.Exec`'s `maxCacheSize`**:
+    - Because the `Packed{LHS,RHS}Cache` is stored inside the constant's `compute.Value` (which is held by the `model.Variable` in `model.Store`), the packed cache is not owned by any single compiled graph. If an older graph is evicted when `graph.Exec` exceeds `maxCacheSize`, the `compute.Value` and its `Packed{LHS,RHS}Cache` remain alive for existing and future graphs until the `Store`/`Exec` is finalized.
+11. **Exact-Size, Non-Pooled Buffers for Constants & Packed Caches**:
+    - `TwoBitBucketLen` rounding and `Backend.bufferPools` (`sync.Pool`) are designed for transient, dynamically sized intermediate activation buffers.
+    - Static constants and `Packed{LHS,RHS}Cache` buffers are long-lived and fixed into the compiled graph / shared constant. They must be allocated with **exact byte sizes** (`NewExactBuffer`, bypassing `TwoBitBucketLen`) and **not owned by the buffer pool** (finalizing them simply releases their backing slice to the GC rather than returning them to `bufferPools`).
+    - Furthermore, `gobackend.Buffer` remains a pure data container with no knowledge of "Constant" semantics.
+12. **Why `Function.ConstantBuffer(buf compute.Buffer)` Is Unnecessary for This Workflow**:
+    - During inference initialization, variables in `model.Store` are loaded initially as local CPU tensors (`flat` Go slices). When `model.Exec` donates a variable from the owned `Store` to `Function.Constant(flat, dims...)`, it immediately frees the local tensor (`v.value.FinalizeAll()`) and retains only the returned `compute.Value` reference.
+
+---
+
+### 6.2. Proposed Component Design
+
+```mermaid
+flowchart TD
+    subgraph GoMLX ["gomlx (ml/model & core/graph)"]
+        Store["model.Store (Donated for Inference)"]
+        Var["model.Variable\n- value: nil (Finalized immediately)\n- constantValue: compute.Value"]
+        G1["Graph #1 (e.g. batch=1)"]
+        G2["Graph #2 (e.g. batch=8)"]
+        Store --> Var
+        Var -->|"Reuses compute.Value"| G1
+        Var -->|"Reuses compute.Value"| G2
+    end
+
+    subgraph GoBackend ["compute (internal/gobackend)"]
+        CV["Shared Constant (*ConstantNode / *ConstantData)\nImplements compute.Value"]
+        Raw["rawBuffer (*Buffer, exact size, non-pooled)\nFreed once packed if all uses are packed!"]
+        Pack["PackedMatrixCache (keyed by layout + dims)\n(*Buffer, exact size, non-pooled)"]
+        CV --> Raw
+        CV --> Pack
+    end
+
+    Var --> CV
+    G1 -->|"DotGeneral / FusedDense"| Pack
+    G2 -->|"DotGeneral / FusedDense"| Pack
+```
+
+1. **`compute.Capabilities.SharedConstants bool`**:
+   - New capability flag indicating that `compute.Value` returned by `Function.Constant(flat, dims...)` can be passed into operations of other `Function`s / `Builder`s created on the same `Backend`.
+2. **`gobackend.ConstantData` (Separating Constant Logic from `Buffer`)**:
+   - Stored in `node.Data` for `OpTypeConstant` nodes (`gobackend.Buffer` stays untouched).
+   - Holds:
+     - `rawBuffer *Buffer`: allocated with exact size (`NewExactBuffer`, non-pooled). Set to `nil` (finalized) once packed when all consumers use the packed cache.
+     - `subGraphSignature string` (or structural key) & `packedCache *PackedMatrixCache`: records the exact constant-only transformation sub-graph and packing key `(SubGraphOps, Layout, BatchSize, CrossSize, ContractingSize, KernelParams)` applied to the constant `W`.
+     - When `Graph_1` compiles and executes, it evaluates any single-use constant transformation sub-graph on `W`, populates `packedCache` on `ConstantData`, records the sub-graph/packing signature, and frees `rawBuffer`.
+     - When `Graph_2` is later compiled/executed using `W`:
+       - It computes the constant transformation sub-graph and packing signature for `W` in `Graph_2`.
+       - If the signature matches `Graph_1`, `Graph_2` skips executing the intermediate constant sub-graph and directly reuses `ConstantData`'s already-populated `packedCache` without needing `rawBuffer`.
+       - If `Graph_2` uses `W` with a **different** sub-graph or non-compatible operation after `rawBuffer` was already released in `Graph_1`, compilation/execution returns a clear error:
+         `"constant/variable was optimized and its raw buffer released in a previous compilation, and is now being compiled/used in a different way that cannot be recovered; if you plan to use different graph structures on the same weights, please use separate Exec objects and do not donate the model.Store"`
+   - When `Function.VerifyAndCastValues` (or `Builder.OpShape`) in a new `Builder` encounters an `OpTypeConstant` `*Node` from a previous `Builder` on the same `Backend`, it automatically creates/reuses a local `OpTypeConstant` `*Node` in the current `Function` sharing the same `*ConstantData`.
+
+### 6.3. Implementation Plan
+
+1. **In `github.com/gomlx/compute`**:
+   - Revert prototype changes on `gobackend.Buffer` so `Buffer` has no knowledge of constants.
+   - Add `SharedConstants bool` to `compute.Capabilities` (enabled in `gobackend`).
+   - Add exact-size, non-pooled buffer allocation (`NewExactBuffer` / `NewExactFlatBuffer`) in `internal/gobackend/buffers.go` for constants and `Packed{LHS,RHS}Cache`.
+   - Implement `ConstantData` in `internal/gobackend`:
+     - Cross-`Builder` / cross-`Function` constant sharing in `Builder.OpShape` and `Function.VerifyAndCastValues`.
+     - Constant transformation sub-graph signature verification and shared `Packed{LHS,RHS}Cache` storage on `ConstantData`.
+     - Automatic release of `ConstantData.rawBuffer` once packed when all uses in the graph go through that constant sub-graph $\to$ `Packed{LHS,RHS}Cache`, and clear error reporting if a subsequent graph attempts to use a released constant with a different sub-graph.
+2. **In `github.com/gomlx/gomlx`**:
+   - Add explicit inference donation support on `model.Store` / `model.Exec` (`Exec.DonateStore()`, `Store.IsDonated()`).
+   - When donated (and `Capabilities.SharedConstants` is `true`), `model.Variable` converts its tensor to a backend constant (`compute.Value`), caches that `compute.Value` on the `Variable` for subsequent compilations (`graph.SharedConstant`), and immediately finalizes the `Variable`'s `*tensors.Tensor` (`v.Value()` returns an error thereafter).
+   - Provide cleanup/finalization of unused variables in the donated `model.Store` and release cached `compute.Value`s when `Store` / `Exec` is finalized.
+
+---
+
+### 6.4. Measured Results After Implementation (`mistralai/Timestral-123M`, AVX-512)
+
+Running `GOEXPERIMENT=simd go run ./examples/timestral/ -model mistralai/Timestral-123M -obs gomlx-AVX512` before and after implementing exact-sized non-pooled constants/caches, automatic `ConstantData.rawBuffer` release upon packing, cross-graph `SharedConstants` reuse, and `exec.DonateStore()`:
+
+| Phase | Before (Baseline) | After Implementation | Delta |
+| :--- | ---: | ---: | ---: |
+| **Load + Compile Max RSS** | `1.36 GB` | **`1.19 GB`** | **`-0.17 GB`** |
+| **Warm-up (Run 0) Max RSS** | `2.36 GB` | **`1.30 GB`** | **`-1.06 GB` (`-45%`)** |
+| **Steady-State Run 1 Max RSS** | `2.54 GB` | **`1.45 GB`** | **`-1.09 GB` (`-43%`)** |
+| **Best Inference Wall Time** | `0.214s` | **`0.201s`** | **Faster** |
+
+
+
