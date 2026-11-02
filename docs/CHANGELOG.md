@@ -1,3 +1,11 @@
+- 2026-11-02:
+  - Optimized `FusedScaledDotProductAttention` (`internal/gobackend/fusedops/sdpa.go`, `avx2/sdpa.go`, `avx512/sdpa.go`):
+    - Added 2D multi-core work partitioning across `(batchSize * numKVHeads, qBlocks)` so models with small `(batch * numKVHeads)` saturate all CPU cores across query sequence blocks.
+    - Reduced per-worker `scores` scratch allocation to a single `kvLen` row (`L1`-resident), inverted the value accumulation loop (`for kvIdx { for d ... }`) for contiguous cache-line access and zero-weight skipping, unrolled the scalar Q·K dot product with 4 independent accumulators, and tracked `activeKVLen` for boolean masks.
+    - Used `fastmath.Exp32` in the generic `float32` SDPA softmax and fixed `exp512` in `avx512/sdpa.go` (removed the `+0.5` bias before `RoundScaled(0)` so masked `-Inf` positions evaluate to exact `0` and trigger the zero-weight fast skip).
+  - Parallelized remaining Go backend unary ops (`Logistic`, `Exp`, `Expm1`, `Log`, `Log1p`, `Rsqrt`, `Sqrt`, `Sin`, `Cos`, `Tanh`, `Erf`, `Sign`, `Abs`, `LogicalNot`, `Ceil`, `Floor`, `Round`, `IsFinite`) in `internal/gobackend/ops/unaryops.go` using `ParallelizeChunks`.
+  - Accelerated scalar (`nosimd`) `Logistic`, `Sigmoid`, `Silu`, `Selu`, and `SwiGLU` kernels in `internal/gobackend/ops/unaryops.go` and `internal/gobackend/activations/nosimd.go` using `fastmath.Exp32`.
+
 - 2026-10-31:
   - Added `CumMax` backend operator to `StandardOps` (with `OpTypeCumMax`, `shapeinference.CumMax`, Go backend implementation in `internal/gobackend/ops/cummax.go`, and compliance tests in `support/backendtest`), reusing `CumSumOptions` (`Exclusive` and `Reverse`).
   - Replaced `workerspool` with a hierarchical 3-level parallel scheduler (`internal/gobackend/scheduler`, documented in `docs/GoBackendScheduler.md`) featuring inter-call, intra-op, and inter-op priority queues, persistent workers, deadlock-free work-helping, dynamic graph execution (`OpsExecutionDynamic`), and $2 \times W$ proportional chunking (#44, #45, #47).
