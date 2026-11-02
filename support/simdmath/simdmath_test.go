@@ -9,8 +9,6 @@ import (
 	"simd"
 	"testing"
 
-	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/support/simdmath"
 )
 
@@ -209,31 +207,3 @@ func TestFloat64Math(t *testing.T) {
 	}
 }
 
-func TestBF16F16Adapters(t *testing.T) {
-	vLen := simd.BroadcastFloat32s(0).Len()
-	bfIn := make([]bfloat16.BFloat16, vLen)
-	f16In := make([]float16.Float16, vLen)
-	for i := range bfIn {
-		v := float32(i) * 0.25
-		bfIn[i] = bfloat16.FromFloat32(v)
-		f16In[i] = float16.FromFloat32(v)
-	}
-
-	vBF := simdmath.LoadBFloat16s(bfIn)
-	bfOut := make([]bfloat16.BFloat16, vLen)
-	simdmath.StoreBFloat16s(bfOut, vBF)
-	for i := range bfIn {
-		if bfOut[i] != bfIn[i] {
-			t.Errorf("BFloat16 roundtrip at %d: got %v, expected %v", i, bfOut[i], bfIn[i])
-		}
-	}
-
-	vF16 := simdmath.LoadFloat16s(f16In)
-	f16Out := make([]float16.Float16, vLen)
-	simdmath.StoreFloat16s(f16Out, vF16)
-	for i := range f16In {
-		if f16Out[i] != f16In[i] {
-			t.Errorf("Float16 roundtrip at %d: got %v, expected %v", i, f16Out[i], f16In[i])
-		}
-	}
-}

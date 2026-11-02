@@ -30,8 +30,8 @@ func ReluFloat64SIMD(in, out []float64) { //alt:float64
 		v.Max(vZero).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		v.Max(vZero).StorePart(out[i:])
 	}
 }
@@ -48,8 +48,8 @@ func SigmoidFloat64SIMD(in, out []float64) { //alt:float64
 		simdmath.SigmoidFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		//alt:float32 simdmath.SigmoidFloat32(v).StorePart(out[i:])
 		simdmath.SigmoidFloat64(v).StorePart(out[i:]) //alt:float64
 	}
@@ -73,8 +73,8 @@ func HardSigmoidFloat64SIMD(in, out []float64) { //alt:float64
 		v.MulAdd(vPointTwo, vHalf).Max(vZero).Min(vOne).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		v.MulAdd(vPointTwo, vHalf).Max(vZero).Min(vOne).StorePart(out[i:])
 	}
 }
@@ -94,8 +94,8 @@ func LeakyReluFloat64SIMD(in, out []float64) { //alt:float64
 		v.IfElse(v.GreaterEqual(vZero), scaled).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		scaled := v.Mul(vAlpha)
 		v.IfElse(v.GreaterEqual(vZero), scaled).StorePart(out[i:])
 	}
@@ -122,8 +122,8 @@ func SeluFloat64SIMD(in, out []float64) { //alt:float64
 		pos.IfElse(v.GreaterEqual(vZero), neg).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		pos := v.Mul(vScale)
 		//alt:float32 neg := vScaleAlpha.Mul(simdmath.ExpFloat32(v).Sub(vOne))
 		neg := vScaleAlpha.Mul(simdmath.ExpFloat64(v).Sub(vOne)) //alt:float64
@@ -143,8 +143,8 @@ func SiluFloat64SIMD(in, out []float64) { //alt:float64
 		simdmath.SigmoidFloat64(v).Mul(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		//alt:float32 simdmath.SigmoidFloat32(v).Mul(v).StorePart(out[i:])
 		simdmath.SigmoidFloat64(v).Mul(v).StorePart(out[i:]) //alt:float64
 	}
@@ -169,8 +169,8 @@ func HardSwishFloat64SIMD(in, out []float64) { //alt:float64
 		v.Mul(scaled).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		scaled := v.MulAdd(vOneSixth, vHalf).Max(vZero).Min(vOne)
 		v.Mul(scaled).StorePart(out[i:])
 	}
@@ -188,8 +188,8 @@ func TanhFloat64SIMD(in, out []float64) { //alt:float64
 		simdmath.TanhFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		//alt:float32 simdmath.TanhFloat32(v).StorePart(out[i:])
 		simdmath.TanhFloat64(v).StorePart(out[i:]) //alt:float64
 	}
@@ -213,8 +213,8 @@ func GeluExactFloat64SIMD(in, out []float64) { //alt:float64
 		vHalf.Mul(v).Mul(vOne.Add(erfVal)).Store(out[i:])
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		//alt:float32 erfVal := simdmath.ErfFloat32(v.Mul(vRsqrt2))
 		erfVal := simdmath.ErfFloat64(v.Mul(vRsqrt2)) //alt:float64
 		vHalf.Mul(v).Mul(vOne.Add(erfVal)).StorePart(out[i:])
@@ -233,8 +233,8 @@ func GeluApproxFloat64SIMD(in, out []float64) { //alt:float64
 		simdmath.GeluApproxFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
-		//alt:float32 v, _ := simd.LoadFloat32sPart(in[i:])
-		v, _ := simd.LoadFloat64sPart(in[i:]) //alt:float64
+		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
 		//alt:float32 simdmath.GeluApproxFloat32(v).StorePart(out[i:])
 		simdmath.GeluApproxFloat64(v).StorePart(out[i:]) //alt:float64
 	}
@@ -258,10 +258,10 @@ func SwiGLUFloat64SIMD(in, out []float64, numRows, hiddenDim int) { //alt:float6
 			siluGate.Mul(vVal).Store(out[outOffset+j:])
 		}
 		if j < hiddenDim {
-			//alt:float32 vGate, _ := simd.LoadFloat32sPart(in[inOffset+j:])
-			vGate, _ := simd.LoadFloat64sPart(in[inOffset+j:]) //alt:float64
-			//alt:float32 vVal, _ := simd.LoadFloat32sPart(in[inOffset+hiddenDim+j:])
-			vVal, _ := simd.LoadFloat64sPart(in[inOffset+hiddenDim+j:]) //alt:float64
+			//alt:float32 vGate, _ := simdmath.LoadFloat32sPart(in[inOffset+j:])
+			vGate, _ := simdmath.LoadFloat64sPart(in[inOffset+j:]) //alt:float64
+			//alt:float32 vVal, _ := simdmath.LoadFloat32sPart(in[inOffset+hiddenDim+j:])
+			vVal, _ := simdmath.LoadFloat64sPart(in[inOffset+hiddenDim+j:]) //alt:float64
 			//alt:float32 siluGate := vGate.Mul(simdmath.SigmoidFloat32(vGate))
 			siluGate := vGate.Mul(simdmath.SigmoidFloat64(vGate)) //alt:float64
 			siluGate.Mul(vVal).StorePart(out[outOffset+j:])
@@ -297,10 +297,10 @@ func vjpReluFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 		vDOut.IfElse(mask, vZero).Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vRef, _ := simd.LoadFloat32sPart(ref[i:])
-		vRef, _ := simd.LoadFloat64sPart(ref[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vRef, _ := simdmath.LoadFloat32sPart(ref[i:])
+		vRef, _ := simdmath.LoadFloat64sPart(ref[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		mask := vRef.Greater(vZero)
 		vDOut.IfElse(mask, vZero).StorePart(dx[i:])
 	}
@@ -326,10 +326,10 @@ func vjpSigmoidFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(vY).Mul(vOne.Sub(vY)).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vY, _ := simd.LoadFloat32sPart(y[i:])
-			vY, _ := simd.LoadFloat64sPart(y[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vY, _ := simdmath.LoadFloat32sPart(y[i:])
+			vY, _ := simdmath.LoadFloat64sPart(y[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			vDOut.Mul(vY).Mul(vOne.Sub(vY)).StorePart(dx[i:])
 		}
 	} else {
@@ -343,10 +343,10 @@ func vjpSigmoidFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(s).Mul(vOne.Sub(s)).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-			vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+			vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			//alt:float32 s := simdmath.SigmoidFloat32(vX)
 			s := simdmath.SigmoidFloat64(vX) //alt:float64
 			vDOut.Mul(s).Mul(vOne.Sub(s)).StorePart(dx[i:])
@@ -379,10 +379,10 @@ func vjpHardSigmoidFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(vSlope).IfElse(mask, vZero).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vY, _ := simd.LoadFloat32sPart(y[i:])
-			vY, _ := simd.LoadFloat64sPart(y[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vY, _ := simdmath.LoadFloat32sPart(y[i:])
+			vY, _ := simdmath.LoadFloat64sPart(y[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			mask := vY.Greater(vZero).And(vY.Less(vOne))
 			vDOut.Mul(vSlope).IfElse(mask, vZero).StorePart(dx[i:])
 		}
@@ -400,10 +400,10 @@ func vjpHardSigmoidFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(vSlope).IfElse(mask, vZero).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-			vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+			vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			mask := vX.Greater(vMinusTwoPointFive).And(vX.Less(vTwoPointFive))
 			vDOut.Mul(vSlope).IfElse(mask, vZero).StorePart(dx[i:])
 		}
@@ -435,10 +435,10 @@ func vjpLeakyReluFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 		vDOut.IfElse(vRef.GreaterEqual(vZero), vDOut.Mul(vSlope)).Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vRef, _ := simd.LoadFloat32sPart(ref[i:])
-		vRef, _ := simd.LoadFloat64sPart(ref[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vRef, _ := simdmath.LoadFloat32sPart(ref[i:])
+		vRef, _ := simdmath.LoadFloat64sPart(ref[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		vDOut.IfElse(vRef.GreaterEqual(vZero), vDOut.Mul(vSlope)).StorePart(dx[i:])
 	}
 }
@@ -469,10 +469,10 @@ func vjpSeluFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			pos.IfElse(vY.Greater(vZero), neg).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vY, _ := simd.LoadFloat32sPart(y[i:])
-			vY, _ := simd.LoadFloat64sPart(y[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vY, _ := simdmath.LoadFloat32sPart(y[i:])
+			vY, _ := simdmath.LoadFloat64sPart(y[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			pos := vDOut.Mul(vScale)
 			neg := vDOut.Mul(vY.Add(vScaleAlpha))
 			pos.IfElse(vY.Greater(vZero), neg).StorePart(dx[i:])
@@ -489,10 +489,10 @@ func vjpSeluFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			pos.IfElse(vX.Greater(vZero), neg).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-			vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+			vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			pos := vDOut.Mul(vScale)
 			//alt:float32 neg := vDOut.Mul(vScaleAlpha).Mul(simdmath.ExpFloat32(vX))
 			neg := vDOut.Mul(vScaleAlpha).Mul(simdmath.ExpFloat64(vX)) //alt:float64
@@ -518,10 +518,10 @@ func vjpSiluFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 		vDOut.Mul(fPrime).Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-		vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+		vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		//alt:float32 s := simdmath.SigmoidFloat32(vX)
 		s := simdmath.SigmoidFloat64(vX) //alt:float64
 		fPrime := s.Mul(vOne.Add(vX.Mul(vOne.Sub(s))))
@@ -554,10 +554,10 @@ func vjpHardSwishFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 		res.Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-		vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+		vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		mid := vDOut.Mul(vX.MulAdd(vOneThird, vHalf))
 		res := mid.IfElse(vX.Greater(vNegThree), vZero)
 		res = vDOut.IfElse(vX.GreaterEqual(vThree), res)
@@ -585,10 +585,10 @@ func vjpTanhFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(vOne.Sub(vY.Mul(vY))).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vY, _ := simd.LoadFloat32sPart(y[i:])
-			vY, _ := simd.LoadFloat64sPart(y[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vY, _ := simdmath.LoadFloat32sPart(y[i:])
+			vY, _ := simdmath.LoadFloat64sPart(y[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			vDOut.Mul(vOne.Sub(vY.Mul(vY))).StorePart(dx[i:])
 		}
 	} else {
@@ -602,10 +602,10 @@ func vjpTanhFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 			vDOut.Mul(vOne.Sub(t.Mul(t))).Store(dx[i:])
 		}
 		if i < len(dOutput) {
-			//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-			vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+			//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+			vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 			//alt:float32 t := simdmath.TanhFloat32(vX)
 			t := simdmath.TanhFloat64(vX) //alt:float64
 			vDOut.Mul(vOne.Sub(t.Mul(t))).StorePart(dx[i:])
@@ -640,10 +640,10 @@ func GeluExactFloat64SIMDVJP(y, x, dOutput, dx []float64) { //alt:float64
 		vDOut.Mul(fPrime).Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-		vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+		vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		//alt:float32 cdf := vHalf.Mul(vOne.Add(simdmath.ErfFloat32(vX.Mul(vInvSqrt2))))
 		cdf := vHalf.Mul(vOne.Add(simdmath.ErfFloat64(vX.Mul(vInvSqrt2)))) //alt:float64
 		//alt:float32 pdf := vInvSqrt2Pi.Mul(simdmath.ExpFloat32(vX.Mul(vX).Mul(vNegHalf)))
@@ -682,10 +682,10 @@ func vjpGeluApproxFloat64SIMD(y, x, dOutput, dx []float64) { //alt:float64
 		vDOut.Mul(fPrime).Store(dx[i:])
 	}
 	if i < len(dOutput) {
-		//alt:float32 vX, _ := simd.LoadFloat32sPart(x[i:])
-		vX, _ := simd.LoadFloat64sPart(x[i:]) //alt:float64
-		//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[i:])
-		vDOut, _ := simd.LoadFloat64sPart(dOutput[i:]) //alt:float64
+		//alt:float32 vX, _ := simdmath.LoadFloat32sPart(x[i:])
+		vX, _ := simdmath.LoadFloat64sPart(x[i:]) //alt:float64
+		//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[i:])
+		vDOut, _ := simdmath.LoadFloat64sPart(dOutput[i:]) //alt:float64
 		x2 := vX.Mul(vX)
 		x3 := x2.Mul(vX)
 		u := vSqrt2ByPi.Mul(vX.MulAdd(vConst044715, x3))
@@ -723,12 +723,12 @@ func vjpSwiGLUFloat64SIMD(x, dOutput, dx []float64, numRows, hiddenDim int) { //
 			vDOut.Mul(swish).Store(dx[xOffset+hiddenDim+j:])
 		}
 		if j < hiddenDim {
-			//alt:float32 vGate, _ := simd.LoadFloat32sPart(x[xOffset+j:])
-			vGate, _ := simd.LoadFloat64sPart(x[xOffset+j:]) //alt:float64
-			//alt:float32 vVal, _ := simd.LoadFloat32sPart(x[xOffset+hiddenDim+j:])
-			vVal, _ := simd.LoadFloat64sPart(x[xOffset+hiddenDim+j:]) //alt:float64
-			//alt:float32 vDOut, _ := simd.LoadFloat32sPart(dOutput[dOutOffset+j:])
-			vDOut, _ := simd.LoadFloat64sPart(dOutput[dOutOffset+j:]) //alt:float64
+			//alt:float32 vGate, _ := simdmath.LoadFloat32sPart(x[xOffset+j:])
+			vGate, _ := simdmath.LoadFloat64sPart(x[xOffset+j:]) //alt:float64
+			//alt:float32 vVal, _ := simdmath.LoadFloat32sPart(x[xOffset+hiddenDim+j:])
+			vVal, _ := simdmath.LoadFloat64sPart(x[xOffset+hiddenDim+j:]) //alt:float64
+			//alt:float32 vDOut, _ := simdmath.LoadFloat32sPart(dOutput[dOutOffset+j:])
+			vDOut, _ := simdmath.LoadFloat64sPart(dOutput[dOutOffset+j:]) //alt:float64
 
 			//alt:float32 s := simdmath.SigmoidFloat32(vGate)
 			s := simdmath.SigmoidFloat64(vGate) //alt:float64

@@ -39,7 +39,7 @@ func simdUnaryFloat32(in, out []float32, fn func(simd.Float32s) simd.Float32s) {
 		fn(v).Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
 		fn(v).StorePart(out[i:])
 	}
 }
@@ -56,7 +56,7 @@ func simdSignFloat32(in, out []float32) {
 		res.Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadFloat32sPart(in[i:])
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
 		res := vPosOne.IfElse(v.Greater(vZero), vNegOne.IfElse(v.Less(vZero), vZero))
 		res.StorePart(out[i:])
 	}
@@ -74,7 +74,7 @@ func simdUnaryFloat64(in, out []float64, fn func(simd.Float64s) simd.Float64s) {
 		fn(v).Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadFloat64sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:])
 		fn(v).StorePart(out[i:])
 	}
 }
@@ -91,7 +91,7 @@ func simdSignFloat64(in, out []float64) {
 		res.Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadFloat64sPart(in[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:])
 		res := vPosOne.IfElse(v.Greater(vZero), vNegOne.IfElse(v.Less(vZero), vZero))
 		res.StorePart(out[i:])
 	}
@@ -152,7 +152,7 @@ func simdAbsInt32(in, out []int32) {
 		simd.LoadInt32s(in[i:]).Abs().Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadInt32sPart(in[i:])
+		v, _ := simdmath.LoadInt32sPart(in[i:])
 		v.Abs().StorePart(out[i:])
 	}
 }
@@ -164,7 +164,7 @@ func simdNegInt32(in, out []int32) {
 		simd.LoadInt32s(in[i:]).Neg().Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadInt32sPart(in[i:])
+		v, _ := simdmath.LoadInt32sPart(in[i:])
 		v.Neg().StorePart(out[i:])
 	}
 }
@@ -176,7 +176,7 @@ func simdNegInt64(in, out []int64) {
 		simd.LoadInt64s(in[i:]).Neg().Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadInt64sPart(in[i:])
+		v, _ := simdmath.LoadInt64sPart(in[i:])
 		v.Neg().StorePart(out[i:])
 	}
 }
@@ -193,7 +193,7 @@ func simdSignInt32(in, out []int32) {
 		res.Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadInt32sPart(in[i:])
+		v, _ := simdmath.LoadInt32sPart(in[i:])
 		res := vPosOne.IfElse(v.Greater(vZero), vNegOne.IfElse(v.Less(vZero), vZero))
 		res.StorePart(out[i:])
 	}
@@ -211,7 +211,7 @@ func simdSignInt64(in, out []int64) {
 		res.Store(out[i:])
 	}
 	if i < len(out) {
-		v, _ := simd.LoadInt64sPart(in[i:])
+		v, _ := simdmath.LoadInt64sPart(in[i:])
 		res := vPosOne.IfElse(v.Greater(vZero), vNegOne.IfElse(v.Less(vZero), vZero))
 		res.StorePart(out[i:])
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/support/simdmath"
 )
 
 const PrioritySIMD = gobackend.PriorityTyped + 5
@@ -38,8 +39,8 @@ func simdAddVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -52,7 +53,7 @@ func simdAddVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -64,8 +65,8 @@ func simdSubVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -78,7 +79,7 @@ func simdSubVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -91,7 +92,7 @@ func simdSubSVFloat32(c float32, rhs []float32, out []float32) {
 		vC.Sub(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -103,8 +104,8 @@ func simdMulVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
 	}
 }
@@ -117,7 +118,7 @@ func simdMulVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
@@ -129,8 +130,8 @@ func simdDivVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Div(vR).StorePart(out[i:])
 	}
 }
@@ -143,7 +144,7 @@ func simdDivVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Div(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Div(vC).StorePart(out[i:])
 	}
 }
@@ -156,7 +157,7 @@ func simdDivSVFloat32(c float32, rhs []float32, out []float32) {
 		vC.Div(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vC.Div(vR).StorePart(out[i:])
 	}
 }
@@ -169,8 +170,8 @@ func simdAddVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Add(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -183,7 +184,7 @@ func simdAddVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -195,8 +196,8 @@ func simdSubVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Sub(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -209,7 +210,7 @@ func simdSubVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -222,7 +223,7 @@ func simdSubSVFloat64(c float64, rhs []float64, out []float64) {
 		vC.Sub(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -234,8 +235,8 @@ func simdMulVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Mul(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
 	}
 }
@@ -248,7 +249,7 @@ func simdMulVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
@@ -260,8 +261,8 @@ func simdDivVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Div(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Div(vR).StorePart(out[i:])
 	}
 }
@@ -274,7 +275,7 @@ func simdDivVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Div(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Div(vC).StorePart(out[i:])
 	}
 }
@@ -287,7 +288,7 @@ func simdDivSVFloat64(c float64, rhs []float64, out []float64) {
 		vC.Div(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vC.Div(vR).StorePart(out[i:])
 	}
 }
@@ -300,8 +301,8 @@ func simdAddVVInt32(lhs, rhs, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Add(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -314,7 +315,7 @@ func simdAddVSInt32(lhs []int32, c int32, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -326,8 +327,8 @@ func simdSubVVInt32(lhs, rhs, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Sub(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -340,7 +341,7 @@ func simdSubVSInt32(lhs []int32, c int32, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -353,7 +354,7 @@ func simdSubSVInt32(c int32, rhs []int32, out []int32) {
 		vC.Sub(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -365,8 +366,8 @@ func simdMulVVInt32(lhs, rhs, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Mul(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
 	}
 }
@@ -379,7 +380,7 @@ func simdMulVSInt32(lhs []int32, c int32, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
@@ -392,8 +393,8 @@ func simdAddVVUint32(lhs, rhs, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Add(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -406,7 +407,7 @@ func simdAddVSUint32(lhs []uint32, c uint32, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -418,8 +419,8 @@ func simdSubVVUint32(lhs, rhs, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Sub(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -432,7 +433,7 @@ func simdSubVSUint32(lhs []uint32, c uint32, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -445,7 +446,7 @@ func simdSubSVUint32(c uint32, rhs []uint32, out []uint32) {
 		vC.Sub(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -457,8 +458,8 @@ func simdMulVVUint32(lhs, rhs, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Mul(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
 	}
 }
@@ -471,7 +472,7 @@ func simdMulVSUint32(lhs []uint32, c uint32, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
@@ -484,8 +485,8 @@ func simdAddVVInt64(lhs, rhs, out []int64) {
 		simd.LoadInt64s(lhs[i:]).Add(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt64sPart(lhs[i:])
-		vR, _ := simd.LoadInt64sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -498,7 +499,7 @@ func simdAddVSInt64(lhs []int64, c int64, out []int64) {
 		simd.LoadInt64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt64sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -510,8 +511,8 @@ func simdSubVVInt64(lhs, rhs, out []int64) {
 		simd.LoadInt64s(lhs[i:]).Sub(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt64sPart(lhs[i:])
-		vR, _ := simd.LoadInt64sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -524,7 +525,7 @@ func simdSubVSInt64(lhs []int64, c int64, out []int64) {
 		simd.LoadInt64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt64sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -537,7 +538,7 @@ func simdSubSVInt64(c int64, rhs []int64, out []int64) {
 		vC.Sub(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadInt64sPart(rhs[i:])
+		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -550,8 +551,8 @@ func simdAddVVUint64(lhs, rhs, out []uint64) {
 		simd.LoadUint64s(lhs[i:]).Add(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint64sPart(lhs[i:])
-		vR, _ := simd.LoadUint64sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
 	}
 }
@@ -564,7 +565,7 @@ func simdAddVSUint64(lhs []uint64, c uint64, out []uint64) {
 		simd.LoadUint64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint64sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
@@ -576,8 +577,8 @@ func simdSubVVUint64(lhs, rhs, out []uint64) {
 		simd.LoadUint64s(lhs[i:]).Sub(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint64sPart(lhs[i:])
-		vR, _ := simd.LoadUint64sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -590,7 +591,7 @@ func simdSubVSUint64(lhs []uint64, c uint64, out []uint64) {
 		simd.LoadUint64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint64sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
@@ -603,7 +604,7 @@ func simdSubSVUint64(c uint64, rhs []uint64, out []uint64) {
 		vC.Sub(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vR, _ := simd.LoadUint64sPart(rhs[i:])
+		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
@@ -971,8 +972,8 @@ func simdV2V1AddFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Add(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1011,8 +1012,8 @@ func simdV2V1MulFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Mul(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1051,8 +1052,8 @@ func simdV2V1SubFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Sub(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1087,8 +1088,8 @@ func simdV1V2SubFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lhs[i:])
-			vR, _ := simd.LoadFloat32sPart(rRow[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rRow[i:])
 			vL.Sub(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1123,8 +1124,8 @@ func simdV2V1DivFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Div(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Div(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1159,8 +1160,8 @@ func simdV1V2DivFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lhs[i:])
-			vR, _ := simd.LoadFloat32sPart(rRow[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rRow[i:])
 			vL.Div(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1195,8 +1196,8 @@ func simdV2V1MaxFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Max(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1235,8 +1236,8 @@ func simdV2V1MinFloat32(lhs, rhs, out []float32, A, B int) {
 			simd.LoadFloat32s(lRow[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
 		if i < B {
-			vL, _ := simd.LoadFloat32sPart(lRow[i:])
-			vR, _ := simd.LoadFloat32sPart(rhs[i:])
+			vL, _ := simdmath.LoadFloat32sPart(lRow[i:])
+			vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 			vL.Min(vR).StorePart(oRow[i:])
 		}
 	}
@@ -1258,8 +1259,8 @@ func simdMaxVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
 	}
 }
@@ -1272,7 +1273,7 @@ func simdMaxVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
@@ -1284,8 +1285,8 @@ func simdMinVVFloat32(lhs, rhs, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
-		vR, _ := simd.LoadFloat32sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
 	}
 }
@@ -1298,7 +1299,7 @@ func simdMinVSFloat32(lhs []float32, c float32, out []float32) {
 		simd.LoadFloat32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat32sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
 }
@@ -1311,8 +1312,8 @@ func simdMaxVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Max(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
 	}
 }
@@ -1325,7 +1326,7 @@ func simdMaxVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Max(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
@@ -1337,8 +1338,8 @@ func simdMinVVFloat64(lhs, rhs, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Min(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
-		vR, _ := simd.LoadFloat64sPart(rhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
+		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
 	}
 }
@@ -1351,7 +1352,7 @@ func simdMinVSFloat64(lhs []float64, c float64, out []float64) {
 		simd.LoadFloat64s(lhs[i:]).Min(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadFloat64sPart(lhs[i:])
+		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
 }
@@ -1364,8 +1365,8 @@ func simdMaxVVInt32(lhs, rhs, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Max(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
 	}
 }
@@ -1378,7 +1379,7 @@ func simdMaxVSInt32(lhs []int32, c int32, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
@@ -1390,8 +1391,8 @@ func simdMinVVInt32(lhs, rhs, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Min(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
-		vR, _ := simd.LoadInt32sPart(rhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
+		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
 	}
 }
@@ -1404,7 +1405,7 @@ func simdMinVSInt32(lhs []int32, c int32, out []int32) {
 		simd.LoadInt32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadInt32sPart(lhs[i:])
+		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
 }
@@ -1417,8 +1418,8 @@ func simdMaxVVUint32(lhs, rhs, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Max(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
 	}
 }
@@ -1431,7 +1432,7 @@ func simdMaxVSUint32(lhs []uint32, c uint32, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
@@ -1443,8 +1444,8 @@ func simdMinVVUint32(lhs, rhs, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Min(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
-		vR, _ := simd.LoadUint32sPart(rhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
+		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
 	}
 }
@@ -1457,7 +1458,7 @@ func simdMinVSUint32(lhs []uint32, c uint32, out []uint32) {
 		simd.LoadUint32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
 	if i < len(out) {
-		vL, _ := simd.LoadUint32sPart(lhs[i:])
+		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
 }
