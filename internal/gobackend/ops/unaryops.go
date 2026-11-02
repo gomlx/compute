@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/exceptions"
+	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/pkg/errors"
@@ -98,10 +99,23 @@ func unaryOperandAndOutput(backend *gobackend.Backend, inputs []*gobackend.Buffe
 }
 
 // runUnarySlices executes fn across inputs and outputs, parallelizing across chunks if large enough.
-func runUnarySlices[T any](backend *gobackend.Backend, inputs, outputs []T, fn func(in, out []T)) {
+func runUnarySlices[I, O any](backend *gobackend.Backend, inputs []I, outputs []O, fn func(in []I, out []O)) {
 	n := len(inputs)
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 65536 {
-		backend.Scheduler.ParallelizeChunks(n, 32768, func(start, end int) {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 16384 {
+		backend.Scheduler.ParallelizeChunks(n, 8192, func(start, end int) {
+			fn(inputs[start:end], outputs[start:end])
+		})
+		return
+	}
+	fn(inputs, outputs)
+}
+
+// runUnaryTranscendentalSlices executes expensive math unary functions across inputs and outputs,
+// parallelizing across smaller chunks (4096 elements) since per-element cost is high.
+func runUnaryTranscendentalSlices[T any](backend *gobackend.Backend, inputs, outputs []T, fn func(in, out []T)) {
+	n := len(inputs)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 4096 {
+		backend.Scheduler.ParallelizeChunks(n, 4096, func(start, end int) {
 			fn(inputs[start:end], outputs[start:end])
 		})
 		return
@@ -171,29 +185,29 @@ func execSign(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	}
 	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execSignGeneric(input.Flat.([]int8), output.Flat.([]int8))
+		runUnarySlices(backend, input.Flat.([]int8), output.Flat.([]int8), execSignGeneric[int8])
 	case dtypes.Int16:
-		execSignGeneric(input.Flat.([]int16), output.Flat.([]int16))
+		runUnarySlices(backend, input.Flat.([]int16), output.Flat.([]int16), execSignGeneric[int16])
 	case dtypes.Int32:
-		execSignGeneric(input.Flat.([]int32), output.Flat.([]int32))
+		runUnarySlices(backend, input.Flat.([]int32), output.Flat.([]int32), execSignGeneric[int32])
 	case dtypes.Int64:
-		execSignGeneric(input.Flat.([]int64), output.Flat.([]int64))
+		runUnarySlices(backend, input.Flat.([]int64), output.Flat.([]int64), execSignGeneric[int64])
 	case dtypes.Uint8:
-		execSignForUnsignedGeneric(input.Flat.([]uint8), output.Flat.([]uint8))
+		runUnarySlices(backend, input.Flat.([]uint8), output.Flat.([]uint8), execSignForUnsignedGeneric[uint8])
 	case dtypes.Uint16:
-		execSignForUnsignedGeneric(input.Flat.([]uint16), output.Flat.([]uint16))
+		runUnarySlices(backend, input.Flat.([]uint16), output.Flat.([]uint16), execSignForUnsignedGeneric[uint16])
 	case dtypes.Uint32:
-		execSignForUnsignedGeneric(input.Flat.([]uint32), output.Flat.([]uint32))
+		runUnarySlices(backend, input.Flat.([]uint32), output.Flat.([]uint32), execSignForUnsignedGeneric[uint32])
 	case dtypes.Uint64:
-		execSignForUnsignedGeneric(input.Flat.([]uint64), output.Flat.([]uint64))
+		runUnarySlices(backend, input.Flat.([]uint64), output.Flat.([]uint64), execSignForUnsignedGeneric[uint64])
 	case dtypes.Float32:
-		execSignGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]float32), execSignGeneric[float32])
 	case dtypes.Float64:
-		execSignGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]float64), execSignGeneric[float64])
 	case dtypes.BFloat16:
-		execSignHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execSignHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execSignHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execSignHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -250,13 +264,13 @@ func execAbs(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	switch input.RawShape.DType {
 	case dtypes.Int8:
-		execAbsGeneric(input.Flat.([]int8), output.Flat.([]int8))
+		runUnarySlices(backend, input.Flat.([]int8), output.Flat.([]int8), execAbsGeneric[int8])
 	case dtypes.Int16:
-		execAbsGeneric(input.Flat.([]int16), output.Flat.([]int16))
+		runUnarySlices(backend, input.Flat.([]int16), output.Flat.([]int16), execAbsGeneric[int16])
 	case dtypes.Int32:
-		execAbsGeneric(input.Flat.([]int32), output.Flat.([]int32))
+		runUnarySlices(backend, input.Flat.([]int32), output.Flat.([]int32), execAbsGeneric[int32])
 	case dtypes.Int64:
-		execAbsGeneric(input.Flat.([]int64), output.Flat.([]int64))
+		runUnarySlices(backend, input.Flat.([]int64), output.Flat.([]int64), execAbsGeneric[int64])
 	case dtypes.Uint8:
 		execAbsUnsignedGeneric[uint8](input, output)
 	case dtypes.Uint16:
@@ -266,13 +280,13 @@ func execAbs(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	case dtypes.Uint64:
 		execAbsUnsignedGeneric[uint64](input, output)
 	case dtypes.Float32:
-		execAbsGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]float32), execAbsGeneric[float32])
 	case dtypes.Float64:
-		execAbsGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]float64), execAbsGeneric[float64])
 	case dtypes.BFloat16:
-		execAbsHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execAbsHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execAbsHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execAbsHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -321,9 +335,11 @@ func execLogicalNot(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	if input.RawShape.DType != dtypes.Bool {
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
-	for ii, val := range input.Flat.([]bool) {
-		output.Flat.([]bool)[ii] = !val
-	}
+	runUnarySlices(backend, input.Flat.([]bool), output.Flat.([]bool), func(in, out []bool) {
+		for ii, val := range in {
+			out[ii] = !val
+		}
+	})
 	return output, nil
 }
 
@@ -496,13 +512,13 @@ func execExp(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execExpGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execExpGeneric[float32])
 	case dtypes.Float64:
-		execExpGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execExpGeneric[float64])
 	case dtypes.BFloat16:
-		execExpHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execExpHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execExpHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execExpHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -534,13 +550,13 @@ func execExpm1(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execExpm1Generic(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execExpm1Generic[float32])
 	case dtypes.Float64:
-		execExpm1Generic(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execExpm1Generic[float64])
 	case dtypes.BFloat16:
-		execExpm1HalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execExpm1HalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execExpm1HalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execExpm1HalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -572,13 +588,13 @@ func execLog1p(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLog1pGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execLog1pGeneric[float32])
 	case dtypes.Float64:
-		execLog1pGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execLog1pGeneric[float64])
 	case dtypes.BFloat16:
-		execLog1pHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execLog1pHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execLog1pHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execLog1pHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -610,13 +626,13 @@ func execLog(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLogGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execLogGeneric[float32])
 	case dtypes.Float64:
-		execLogGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execLogGeneric[float64])
 	case dtypes.BFloat16:
-		execLogHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execLogHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execLogHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execLogHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -648,17 +664,28 @@ func execLogistic(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execLogisticGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execLogisticFloat32)
 	case dtypes.Float64:
-		execLogisticGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execLogisticGeneric[float64])
 	case dtypes.BFloat16:
-		execLogisticHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execLogisticHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execLogisticHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execLogisticHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
 	return output, nil
+}
+
+func execLogisticFloat32(inputs, outputs []float32) {
+	for ii, input := range inputs {
+		if input >= 0 {
+			outputs[ii] = 1.0 / (1.0 + fastmath.Exp32(-input))
+		} else {
+			ex := fastmath.Exp32(input)
+			outputs[ii] = ex / (1.0 + ex)
+		}
+	}
 }
 
 func execLogisticGeneric[T float32 | float64](inputs, outputs []T) {
@@ -674,15 +701,15 @@ func execLogisticGeneric[T float32 | float64](inputs, outputs []T) {
 
 func execLogisticHalfPrecision[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](inputs, outputs []T) {
 	for ii, input := range inputs {
-		input64 := float64(input.Float32())
-		var output64 float64
-		if input64 >= 0 {
-			output64 = 1.0 / (1.0 + math.Exp(-input64))
+		x := input.Float32()
+		var out float32
+		if x >= 0 {
+			out = 1.0 / (1.0 + fastmath.Exp32(-x))
 		} else {
-			e_x := math.Exp(input64)
-			output64 = e_x / (1.0 + e_x)
+			ex := fastmath.Exp32(x)
+			out = ex / (1.0 + ex)
 		}
-		P(&outputs[ii]).SetFloat32(float32(output64))
+		P(&outputs[ii]).SetFloat32(out)
 	}
 }
 
@@ -699,13 +726,13 @@ func execCeil(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execCeilGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]float32), execCeilGeneric[float32])
 	case dtypes.Float64:
-		execCeilGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]float64), execCeilGeneric[float64])
 	case dtypes.BFloat16:
-		execCeilHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execCeilHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execCeilHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execCeilHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -737,13 +764,13 @@ func execFloor(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execFloorGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]float32), execFloorGeneric[float32])
 	case dtypes.Float64:
-		execFloorGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]float64), execFloorGeneric[float64])
 	case dtypes.BFloat16:
-		execFloorHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execFloorHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execFloorHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execFloorHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -775,13 +802,13 @@ func execRound(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execRoundGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]float32), execRoundGeneric[float32])
 	case dtypes.Float64:
-		execRoundGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]float64), execRoundGeneric[float64])
 	case dtypes.BFloat16:
-		execRoundHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execRoundHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execRoundHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execRoundHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -813,13 +840,13 @@ func execRsqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execRsqrtGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execRsqrtGeneric[float32])
 	case dtypes.Float64:
-		execRsqrtGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execRsqrtGeneric[float64])
 	case dtypes.BFloat16:
-		execRsqrtHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execRsqrtHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execRsqrtHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execRsqrtHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -851,13 +878,13 @@ func execSqrt(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execSqrtGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execSqrtGeneric[float32])
 	case dtypes.Float64:
-		execSqrtGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execSqrtGeneric[float64])
 	case dtypes.BFloat16:
-		execSqrtHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execSqrtHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execSqrtHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execSqrtHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -889,13 +916,13 @@ func execCos(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execCosGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execCosGeneric[float32])
 	case dtypes.Float64:
-		execCosGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execCosGeneric[float64])
 	case dtypes.BFloat16:
-		execCosHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execCosHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execCosHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execCosHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -927,13 +954,13 @@ func execSin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execSinGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execSinGeneric[float32])
 	case dtypes.Float64:
-		execSinGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execSinGeneric[float64])
 	case dtypes.BFloat16:
-		execSinHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execSinHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execSinHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execSinHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -965,13 +992,13 @@ func execTanh(backend *gobackend.Backend, node *gobackend.Node, inputs []*goback
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execTanhGeneric(input.Flat.([]float32), output.Flat.([]float32))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float32), output.Flat.([]float32), execTanhGeneric[float32])
 	case dtypes.Float64:
-		execTanhGeneric(input.Flat.([]float64), output.Flat.([]float64))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float64), output.Flat.([]float64), execTanhGeneric[float64])
 	case dtypes.BFloat16:
-		execTanhHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execTanhHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execTanhHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execTanhHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -1007,9 +1034,9 @@ func execErf(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	case dtypes.Float64:
 		execErfGeneric(backend, input.Flat.([]float64), output.Flat.([]float64))
 	case dtypes.BFloat16:
-		execErfHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), execErfHalfPrecision[bfloat16.BFloat16, *bfloat16.BFloat16])
 	case dtypes.Float16:
-		execErfHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16))
+		runUnaryTranscendentalSlices(backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), execErfHalfPrecision[float16.Float16, *float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}
@@ -1077,13 +1104,13 @@ func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	}
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		execIsFiniteGeneric(input.Flat.([]float32), output.Flat.([]bool))
+		runUnarySlices(backend, input.Flat.([]float32), output.Flat.([]bool), execIsFiniteGeneric[float32])
 	case dtypes.Float64:
-		execIsFiniteGeneric(input.Flat.([]float64), output.Flat.([]bool))
+		runUnarySlices(backend, input.Flat.([]float64), output.Flat.([]bool), execIsFiniteGeneric[float64])
 	case dtypes.BFloat16:
-		execIsFiniteHalfPrecision(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bool))
+		runUnarySlices(backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bool), execIsFiniteHalfPrecision[bfloat16.BFloat16])
 	case dtypes.Float16:
-		execIsFiniteHalfPrecision(input.Flat.([]float16.Float16), output.Flat.([]bool))
+		runUnarySlices(backend, input.Flat.([]float16.Float16), output.Flat.([]bool), execIsFiniteHalfPrecision[float16.Float16])
 	default:
 		exceptions.Panicf("unsupported data type %s for %s", input.RawShape.DType, node.OpType)
 	}

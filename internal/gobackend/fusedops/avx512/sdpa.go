@@ -63,7 +63,6 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	vMaxLog := archsimd.BroadcastFloat32x16(maxLogF)
 	vMinLog := archsimd.BroadcastFloat32x16(minLogF)
 	vLog2E := archsimd.BroadcastFloat32x16(log2E)
-	vHalf := archsimd.BroadcastFloat32x16(0.5)
 	vLn2Hi := archsimd.BroadcastFloat32x16(ln2Hi)
 	vLn2Lo := archsimd.BroadcastFloat32x16(ln2Lo)
 
@@ -77,7 +76,7 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	v127 := archsimd.BroadcastUint32x16(127)
 
 	xClamped := x.Max(vMinLog).Min(vMaxLog)
-	z := xClamped.MulAdd(vLog2E, vHalf).RoundScaled(0)
+	z := xClamped.Mul(vLog2E).RoundScaled(0)
 	g := xClamped.Sub(z.Mul(vLn2Hi)).Sub(z.Mul(vLn2Lo))
 
 	n := z.ConvertToInt32().AsUint32x16().Add(v127).ShiftAllLeft(23).BitsToFloat32()
@@ -102,7 +101,7 @@ func DispatchSDPAAVX512(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen, headDim int,
+	groupSize, qStart, qEnd, kvLen, headDim int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) bool {
@@ -114,7 +113,7 @@ func DispatchSDPAAVX512(
 			additiveMask, booleanMask, maskGroupStride,
 			additiveBias, biasGroupStride,
 			scoresScratch,
-			groupSize, seqLen, kvLen,
+			groupSize, qStart, qEnd, kvLen,
 			scale, causal, qLimit, kvLimit,
 		)
 		return true
@@ -125,7 +124,7 @@ func DispatchSDPAAVX512(
 			additiveMask, booleanMask, maskGroupStride,
 			additiveBias, biasGroupStride,
 			scoresScratch,
-			groupSize, seqLen, kvLen,
+			groupSize, qStart, qEnd, kvLen,
 			scale, causal, qLimit, kvLimit,
 		)
 		return true
@@ -136,7 +135,7 @@ func DispatchSDPAAVX512(
 			additiveMask, booleanMask, maskGroupStride,
 			additiveBias, biasGroupStride,
 			scoresScratch,
-			groupSize, seqLen, kvLen,
+			groupSize, qStart, qEnd, kvLen,
 			scale, causal, qLimit, kvLimit,
 		)
 		return true
@@ -147,7 +146,7 @@ func DispatchSDPAAVX512(
 			additiveMask, booleanMask, maskGroupStride,
 			additiveBias, biasGroupStride,
 			scoresScratch,
-			groupSize, seqLen, kvLen, headDim,
+			groupSize, qStart, qEnd, kvLen, headDim,
 			scale, causal, qLimit, kvLimit,
 		)
 		return true
@@ -232,7 +231,7 @@ func sdpaFloat32AVX512Dim32(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen int,
+	groupSize, qStart, qEnd, kvLen int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
@@ -241,7 +240,7 @@ func sdpaFloat32AVX512Dim32(
 		gMaskOff := gIdx * maskGroupStride
 		gBiasOff := gIdx * biasGroupStride
 
-		for qIdx := range seqLen {
+		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
 				for d := range 32 {
@@ -273,12 +272,19 @@ func sdpaFloat32AVX512Dim32(
 			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32])
 
 			rowMax := float32(math.Inf(-1))
+			activeKVLen := kvLenUnmasked
+			if len(booleanMask) > 0 {
+				activeKVLen = 0
+			}
 
 			for ki := range kvLenUnmasked {
 				maskIdx := maskIdxBase + ki
-				if len(booleanMask) > 0 && !booleanMask[maskIdx] {
-					scoresScratch[ki] = float32(math.Inf(-1))
-					continue
+				if len(booleanMask) > 0 {
+					if !booleanMask[maskIdx] {
+						scoresScratch[ki] = float32(math.Inf(-1))
+						continue
+					}
+					activeKVLen = ki + 1
 				}
 
 				kBase := kvOff + ki*kvSeqStride
@@ -300,7 +306,14 @@ func sdpaFloat32AVX512Dim32(
 				}
 			}
 
-			softmaxAndValueAccumDim32(v, output, outBase, kvOff, kvSeqStride, scoresScratch, kvLenUnmasked, rowMax)
+			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
+				for d := range 32 {
+					output[outBase+d] = 0
+				}
+				continue
+			}
+
+			softmaxAndValueAccumDim32(v, output, outBase, kvOff, kvSeqStride, scoresScratch, activeKVLen, rowMax)
 		}
 	}
 }
@@ -388,7 +401,7 @@ func sdpaFloat32AVX512Dim64(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen int,
+	groupSize, qStart, qEnd, kvLen int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
@@ -397,7 +410,7 @@ func sdpaFloat32AVX512Dim64(
 		gMaskOff := gIdx * maskGroupStride
 		gBiasOff := gIdx * biasGroupStride
 
-		for qIdx := range seqLen {
+		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
 				for d := range 64 {
@@ -431,12 +444,19 @@ func sdpaFloat32AVX512Dim64(
 			q3 := archsimd.LoadFloat32x16(q[qBase+48 : qBase+64])
 
 			rowMax := float32(math.Inf(-1))
+			activeKVLen := kvLenUnmasked
+			if len(booleanMask) > 0 {
+				activeKVLen = 0
+			}
 
 			for ki := range kvLenUnmasked {
 				maskIdx := maskIdxBase + ki
-				if len(booleanMask) > 0 && !booleanMask[maskIdx] {
-					scoresScratch[ki] = float32(math.Inf(-1))
-					continue
+				if len(booleanMask) > 0 {
+					if !booleanMask[maskIdx] {
+						scoresScratch[ki] = float32(math.Inf(-1))
+						continue
+					}
+					activeKVLen = ki + 1
 				}
 
 				kBase := kvOff + ki*kvSeqStride
@@ -460,7 +480,14 @@ func sdpaFloat32AVX512Dim64(
 				}
 			}
 
-			softmaxAndValueAccumDim64(v, output, outBase, kvOff, kvSeqStride, scoresScratch, kvLenUnmasked, rowMax)
+			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
+				for d := range 64 {
+					output[outBase+d] = 0
+				}
+				continue
+			}
+
+			softmaxAndValueAccumDim64(v, output, outBase, kvOff, kvSeqStride, scoresScratch, activeKVLen, rowMax)
 		}
 	}
 }
@@ -564,7 +591,7 @@ func sdpaFloat32AVX512Dim128(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen int,
+	groupSize, qStart, qEnd, kvLen int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
@@ -573,7 +600,7 @@ func sdpaFloat32AVX512Dim128(
 		gMaskOff := gIdx * maskGroupStride
 		gBiasOff := gIdx * biasGroupStride
 
-		for qIdx := range seqLen {
+		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
 				for d := range 128 {
@@ -611,12 +638,19 @@ func sdpaFloat32AVX512Dim128(
 			q7 := archsimd.LoadFloat32x16(q[qBase+112 : qBase+128])
 
 			rowMax := float32(math.Inf(-1))
+			activeKVLen := kvLenUnmasked
+			if len(booleanMask) > 0 {
+				activeKVLen = 0
+			}
 
 			for ki := range kvLenUnmasked {
 				maskIdx := maskIdxBase + ki
-				if len(booleanMask) > 0 && !booleanMask[maskIdx] {
-					scoresScratch[ki] = float32(math.Inf(-1))
-					continue
+				if len(booleanMask) > 0 {
+					if !booleanMask[maskIdx] {
+						scoresScratch[ki] = float32(math.Inf(-1))
+						continue
+					}
+					activeKVLen = ki + 1
 				}
 
 				kBase := kvOff + ki*kvSeqStride
@@ -645,7 +679,14 @@ func sdpaFloat32AVX512Dim128(
 				}
 			}
 
-			softmaxAndValueAccumDim128(v, output, outBase, kvOff, kvSeqStride, scoresScratch, kvLenUnmasked, rowMax)
+			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
+				for d := range 128 {
+					output[outBase+d] = 0
+				}
+				continue
+			}
+
+			softmaxAndValueAccumDim128(v, output, outBase, kvOff, kvSeqStride, scoresScratch, activeKVLen, rowMax)
 		}
 	}
 }
@@ -659,7 +700,7 @@ func sdpaFloat32AVX512General(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen, headDim int,
+	groupSize, qStart, qEnd, kvLen, headDim int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
@@ -668,7 +709,7 @@ func sdpaFloat32AVX512General(
 		gMaskOff := gIdx * maskGroupStride
 		gBiasOff := gIdx * biasGroupStride
 
-		for qIdx := range seqLen {
+		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
 				for d := range headDim {
@@ -697,12 +738,19 @@ func sdpaFloat32AVX512General(
 			biasIdxBase := gBiasOff + qIdx*kvLen
 
 			rowMax := float32(math.Inf(-1))
+			activeKVLen := kvLenUnmasked
+			if len(booleanMask) > 0 {
+				activeKVLen = 0
+			}
 
 			for ki := range kvLenUnmasked {
 				maskIdx := maskIdxBase + ki
-				if len(booleanMask) > 0 && !booleanMask[maskIdx] {
-					scoresScratch[ki] = float32(math.Inf(-1))
-					continue
+				if len(booleanMask) > 0 {
+					if !booleanMask[maskIdx] {
+						scoresScratch[ki] = float32(math.Inf(-1))
+						continue
+					}
+					activeKVLen = ki + 1
 				}
 
 				kBase := kvOff + ki*kvSeqStride
@@ -732,6 +780,14 @@ func sdpaFloat32AVX512General(
 				if s > rowMax {
 					rowMax = s
 				}
+			}
+
+			kvLenUnmasked = activeKVLen
+			if kvLenUnmasked <= 0 || rowMax == float32(math.Inf(-1)) {
+				for d := range headDim {
+					output[outBase+d] = 0
+				}
+				continue
 			}
 
 			// Softmax

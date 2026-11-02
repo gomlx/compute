@@ -4,7 +4,8 @@ package gobackend
 
 // SDPAFloat32ArchFn is a function hook to execute Scaled Dot-Product Attention for float32
 // using architecture-specific kernels (e.g. AVX2, AVX-512).
-// It processes one KV-head group (with groupSize query heads) with zero transpositions.
+// It processes one KV-head group (with groupSize query heads) over query range [qStart, qEnd)
+// with zero transpositions.
 type SDPAFloat32ArchFn func(
 	q, k, v, output []float32,
 	qOff, kvOff, qSeqStride, kvSeqStride, qGroupStride int,
@@ -14,7 +15,7 @@ type SDPAFloat32ArchFn func(
 	additiveBias []float32,
 	biasGroupStride int,
 	scoresScratch []float32,
-	groupSize, seqLen, kvLen, headDim int,
+	groupSize, qStart, qEnd, kvLen, headDim int,
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) bool

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
@@ -525,7 +526,7 @@ func transposeBuffer(backend *gobackend.Backend, buf *gobackend.Buffer, permutat
 // the element stride between consecutive query heads within the group.
 // The output uses qOff/qSeqStride/qGroupStride (same layout as query).
 //
-// scores is a dense [groupSize, seqLen, kvLen] scratch buffer.
+// scores is a [kvLen] per-row scratch buffer.
 // Masks are dense per-head [seqLen, kvLen] buffers, shared across the group when
 // maskGroupStride is 0, or offset by maskGroupStride per group member for per-head masks.
 // additiveBias (optional) is added to scores before additiveMask and softmax; indexed
@@ -539,29 +540,23 @@ func sdpaGeneric[T float32 | float64](
 	biasGroupStride int,
 	scores []T,
 	output []T,
-	groupSize, seqLen, kvLen, headDim int, scale T, causal bool,
+	groupSize, qStart, qEnd, kvLen, headDim int, scale T, causal bool,
 	qLimit, kvLimit int,
 ) {
+	_, isF32 := any(scale).(float32)
+
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
 		gBiasOff := gIdx * biasGroupStride
-		for qIdx := range seqLen {
+		for qIdx := qStart; qIdx < qEnd; qIdx++ {
+			outBase := gQOff + qIdx*qSeqStride
+			outRow := output[outBase : outBase+headDim]
 			if qIdx >= qLimit {
 				// Padded query position: emit a zero output row, skip attention.
-				// Local padBase has its own scope, distinct from the outBase the
-				// accumulation loop declares later, so there is no redeclaration.
-				padBase := gQOff + qIdx*qSeqStride
-				for d := range headDim {
-					output[padBase+d] = 0
-				}
+				clear(outRow)
 				continue
 			}
-			rowMax := T(math.Inf(-1))
-			qBase := gQOff + qIdx*qSeqStride
-			scoreIdxBase := (gIdx*seqLen + qIdx) * kvLen
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
 
 			kvLenUnmasked := kvLen
 			if kvLimit < kvLenUnmasked {
@@ -570,28 +565,53 @@ func sdpaGeneric[T float32 | float64](
 			if causal {
 				kvLenUnmasked = min(kvLenUnmasked, qIdx+1)
 			}
+			if kvLenUnmasked <= 0 {
+				clear(outRow)
+				continue
+			}
 
-			// Zero out scores so a future loop widening past kvLenUnmasked
-			// cannot read stale scores from a prior kvHead iteration.
-			if causal || len(booleanMask) > 0 || kvLimit < kvLen {
-				for i := scoreIdxBase; i < scoreIdxBase+kvLen; i++ {
-					scores[i] = 0
-				}
+			rowMax := T(math.Inf(-1))
+			qBase := gQOff + qIdx*qSeqStride
+			qRow := q[qBase : qBase+headDim]
+			maskIdxBase := gMaskOff + qIdx*kvLen
+			biasIdxBase := gBiasOff + qIdx*kvLen
+
+			activeKVLen := kvLenUnmasked
+			if len(booleanMask) > 0 {
+				activeKVLen = 0
 			}
 
 			for kvIdx := range kvLenUnmasked {
-				scoreIdx := scoreIdxBase + kvIdx
 				maskIdx := maskIdxBase + kvIdx
 				if len(booleanMask) > 0 {
 					if !booleanMask[maskIdx] {
+						scores[kvIdx] = 0
 						continue
 					}
+					activeKVLen = kvIdx + 1
 				}
-				var dot T
 				kBase := kvOff + kvIdx*kvSeqStride
-				for d := range headDim {
-					dot += q[qBase+d] * k[kBase+d]
+				kRow := k[kBase : kBase+headDim]
+
+				var dot0, dot1, dot2, dot3 T
+				d := 0
+				for ; d+7 < headDim; d += 8 {
+					dot0 += qRow[d]*kRow[d] + qRow[d+4]*kRow[d+4]
+					dot1 += qRow[d+1]*kRow[d+1] + qRow[d+5]*kRow[d+5]
+					dot2 += qRow[d+2]*kRow[d+2] + qRow[d+6]*kRow[d+6]
+					dot3 += qRow[d+3]*kRow[d+3] + qRow[d+7]*kRow[d+7]
 				}
+				for ; d+3 < headDim; d += 4 {
+					dot0 += qRow[d] * kRow[d]
+					dot1 += qRow[d+1] * kRow[d+1]
+					dot2 += qRow[d+2] * kRow[d+2]
+					dot3 += qRow[d+3] * kRow[d+3]
+				}
+				dot := (dot0 + dot1) + (dot2 + dot3)
+				for ; d < headDim; d++ {
+					dot += qRow[d] * kRow[d]
+				}
+
 				s := dot * scale
 				if len(additiveBias) > 0 {
 					s += additiveBias[biasIdxBase+kvIdx]
@@ -599,80 +619,91 @@ func sdpaGeneric[T float32 | float64](
 				if len(additiveMask) > 0 {
 					s += additiveMask[maskIdx]
 				}
-				scores[scoreIdx] = s
+				scores[kvIdx] = s
 				if s > rowMax {
 					rowMax = s
 				}
 			}
 
+			kvLenUnmasked = activeKVLen
+			if kvLenUnmasked <= 0 || rowMax == T(math.Inf(-1)) {
+				// All positions were masked: output row is all zeros.
+				clear(outRow)
+				continue
+			}
+
 			// Softmax: exp(scores - max) and sum.
 			var sum T
-			scoreIdx := scoreIdxBase
-			maskIdx := maskIdxBase
 			if len(booleanMask) > 0 {
-				for range kvLenUnmasked {
-					if booleanMask[maskIdx] {
-						scores[scoreIdx] = T(math.Exp(float64(scores[scoreIdx] - rowMax)))
-						sum += scores[scoreIdx]
+				if isF32 {
+					for kvIdx := range kvLenUnmasked {
+						if booleanMask[maskIdxBase+kvIdx] {
+							e := T(fastmath.Exp32(float32(scores[kvIdx] - rowMax)))
+							scores[kvIdx] = e
+							sum += e
+						} else {
+							scores[kvIdx] = 0
+						}
 					}
-					scoreIdx++
-					maskIdx++
+				} else {
+					for kvIdx := range kvLenUnmasked {
+						if booleanMask[maskIdxBase+kvIdx] {
+							e := T(math.Exp(float64(scores[kvIdx] - rowMax)))
+							scores[kvIdx] = e
+							sum += e
+						} else {
+							scores[kvIdx] = 0
+						}
+					}
 				}
 			} else {
-				// No boolean mask, so we can use the fast path.
-				for range kvLenUnmasked {
-					scores[scoreIdx] = T(math.Exp(float64(scores[scoreIdx] - rowMax)))
-					sum += scores[scoreIdx]
-					scoreIdx++
+				if isF32 {
+					for kvIdx := range kvLenUnmasked {
+						e := T(fastmath.Exp32(float32(scores[kvIdx] - rowMax)))
+						scores[kvIdx] = e
+						sum += e
+					}
+				} else {
+					for kvIdx := range kvLenUnmasked {
+						e := T(math.Exp(float64(scores[kvIdx] - rowMax)))
+						scores[kvIdx] = e
+						sum += e
+					}
 				}
 			}
-			// Guard against all-masked rows: if sum == 0 (every position was masked),
-			// set invSum to 0 so the output row is all zeros rather than NaN/Inf.
+
 			var invSum T
 			if sum != 0 {
 				invSum = 1.0 / sum
 			}
-			if len(booleanMask) > 0 {
-				scoreIdx = scoreIdxBase
-				maskIdx = maskIdxBase
-				for range kvLenUnmasked {
-					if booleanMask[maskIdx] {
-						scores[scoreIdx] *= invSum
-					} else {
-						scores[scoreIdx] = 0
-					}
-					scoreIdx++
-					maskIdx++
-				}
-			} else {
-				scoreIdx = scoreIdxBase
-				for range kvLenUnmasked {
-					scores[scoreIdx] *= invSum
-					scoreIdx++
-				}
+			for kvIdx := range kvLenUnmasked {
+				scores[kvIdx] *= invSum
 			}
 
-			// output[qIdx][d] = sum_kvIdx(scores[qIdx][kvIdx] * v[kvIdx][d])
-			outBase := gQOff + qIdx*qSeqStride
-			for d := range headDim {
-				scoreIdx := scoreIdxBase
-				maskIdx := maskIdxBase
-				var acc T
-				if len(booleanMask) > 0 {
-					for kvIdx := range kvLenUnmasked {
-						if booleanMask[maskIdx] {
-							acc += scores[scoreIdx] * v[kvOff+kvIdx*kvSeqStride+d]
-						}
-						scoreIdx++
-						maskIdx++
-					}
-				} else {
-					for kvIdx := range kvLenUnmasked {
-						acc += scores[scoreIdx] * v[kvOff+kvIdx*kvSeqStride+d]
-						scoreIdx++
-					}
+			// output[qIdx][d] = sum_kvIdx(scores[kvIdx] * v[kvIdx][d])
+			// Iterate kvIdx on the outside and d on the inside for contiguous L1 access.
+			clear(outRow)
+			for kvIdx := range kvLenUnmasked {
+				w := scores[kvIdx]
+				if w == 0 {
+					continue
 				}
-				output[outBase+d] = acc
+				vBase := kvOff + kvIdx*kvSeqStride
+				vRow := v[vBase : vBase+headDim]
+				d := 0
+				for ; d+7 < headDim; d += 8 {
+					outRow[d] += w * vRow[d]
+					outRow[d+1] += w * vRow[d+1]
+					outRow[d+2] += w * vRow[d+2]
+					outRow[d+3] += w * vRow[d+3]
+					outRow[d+4] += w * vRow[d+4]
+					outRow[d+5] += w * vRow[d+5]
+					outRow[d+6] += w * vRow[d+6]
+					outRow[d+7] += w * vRow[d+7]
+				}
+				for ; d < headDim; d++ {
+					outRow[d] += w * vRow[d]
+				}
 			}
 		}
 	}
@@ -746,7 +777,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	maskSliceLen := seqLen * kvLen
 	archFn := gobackend.GetSDPAArchDispatcher()
 
-	processHead := func(batchIdx, kvHeadIdx int, scores []T) {
+	processHead := func(batchIdx, kvHeadIdx, qStart, qEnd int, scores []T) {
 		qLimit := seqLen
 		kvLimit := kvLen
 		if len(querySeqLen) > 0 {
@@ -810,7 +841,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 					addMaskF32, booleanMaskSlice, maskGroupStride,
 					addBiasF32, biasGroupStride,
 					scratchF32,
-					groupSize, seqLen, kvLen, headDim,
+					groupSize, qStart, qEnd, kvLen, headDim,
 					float32(scale), causal,
 					qLimit, kvLimit,
 				) {
@@ -825,17 +856,34 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 			additiveBiasSlice, biasGroupStride,
 			scores,
 			out,
-			groupSize, seqLen, kvLen, headDim, scale, causal,
+			groupSize, qStart, qEnd, kvLen, headDim, scale, causal,
 			qLimit, kvLimit,
 		)
 	}
 
-	totalTasks := batchSize * numKVHeads
+	headTasks := batchSize * numKVHeads
+	qBlockSize := max(seqLen, 1)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
+		numWorkers := backend.Scheduler.EffectiveParallelism()
+		if numWorkers > 1 && seqLen > 1 && headTasks*seqLen*kvLen >= 1024 {
+			targetTasks := numWorkers * 8
+			if headTasks < targetTasks {
+				neededQBlocks := (targetTasks + headTasks - 1) / headTasks
+				qBlockSize = max(8, (seqLen+neededQBlocks-1)/neededQBlocks)
+			}
+		}
+	}
+	numQBlocks := 1
+	if seqLen > 0 {
+		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
+	}
+	totalTasks := headTasks * numQBlocks
+	scratchSize := max(kvLen, 1)
+
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
 		workersToStart := min(totalTasks, numWorkers)
 		var taskCounter atomic.Int64
-		scratchSize := max(groupSize*seqLen*kvLen, kvLen)
 
 		tasks := make([]func(), workersToStart)
 		for i := range workersToStart {
@@ -846,18 +894,22 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 					if taskIdx >= totalTasks {
 						break
 					}
-					batchIdx := taskIdx / numKVHeads
-					kvHeadIdx := taskIdx % numKVHeads
-					processHead(batchIdx, kvHeadIdx, workerScores)
+					headTaskIdx := taskIdx / numQBlocks
+					qBlockIdx := taskIdx % numQBlocks
+					batchIdx := headTaskIdx / numKVHeads
+					kvHeadIdx := headTaskIdx % numKVHeads
+					qStart := qBlockIdx * qBlockSize
+					qEnd := min(qStart+qBlockSize, seqLen)
+					processHead(batchIdx, kvHeadIdx, qStart, qEnd, workerScores)
 				}
 			}
 		}
 		backend.Scheduler.RunIntraOpTasks(tasks)
 	} else {
-		scores := make([]T, max(groupSize*seqLen*kvLen, kvLen))
+		scores := make([]T, scratchSize)
 		for batchIdx := range batchSize {
 			for kvHeadIdx := range numKVHeads {
-				processHead(batchIdx, kvHeadIdx, scores)
+				processHead(batchIdx, kvHeadIdx, 0, seqLen, scores)
 			}
 		}
 	}

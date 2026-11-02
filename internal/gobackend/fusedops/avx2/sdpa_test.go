@@ -46,7 +46,7 @@ func TestDispatchSDPAAVX2_Correctness(t *testing.T) {
 				nil, nil, 0,
 				nil, 0,
 				scratch,
-				groupSize, seqLen, kvLen, headDim,
+				groupSize, 0, seqLen, kvLen, headDim,
 				1.0, causal,
 				seqLen, kvLen,
 			)

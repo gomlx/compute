@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -149,7 +150,30 @@ func ReluNoSIMD[T float32 | float64](in, out []T) {
 	}
 }
 
+func sigmoid32(x float32) float32 {
+	if x >= 0 {
+		return 1.0 / (1.0 + fastmath.Exp32(-x))
+	}
+	ex := fastmath.Exp32(x)
+	return ex / (1.0 + ex)
+}
+
+func silu32(x float32) float32 {
+	const minLogF = -88.02969187150841
+	if x < minLogF {
+		return 0
+	}
+	return x / (1.0 + fastmath.Exp32(-x))
+}
+
 func SigmoidNoSIMD[T float32 | float64](in, out []T) {
+	if inF32, ok := any(in).([]float32); ok {
+		outF32 := any(out).([]float32)
+		for i, x := range inF32 {
+			outF32[i] = sigmoid32(x)
+		}
+		return
+	}
 	for i, x := range in {
 		out[i] = T(1.0 / (1.0 + math.Exp(float64(-x))))
 	}
@@ -186,6 +210,17 @@ const (
 )
 
 func SeluNoSIMD[T float32 | float64](in, out []T) {
+	if inF32, ok := any(in).([]float32); ok {
+		outF32 := any(out).([]float32)
+		for i, x := range inF32 {
+			if x > 0 {
+				outF32[i] = float32(seluScale) * x
+			} else {
+				outF32[i] = float32(seluScaleAlpha) * (fastmath.Exp32(x) - 1.0)
+			}
+		}
+		return
+	}
 	for i, x := range in {
 		if x > 0 {
 			out[i] = T(seluScale) * x
@@ -196,6 +231,13 @@ func SeluNoSIMD[T float32 | float64](in, out []T) {
 }
 
 func SiluNoSIMD[T float32 | float64](in, out []T) {
+	if inF32, ok := any(in).([]float32); ok {
+		outF32 := any(out).([]float32)
+		for i, x := range inF32 {
+			outF32[i] = silu32(x)
+		}
+		return
+	}
 	for i, x := range in {
 		out[i] = x / (1.0 + T(math.Exp(float64(-x))))
 	}
@@ -232,6 +274,19 @@ func GeluApproxNoSIMD[T float32 | float64](in, out []T) {
 }
 
 func swigluNoSIMD[T float32 | float64](in, out []T, numRows, hiddenDim int) {
+	if inF32, ok := any(in).([]float32); ok {
+		outF32 := any(out).([]float32)
+		for m := range numRows {
+			inOffset := m * 2 * hiddenDim
+			outOffset := m * hiddenDim
+			for j := range hiddenDim {
+				gate := inF32[inOffset+j]
+				val := inF32[inOffset+hiddenDim+j]
+				outF32[outOffset+j] = silu32(gate) * val
+			}
+		}
+		return
+	}
 	for m := range numRows {
 		inOffset := m * 2 * hiddenDim
 		outOffset := m * hiddenDim
@@ -258,9 +313,7 @@ func ReluBF16NoSIMD(in, out []bfloat16.BFloat16) {
 
 func sigmoidBF16NoSIMD(in, out []bfloat16.BFloat16) {
 	for i, v := range in {
-		x := v.Float32()
-		val := float32(1.0 / (1.0 + math.Exp(float64(-x))))
-		out[i] = bfloat16.FromFloat32(val)
+		out[i] = bfloat16.FromFloat32(sigmoid32(v.Float32()))
 	}
 }
 
@@ -290,7 +343,7 @@ func seluBF16NoSIMD(in, out []bfloat16.BFloat16) {
 		if x > 0 {
 			val = float32(seluScale) * x
 		} else {
-			val = float32(seluScaleAlpha * (math.Exp(float64(x)) - 1.0))
+			val = float32(seluScaleAlpha) * (fastmath.Exp32(x) - 1.0)
 		}
 		out[i] = bfloat16.FromFloat32(val)
 	}
@@ -298,9 +351,7 @@ func seluBF16NoSIMD(in, out []bfloat16.BFloat16) {
 
 func SiluBF16NoSIMD(in, out []bfloat16.BFloat16) {
 	for i, v := range in {
-		x := v.Float32()
-		val := x / (1.0 + float32(math.Exp(float64(-x))))
-		out[i] = bfloat16.FromFloat32(val)
+		out[i] = bfloat16.FromFloat32(silu32(v.Float32()))
 	}
 }
 
@@ -347,8 +398,7 @@ func swigluBF16NoSIMD(in, out []bfloat16.BFloat16, numRows, hiddenDim int) {
 		for j := range hiddenDim {
 			gate := in[inOffset+j].Float32()
 			val := in[inOffset+hiddenDim+j].Float32()
-			siluGate := gate / (1.0 + float32(math.Exp(float64(-gate))))
-			out[outOffset+j] = bfloat16.FromFloat32(siluGate * val)
+			out[outOffset+j] = bfloat16.FromFloat32(silu32(gate) * val)
 		}
 	}
 }
@@ -367,9 +417,7 @@ func ReluF16NoSIMD(in, out []float16.Float16) {
 
 func sigmoidF16NoSIMD(in, out []float16.Float16) {
 	for i, v := range in {
-		x := v.Float32()
-		val := float32(1.0 / (1.0 + math.Exp(float64(-x))))
-		out[i] = float16.FromFloat32(val)
+		out[i] = float16.FromFloat32(sigmoid32(v.Float32()))
 	}
 }
 
@@ -399,7 +447,7 @@ func seluF16NoSIMD(in, out []float16.Float16) {
 		if x > 0 {
 			val = float32(seluScale) * x
 		} else {
-			val = float32(seluScaleAlpha * (math.Exp(float64(x)) - 1.0))
+			val = float32(seluScaleAlpha) * (fastmath.Exp32(x) - 1.0)
 		}
 		out[i] = float16.FromFloat32(val)
 	}
@@ -407,9 +455,7 @@ func seluF16NoSIMD(in, out []float16.Float16) {
 
 func SiluF16NoSIMD(in, out []float16.Float16) {
 	for i, v := range in {
-		x := v.Float32()
-		val := x / (1.0 + float32(math.Exp(float64(-x))))
-		out[i] = float16.FromFloat32(val)
+		out[i] = float16.FromFloat32(silu32(v.Float32()))
 	}
 }
 
@@ -456,8 +502,7 @@ func swigluF16NoSIMD(in, out []float16.Float16, numRows, hiddenDim int) {
 		for j := range hiddenDim {
 			gate := in[inOffset+j].Float32()
 			val := in[inOffset+hiddenDim+j].Float32()
-			siluGate := gate / (1.0 + float32(math.Exp(float64(-gate))))
-			out[outOffset+j] = float16.FromFloat32(siluGate * val)
+			out[outOffset+j] = float16.FromFloat32(silu32(gate) * val)
 		}
 	}
 }
