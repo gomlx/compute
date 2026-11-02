@@ -6,9 +6,6 @@ package simdmath
 
 import (
 	"simd"
-
-	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/dtypes/float16"
 )
 
 // -----------------------------------------------------------------------------
@@ -328,94 +325,3 @@ func GeluApproxFloat64(x simd.Float64s) simd.Float64s {
 	return vHalf.Mul(x).Mul(vOne.Add(TanhFloat64(inner)))
 }
 
-// -----------------------------------------------------------------------------
-// BFloat16 and Float16 Vector Adapters
-// -----------------------------------------------------------------------------
-
-// LoadBFloat16s loads a full vector of bfloat16 by upscaling to Float32s.
-func LoadBFloat16s(s []bfloat16.BFloat16) simd.Float32s {
-	var buf [16]float32
-	n := simd.BroadcastFloat32s(0).Len()
-	for i := 0; i < n; i++ {
-		buf[i] = s[i].Float32()
-	}
-	return simd.LoadFloat32s(buf[:n])
-}
-
-// LoadBFloat16sPart loads a partial vector of bfloat16 upscaled to Float32s.
-func LoadBFloat16sPart(s []bfloat16.BFloat16) (simd.Float32s, int) {
-	var buf [16]float32
-	vLen := simd.BroadcastFloat32s(0).Len()
-	n := min(len(s), vLen)
-	for i := 0; i < n; i++ {
-		buf[i] = s[i].Float32()
-	}
-	v, loaded := simd.LoadFloat32sPart(buf[:n])
-	return v, loaded
-}
-
-// StoreBFloat16s downscales a Float32s vector and stores into s.
-func StoreBFloat16s(s []bfloat16.BFloat16, v simd.Float32s) {
-	var buf [16]float32
-	n := v.Len()
-	v.Store(buf[:n])
-	for i := 0; i < n; i++ {
-		s[i] = bfloat16.FromFloat32(buf[i])
-	}
-}
-
-// StoreBFloat16sPart downscales and stores the partial elements of v into s.
-func StoreBFloat16sPart(s []bfloat16.BFloat16, v simd.Float32s) int {
-	var buf [16]float32
-	vLen := v.Len()
-	n := min(len(s), vLen)
-	v.Store(buf[:vLen])
-	for i := 0; i < n; i++ {
-		s[i] = bfloat16.FromFloat32(buf[i])
-	}
-	return n
-}
-
-// LoadFloat16s loads a full vector of float16 by upscaling to Float32s.
-func LoadFloat16s(s []float16.Float16) simd.Float32s {
-	var buf [16]float32
-	n := simd.BroadcastFloat32s(0).Len()
-	for i := 0; i < n; i++ {
-		buf[i] = s[i].Float32()
-	}
-	return simd.LoadFloat32s(buf[:n])
-}
-
-// LoadFloat16sPart loads a partial vector of float16 upscaled to Float32s.
-func LoadFloat16sPart(s []float16.Float16) (simd.Float32s, int) {
-	var buf [16]float32
-	vLen := simd.BroadcastFloat32s(0).Len()
-	n := min(len(s), vLen)
-	for i := 0; i < n; i++ {
-		buf[i] = s[i].Float32()
-	}
-	v, loaded := simd.LoadFloat32sPart(buf[:n])
-	return v, loaded
-}
-
-// StoreFloat16s downscales a Float32s vector and stores into s.
-func StoreFloat16s(s []float16.Float16, v simd.Float32s) {
-	var buf [16]float32
-	n := v.Len()
-	v.Store(buf[:n])
-	for i := 0; i < n; i++ {
-		s[i] = float16.FromFloat32(buf[i])
-	}
-}
-
-// StoreFloat16sPart downscales and stores the partial elements of v into s.
-func StoreFloat16sPart(s []float16.Float16, v simd.Float32s) int {
-	var buf [16]float32
-	vLen := v.Len()
-	n := min(len(s), vLen)
-	v.Store(buf[:vLen])
-	for i := 0; i < n; i++ {
-		s[i] = float16.FromFloat32(buf[i])
-	}
-	return n
-}

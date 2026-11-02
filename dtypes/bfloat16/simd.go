@@ -7,6 +7,8 @@ package bfloat16
 import (
 	"simd"
 	"unsafe"
+
+	"github.com/gomlx/compute/support/simdmath"
 )
 
 // LoadBFloat16s loads a vector of BFloat16 values into a simd.Uint16s vector.
@@ -20,7 +22,7 @@ func LoadBFloat16s(s []BFloat16) simd.Uint16s {
 // returning the vector and the count of loaded elements.
 func LoadBFloat16sPart(s []BFloat16) (simd.Uint16s, int) {
 	u16Slice := unsafe.Slice((*uint16)(unsafe.Pointer(unsafe.SliceData(s))), len(s))
-	return simd.LoadUint16sPart(u16Slice)
+	return simdmath.LoadUint16sPart(u16Slice)
 }
 
 // StoreBFloat16s stores a simd.Uint16s vector into a BFloat16 slice.

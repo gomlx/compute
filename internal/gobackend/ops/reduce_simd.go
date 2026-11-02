@@ -14,6 +14,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/support/sets"
+	"github.com/gomlx/compute/support/simdmath"
 )
 
 func init() {
@@ -154,8 +155,8 @@ func simdReduceLeadingSumFloat32(in, out []float32, A, B int) {
 			vOut.Add(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat32sPart(out[i:B])
-			vIn, _ := simd.LoadFloat32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat32sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat32sPart(in[off+i : off+B])
 			vOut.Add(vIn).StorePart(out[i:B])
 		}
 	}
@@ -188,7 +189,7 @@ func simdReduceTrailingSumFloat32(in []float32, out []float32, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat32sPart(row)
+			v, _ := simdmath.LoadFloat32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -304,8 +305,8 @@ func simdReduceLeadingMaxFloat32(in, out []float32, A, B int) {
 			vOut.Max(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat32sPart(out[i:B])
-			vIn, _ := simd.LoadFloat32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat32sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat32sPart(in[off+i : off+B])
 			vOut.Max(vIn).StorePart(out[i:B])
 		}
 	}
@@ -338,7 +339,7 @@ func simdReduceTrailingMaxFloat32(in []float32, out []float32, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat32sPart(row)
+			v, _ := simdmath.LoadFloat32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -454,8 +455,8 @@ func simdReduceLeadingMinFloat32(in, out []float32, A, B int) {
 			vOut.Min(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat32sPart(out[i:B])
-			vIn, _ := simd.LoadFloat32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat32sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat32sPart(in[off+i : off+B])
 			vOut.Min(vIn).StorePart(out[i:B])
 		}
 	}
@@ -488,7 +489,7 @@ func simdReduceTrailingMinFloat32(in []float32, out []float32, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat32sPart(row)
+			v, _ := simdmath.LoadFloat32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -604,8 +605,8 @@ func simdReduceLeadingProductFloat32(in, out []float32, A, B int) {
 			vOut.Mul(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat32sPart(out[i:B])
-			vIn, _ := simd.LoadFloat32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat32sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat32sPart(in[off+i : off+B])
 			vOut.Mul(vIn).StorePart(out[i:B])
 		}
 	}
@@ -638,7 +639,7 @@ func simdReduceTrailingProductFloat32(in []float32, out []float32, A, B int, dty
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat32sPart(row)
+			v, _ := simdmath.LoadFloat32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -754,8 +755,8 @@ func simdReduceLeadingSumFloat64(in, out []float64, A, B int) {
 			vOut.Add(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat64sPart(out[i:B])
-			vIn, _ := simd.LoadFloat64sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat64sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat64sPart(in[off+i : off+B])
 			vOut.Add(vIn).StorePart(out[i:B])
 		}
 	}
@@ -788,7 +789,7 @@ func simdReduceTrailingSumFloat64(in []float64, out []float64, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat64sPart(row)
+			v, _ := simdmath.LoadFloat64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -904,8 +905,8 @@ func simdReduceLeadingMaxFloat64(in, out []float64, A, B int) {
 			vOut.Max(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat64sPart(out[i:B])
-			vIn, _ := simd.LoadFloat64sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat64sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat64sPart(in[off+i : off+B])
 			vOut.Max(vIn).StorePart(out[i:B])
 		}
 	}
@@ -938,7 +939,7 @@ func simdReduceTrailingMaxFloat64(in []float64, out []float64, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat64sPart(row)
+			v, _ := simdmath.LoadFloat64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1054,8 +1055,8 @@ func simdReduceLeadingMinFloat64(in, out []float64, A, B int) {
 			vOut.Min(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat64sPart(out[i:B])
-			vIn, _ := simd.LoadFloat64sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat64sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat64sPart(in[off+i : off+B])
 			vOut.Min(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1088,7 +1089,7 @@ func simdReduceTrailingMinFloat64(in []float64, out []float64, A, B int, dtype d
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat64sPart(row)
+			v, _ := simdmath.LoadFloat64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1204,8 +1205,8 @@ func simdReduceLeadingProductFloat64(in, out []float64, A, B int) {
 			vOut.Mul(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadFloat64sPart(out[i:B])
-			vIn, _ := simd.LoadFloat64sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadFloat64sPart(out[i:B])
+			vIn, _ := simdmath.LoadFloat64sPart(in[off+i : off+B])
 			vOut.Mul(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1238,7 +1239,7 @@ func simdReduceTrailingProductFloat64(in []float64, out []float64, A, B int, dty
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadFloat64sPart(row)
+			v, _ := simdmath.LoadFloat64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1354,8 +1355,8 @@ func simdReduceLeadingSumInt32(in, out []int32, A, B int) {
 			vOut.Add(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadInt32sPart(out[i:B])
-			vIn, _ := simd.LoadInt32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadInt32sPart(out[i:B])
+			vIn, _ := simdmath.LoadInt32sPart(in[off+i : off+B])
 			vOut.Add(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1388,7 +1389,7 @@ func simdReduceTrailingSumInt32(in []int32, out []int32, A, B int, dtype dtypes.
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadInt32sPart(row)
+			v, _ := simdmath.LoadInt32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1504,8 +1505,8 @@ func simdReduceLeadingMaxInt32(in, out []int32, A, B int) {
 			vOut.Max(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadInt32sPart(out[i:B])
-			vIn, _ := simd.LoadInt32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadInt32sPart(out[i:B])
+			vIn, _ := simdmath.LoadInt32sPart(in[off+i : off+B])
 			vOut.Max(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1538,7 +1539,7 @@ func simdReduceTrailingMaxInt32(in []int32, out []int32, A, B int, dtype dtypes.
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadInt32sPart(row)
+			v, _ := simdmath.LoadInt32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1654,8 +1655,8 @@ func simdReduceLeadingMinInt32(in, out []int32, A, B int) {
 			vOut.Min(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadInt32sPart(out[i:B])
-			vIn, _ := simd.LoadInt32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadInt32sPart(out[i:B])
+			vIn, _ := simdmath.LoadInt32sPart(in[off+i : off+B])
 			vOut.Min(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1688,7 +1689,7 @@ func simdReduceTrailingMinInt32(in []int32, out []int32, A, B int, dtype dtypes.
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadInt32sPart(row)
+			v, _ := simdmath.LoadInt32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1804,8 +1805,8 @@ func simdReduceLeadingProductInt32(in, out []int32, A, B int) {
 			vOut.Mul(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadInt32sPart(out[i:B])
-			vIn, _ := simd.LoadInt32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadInt32sPart(out[i:B])
+			vIn, _ := simdmath.LoadInt32sPart(in[off+i : off+B])
 			vOut.Mul(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1838,7 +1839,7 @@ func simdReduceTrailingProductInt32(in []int32, out []int32, A, B int, dtype dty
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadInt32sPart(row)
+			v, _ := simdmath.LoadInt32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -1954,8 +1955,8 @@ func simdReduceLeadingSumUint32(in, out []uint32, A, B int) {
 			vOut.Add(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadUint32sPart(out[i:B])
-			vIn, _ := simd.LoadUint32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadUint32sPart(out[i:B])
+			vIn, _ := simdmath.LoadUint32sPart(in[off+i : off+B])
 			vOut.Add(vIn).StorePart(out[i:B])
 		}
 	}
@@ -1988,7 +1989,7 @@ func simdReduceTrailingSumUint32(in []uint32, out []uint32, A, B int, dtype dtyp
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadUint32sPart(row)
+			v, _ := simdmath.LoadUint32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -2125,7 +2126,7 @@ func simdReduceTrailingSumInt64(in, out []int64, A, B int, dtype dtypes.DType) {
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadInt64sPart(row)
+			v, _ := simdmath.LoadInt64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, val := range tmp[1:B] {
@@ -2262,7 +2263,7 @@ func simdReduceTrailingSumUint64(in, out []uint64, A, B int, dtype dtypes.DType)
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadUint64sPart(row)
+			v, _ := simdmath.LoadUint64sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, val := range tmp[1:B] {
@@ -2378,8 +2379,8 @@ func simdReduceLeadingMaxUint32(in, out []uint32, A, B int) {
 			vOut.Max(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadUint32sPart(out[i:B])
-			vIn, _ := simd.LoadUint32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadUint32sPart(out[i:B])
+			vIn, _ := simdmath.LoadUint32sPart(in[off+i : off+B])
 			vOut.Max(vIn).StorePart(out[i:B])
 		}
 	}
@@ -2412,7 +2413,7 @@ func simdReduceTrailingMaxUint32(in []uint32, out []uint32, A, B int, dtype dtyp
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadUint32sPart(row)
+			v, _ := simdmath.LoadUint32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -2528,8 +2529,8 @@ func simdReduceLeadingMinUint32(in, out []uint32, A, B int) {
 			vOut.Min(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadUint32sPart(out[i:B])
-			vIn, _ := simd.LoadUint32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadUint32sPart(out[i:B])
+			vIn, _ := simdmath.LoadUint32sPart(in[off+i : off+B])
 			vOut.Min(vIn).StorePart(out[i:B])
 		}
 	}
@@ -2562,7 +2563,7 @@ func simdReduceTrailingMinUint32(in []uint32, out []uint32, A, B int, dtype dtyp
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadUint32sPart(row)
+			v, _ := simdmath.LoadUint32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {
@@ -2678,8 +2679,8 @@ func simdReduceLeadingProductUint32(in, out []uint32, A, B int) {
 			vOut.Mul(vIn).Store(out[i:])
 		}
 		if i < B {
-			vOut, _ := simd.LoadUint32sPart(out[i:B])
-			vIn, _ := simd.LoadUint32sPart(in[off+i : off+B])
+			vOut, _ := simdmath.LoadUint32sPart(out[i:B])
+			vIn, _ := simdmath.LoadUint32sPart(in[off+i : off+B])
 			vOut.Mul(vIn).StorePart(out[i:B])
 		}
 	}
@@ -2712,7 +2713,7 @@ func simdReduceTrailingProductUint32(in []uint32, out []uint32, A, B int, dtype 
 			continue
 		}
 		if B < vLen {
-			v, _ := simd.LoadUint32sPart(row)
+			v, _ := simdmath.LoadUint32sPart(row)
 			v.Store(tmp)
 			res := tmp[0]
 			for _, v := range tmp[1:B] {

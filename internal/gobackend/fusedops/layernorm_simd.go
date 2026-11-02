@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/support/simdmath"
 )
 
 const PrioritySIMD = gobackend.PriorityTyped + 5
@@ -389,17 +390,17 @@ func simdLayerNormTrailingAxesFloat32(
 			vNorm.Store(outRow[i:])
 		}
 		if i < normSize {
-			vIn, _ := simd.LoadFloat32sPart(row[i:])
+			vIn, _ := simdmath.LoadFloat32sPart(row[i:])
 			vNorm := vIn.Sub(vMean).Mul(vInvStd)
 			if gammaData != nil && betaData != nil {
-				vG, _ := simd.LoadFloat32sPart(gammaData[i:])
-				vB, _ := simd.LoadFloat32sPart(betaData[i:])
+				vG, _ := simdmath.LoadFloat32sPart(gammaData[i:])
+				vB, _ := simdmath.LoadFloat32sPart(betaData[i:])
 				vNorm = vNorm.MulAdd(vG, vB)
 			} else if gammaData != nil {
-				vG, _ := simd.LoadFloat32sPart(gammaData[i:])
+				vG, _ := simdmath.LoadFloat32sPart(gammaData[i:])
 				vNorm = vNorm.Mul(vG)
 			} else if betaData != nil {
-				vB, _ := simd.LoadFloat32sPart(betaData[i:])
+				vB, _ := simdmath.LoadFloat32sPart(betaData[i:])
 				vNorm = vNorm.Add(vB)
 			}
 			vNorm.StorePart(outRow[i:])
@@ -576,17 +577,17 @@ func simdLayerNormTrailingAxesFloat64(
 			vNorm.Store(outRow[i:])
 		}
 		if i < normSize {
-			vIn, _ := simd.LoadFloat64sPart(row[i:])
+			vIn, _ := simdmath.LoadFloat64sPart(row[i:])
 			vNorm := vIn.Sub(vMean).Mul(vInvStd)
 			if gammaData != nil && betaData != nil {
-				vG, _ := simd.LoadFloat64sPart(gammaData[i:])
-				vB, _ := simd.LoadFloat64sPart(betaData[i:])
+				vG, _ := simdmath.LoadFloat64sPart(gammaData[i:])
+				vB, _ := simdmath.LoadFloat64sPart(betaData[i:])
 				vNorm = vNorm.MulAdd(vG, vB)
 			} else if gammaData != nil {
-				vG, _ := simd.LoadFloat64sPart(gammaData[i:])
+				vG, _ := simdmath.LoadFloat64sPart(gammaData[i:])
 				vNorm = vNorm.Mul(vG)
 			} else if betaData != nil {
-				vB, _ := simd.LoadFloat64sPart(betaData[i:])
+				vB, _ := simdmath.LoadFloat64sPart(betaData[i:])
 				vNorm = vNorm.Add(vB)
 			}
 			vNorm.StorePart(outRow[i:])
