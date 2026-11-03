@@ -170,9 +170,15 @@ type RegisterPriority int
 
 const (
 	PriorityGeneric RegisterPriority = 0
-	PriorityTyped   RegisterPriority = 1   // Specialized typed implementation.
-	PriorityArch    RegisterPriority = 10  // Specialized architecture implementation.
-	PriorityUser    RegisterPriority = 100 // Custom user overrides.
+	PriorityTyped   RegisterPriority = 1                // Specialized typed implementation.
+	PrioritySIMD    RegisterPriority = 6                // Portable Go simd/archsimd package implementation.
+	PriorityArch    RegisterPriority = 10               // Specialized baseline architecture implementation.
+	PriorityNEON    RegisterPriority = PriorityArch     // ARM64 AdvSIMD / NEON (128-bit, 32 registers).
+	PriorityAVX2    RegisterPriority = PriorityArch     // AMD64 AVX2 (256-bit, 16 registers).
+	PriorityAVX512  RegisterPriority = PriorityArch + 1 // AMD64 AVX-512 (512-bit, 32 registers).
+	PrioritySVE     RegisterPriority = PriorityArch + 1 // ARM64 SVE / SVE2.
+	PrioritySME     RegisterPriority = PriorityArch + 2 // ARM64 SME / SME2.
+	PriorityUser    RegisterPriority = 100              // Custom user overrides.
 )
 
 // SetNodeExecutor sets the node executor for the given operation type with the specified priority.
