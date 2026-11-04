@@ -38,13 +38,49 @@ func ReluFloat64SIMD(in, out []float64) { //alt:float64
 
 //alt:float32 func SigmoidFloat32SIMD(in, out []float32) {
 func SigmoidFloat64SIMD(in, out []float64) { //alt:float64
-	//alt:float32 vLen := simd.BroadcastFloat32s(0).Len()
+	//alt:float32 vOne := simd.BroadcastFloat32s(1.0)
+	//alt:float32 vMaxLog := simd.BroadcastFloat32s(89.0)
+	//alt:float32 vMinLog := simd.BroadcastFloat32s(-104.0)
+	//alt:float32 vLog2E := simd.BroadcastFloat32s(1.44269504088896341)
+	//alt:float32 vHalf := simd.BroadcastFloat32s(0.5)
+	//alt:float32 vLn2Hi := simd.BroadcastFloat32s(0.693359375)
+	//alt:float32 vLn2Lo := simd.BroadcastFloat32s(-2.12194440e-4)
+	//alt:float32 vP7 := simd.BroadcastFloat32s(1.9875691500e-4)
+	//alt:float32 vP6 := simd.BroadcastFloat32s(1.3981999507e-3)
+	//alt:float32 vP5 := simd.BroadcastFloat32s(8.3334519073e-3)
+	//alt:float32 vP4 := simd.BroadcastFloat32s(4.1665795894e-2)
+	//alt:float32 vP3 := simd.BroadcastFloat32s(1.6666665459e-1)
+	//alt:float32 vP2 := simd.BroadcastFloat32s(5.0000001201e-1)
+	//alt:float32 vInt1 := simd.BroadcastInt32s(1)
+	//alt:float32 v254 := simd.BroadcastUint32s(254)
+	//alt:float32 vLen := vOne.Len()
 	vLen := simd.BroadcastFloat64s(0).Len() //alt:float64
 	i := 0
 	for ; i+vLen <= len(in); i += vLen {
 		//alt:float32 v := simd.LoadFloat32s(in[i:])
-		v := simd.LoadFloat64s(in[i:]) //alt:float64
-		//alt:float32 simdmath.SigmoidFloat32(v).Store(out[i:])
+		//alt:float32 x := v.Neg()
+		//alt:float32 xClamped := vMinLog.IfElse(x.Less(vMinLog), vMaxLog.IfElse(x.Greater(vMaxLog), x))
+		//alt:float32 z := xClamped.MulAdd(vLog2E, vHalf)
+		//alt:float32 intZ := z.ConvertToInt32()
+		//alt:float32 floatZ := intZ.ConvertToFloat32()
+		//alt:float32 adjMask := floatZ.Greater(z)
+		//alt:float32 zFloor := floatZ.Sub(vOne.Masked(adjMask))
+		//alt:float32 intFloor := intZ.Sub(vInt1.Masked(adjMask))
+		//alt:float32 g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 sumExp := intFloor.ToBits().Add(v254)
+		//alt:float32 e1 := sumExp.ShiftAllRight(1)
+		//alt:float32 e2 := sumExp.Sub(e1)
+		//alt:float32 scale1 := e1.ShiftAllLeft(23).BitsToFloat32()
+		//alt:float32 scale2 := e2.ShiftAllLeft(23).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 expNeg := poly.Mul(scale1).Mul(scale2)
+		//alt:float32 vOne.Div(vOne.Add(expNeg)).Store(out[i:])
+		v := simd.LoadFloat64s(in[i:])            //alt:float64
 		simdmath.SigmoidFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
@@ -133,13 +169,49 @@ func SeluFloat64SIMD(in, out []float64) { //alt:float64
 
 //alt:float32 func SiluFloat32SIMD(in, out []float32) {
 func SiluFloat64SIMD(in, out []float64) { //alt:float64
-	//alt:float32 vLen := simd.BroadcastFloat32s(0).Len()
+	//alt:float32 vOne := simd.BroadcastFloat32s(1.0)
+	//alt:float32 vMaxLog := simd.BroadcastFloat32s(89.0)
+	//alt:float32 vMinLog := simd.BroadcastFloat32s(-104.0)
+	//alt:float32 vLog2E := simd.BroadcastFloat32s(1.44269504088896341)
+	//alt:float32 vHalf := simd.BroadcastFloat32s(0.5)
+	//alt:float32 vLn2Hi := simd.BroadcastFloat32s(0.693359375)
+	//alt:float32 vLn2Lo := simd.BroadcastFloat32s(-2.12194440e-4)
+	//alt:float32 vP7 := simd.BroadcastFloat32s(1.9875691500e-4)
+	//alt:float32 vP6 := simd.BroadcastFloat32s(1.3981999507e-3)
+	//alt:float32 vP5 := simd.BroadcastFloat32s(8.3334519073e-3)
+	//alt:float32 vP4 := simd.BroadcastFloat32s(4.1665795894e-2)
+	//alt:float32 vP3 := simd.BroadcastFloat32s(1.6666665459e-1)
+	//alt:float32 vP2 := simd.BroadcastFloat32s(5.0000001201e-1)
+	//alt:float32 vInt1 := simd.BroadcastInt32s(1)
+	//alt:float32 v254 := simd.BroadcastUint32s(254)
+	//alt:float32 vLen := vOne.Len()
 	vLen := simd.BroadcastFloat64s(0).Len() //alt:float64
 	i := 0
 	for ; i+vLen <= len(in); i += vLen {
 		//alt:float32 v := simd.LoadFloat32s(in[i:])
-		v := simd.LoadFloat64s(in[i:]) //alt:float64
-		//alt:float32 simdmath.SigmoidFloat32(v).Mul(v).Store(out[i:])
+		//alt:float32 x := v.Neg()
+		//alt:float32 xClamped := vMinLog.IfElse(x.Less(vMinLog), vMaxLog.IfElse(x.Greater(vMaxLog), x))
+		//alt:float32 z := xClamped.MulAdd(vLog2E, vHalf)
+		//alt:float32 intZ := z.ConvertToInt32()
+		//alt:float32 floatZ := intZ.ConvertToFloat32()
+		//alt:float32 adjMask := floatZ.Greater(z)
+		//alt:float32 zFloor := floatZ.Sub(vOne.Masked(adjMask))
+		//alt:float32 intFloor := intZ.Sub(vInt1.Masked(adjMask))
+		//alt:float32 g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 sumExp := intFloor.ToBits().Add(v254)
+		//alt:float32 e1 := sumExp.ShiftAllRight(1)
+		//alt:float32 e2 := sumExp.Sub(e1)
+		//alt:float32 scale1 := e1.ShiftAllLeft(23).BitsToFloat32()
+		//alt:float32 scale2 := e2.ShiftAllLeft(23).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 expNeg := poly.Mul(scale1).Mul(scale2)
+		//alt:float32 v.Div(vOne.Add(expNeg)).Store(out[i:])
+		v := simd.LoadFloat64s(in[i:])                   //alt:float64
 		simdmath.SigmoidFloat64(v).Mul(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
@@ -178,44 +250,170 @@ func HardSwishFloat64SIMD(in, out []float64) { //alt:float64
 
 //alt:float32 func TanhFloat32SIMD(in, out []float32) {
 func TanhFloat64SIMD(in, out []float64) { //alt:float64
-	//alt:float32 vLen := simd.BroadcastFloat32s(0).Len()
+	if len(in) == 0 {
+		return
+	}
+	_ = out[len(in)-1]
+	//alt:float32 vNine := simd.BroadcastFloat32s(9.0)
+	//alt:float32 vNegNine := simd.BroadcastFloat32s(-9.0)
+	//alt:float32 vTwo := simd.BroadcastFloat32s(2.0)
+	//alt:float32 vOne := simd.BroadcastFloat32s(1.0)
+	//alt:float32 vNegOne := simd.BroadcastFloat32s(-1.0)
+	//alt:float32 vLog2E := simd.BroadcastFloat32s(1.44269504088896341)
+	//alt:float32 vMagic := simd.BroadcastFloat32s(12582912.0)
+	//alt:float32 vLn2Hi := simd.BroadcastFloat32s(0.693359375)
+	//alt:float32 vLn2Lo := simd.BroadcastFloat32s(-2.12194440e-4)
+	//alt:float32 vP7 := simd.BroadcastFloat32s(1.9875691500e-4)
+	//alt:float32 vP6 := simd.BroadcastFloat32s(1.3981999507e-3)
+	//alt:float32 vP5 := simd.BroadcastFloat32s(8.3334519073e-3)
+	//alt:float32 vP4 := simd.BroadcastFloat32s(4.1665795894e-2)
+	//alt:float32 vP3 := simd.BroadcastFloat32s(1.6666665459e-1)
+	//alt:float32 vP2 := simd.BroadcastFloat32s(5.0000001201e-1)
+	//alt:float32 vShift23 := simd.BroadcastUint32s(1 << 23)
+	//alt:float32 vBias127 := simd.BroadcastUint32s(127 << 23)
+	//alt:float32 vLen := vOne.Len()
 	vLen := simd.BroadcastFloat64s(0).Len() //alt:float64
 	i := 0
 	for ; i+vLen <= len(in); i += vLen {
 		//alt:float32 v := simd.LoadFloat32s(in[i:])
-		v := simd.LoadFloat64s(in[i:]) //alt:float64
-		//alt:float32 simdmath.TanhFloat32(v).Store(out[i:])
+		//alt:float32 isGeNine := v.GreaterEqual(vNine)
+		//alt:float32 isLeNegNine := v.LessEqual(vNegNine)
+		//alt:float32 clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, v))
+		//alt:float32 twoX := clamped.Mul(vTwo)
+		//alt:float32 zRound := twoX.MulAdd(vLog2E, vMagic)
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := twoX.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 exp2x := poly.Mul(scale)
+		//alt:float32 res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
+		//alt:float32 res = vOne.IfElse(isGeNine, res)
+		//alt:float32 res = vNegOne.IfElse(isLeNegNine, res)
+		//alt:float32 res.Store(out[i:])
+		v := simd.LoadFloat64s(in[i:])         //alt:float64
 		simdmath.TanhFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
 		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
-		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
-		//alt:float32 simdmath.TanhFloat32(v).StorePart(out[i:])
+		//alt:float32 isGeNine := v.GreaterEqual(vNine)
+		//alt:float32 isLeNegNine := v.LessEqual(vNegNine)
+		//alt:float32 clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, v))
+		//alt:float32 twoX := clamped.Mul(vTwo)
+		//alt:float32 zRound := twoX.MulAdd(vLog2E, vMagic)
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := twoX.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 exp2x := poly.Mul(scale)
+		//alt:float32 res := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
+		//alt:float32 res = vOne.IfElse(isGeNine, res)
+		//alt:float32 res = vNegOne.IfElse(isLeNegNine, res)
+		//alt:float32 res.StorePart(out[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:])  //alt:float64
 		simdmath.TanhFloat64(v).StorePart(out[i:]) //alt:float64
 	}
 }
 
 //alt:float32 func GeluExactFloat32SIMD(in, out []float32) {
 func GeluExactFloat64SIMD(in, out []float64) { //alt:float64
+	if len(in) == 0 {
+		return
+	}
+	_ = out[len(in)-1]
 	//alt:float32 vHalf := simd.BroadcastFloat32s(0.5)
 	vHalf := simd.BroadcastFloat64s(0.5) //alt:float64
 	//alt:float32 vOne := simd.BroadcastFloat32s(1.0)
 	vOne := simd.BroadcastFloat64s(1.0) //alt:float64
 	//alt:float32 vRsqrt2 := simd.BroadcastFloat32s(0.7071067811865475)
 	vRsqrt2 := simd.BroadcastFloat64s(0.7071067811865475) //alt:float64
+	//alt:float32 vSignMask := simd.BroadcastUint32s(0x80000000)
+	//alt:float32 vP := simd.BroadcastFloat32s(0.3275911)
+	//alt:float32 vA1 := simd.BroadcastFloat32s(0.254829592)
+	//alt:float32 vA2 := simd.BroadcastFloat32s(-0.284496736)
+	//alt:float32 vA3 := simd.BroadcastFloat32s(1.421413741)
+	//alt:float32 vA4 := simd.BroadcastFloat32s(-1.453152027)
+	//alt:float32 vA5 := simd.BroadcastFloat32s(1.061405429)
+	//alt:float32 vMinLog := simd.BroadcastFloat32s(-87.336544)
+	//alt:float32 vLog2E := simd.BroadcastFloat32s(1.44269504088896341)
+	//alt:float32 vMagic := simd.BroadcastFloat32s(12582912.0)
+	//alt:float32 vLn2Hi := simd.BroadcastFloat32s(0.693359375)
+	//alt:float32 vLn2Lo := simd.BroadcastFloat32s(-2.12194440e-4)
+	//alt:float32 vP7 := simd.BroadcastFloat32s(1.9875691500e-4)
+	//alt:float32 vP6 := simd.BroadcastFloat32s(1.3981999507e-3)
+	//alt:float32 vP5 := simd.BroadcastFloat32s(8.3334519073e-3)
+	//alt:float32 vP4 := simd.BroadcastFloat32s(4.1665795894e-2)
+	//alt:float32 vP3 := simd.BroadcastFloat32s(1.6666665459e-1)
+	//alt:float32 vP2 := simd.BroadcastFloat32s(5.0000001201e-1)
+	//alt:float32 vShift23 := simd.BroadcastUint32s(1 << 23)
+	//alt:float32 vBias127 := simd.BroadcastUint32s(127 << 23)
 	vLen := vHalf.Len()
 	i := 0
 	for ; i+vLen <= len(in); i += vLen {
 		//alt:float32 v := simd.LoadFloat32s(in[i:])
 		v := simd.LoadFloat64s(in[i:]) //alt:float64
-		//alt:float32 erfVal := simdmath.ErfFloat32(v.Mul(vRsqrt2))
+		//alt:float32 x := v.Mul(vRsqrt2)
+		//alt:float32 absX := x.Abs()
+		//alt:float32 negX2 := absX.Mul(absX).Neg()
+		//alt:float32 xClamped := vMinLog.IfElse(negX2.Less(vMinLog), negX2)
+		//alt:float32 zRound := xClamped.MulAdd(vLog2E, vMagic)
+		//alt:float32 t := vOne.Div(vP.MulAdd(absX, vOne))
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 g2 := g.Mul(g)
+		//alt:float32 q67 := vP7.MulAdd(g, vP6)
+		//alt:float32 q45 := vP5.MulAdd(g, vP4)
+		//alt:float32 q23 := vP3.MulAdd(g, vP2)
+		//alt:float32 q01 := g.Add(vOne)
+		//alt:float32 g4 := g2.Mul(g2)
+		//alt:float32 q47 := q67.MulAdd(g2, q45)
+		//alt:float32 q03 := q23.MulAdd(g2, q01)
+		//alt:float32 expNegX2 := q47.MulAdd(g4, q03).Mul(scale)
+		//alt:float32 t2 := t.Mul(t)
+		//alt:float32 p45 := vA5.MulAdd(t, vA4)
+		//alt:float32 p23 := vA3.MulAdd(t, vA2)
+		//alt:float32 erfPoly := p45.MulAdd(t2, p23).MulAdd(t, vA1).Mul(t)
+		//alt:float32 res := vOne.Sub(erfPoly.Mul(expNegX2))
+		//alt:float32 erfVal := res.ToBits().Xor(x.ToBits().And(vSignMask)).BitsToFloat32()
 		erfVal := simdmath.ErfFloat64(v.Mul(vRsqrt2)) //alt:float64
 		vHalf.Mul(v).Mul(vOne.Add(erfVal)).Store(out[i:])
 	}
 	if i < len(in) {
 		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
 		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
-		//alt:float32 erfVal := simdmath.ErfFloat32(v.Mul(vRsqrt2))
+		//alt:float32 x := v.Mul(vRsqrt2)
+		//alt:float32 absX := x.Abs()
+		//alt:float32 t := vOne.Div(vP.MulAdd(absX, vOne))
+		//alt:float32 erfPoly := vA5.MulAdd(t, vA4)
+		//alt:float32 erfPoly = erfPoly.MulAdd(t, vA3)
+		//alt:float32 erfPoly = erfPoly.MulAdd(t, vA2)
+		//alt:float32 erfPoly = erfPoly.MulAdd(t, vA1)
+		//alt:float32 erfPoly = erfPoly.Mul(t)
+		//alt:float32 negX2 := absX.Mul(absX).Neg()
+		//alt:float32 xClamped := vMinLog.IfElse(negX2.Less(vMinLog), negX2)
+		//alt:float32 zRound := xClamped.MulAdd(vLog2E, vMagic)
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 expPoly := vP7.MulAdd(g, vP6)
+		//alt:float32 expPoly = expPoly.MulAdd(g, vP5)
+		//alt:float32 expPoly = expPoly.MulAdd(g, vP4)
+		//alt:float32 expPoly = expPoly.MulAdd(g, vP3)
+		//alt:float32 expPoly = expPoly.MulAdd(g, vP2)
+		//alt:float32 expPoly = expPoly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 expNegX2 := expPoly.Mul(scale)
+		//alt:float32 res := vOne.Sub(erfPoly.Mul(expNegX2))
+		//alt:float32 erfVal := res.ToBits().Xor(x.ToBits().And(vSignMask)).BitsToFloat32()
 		erfVal := simdmath.ErfFloat64(v.Mul(vRsqrt2)) //alt:float64
 		vHalf.Mul(v).Mul(vOne.Add(erfVal)).StorePart(out[i:])
 	}
@@ -223,19 +421,83 @@ func GeluExactFloat64SIMD(in, out []float64) { //alt:float64
 
 //alt:float32 func GeluApproxFloat32SIMD(in, out []float32) {
 func GeluApproxFloat64SIMD(in, out []float64) { //alt:float64
-	//alt:float32 vLen := simd.BroadcastFloat32s(0).Len()
+	if len(in) == 0 {
+		return
+	}
+	_ = out[len(in)-1]
+	//alt:float32 vHalf := simd.BroadcastFloat32s(0.5)
+	//alt:float32 vOne := simd.BroadcastFloat32s(1.0)
+	//alt:float32 vNegOne := simd.BroadcastFloat32s(-1.0)
+	//alt:float32 vTwo := simd.BroadcastFloat32s(2.0)
+	//alt:float32 vNine := simd.BroadcastFloat32s(9.0)
+	//alt:float32 vNegNine := simd.BroadcastFloat32s(-9.0)
+	//alt:float32 vSqrt2OverPi := simd.BroadcastFloat32s(0.7978845608)
+	//alt:float32 vCoeff := simd.BroadcastFloat32s(0.044715)
+	//alt:float32 vLog2E := simd.BroadcastFloat32s(1.44269504088896341)
+	//alt:float32 vMagic := simd.BroadcastFloat32s(12582912.0)
+	//alt:float32 vLn2Hi := simd.BroadcastFloat32s(0.693359375)
+	//alt:float32 vLn2Lo := simd.BroadcastFloat32s(-2.12194440e-4)
+	//alt:float32 vP7 := simd.BroadcastFloat32s(1.9875691500e-4)
+	//alt:float32 vP6 := simd.BroadcastFloat32s(1.3981999507e-3)
+	//alt:float32 vP5 := simd.BroadcastFloat32s(8.3334519073e-3)
+	//alt:float32 vP4 := simd.BroadcastFloat32s(4.1665795894e-2)
+	//alt:float32 vP3 := simd.BroadcastFloat32s(1.6666665459e-1)
+	//alt:float32 vP2 := simd.BroadcastFloat32s(5.0000001201e-1)
+	//alt:float32 vShift23 := simd.BroadcastUint32s(1 << 23)
+	//alt:float32 vBias127 := simd.BroadcastUint32s(127 << 23)
+	//alt:float32 vLen := vHalf.Len()
 	vLen := simd.BroadcastFloat64s(0).Len() //alt:float64
 	i := 0
 	for ; i+vLen <= len(in); i += vLen {
 		//alt:float32 v := simd.LoadFloat32s(in[i:])
-		v := simd.LoadFloat64s(in[i:]) //alt:float64
-		//alt:float32 simdmath.GeluApproxFloat32(v).Store(out[i:])
+		//alt:float32 x3 := v.Mul(v).Mul(v)
+		//alt:float32 inner := vSqrt2OverPi.Mul(vCoeff.MulAdd(x3, v))
+		//alt:float32 isGeNine := inner.GreaterEqual(vNine)
+		//alt:float32 isLeNegNine := inner.LessEqual(vNegNine)
+		//alt:float32 clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, inner))
+		//alt:float32 twoX := clamped.Mul(vTwo)
+		//alt:float32 zRound := twoX.MulAdd(vLog2E, vMagic)
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := twoX.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 exp2x := poly.Mul(scale)
+		//alt:float32 t := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
+		//alt:float32 t = vOne.IfElse(isGeNine, t)
+		//alt:float32 t = vNegOne.IfElse(isLeNegNine, t)
+		//alt:float32 vHalf.Mul(v).Mul(vOne.Add(t)).Store(out[i:])
+		v := simd.LoadFloat64s(in[i:])               //alt:float64
 		simdmath.GeluApproxFloat64(v).Store(out[i:]) //alt:float64
 	}
 	if i < len(in) {
 		//alt:float32 v, _ := simdmath.LoadFloat32sPart(in[i:])
-		v, _ := simdmath.LoadFloat64sPart(in[i:]) //alt:float64
-		//alt:float32 simdmath.GeluApproxFloat32(v).StorePart(out[i:])
+		//alt:float32 x3 := v.Mul(v).Mul(v)
+		//alt:float32 inner := vSqrt2OverPi.Mul(vCoeff.MulAdd(x3, v))
+		//alt:float32 isGeNine := inner.GreaterEqual(vNine)
+		//alt:float32 isLeNegNine := inner.LessEqual(vNegNine)
+		//alt:float32 clamped := vNegNine.IfElse(isLeNegNine, vNine.IfElse(isGeNine, inner))
+		//alt:float32 twoX := clamped.Mul(vTwo)
+		//alt:float32 zRound := twoX.MulAdd(vLog2E, vMagic)
+		//alt:float32 zFloor := zRound.Sub(vMagic)
+		//alt:float32 g := twoX.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
+		//alt:float32 scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		//alt:float32 poly := vP7.MulAdd(g, vP6)
+		//alt:float32 poly = poly.MulAdd(g, vP5)
+		//alt:float32 poly = poly.MulAdd(g, vP4)
+		//alt:float32 poly = poly.MulAdd(g, vP3)
+		//alt:float32 poly = poly.MulAdd(g, vP2)
+		//alt:float32 poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+		//alt:float32 exp2x := poly.Mul(scale)
+		//alt:float32 t := vOne.Sub(vTwo.Div(exp2x.Add(vOne)))
+		//alt:float32 t = vOne.IfElse(isGeNine, t)
+		//alt:float32 t = vNegOne.IfElse(isLeNegNine, t)
+		//alt:float32 vHalf.Mul(v).Mul(vOne.Add(t)).StorePart(out[i:])
+		v, _ := simdmath.LoadFloat64sPart(in[i:])        //alt:float64
 		simdmath.GeluApproxFloat64(v).StorePart(out[i:]) //alt:float64
 	}
 }

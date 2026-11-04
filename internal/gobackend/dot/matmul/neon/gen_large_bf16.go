@@ -183,7 +183,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 	if isSMEKernel && SMEUseHybridNEON && maxWorkers > 1 && batchSize < maxWorkers && len(cachedRHSPanels) == 0 {
 		fineNc := max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
 		fineColPanels := (rhsCrossSize + fineNc - 1) / fineNc
-		if batchSize*numKPanels*fineColPanels <= 1024 {
+		if batchSize*numKPanels*fineColPanels <= 2048 {
 			params.RHSPanelCrossSize = fineNc
 			numColPanels = fineColPanels
 			rhsPanelsPerBatch = numKPanels * numColPanels
@@ -215,7 +215,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 			var smeCluster int
-			smeCluster, useSME = smeAcquireCluster()
+			smeCluster, useSME, _ = smeAcquireCluster()
 			if useSME {
 				defer smeReleaseCluster(smeCluster)
 			}
@@ -339,8 +339,8 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 		sharedLHSPanels, sharedRHSPanels [][]bfloat16.BFloat16 //alt:bf16
 		//alt:f16  sharedLHSPanels, sharedRHSPanels [][]float16.Float16
 		//alt:f64  sharedLHSPanels, sharedRHSPanels [][]float64
-		sharedLHSReadyBuf [1024]atomic.Uint32
-		sharedRHSReadyBuf [1024]atomic.Uint32
+		sharedLHSReadyBuf [2048]atomic.Uint32
+		sharedRHSReadyBuf [2048]atomic.Uint32
 		sharedLHSReady    []atomic.Uint32
 		sharedRHSReady    []atomic.Uint32
 	)
@@ -394,30 +394,62 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 		}
 	}
 
-	var nextItem atomic.Int32
+	// Dual-ended atomic queue bounds: upper 32 bits = head index, lower 32 bits = tail index.
+	// When batchSize >= maxWorkers, workItems is tapered from coarse multi-batch chunks at head
+	// to fine (< 1 batch) 2D sub-tiles at tail, so SME workers pull from head and NEON workers pull from tail.
+	// When batchSize < maxWorkers, smeAppendHybridWorkItems orders 2D tiles diagonally so all workers
+	// pull from head to share hot L2 panels while NEON workers yield the final tail items to SME.
+	var bounds atomic.Uint64
+	bounds.Store(uint64(uint32(len(workItems))))
 	var localSMEWorkers atomic.Int32
+	pullNEONFromTail := batchSize >= maxWorkers
+
+	claimItem := func(useSME, isSlowECore bool) (int, bool) {
+		for {
+			b := bounds.Load()
+			head := int(b >> 32)
+			tail := int(uint32(b))
+			rem := tail - head
+			if rem <= 0 {
+				return -1, false
+			}
+			if !useSME {
+				smeActive := int(localSMEWorkers.Load())
+				if smeActive > 0 && (rem <= 3*smeActive || (isSlowECore && rem <= 6*smeActive)) {
+					return -1, false
+				}
+				if pullNEONFromTail {
+					if bounds.CompareAndSwap(b, (uint64(uint32(head))<<32)|uint64(uint32(tail-1))) {
+						return tail - 1, true
+					}
+					continue
+				}
+			}
+			if bounds.CompareAndSwap(b, (uint64(uint32(head+1))<<32)|uint64(uint32(tail))) {
+				return head, true
+			}
+		}
+	}
+
 	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
 		useSME := true
+		isSlowECore := false
 		if isSMEKernel && SMEUseHybridNEON {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 			var smeCluster int
-			smeCluster, useSME = smeAcquireCluster()
+			smeCluster, useSME, isSlowECore = smeAcquireCluster()
 			if useSME {
 				localSMEWorkers.Add(1)
 				defer func() {
 					localSMEWorkers.Add(-1)
 					smeReleaseCluster(smeCluster)
 				}()
-			} else if smeActive := int(localSMEWorkers.Load()); smeActive > 0 && int(nextItem.Load()) >= len(workItems)-3*smeActive {
-				// Only a few items remain and fast SME workers are already active in this matmul;
-				// avoid grabbing a tail item on a slower NEON worker.
-				return
 			}
 		}
 
-		itemIdx := int(nextItem.Add(1) - 1)
-		if itemIdx >= len(workItems) {
+		itemIdx, ok := claimItem(useSME, isSlowECore)
+		if !ok {
 			return
 		}
 		var (
@@ -533,13 +565,8 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 					useSME,
 				)
 			}
-			if !useSME {
-				if smeActive := int(localSMEWorkers.Load()); smeActive > 0 && int(nextItem.Load()) >= len(workItems)-3*smeActive {
-					break
-				}
-			}
-			itemIdx = int(nextItem.Add(1) - 1)
-			if itemIdx >= len(workItems) {
+			itemIdx, ok = claimItem(useSME, isSlowECore)
+			if !ok {
 				break
 			}
 		}

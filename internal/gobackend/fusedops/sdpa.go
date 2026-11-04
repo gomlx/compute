@@ -878,33 +878,29 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
 	}
 	totalTasks := headTasks * numQBlocks
-	scratchSize := max(kvLen, 1)
+	scratchSize := max(32*kvLen, 1)
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
 		workersToStart := min(totalTasks, numWorkers)
 		var taskCounter atomic.Int64
 
-		tasks := make([]func(), workersToStart)
-		for i := range workersToStart {
-			tasks[i] = func() {
-				workerScores := make([]T, scratchSize)
-				for {
-					taskIdx := int(taskCounter.Add(1) - 1)
-					if taskIdx >= totalTasks {
-						break
-					}
-					headTaskIdx := taskIdx / numQBlocks
-					qBlockIdx := taskIdx % numQBlocks
-					batchIdx := headTaskIdx / numKVHeads
-					kvHeadIdx := headTaskIdx % numKVHeads
-					qStart := qBlockIdx * qBlockSize
-					qEnd := min(qStart+qBlockSize, seqLen)
-					processHead(batchIdx, kvHeadIdx, qStart, qEnd, workerScores)
+		backend.Scheduler.SaturateUpTo(workersToStart, func() {
+			workerScores := make([]T, scratchSize)
+			for {
+				taskIdx := int(taskCounter.Add(1) - 1)
+				if taskIdx >= totalTasks {
+					break
 				}
+				headTaskIdx := taskIdx / numQBlocks
+				qBlockIdx := taskIdx % numQBlocks
+				batchIdx := headTaskIdx / numKVHeads
+				kvHeadIdx := headTaskIdx % numKVHeads
+				qStart := qBlockIdx * qBlockSize
+				qEnd := min(qStart+qBlockSize, seqLen)
+				processHead(batchIdx, kvHeadIdx, qStart, qEnd, workerScores)
 			}
-		}
-		backend.Scheduler.RunIntraOpTasks(tasks)
+		})
 	} else {
 		scores := make([]T, scratchSize)
 		for batchIdx := range batchSize {

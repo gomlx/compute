@@ -38,7 +38,7 @@ func registerNoSIMD() {
 	RegisterKernel[float32]("nosimd:silu", compute.ActivationSilu, SiluNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterKernel[float32]("nosimd:hardswish", compute.ActivationHardSwish, HardSwishNoSIMD[float32], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterKernel[float32]("nosimd:tanh", compute.ActivationTanh, TanhNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterKernel[float32]("nosimd:gelu", compute.ActivationGelu, geluExactNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterKernel[float32]("nosimd:gelu", compute.ActivationGelu, GeluExactNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterKernel[float32]("nosimd:geluapprox", compute.ActivationGeluApproximate, GeluApproxNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 
 	// Float64
@@ -50,7 +50,7 @@ func registerNoSIMD() {
 	RegisterKernel[float64]("nosimd:silu", compute.ActivationSilu, SiluNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterKernel[float64]("nosimd:hardswish", compute.ActivationHardSwish, HardSwishNoSIMD[float64], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterKernel[float64]("nosimd:tanh", compute.ActivationTanh, TanhNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterKernel[float64]("nosimd:gelu", compute.ActivationGelu, geluExactNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterKernel[float64]("nosimd:gelu", compute.ActivationGelu, GeluExactNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterKernel[float64]("nosimd:geluapprox", compute.ActivationGeluApproximate, GeluApproxNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 
 	// BFloat16
@@ -258,7 +258,7 @@ func TanhNoSIMD[T float32 | float64](in, out []T) {
 	}
 }
 
-func geluExactNoSIMD[T float32 | float64](in, out []T) {
+func GeluExactNoSIMD[T float32 | float64](in, out []T) {
 	invSqrt2 := 1.0 / math.Sqrt2
 	for i, x := range in {
 		out[i] = x * 0.5 * T(1.0+math.Erf(float64(x)*invSqrt2))

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 )
 
@@ -232,6 +233,12 @@ var (
 	smePerfCutoffTicks  uint64 = 395
 )
 
+func init() {
+	if gobackend.IsSMEAllowed {
+		calibrateSMEClusters()
+	}
+}
+
 // calibrateSMEClusters runs once to measure per-core NEON VFMLA ticks across all logical CPUs
 // and calibrate the tick midpoints separating Super, Performance, and Efficiency clusters.
 func calibrateSMEClusters() {
@@ -251,11 +258,15 @@ func calibrateSMEClusters() {
 			go func(id int) {
 				runtime.LockOSThread()
 				defer runtime.UnlockOSThread()
-				for range 256 {
+				for range 64 {
 					_ = smeProbeCoreClockTicks()
 				}
 				readyWg.Done()
-				for !goSignal.Load() {
+				for spins := 0; !goSignal.Load(); spins++ {
+					if spins > 10000 {
+						runtime.Gosched()
+						spins = 0
+					}
 				}
 				minTicks := uint64(999999)
 				for range 5 {
@@ -292,25 +303,32 @@ func calibrateSMEClusters() {
 		clusterCenters = append(clusterCenters, clusterSum/clusterCount)
 
 		if len(clusterCenters) == 3 {
-			smeSuperCutoffTicks = (clusterCenters[0] + clusterCenters[1]) / 2
-			smePerfCutoffTicks = (clusterCenters[1] + clusterCenters[2]) / 2
+			superCut := (clusterCenters[0] + clusterCenters[1]) / 2
+			perfCut := (clusterCenters[1] + clusterCenters[2]) / 2
+			if superCut >= 240 && superCut <= 300 && perfCut >= 330 && perfCut <= 450 {
+				smeSuperCutoffTicks = superCut
+				smePerfCutoffTicks = perfCut
+			}
 		} else if len(clusterCenters) == 2 {
 			// 2-cluster CPU (e.g. Performance + Efficiency without separate Super tier):
 			// split fast cores across slots 0 and 1, and Efficiency cores on slot 2.
-			smeSuperCutoffTicks = clusterCenters[0]
-			smePerfCutoffTicks = (clusterCenters[0] + clusterCenters[1]) / 2
+			perfCut := (clusterCenters[0] + clusterCenters[1]) / 2
+			if perfCut >= 300 && perfCut <= 450 {
+				smeSuperCutoffTicks = clusterCenters[0]
+				smePerfCutoffTicks = perfCut
+			}
 		}
 	})
 }
 
 // smeAcquireCluster probes the current OS thread's CPU cluster and attempts to acquire
 // that cluster's global SME unit lock.
-// If acquired, returns (clusterIdx, true) and the caller MUST call smeReleaseCluster(clusterIdx).
-// If the cluster's SME unit is already busy, returns (-1, false) and the caller should execute
-// using the per-core NEON microkernel on the shared packed buffers.
-func smeAcquireCluster() (int, bool) {
+// If acquired, returns (clusterIdx, true, false) and the caller MUST call smeReleaseCluster(clusterIdx).
+// If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
+// is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
+func smeAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
 	if !SMEUseHybridNEON {
-		return -1, true
+		return -1, true, false
 	}
 	calibrateSMEClusters()
 
@@ -348,15 +366,15 @@ func smeAcquireCluster() (int, bool) {
 	// (e.g. due to thermal throttling shifting ticks between Super and Performance), fall back to
 	// the adjacent fast cluster if it is currently unoccupied.
 	if tryClaim(primaryCluster) {
-		return primaryCluster, true
+		return primaryCluster, true, false
 	}
 	if primaryCluster <= 1 {
 		otherFast := 1 - primaryCluster
 		if tryClaim(otherFast) {
-			return otherFast, true
+			return otherFast, true, false
 		}
 	}
-	return -1, false
+	return -1, false, primaryCluster == 2
 }
 
 // smeReleaseCluster releases a previously acquired global SME cluster lock.
@@ -367,9 +385,10 @@ func smeReleaseCluster(cluster int) {
 	}
 }
 
-// smeAppendHybridWorkItems partitions a matrix multiplication into fine-grained 2D (M, N) panel
-// work items ordered diagonally so concurrent SME (fast) and NEON (slower) workers pack distinct
-// LHS/RHS panels in parallel without contention and load-balance dynamically without tail stalls.
+// smeAppendHybridWorkItems partitions a matrix multiplication into tapered 2D (M, N) panel
+// work items (coarse at the head for SME workers, fine micro-tiles at the tail for NEON workers)
+// ordered diagonally so concurrent SME and NEON workers pack distinct LHS/RHS panels in parallel
+// and load-balance dynamically without tail stalls.
 func smeAppendHybridWorkItems(
 	dst []matmul.WorkItem,
 	batchSize, lhsCrossSize, rhsCrossSize int,
@@ -383,14 +402,12 @@ func smeAppendHybridWorkItems(
 	maxMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
 	maxNBlocks := max(1, (rhsCrossSize+nr-1)/nr)
 
-	maxItemsPerBatch := max(1, cap(dst)/max(1, batchSize))
-	if maxMBlocks*maxNBlocks < 2*maxWorkers || maxItemsPerBatch < 2*maxWorkers {
+	maxCap := max(64, cap(dst))
+	maxItemsPerBatch := max(1, maxCap/max(1, batchSize))
+	if batchSize >= maxWorkers || maxMBlocks*maxNBlocks < 2*maxWorkers || maxItemsPerBatch < 2*maxWorkers {
 		return matmul.AppendWorkItems(dst, batchSize, lhsCrossSize, rhsCrossSize, params, maxWorkers)
 	}
 
-	// Start with row panels of height Mc (64) and column chunks of width 4*Nr (128)
-	// so each 2D work item reuses packed LHS across 4 RHS strips and packed RHS across 2 LHS strips
-	// in L1 cache while still giving ~8*maxWorkers items for dynamic load balancing.
 	colUnit := max(nr, min(params.RHSPanelCrossSize, 4*nr))
 	actualM := max(1, (lhsCrossSize+mc-1)/mc)
 	actualN := max(1, (rhsCrossSize+colUnit-1)/colUnit)

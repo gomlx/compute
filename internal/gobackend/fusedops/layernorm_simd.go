@@ -313,12 +313,14 @@ func simdLayerNormTrailingAxesFloat32(
 	}
 
 	// General trailing axes loop
+	hasGamma := len(gammaData) >= normSize
+	hasBeta := len(betaData) >= normSize
 	for outer := range outerSize {
 		base := outer * normSize
 		row := inData[base : base+normSize]
 		outRow := outData[base : base+normSize]
 
-		// 1. Mean
+		// 1. Mean (4-way unrolled)
 		var mean float32
 		if normSize < vLen {
 			var sum float32
@@ -327,8 +329,25 @@ func simdLayerNormTrailingAxesFloat32(
 			}
 			mean = sum * invNormSizeF
 		} else {
-			vAcc := simd.LoadFloat32s(row)
-			i := vLen
+			var vAcc simd.Float32s
+			i := 0
+			if normSize >= 4*vLen {
+				vAcc0 := simd.LoadFloat32s(row)
+				vAcc1 := simd.LoadFloat32s(row[vLen:])
+				vAcc2 := simd.LoadFloat32s(row[2*vLen:])
+				vAcc3 := simd.LoadFloat32s(row[3*vLen:])
+				i = 4 * vLen
+				for ; i+4*vLen <= normSize; i += 4 * vLen {
+					vAcc0 = vAcc0.Add(simd.LoadFloat32s(row[i:]))
+					vAcc1 = vAcc1.Add(simd.LoadFloat32s(row[i+vLen:]))
+					vAcc2 = vAcc2.Add(simd.LoadFloat32s(row[i+2*vLen:]))
+					vAcc3 = vAcc3.Add(simd.LoadFloat32s(row[i+3*vLen:]))
+				}
+				vAcc = vAcc0.Add(vAcc1).Add(vAcc2.Add(vAcc3))
+			} else {
+				vAcc = simd.LoadFloat32s(row)
+				i = vLen
+			}
 			for ; i+vLen <= normSize; i += vLen {
 				vAcc = vAcc.Add(simd.LoadFloat32s(row[i:]))
 			}
@@ -344,7 +363,7 @@ func simdLayerNormTrailingAxesFloat32(
 		}
 		vMean := simd.BroadcastFloat32s(mean)
 
-		// 2. Variance
+		// 2. Variance (4-way unrolled with FMA)
 		var variance float32
 		if normSize < vLen {
 			var varSum float32
@@ -354,12 +373,37 @@ func simdLayerNormTrailingAxesFloat32(
 			}
 			variance = varSum * invNormSizeF
 		} else {
-			vDiff0 := simd.LoadFloat32s(row).Sub(vMean)
-			vVarAcc := vDiff0.Mul(vDiff0)
-			i := vLen
+			var vVarAcc simd.Float32s
+			i := 0
+			if normSize >= 4*vLen {
+				vD0 := simd.LoadFloat32s(row).Sub(vMean)
+				vD1 := simd.LoadFloat32s(row[vLen:]).Sub(vMean)
+				vD2 := simd.LoadFloat32s(row[2*vLen:]).Sub(vMean)
+				vD3 := simd.LoadFloat32s(row[3*vLen:]).Sub(vMean)
+				vVar0 := vD0.Mul(vD0)
+				vVar1 := vD1.Mul(vD1)
+				vVar2 := vD2.Mul(vD2)
+				vVar3 := vD3.Mul(vD3)
+				i = 4 * vLen
+				for ; i+4*vLen <= normSize; i += 4 * vLen {
+					d0 := simd.LoadFloat32s(row[i:]).Sub(vMean)
+					d1 := simd.LoadFloat32s(row[i+vLen:]).Sub(vMean)
+					d2 := simd.LoadFloat32s(row[i+2*vLen:]).Sub(vMean)
+					d3 := simd.LoadFloat32s(row[i+3*vLen:]).Sub(vMean)
+					vVar0 = d0.MulAdd(d0, vVar0)
+					vVar1 = d1.MulAdd(d1, vVar1)
+					vVar2 = d2.MulAdd(d2, vVar2)
+					vVar3 = d3.MulAdd(d3, vVar3)
+				}
+				vVarAcc = vVar0.Add(vVar1).Add(vVar2.Add(vVar3))
+			} else {
+				vDiff0 := simd.LoadFloat32s(row).Sub(vMean)
+				vVarAcc = vDiff0.Mul(vDiff0)
+				i = vLen
+			}
 			for ; i+vLen <= normSize; i += vLen {
 				vD := simd.LoadFloat32s(row[i:]).Sub(vMean)
-				vVarAcc = vVarAcc.Add(vD.Mul(vD))
+				vVarAcc = vD.MulAdd(vD, vVarAcc)
 			}
 			vVarAcc.Store(tmp)
 			var varSum float32
@@ -377,29 +421,58 @@ func simdLayerNormTrailingAxesFloat32(
 
 		// 3. Normalize + Affine (gamma, beta)
 		i := 0
-		for ; i+vLen <= normSize; i += vLen {
-			vIn := simd.LoadFloat32s(row[i:])
-			vNorm := vIn.Sub(vMean).Mul(vInvStd)
-			if gammaData != nil && betaData != nil {
-				vNorm = vNorm.MulAdd(simd.LoadFloat32s(gammaData[i:]), simd.LoadFloat32s(betaData[i:]))
-			} else if gammaData != nil {
-				vNorm = vNorm.Mul(simd.LoadFloat32s(gammaData[i:]))
-			} else if betaData != nil {
-				vNorm = vNorm.Add(simd.LoadFloat32s(betaData[i:]))
+		if hasGamma && hasBeta {
+			for ; i+4*vLen <= normSize; i += 4 * vLen {
+				v0 := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd).MulAdd(simd.LoadFloat32s(gammaData[i:]), simd.LoadFloat32s(betaData[i:]))
+				v1 := simd.LoadFloat32s(row[i+vLen:]).Sub(vMean).Mul(vInvStd).MulAdd(simd.LoadFloat32s(gammaData[i+vLen:]), simd.LoadFloat32s(betaData[i+vLen:]))
+				v2 := simd.LoadFloat32s(row[i+2*vLen:]).Sub(vMean).Mul(vInvStd).MulAdd(simd.LoadFloat32s(gammaData[i+2*vLen:]), simd.LoadFloat32s(betaData[i+2*vLen:]))
+				v3 := simd.LoadFloat32s(row[i+3*vLen:]).Sub(vMean).Mul(vInvStd).MulAdd(simd.LoadFloat32s(gammaData[i+3*vLen:]), simd.LoadFloat32s(betaData[i+3*vLen:]))
+				v0.Store(outRow[i:])
+				v1.Store(outRow[i+vLen:])
+				v2.Store(outRow[i+2*vLen:])
+				v3.Store(outRow[i+3*vLen:])
 			}
-			vNorm.Store(outRow[i:])
+			for ; i+vLen <= normSize; i += vLen {
+				vNorm := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd).MulAdd(simd.LoadFloat32s(gammaData[i:]), simd.LoadFloat32s(betaData[i:]))
+				vNorm.Store(outRow[i:])
+			}
+		} else if hasGamma {
+			for ; i+vLen <= normSize; i += vLen {
+				vNorm := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd).Mul(simd.LoadFloat32s(gammaData[i:]))
+				vNorm.Store(outRow[i:])
+			}
+		} else if hasBeta {
+			for ; i+vLen <= normSize; i += vLen {
+				vNorm := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd).Add(simd.LoadFloat32s(betaData[i:]))
+				vNorm.Store(outRow[i:])
+			}
+		} else {
+			for ; i+4*vLen <= normSize; i += 4 * vLen {
+				v0 := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd)
+				v1 := simd.LoadFloat32s(row[i+vLen:]).Sub(vMean).Mul(vInvStd)
+				v2 := simd.LoadFloat32s(row[i+2*vLen:]).Sub(vMean).Mul(vInvStd)
+				v3 := simd.LoadFloat32s(row[i+3*vLen:]).Sub(vMean).Mul(vInvStd)
+				v0.Store(outRow[i:])
+				v1.Store(outRow[i+vLen:])
+				v2.Store(outRow[i+2*vLen:])
+				v3.Store(outRow[i+3*vLen:])
+			}
+			for ; i+vLen <= normSize; i += vLen {
+				vNorm := simd.LoadFloat32s(row[i:]).Sub(vMean).Mul(vInvStd)
+				vNorm.Store(outRow[i:])
+			}
 		}
 		if i < normSize {
 			vIn, _ := simdmath.LoadFloat32sPart(row[i:])
 			vNorm := vIn.Sub(vMean).Mul(vInvStd)
-			if gammaData != nil && betaData != nil {
+			if hasGamma && hasBeta {
 				vG, _ := simdmath.LoadFloat32sPart(gammaData[i:])
 				vB, _ := simdmath.LoadFloat32sPart(betaData[i:])
 				vNorm = vNorm.MulAdd(vG, vB)
-			} else if gammaData != nil {
+			} else if hasGamma {
 				vG, _ := simdmath.LoadFloat32sPart(gammaData[i:])
 				vNorm = vNorm.Mul(vG)
-			} else if betaData != nil {
+			} else if hasBeta {
 				vB, _ := simdmath.LoadFloat32sPart(betaData[i:])
 				vNorm = vNorm.Add(vB)
 			}

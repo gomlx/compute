@@ -267,19 +267,136 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	}
 
 	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize
-	numChunks := min(maxChunksBySize, 2*numWorkers)
-	if numChunks <= 1 {
+	if maxChunksBySize <= 1 {
 		fn(0, totalItems)
 		return
 	}
 
 	s.ensureWorkersStarted()
 
-	var nextChunk atomic.Int32
+	var nextIdx atomic.Int64
 	var unstarted atomic.Int32
 	var wg sync.WaitGroup
 
-	numHelpers := min(numChunks-1, numWorkers-1)
+	numHelpers := min(maxChunksBySize-1, numWorkers-1)
+	unstarted.Store(int32(numHelpers))
+	wg.Add(numHelpers)
+
+	decrementUnstarted := func() bool {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return false
+			}
+			if unstarted.CompareAndSwap(u, u-1) {
+				return true
+			}
+		}
+	}
+	cancelUnstarted := func() {
+		for {
+			u := unstarted.Load()
+			if u <= 0 {
+				return
+			}
+			if unstarted.CompareAndSwap(u, 0) {
+				wg.Add(-int(u))
+				return
+			}
+		}
+	}
+
+	// Guided self-scheduling (tapered chunks): early chunks are ~remaining/(2*numWorkers)
+	// for cache locality and low atomic traffic, tapering down to minChunkSize at the tail
+	// so slower cores (e.g. E-cores on hybrid x86/ARM64 CPUs) never hold a large tail chunk.
+	divisor := 2 * numWorkers
+	claimChunk := func() (int, int, bool) {
+		for {
+			cur := int(nextIdx.Load())
+			rem := totalItems - cur
+			if rem <= 0 {
+				return 0, 0, false
+			}
+			chunk := max(minChunkSize, (rem+divisor-1)/divisor)
+			if chunk > rem {
+				chunk = rem
+			}
+			if nextIdx.CompareAndSwap(int64(cur), int64(cur+chunk)) {
+				return cur, cur + chunk, true
+			}
+		}
+	}
+
+	helperFn := func() {
+		if !decrementUnstarted() {
+			return
+		}
+		defer wg.Done()
+		for {
+			start, end, ok := claimChunk()
+			if !ok {
+				return
+			}
+			fn(start, end)
+		}
+	}
+	for range numHelpers {
+		select {
+		case s.intraOpQueue <- helperFn:
+		default:
+			if decrementUnstarted() {
+				wg.Done()
+			}
+		}
+	}
+
+	// Work-helping: caller drains chunks alongside helpers.
+	for {
+		start, end, ok := claimChunk()
+		if !ok {
+			break
+		}
+		fn(start, end)
+	}
+
+	cancelUnstarted()
+	wg.Wait()
+}
+
+// Saturate fans out workerFn across the calling goroutine and up to EffectiveParallelism()-1
+// available scheduler workers (used by work-pulling ops like MatMul).
+//
+// Each workerFn pulls work from a shared queue until no work remains and then returns.
+func (s *Scheduler) Saturate(workerFn func()) {
+	s.SaturateUpTo(0, workerFn)
+}
+
+// SaturateUpTo is like Saturate, but caps the total number of participating workers
+// (including the calling goroutine) to maxWorkers when maxWorkers > 0.
+func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
+	if !s.IsEnabled() {
+		workerFn()
+		return
+	}
+
+	limit := s.EffectiveParallelism()
+	if s.IsUnlimited() {
+		limit = runtime.GOMAXPROCS(0)
+	}
+	if maxWorkers > 0 && maxWorkers < limit {
+		limit = maxWorkers
+	}
+	if limit <= 1 {
+		workerFn()
+		return
+	}
+
+	s.ensureWorkersStarted()
+
+	var wg sync.WaitGroup
+	var unstarted atomic.Int32
+
+	numHelpers := limit - 1
 	unstarted.Store(int32(numHelpers))
 	wg.Add(numHelpers)
 
@@ -312,124 +429,9 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 			return
 		}
 		defer wg.Done()
-		for {
-			c := int(nextChunk.Add(1) - 1)
-			if c >= numChunks {
-				return
-			}
-			start := (c*totalItems + numChunks - 1) / numChunks
-			end := ((c+1)*totalItems + numChunks - 1) / numChunks
-			fn(start, end)
-		}
+		workerFn()
 	}
 	for range numHelpers {
-		select {
-		case s.intraOpQueue <- helperFn:
-		default:
-			if decrementUnstarted() {
-				wg.Done()
-			}
-		}
-	}
-
-	// Work-helping: caller drains chunks alongside helpers.
-	for {
-		c := int(nextChunk.Add(1) - 1)
-		if c >= numChunks {
-			break
-		}
-		start := (c*totalItems + numChunks - 1) / numChunks
-		end := ((c+1)*totalItems + numChunks - 1) / numChunks
-		fn(start, end)
-	}
-
-	cancelUnstarted()
-	wg.Wait()
-}
-
-// Saturate fans out workerFn across the calling goroutine and up to EffectiveParallelism()-1
-// available scheduler workers (used by work-pulling ops like MatMul).
-//
-// Each workerFn pulls work from a shared queue until no work remains and then returns.
-// Once any workerFn returns (indicating the work queue is exhausted), Saturate stops
-// recruiting additional workers and waits for all already-running workerFn instances
-// to finish before returning.
-func (s *Scheduler) Saturate(workerFn func()) {
-	s.SaturateUpTo(0, workerFn)
-}
-
-// SaturateUpTo is like Saturate, but caps the total number of participating workers
-// (including the calling goroutine) to maxWorkers when maxWorkers > 0.
-func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
-	if !s.IsEnabled() {
-		workerFn()
-		return
-	}
-
-	limit := s.EffectiveParallelism()
-	if s.IsUnlimited() {
-		limit = runtime.GOMAXPROCS(0)
-	}
-	if maxWorkers > 0 && maxWorkers < limit {
-		limit = maxWorkers
-	}
-	if limit <= 1 {
-		workerFn()
-		return
-	}
-
-	s.ensureWorkersStarted()
-
-	var wg sync.WaitGroup
-	var unstarted atomic.Int32
-	var doneFanningOut atomic.Bool
-
-	numHelpers := limit - 1
-	unstarted.Store(int32(numHelpers))
-	wg.Add(numHelpers)
-
-	decrementUnstarted := func() bool {
-		for {
-			u := unstarted.Load()
-			if u <= 0 {
-				return false
-			}
-			if unstarted.CompareAndSwap(u, u-1) {
-				return true
-			}
-		}
-	}
-	cancelUnstarted := func() {
-		for {
-			u := unstarted.Load()
-			if u <= 0 {
-				return
-			}
-			if unstarted.CompareAndSwap(u, 0) {
-				wg.Add(-int(u))
-				return
-			}
-		}
-	}
-
-	helperFn := func() {
-		if doneFanningOut.Load() || !decrementUnstarted() {
-			return
-		}
-		defer wg.Done()
-		if !doneFanningOut.Load() {
-			workerFn()
-			doneFanningOut.Store(true)
-			cancelUnstarted()
-		}
-	}
-	for range numHelpers {
-		if doneFanningOut.Load() {
-			if decrementUnstarted() {
-				wg.Done()
-			}
-			continue
-		}
 		select {
 		case s.intraOpQueue <- helperFn:
 		default:
@@ -440,10 +442,7 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	}
 
 	// The calling goroutine participates directly as one of the workers.
-	if !doneFanningOut.Load() {
-		workerFn()
-		doneFanningOut.Store(true)
-	}
+	workerFn()
 
 	cancelUnstarted()
 	wg.Wait()

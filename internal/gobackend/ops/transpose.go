@@ -4,6 +4,7 @@ package ops
 
 import (
 	"slices"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -270,24 +271,117 @@ func dispatchTranspose4D_0213(backend *gobackend.Backend, operand, output *gobac
 	return true
 }
 
+func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim, dDim int) {
+	strideIn := hDim * dDim
+	sStrideOut := sDim * dDim
+	bStrideIn := sDim * strideIn
+	inPtr := unsafe.Pointer(&in[0])
+	outPtr := unsafe.Pointer(&out[0])
+	var zero T
+	elemSize := uintptr(unsafe.Sizeof(zero))
+	rowBytes := uintptr(dDim) * elemSize
+
+	switch rowBytes {
+	case 32:
+		stepIn := uintptr(strideIn) * elemSize
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
+			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
+			for range sDim {
+				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
+				src = unsafe.Add(src, stepIn)
+				dst = unsafe.Add(dst, 32)
+			}
+		}
+	case 64:
+		stepIn := uintptr(strideIn) * elemSize
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
+			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
+			for range sDim {
+				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
+				*(*[4]uint64)(unsafe.Add(dst, 32)) = *(*[4]uint64)(unsafe.Add(src, 32))
+				src = unsafe.Add(src, stepIn)
+				dst = unsafe.Add(dst, 64)
+			}
+		}
+	case 128:
+		stepIn := uintptr(strideIn) * elemSize
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
+			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
+			for range sDim {
+				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
+				*(*[4]uint64)(unsafe.Add(dst, 32)) = *(*[4]uint64)(unsafe.Add(src, 32))
+				*(*[4]uint64)(unsafe.Add(dst, 64)) = *(*[4]uint64)(unsafe.Add(src, 64))
+				*(*[4]uint64)(unsafe.Add(dst, 96)) = *(*[4]uint64)(unsafe.Add(src, 96))
+				src = unsafe.Add(src, stepIn)
+				dst = unsafe.Add(dst, 128)
+			}
+		}
+	case 256:
+		stepIn := uintptr(strideIn) * elemSize
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
+			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
+			for range sDim {
+				for off := uintptr(0); off < 256; off += 64 {
+					*(*[4]uint64)(unsafe.Add(dst, off)) = *(*[4]uint64)(unsafe.Add(src, off))
+					*(*[4]uint64)(unsafe.Add(dst, off+32)) = *(*[4]uint64)(unsafe.Add(src, off+32))
+				}
+				src = unsafe.Add(src, stepIn)
+				dst = unsafe.Add(dst, 256)
+			}
+		}
+	case 512:
+		stepIn := uintptr(strideIn) * elemSize
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
+			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
+			for range sDim {
+				for off := uintptr(0); off < 512; off += 64 {
+					*(*[4]uint64)(unsafe.Add(dst, off)) = *(*[4]uint64)(unsafe.Add(src, off))
+					*(*[4]uint64)(unsafe.Add(dst, off+32)) = *(*[4]uint64)(unsafe.Add(src, off+32))
+				}
+				src = unsafe.Add(src, stepIn)
+				dst = unsafe.Add(dst, 512)
+			}
+		}
+	default:
+		for outer := startOuter; outer < endOuter; outer++ {
+			b := outer / hDim
+			h := outer % hDim
+			outBase := outer * sStrideOut
+			inBase := b*bStrideIn + h*dDim
+			for s := range sDim {
+				inOff := inBase + s*strideIn
+				outOff := outBase + s*dDim
+				copy(out[outOff:outOff+dDim], in[inOff:inOff+dDim])
+			}
+		}
+	}
+}
+
 func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim, hDim, dDim int) {
 	totalElements := bDim * sDim * hDim * dDim
+	if totalElements == 0 {
+		return
+	}
 	totalOuter := bDim * hDim
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter > 1 && totalElements > 32768 {
 		minOuter := max(1, 32768/max(1, sDim*dDim))
 		backend.Scheduler.ParallelizeChunks(totalOuter, minOuter, func(start, end int) {
-			for outer := start; outer < end; outer++ {
-				b := outer / hDim
-				h := outer % hDim
-				outBase := outer * (sDim * dDim)
-				inBase := b*(sDim*hDim*dDim) + h*dDim
-				strideIn := hDim * dDim
-				for s := 0; s < sDim; s++ {
-					inOff := inBase + s*strideIn
-					outOff := outBase + s*dDim
-					copy(out[outOff:outOff+dDim], in[inOff:inOff+dDim])
-				}
-			}
+			transpose4D_0213Block(in, out, start, end, sDim, hDim, dDim)
 		})
 	} else if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOuter == 1 && sDim > 512 && totalElements > 32768 {
 		minS := max(1, 32768/max(1, hDim*dDim))
@@ -300,18 +394,7 @@ func transpose4D_0213[T any](backend *gobackend.Backend, in, out []T, bDim, sDim
 			}
 		})
 	} else {
-		for outer := 0; outer < totalOuter; outer++ {
-			b := outer / hDim
-			h := outer % hDim
-			outBase := outer * (sDim * dDim)
-			inBase := b*(sDim*hDim*dDim) + h*dDim
-			strideIn := hDim * dDim
-			for s := 0; s < sDim; s++ {
-				inOff := inBase + s*strideIn
-				outOff := outBase + s*dDim
-				copy(out[outOff:outOff+dDim], in[inOff:inOff+dDim])
-			}
-		}
+		transpose4D_0213Block(in, out, 0, totalOuter, sDim, hDim, dDim)
 	}
 }
 
