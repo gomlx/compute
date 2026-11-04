@@ -1,3 +1,19 @@
+- 2026-11-04:
+  - Added comprehensive ARM64 NEON and Scalable Matrix Extension (`FEAT_SME`) SIMD acceleration across the Go backend (`internal/gobackend/...`, `dtypes/float16`, `dtypes/bfloat16`):
+    - **Runtime Feature Detection (`internal/gobackend/simd_arm64*.go`)**: Added ARM64 capability detection and environment controls (`GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`) for `IsNEONAllowed`, `IsARM64FP16Allowed`, `IsARM64BF16Allowed`, `IsARM64DotProdAllowed`, `IsARM64I8MMAllowed`, `IsSVEAllowed`, and `IsSMEAllowed`.
+    - **NEON & SME `DotGeneral` / `FusedDense` GEMM (`internal/gobackend/dot/matmul/neon`)**:
+      - Registered `"simd:neon"` (`PriorityNEON`) and `"simd:sme"` (`PrioritySME`) with full support for `Float32`, `Float16`, `BFloat16`, and `Float64`.
+      - Implemented handwritten Plan9 ARM64 assembly microkernels for large cache-tiled GEMM (`neonLargeKernel*Asm`, $4 \times 16$ / $8 \times 8$ / $8 \times 4$), zero-packing small GEMM (`neonSmallNonTransposed*Asm`, `neonSmallTransposed*Asm`), and vectorized LHS/RHS panel packing (`pack_arm64.s`).
+      - Implemented 1-tile ($16 \times 16$) and 4-tile ($32 \times 32$ and $16 \times 64$) SME outer-product (`FMOPA`) microkernels (`sme_arm64.s`) with a two-phase `Z31` hardware canary to guard against `darwin/arm64` `SIGURG` `sigreturn` upper-bit zeroing of streaming `Z` registers.
+      - Implemented `CNTVCT_EL0` core-type probing (`smeProbeCoreClockTicks`), global per-cluster SME locks (`globalSMEClusterLocks`), zero-repack strided NEON co-execution (`neonLargeKernelFromSME*`), 3-phase tapered chunking (`AppendWorkItems`), and a lock-free dual-ended work queue (`bounds atomic.Uint64`) so asymmetric CPU clusters (Super, Performance, and Efficiency cores) co-execute SME + NEON without tail stragglers (reaching up to **2.5 TFlops/s** on Apple M6, **20×–22× faster** than `nosimd`).
+    - **ARM64 SME + NEON `FusedScaledDotProductAttention` (`internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/fusedops/sdpa_simd.go`)**:
+      - Added `DispatchSDPAARM64` (`PriorityArch`) combining a 32-query-row SME $32 \times 32$ outer-product path (`sdpaSME32RowsFloat32`), a 4-query-row zero-packing NEON assembly path (`sdpaNEON4RowsFloat32`), and 2-row/1-row NEON `archsimd` paths, plus a portable `DispatchSDPASIMD` (`PrioritySIMD`) fallback—reducing `SDPA` CPU time on `all-MiniLM-L6-v2` by **16.8×**.
+    - **NEON Reductions, Binary Trailing Broadcasts, Epilogues, `Where`, and Half-Precision Conversions**:
+      - Added ARM64 NEON assembly and `archsimd` kernels in `internal/gobackend/ops/neon` (`reduce_arm64.s`, `binary_trailing_arm64.go`), `ops/where_arm64.go`, `ops/convertdtype_arm64.go`, `dot/matmul/epilogue_arm64.go`, `dtypes/float16/neon_arm64.s` (`FCVTL`/`FCVTN`), and `dtypes/bfloat16/neon_arm64.s` (`SHLL`/`USHR`).
+    - **Scheduler & Transformer Op Optimizations**:
+      - Upgraded `Scheduler.ParallelizeChunks` (`internal/gobackend/scheduler/scheduler.go`) to Guided Self-Scheduling (GSS) for asymmetric CPU topologies.
+      - Optimized `GeluExactFloat32SIMD` (`activations/simd_full_base.go`), multi-row `FusedSoftmax` (`fusedops/softmax_simd.go`), 4-way unrolled `FusedLayerNorm` (`fusedops/layernorm_simd.go`), and 4D attention head transpositions (`ops/transpose.go`).
+
 - 2026-11-02:
   - Optimized `FusedScaledDotProductAttention` (`internal/gobackend/fusedops/sdpa.go`, `avx2/sdpa.go`, `avx512/sdpa.go`):
     - Added 2D multi-core work partitioning across `(batchSize * numKVHeads, qBlocks)` so models with small `(batch * numKVHeads)` saturate all CPU cores across query sequence blocks.
