@@ -1670,3 +1670,189 @@ func BenchmarkSMEGeometries(b *testing.B) {
 		}
 	}
 }
+
+// TestSMEHybridCoExecution verifies that hybrid SME+NEON co-execution (SMEUseHybridNEON=true),
+// neonLargeKernelFromSME* strided fallback microkernels (including non-multiple edge tails),
+// and concurrent inter-call matmuls competing for globalSMEClusterLocks produce exact results.
+func TestSMEHybridCoExecution(t *testing.T) {
+	if !gobackend.IsSMEAllowed {
+		t.Skip("ARM64 SME is not supported or allowed on this host")
+	}
+
+	origHybrid := SMEUseHybridNEON
+	origPerCluster := SMEWorkersPerCluster
+	defer func() {
+		SMEUseHybridNEON = origHybrid
+		SMEWorkersPerCluster = origPerCluster
+	}()
+
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
+	// 1. Test non-multiple edge dimensions (M=301, N=531, K=263) across all 4 dtypes with:
+	//    - Pure SME (SMEUseHybridNEON=false)
+	//    - Hybrid SME+NEON (SMEUseHybridNEON=true, SMEWorkersPerCluster=1)
+	//    - Pure Strided NEON on SME-packed panels (SMEUseHybridNEON=true, SMEWorkersPerCluster=0)
+	const B, M, N, K = 1, 301, 531, 263
+	lhs32 := make([]float32, B*M*K)
+	rhs32 := make([]float32, B*K*N)
+	lhsF16 := make([]float16.Float16, B*M*K)
+	rhsF16 := make([]float16.Float16, B*K*N)
+	lhsBF16 := make([]bfloat16.BFloat16, B*M*K)
+	rhsBF16 := make([]bfloat16.BFloat16, B*K*N)
+	lhs64 := make([]float64, B*M*K)
+	rhs64 := make([]float64, B*K*N)
+	for i := range lhs32 {
+		v := float32(i%19-9) * 0.05
+		lhs32[i] = v
+		lhsF16[i] = float16.FromFloat32(v)
+		lhsBF16[i] = bfloat16.FromFloat32(v)
+		lhs64[i] = float64(v)
+	}
+	for i := range rhs32 {
+		v := float32(i%23-11) * 0.05
+		rhs32[i] = v
+		rhsF16[i] = float16.FromFloat32(v)
+		rhsBF16[i] = bfloat16.FromFloat32(v)
+		rhs64[i] = float64(v)
+	}
+
+	SMEUseHybridNEON = false
+	want32 := make([]float32, B*M*N)
+	wantF16 := make([]float32, B*M*N)
+	wantBF16 := make([]float32, B*M*N)
+	want64 := make([]float64, B*M*N)
+	neonLargeWithParamsFloat32(backend, dot.LayoutNonTransposed, lhs32, rhs32, B, M, N, K, want32, nil, SMEParamsFloat32)
+	neonLargeWithParamsFloat16(backend, dot.LayoutNonTransposed, lhsF16, rhsF16, B, M, N, K, wantF16, nil, SMEParamsFloat16)
+	neonLargeWithParamsBFloat16(backend, dot.LayoutNonTransposed, lhsBF16, rhsBF16, B, M, N, K, wantBF16, nil, SMEParamsBFloat16)
+	neonLargeWithParamsFloat64(backend, dot.LayoutNonTransposed, lhs64, rhs64, B, M, N, K, want64, nil, SMEParamsFloat64)
+
+	for _, workersPerCluster := range []int32{1, 0} {
+		SMEUseHybridNEON = true
+		SMEWorkersPerCluster = workersPerCluster
+
+		got32 := make([]float32, B*M*N)
+		gotF16 := make([]float32, B*M*N)
+		gotBF16 := make([]float32, B*M*N)
+		got64 := make([]float64, B*M*N)
+		neonLargeWithParamsFloat32(backend, dot.LayoutNonTransposed, lhs32, rhs32, B, M, N, K, got32, nil, SMEParamsFloat32)
+		neonLargeWithParamsFloat16(backend, dot.LayoutNonTransposed, lhsF16, rhsF16, B, M, N, K, gotF16, nil, SMEParamsFloat16)
+		neonLargeWithParamsBFloat16(backend, dot.LayoutNonTransposed, lhsBF16, rhsBF16, B, M, N, K, gotBF16, nil, SMEParamsBFloat16)
+		neonLargeWithParamsFloat64(backend, dot.LayoutNonTransposed, lhs64, rhs64, B, M, N, K, got64, nil, SMEParamsFloat64)
+
+		for i := range want32 {
+			if diff := math.Abs(float64(got32[i] - want32[i])); diff > 1e-4 {
+				t.Fatalf("Float32 mismatch at %d (workersPerCluster=%d): got %v, want %v", i, workersPerCluster, got32[i], want32[i])
+			}
+			if diff := math.Abs(float64(gotF16[i] - wantF16[i])); diff > 1e-3 {
+				t.Fatalf("Float16 mismatch at %d (workersPerCluster=%d): got %v, want %v", i, workersPerCluster, gotF16[i], wantF16[i])
+			}
+			if diff := math.Abs(float64(gotBF16[i] - wantBF16[i])); diff > 1e-3 {
+				t.Fatalf("BFloat16 mismatch at %d (workersPerCluster=%d): got %v, want %v", i, workersPerCluster, gotBF16[i], wantBF16[i])
+			}
+			if diff := math.Abs(got64[i] - want64[i]); diff > 1e-9 {
+				t.Fatalf("Float64 mismatch at %d (workersPerCluster=%d): got %v, want %v", i, workersPerCluster, got64[i], want64[i])
+			}
+		}
+	}
+
+	// 2. Test concurrent inter-op / inter-call contention across 4 parallel matmuls competing for globalSMEClusterLocks:
+	SMEUseHybridNEON = true
+	SMEWorkersPerCluster = 1
+	const numConcurrent = 4
+	errCh := make(chan error, numConcurrent)
+	for range numConcurrent {
+		go func() {
+			got := make([]float32, B*M*N)
+			for range 5 {
+				neonLargeWithParamsFloat32(backend, dot.LayoutNonTransposed, lhs32, rhs32, B, M, N, K, got, nil, SMEParamsFloat32)
+				for i := range want32 {
+					if math.Abs(float64(got[i]-want32[i])) > 1e-4 {
+						errCh <- fmt.Errorf("concurrent Float32 mismatch at %d: got %v, want %v", i, got[i], want32[i])
+						return
+					}
+				}
+			}
+			errCh <- nil
+		}()
+	}
+	for range numConcurrent {
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkSMEHybrid compares Pure SME (SMEUseHybridNEON=false, all workers queuing on cluster SME units)
+// against Hybrid SME+NEON (SMEUseHybridNEON=true, 1 SME worker per cluster + remaining workers on per-core NEON).
+func BenchmarkSMEHybrid(b *testing.B) {
+	if !gobackend.IsSMEAllowed {
+		b.Skip("ARM64 SME is not supported or allowed on this host")
+	}
+
+	origHybrid := SMEUseHybridNEON
+	defer func() { SMEUseHybridNEON = origHybrid }()
+
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		b.Fatalf("failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
+	shapes := []struct {
+		name       string
+		B, M, N, K int
+		cachedRHS  bool
+	}{
+		{"Dynamic_1x1024x1024x1024", 1, 1024, 1024, 1024, false},
+		{"CachedRHS_1x1024x1024x1024", 1, 1024, 1024, 1024, true},
+		{"Dynamic_1x1536x1920x384", 1, 1536, 1920, 384, false},
+		{"CachedRHS_1x1536x1920x384", 1, 1536, 1920, 384, true},
+		{"Dynamic_1x2048x2048x2048", 1, 2048, 2048, 2048, false},
+		{"CachedRHS_1x2048x2048x2048", 1, 2048, 2048, 2048, true},
+	}
+
+	for _, sh := range shapes {
+		lhs := make([]float32, sh.B*sh.M*sh.K)
+		for i := range lhs {
+			lhs[i] = float32(i%13-6) * 0.01
+		}
+		rhs := make([]float32, sh.B*sh.K*sh.N)
+		for i := range rhs {
+			rhs[i] = float32(i%17-8) * 0.01
+		}
+		output := make([]float32, sh.B*sh.M*sh.N)
+		flops := float64(2 * sh.B * sh.M * sh.N * sh.K)
+
+		var nodeData *dot.NodeData
+		if sh.cachedRHS {
+			nodeData = &dot.NodeData{
+				RHSConstantData: &gobackend.ConstantData{},
+			}
+		}
+
+		for _, mode := range []struct {
+			name   string
+			hybrid bool
+		}{
+			{"PureSME", false},
+			{"HybridSME_NEON", true},
+		} {
+			b.Run("Float32/"+sh.name+"/"+mode.name, func(b *testing.B) {
+				SMEUseHybridNEON = mode.hybrid
+				for range 3 {
+					smeRouterFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, sh.B, sh.M, sh.N, sh.K, output, nodeData)
+				}
+				for b.Loop() {
+					smeRouterFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, sh.B, sh.M, sh.N, sh.K, output, nodeData)
+				}
+				elapsed := b.Elapsed()
+				b.ReportMetric(flops*float64(b.N)/elapsed.Seconds()/1e9, "GFlops/s")
+				b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
+			})
+		}
+	}
+}

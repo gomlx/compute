@@ -1596,3 +1596,450 @@ next_row_strip:
 sme_f64_16x16_done:
 	WORD $0xD503467F // SMSTOP
 	RET
+
+// ===========================================================================
+// Hybrid SME + NEON Cluster Probing & Strided Sub-Tile NEON Microkernels
+// ===========================================================================
+
+#define FMLA_4S_LANE(Vd, Vn, Vm, lane) \
+	WORD $(0x4F801000 | (((lane)&1)<<21) | (((lane)&2)<<10) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define FMLA_2D_LANE(Vd, Vn, Vm, lane) \
+	WORD $(0x4FC01000 | (((lane)&1)<<11) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define FCVTL_4S_4H(Vd, Vn)   WORD $(0x0E217800 | ((Vn)<<5) | (Vd))
+#define FCVTL2_4S_8H(Vd, Vn)  WORD $(0x4E217800 | ((Vn)<<5) | (Vd))
+#define SHLL_4S_4H_16(Vd, Vn)  WORD $(0x2E613800 | ((Vn)<<5) | (Vd))
+#define SHLL2_4S_8H_16(Vd, Vn) WORD $(0x6E613800 | ((Vn)<<5) | (Vd))
+
+// func smeProbeCoreClockTicks() uint64
+// Executes 256 iterations of 16 independent per-core NEON VFMLA instructions
+// timed against the hardware virtual counter CNTVCT_EL0 (1 GHz = 1 ns/tick on Apple Silicon).
+// Because NEON execution pipelines are private to each core (4x 128-bit FMA pipes on
+// Super/Performance cores vs. 2x on Efficiency cores), this ~250-460ns probe cleanly
+// identifies which physical core cluster (Super, Performance, or Efficiency) the thread is on.
+TEXT ·smeProbeCoreClockTicks(SB), NOSPLIT, $0-8
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+	WORD $0xD5033FDF // ISB
+	WORD $0xD53BE041 // MRS X1, CNTVCT_EL0
+	MOVD $256, R0
+sme_probe_loop:
+	VFMLA V16.S4, V17.S4, V0.S4
+	VFMLA V16.S4, V18.S4, V1.S4
+	VFMLA V16.S4, V19.S4, V2.S4
+	VFMLA V16.S4, V20.S4, V3.S4
+	VFMLA V21.S4, V17.S4, V4.S4
+	VFMLA V21.S4, V18.S4, V5.S4
+	VFMLA V21.S4, V19.S4, V6.S4
+	VFMLA V21.S4, V20.S4, V7.S4
+	VFMLA V22.S4, V17.S4, V8.S4
+	VFMLA V22.S4, V18.S4, V9.S4
+	VFMLA V22.S4, V19.S4, V10.S4
+	VFMLA V22.S4, V20.S4, V11.S4
+	VFMLA V23.S4, V17.S4, V12.S4
+	VFMLA V23.S4, V18.S4, V13.S4
+	VFMLA V23.S4, V19.S4, V14.S4
+	VFMLA V23.S4, V20.S4, V15.S4
+	SUB $1, R0, R0
+	CBNZ R0, sme_probe_loop
+	WORD $0xD5033FDF // ISB
+	WORD $0xD53BE042 // MRS X2, CNTVCT_EL0
+	SUB R1, R2, R0
+	MOVD R0, ret+0(FP)
+	RET
+
+// func neonSubTile4x16StridedFloat32Asm(lhsPtr, rhsPtr, outPtr unsafe.Pointer, contractingLen, lhsStepBytes, rhsStepBytes, outRowStrideBytes int, accumulate bool)
+TEXT ·neonSubTile4x16StridedFloat32Asm(SB), NOSPLIT, $0-57
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD contractingLen+24(FP), R3
+	MOVD lhsStepBytes+32(FP), R4
+	MOVD rhsStepBytes+40(FP), R5
+	MOVD outRowStrideBytes+48(FP), R6
+	MOVBU accumulate+56(FP), R7
+
+	CBZ R7, zero_f32
+	MOVD R2, R8
+	VLD1 (R8), [V0.S4, V1.S4, V2.S4, V3.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V4.S4, V5.S4, V6.S4, V7.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V8.S4, V9.S4, V10.S4, V11.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V12.S4, V13.S4, V14.S4, V15.S4]
+	B k_check_f32
+
+zero_f32:
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+k_check_f32:
+	CBZ R3, store_f32
+
+k_loop_f32:
+	VLD1 (R0), [V16.S4]
+	ADD R4, R0, R0
+	VLD1 (R1), [V17.S4, V18.S4, V19.S4, V20.S4]
+	ADD R5, R1, R1
+
+	FMLA_4S_LANE(0, 17, 16, 0)
+	FMLA_4S_LANE(1, 18, 16, 0)
+	FMLA_4S_LANE(2, 19, 16, 0)
+	FMLA_4S_LANE(3, 20, 16, 0)
+
+	FMLA_4S_LANE(4, 17, 16, 1)
+	FMLA_4S_LANE(5, 18, 16, 1)
+	FMLA_4S_LANE(6, 19, 16, 1)
+	FMLA_4S_LANE(7, 20, 16, 1)
+
+	FMLA_4S_LANE(8, 17, 16, 2)
+	FMLA_4S_LANE(9, 18, 16, 2)
+	FMLA_4S_LANE(10, 19, 16, 2)
+	FMLA_4S_LANE(11, 20, 16, 2)
+
+	FMLA_4S_LANE(12, 17, 16, 3)
+	FMLA_4S_LANE(13, 18, 16, 3)
+	FMLA_4S_LANE(14, 19, 16, 3)
+	FMLA_4S_LANE(15, 20, 16, 3)
+
+	SUB $1, R3, R3
+	CBNZ R3, k_loop_f32
+
+store_f32:
+	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R2)
+	RET
+
+// func neonSubTile8x8StridedFloat16Asm(lhsPtr, rhsPtr, outPtr unsafe.Pointer, contractingLen, lhsStepBytes, rhsStepBytes, outRowStrideBytes int, accumulate bool)
+TEXT ·neonSubTile8x8StridedFloat16Asm(SB), NOSPLIT, $0-57
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD contractingLen+24(FP), R3
+	MOVD lhsStepBytes+32(FP), R4
+	MOVD rhsStepBytes+40(FP), R5
+	MOVD outRowStrideBytes+48(FP), R6
+	MOVBU accumulate+56(FP), R7
+
+	CBZ R7, zero_f16
+	MOVD R2, R8
+	VLD1 (R8), [V0.S4, V1.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V2.S4, V3.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V4.S4, V5.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V6.S4, V7.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V8.S4, V9.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V10.S4, V11.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V12.S4, V13.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V14.S4, V15.S4]
+	B k_check_f16
+
+zero_f16:
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+k_check_f16:
+	CBZ R3, store_f16
+
+k_loop_f16:
+	VLD1 (R0), [V20.H8]
+	ADD R4, R0, R0
+	VLD1 (R1), [V21.H8]
+	ADD R5, R1, R1
+
+	FCVTL_4S_4H(16, 20)
+	FCVTL2_4S_8H(17, 20)
+	FCVTL_4S_4H(18, 21)
+	FCVTL2_4S_8H(19, 21)
+
+	FMLA_4S_LANE(0, 18, 16, 0)
+	FMLA_4S_LANE(1, 19, 16, 0)
+	FMLA_4S_LANE(2, 18, 16, 1)
+	FMLA_4S_LANE(3, 19, 16, 1)
+	FMLA_4S_LANE(4, 18, 16, 2)
+	FMLA_4S_LANE(5, 19, 16, 2)
+	FMLA_4S_LANE(6, 18, 16, 3)
+	FMLA_4S_LANE(7, 19, 16, 3)
+
+	FMLA_4S_LANE(8, 18, 17, 0)
+	FMLA_4S_LANE(9, 19, 17, 0)
+	FMLA_4S_LANE(10, 18, 17, 1)
+	FMLA_4S_LANE(11, 19, 17, 1)
+	FMLA_4S_LANE(12, 18, 17, 2)
+	FMLA_4S_LANE(13, 19, 17, 2)
+	FMLA_4S_LANE(14, 18, 17, 3)
+	FMLA_4S_LANE(15, 19, 17, 3)
+
+	SUB $1, R3, R3
+	CBNZ R3, k_loop_f16
+
+store_f16:
+	VST1 [V0.S4, V1.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V2.S4, V3.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V4.S4, V5.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V6.S4, V7.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V8.S4, V9.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V10.S4, V11.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V12.S4, V13.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V14.S4, V15.S4], (R2)
+	RET
+
+// func neonSubTile8x8StridedBFloat16Asm(lhsPtr, rhsPtr, outPtr unsafe.Pointer, contractingLen, lhsStepBytes, rhsStepBytes, outRowStrideBytes int, accumulate bool)
+TEXT ·neonSubTile8x8StridedBFloat16Asm(SB), NOSPLIT, $0-57
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD contractingLen+24(FP), R3
+	MOVD lhsStepBytes+32(FP), R4
+	MOVD rhsStepBytes+40(FP), R5
+	MOVD outRowStrideBytes+48(FP), R6
+	MOVBU accumulate+56(FP), R7
+
+	CBZ R7, zero_bf16
+	MOVD R2, R8
+	VLD1 (R8), [V0.S4, V1.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V2.S4, V3.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V4.S4, V5.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V6.S4, V7.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V8.S4, V9.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V10.S4, V11.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V12.S4, V13.S4]
+	ADD R6, R8, R8
+	VLD1 (R8), [V14.S4, V15.S4]
+	B k_check_bf16
+
+zero_bf16:
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+k_check_bf16:
+	CBZ R3, store_bf16
+
+k_loop_bf16:
+	VLD1 (R0), [V20.H8]
+	ADD R4, R0, R0
+	VLD1 (R1), [V21.H8]
+	ADD R5, R1, R1
+
+	SHLL_4S_4H_16(16, 20)
+	SHLL2_4S_8H_16(17, 20)
+	SHLL_4S_4H_16(18, 21)
+	SHLL2_4S_8H_16(19, 21)
+
+	FMLA_4S_LANE(0, 18, 16, 0)
+	FMLA_4S_LANE(1, 19, 16, 0)
+	FMLA_4S_LANE(2, 18, 16, 1)
+	FMLA_4S_LANE(3, 19, 16, 1)
+	FMLA_4S_LANE(4, 18, 16, 2)
+	FMLA_4S_LANE(5, 19, 16, 2)
+	FMLA_4S_LANE(6, 18, 16, 3)
+	FMLA_4S_LANE(7, 19, 16, 3)
+
+	FMLA_4S_LANE(8, 18, 17, 0)
+	FMLA_4S_LANE(9, 19, 17, 0)
+	FMLA_4S_LANE(10, 18, 17, 1)
+	FMLA_4S_LANE(11, 19, 17, 1)
+	FMLA_4S_LANE(12, 18, 17, 2)
+	FMLA_4S_LANE(13, 19, 17, 2)
+	FMLA_4S_LANE(14, 18, 17, 3)
+	FMLA_4S_LANE(15, 19, 17, 3)
+
+	SUB $1, R3, R3
+	CBNZ R3, k_loop_bf16
+
+store_bf16:
+	VST1 [V0.S4, V1.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V2.S4, V3.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V4.S4, V5.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V6.S4, V7.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V8.S4, V9.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V10.S4, V11.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V12.S4, V13.S4], (R2)
+	ADD R6, R2, R2
+	VST1 [V14.S4, V15.S4], (R2)
+	RET
+
+// func neonSubTile8x4StridedFloat64Asm(lhsPtr, rhsPtr, outPtr unsafe.Pointer, contractingLen, lhsStepBytes, rhsStepBytes, outRowStrideBytes int, accumulate bool)
+TEXT ·neonSubTile8x4StridedFloat64Asm(SB), NOSPLIT, $0-57
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD contractingLen+24(FP), R3
+	MOVD lhsStepBytes+32(FP), R4
+	MOVD rhsStepBytes+40(FP), R5
+	MOVD outRowStrideBytes+48(FP), R6
+	MOVBU accumulate+56(FP), R7
+
+	CBZ R7, zero_f64
+	MOVD R2, R8
+	VLD1 (R8), [V0.D2, V1.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V2.D2, V3.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V4.D2, V5.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V6.D2, V7.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V8.D2, V9.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V10.D2, V11.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V12.D2, V13.D2]
+	ADD R6, R8, R8
+	VLD1 (R8), [V14.D2, V15.D2]
+	B k_check_f64
+
+zero_f64:
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+k_check_f64:
+	CBZ R3, store_f64
+
+k_loop_f64:
+	VLD1 (R0), [V16.D2, V17.D2, V18.D2, V19.D2]
+	ADD R4, R0, R0
+	VLD1 (R1), [V20.D2, V21.D2]
+	ADD R5, R1, R1
+
+	FMLA_2D_LANE(0, 20, 16, 0)
+	FMLA_2D_LANE(1, 21, 16, 0)
+	FMLA_2D_LANE(2, 20, 16, 1)
+	FMLA_2D_LANE(3, 21, 16, 1)
+
+	FMLA_2D_LANE(4, 20, 17, 0)
+	FMLA_2D_LANE(5, 21, 17, 0)
+	FMLA_2D_LANE(6, 20, 17, 1)
+	FMLA_2D_LANE(7, 21, 17, 1)
+
+	FMLA_2D_LANE(8, 20, 18, 0)
+	FMLA_2D_LANE(9, 21, 18, 0)
+	FMLA_2D_LANE(10, 20, 18, 1)
+	FMLA_2D_LANE(11, 21, 18, 1)
+
+	FMLA_2D_LANE(12, 20, 19, 0)
+	FMLA_2D_LANE(13, 21, 19, 0)
+	FMLA_2D_LANE(14, 20, 19, 1)
+	FMLA_2D_LANE(15, 21, 19, 1)
+
+	SUB $1, R3, R3
+	CBNZ R3, k_loop_f64
+
+store_f64:
+	VST1 [V0.D2, V1.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V2.D2, V3.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V4.D2, V5.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V6.D2, V7.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V8.D2, V9.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V10.D2, V11.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V12.D2, V13.D2], (R2)
+	ADD R6, R2, R2
+	VST1 [V14.D2, V15.D2], (R2)
+	RET
+
