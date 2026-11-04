@@ -54,6 +54,9 @@ const (
 	PriorityNoSIMD = gobackend.PriorityTyped
 	PriorityAVX2   = gobackend.PriorityArch
 	PriorityAVX512 = gobackend.PriorityArch + 1
+	PriorityNEON   = gobackend.PriorityNEON
+	PrioritySVE    = gobackend.PrioritySVE
+	PrioritySME    = gobackend.PrioritySME
 )
 
 func init() {

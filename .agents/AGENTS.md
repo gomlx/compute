@@ -469,9 +469,12 @@ When implementing or modifying ARM64 assembly routines in `./internal/gobackend/
   - NEON supports multiplying a vector directly by a scalar lane of another vector register (`FMLA Vd.4S, Vn.4S, Vm.S[lane]`).
   - Instead of executing separate broadcast/splat (`VDUP`) instructions for each LHS element, load 4 contiguous LHS elements into `V28.S4` once and issue 4 indexed FMAs against lanes `0, 1, 2, 3`, eliminating 75% of LHS load/broadcast instructions.
 
-### 4. No AVX $\leftrightarrow$ SSE Transition Penalty on NEON (and `SMSTOP` for SME)
+### 4. No AVX $\leftrightarrow$ SSE Transition Penalty on NEON (and `SMSTOP` + Signal Canary for SME)
 - **NEON (`V0`–`V31`)**: Scalar floating-point (`F0`–`F31` / `S0`–`S31` / `D0`–`D31`) and 128-bit NEON vector instructions share the exact same architectural register file without state transition penalties. No `VZEROUPPER` equivalent is required when returning from NEON routines.
-- **SME (`SMSTART` / `SMSTOP`)**: If an SME routine enters Streaming SVE / ZA-array mode via `SMSTART`, it **must** execute `SMSTOP` before `RET` (as required by the platform ABI and Go runtime).
+- **SME (`SMSTART` / `SMSTOP` and `ZA` Multi-Tile Latency Hiding)**:
+  - If an SME routine enters Streaming SVE / ZA-array mode via `SMSTART`, it **must** execute `SMSTOP` before `RET` (as required by the platform ABI and Go runtime).
+  - On 512-bit SVL implementations (e.g. Apple M4/M5/M6), the 4 KB `ZA` matrix array is partitioned into four $16 \times 16$ `.S` tiles (`ZA0.S`–`ZA3.S`). Because `ZA` tile accumulation has a ~4-cycle latency, single-tile $16 \times 16$ kernels stall on back-to-back `FMOPA ZA0.S` instructions; use 4-tile $32 \times 32$ ($2 \times 2$ tiles `ZA0..3.S`) or $16 \times 64$ ($1 \times 4$ tiles `ZA0..3.S`) kernels for full speed (>2.1 TFlops/s per core), stepping down to $16 \times 16$ only when $M < 32$ or $N < 32$.
+  - **`darwin/arm64` Async Signal (`SIGURG`) Safety in Streaming Mode**: On macOS (`darwin/arm64`), the POSIX signal context (`_STRUCT_ARM_NEON_STATE64`) only saves/restores the lower 128 bits (`Q0`–`Q31`) of `Z0`–`Z31`. When Go delivers an async `SIGURG` signal during `SMSTART`, `ZA` is preserved, but `sigreturn` zeroes bits `[511:128]` (lanes `4..15`) of all `Z` registers. Always protect SME streaming loops with a `Z31` upper-lane canary (`MOV Z31.S, #1` before the loop, `LASTB W11, P7, Z31.S` + `CBZ R11, retry` before writing `ZA` to memory; see `internal/gobackend/dot/matmul/neon/sme_arm64.s`).
 
 ### 5. Horizontal Reductions on NEON
 - **Integer Horizontal Sum (`VADDV`)**:
@@ -487,8 +490,22 @@ When implementing or modifying ARM64 assembly routines in `./internal/gobackend/
   - `FCVTL` / `FCVTL2` (4 or 8 `Float16` $\to$ `Float32x4`) and `FCVTN` / `FCVTN2` (`Float32x4` $\to$ `Float16`) convert 8 half-precision floats in 2 instructions (~2 cycles total).
 - **`BFloat16`**:
   - Widening `BFloat16x8` $\to$ two `Float32x4` vectors uses `UXTL` / `UXTL2` + left shift by 16 (`SHL $16`), or `SSHLL` / `USHLL` (exposed in `archsimd` via `ExtendLo4ToUint32()` and `HiToLo().ExtendLo4ToUint32()`).
-- **Encoding Newer ARMv8.2+ Instructions in Plan9 Assembly**:
-  - Where Go's Plan9 assembler does not yet provide mnemonics for newer ARMv8.2+/v8.6+ instructions (`FCVTL`, `FCVTN`, `SDOT`, `UDOT`, `BFDOT`, `SMMLA`), encode them using `WORD $0x...` macros with clear comments showing the exact ARM architectural mnemonic and register operands.
+- **Encoding Newer ARMv8.2+ and Element-Indexed Instructions in Plan9 Assembly**:
+  - Where Go's Plan9 assembler does not yet provide mnemonics for element-indexed `FMLA` or newer ARMv8.2+/v8.6+ instructions (`FCVTL`, `FCVTL2`, `SHLL`, `SHLL2`, `SDOT`, `UDOT`, `BFDOT`, `SMMLA`), encode them using `WORD $0x...` macros with clear comments showing the exact ARM architectural mnemonic and register operands:
+    ```c
+    // FMLA Vd.4S, Vn.4S, Vm.S[lane] (sz=10 at bits [23:22]):
+    #define FMLA_4S_LANE(Vd, Vn, Vm, lane) \
+        WORD $(0x4F801000 | (((lane)&1)<<21) | (((lane)&2)<<10) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+    // FMLA Vd.2D, Vn.2D, Vm.D[lane] (sz=11 at bits [23:22]):
+    #define FMLA_2D_LANE(Vd, Vn, Vm, lane) \
+        WORD $(0x4FC01000 | (((lane)&1)<<11) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+    // FCVTL Vd.4S, Vn.4H and FCVTL2 Vd.4S, Vn.8H:
+    #define FCVTL_4S_4H(Vd, Vn)  WORD $(0x0E217800 | ((Vn)<<5) | (Vd))
+    #define FCVTL2_4S_8H(Vd, Vn) WORD $(0x4E217800 | ((Vn)<<5) | (Vd))
+    // SHLL Vd.4S, Vn.4H, #16 and SHLL2 Vd.4S, Vn.8H, #16 (BFloat16 -> Float32 widening):
+    #define SHLL_4S_4H_16(Vd, Vn)  WORD $(0x2E613800 | ((Vn)<<5) | (Vd))
+    #define SHLL2_4S_8H_16(Vd, Vn) WORD $(0x6E613800 | ((Vn)<<5) | (Vd))
+    ```
 
 ## Guidelines for Fused Kernels and Intra-Op Parallelization
 
