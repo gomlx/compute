@@ -15,6 +15,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	_ "github.com/gomlx/compute/internal/gobackend/ops/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/ops/avx512"
+	_ "github.com/gomlx/compute/internal/gobackend/ops/neon"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 	"github.com/pkg/errors"

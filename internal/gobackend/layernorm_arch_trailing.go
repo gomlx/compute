@@ -3,13 +3,14 @@
 package gobackend
 
 import (
+	"slices"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
 )
 
 // LayerNormTrailingArchFn is a function hook to execute LayerNorm on trailing contiguous axes
-// using architecture-specific kernels (e.g., AVX2, AVX-512).
+// using architecture-specific kernels (e.g., AVX2, AVX-512, NEON).
 //
 // Parameters:
 //   - inPtr, outPtr: unsafe.Pointer to flat input/output data
@@ -25,17 +26,55 @@ type LayerNormTrailingArchFn func(
 	dtype dtypes.DType,
 ) bool
 
+type layerNormTrailingArchEntry struct {
+	priority RegisterPriority
+	fn       LayerNormTrailingArchFn
+}
+
 var (
-	layerNormTrailingArchFn       LayerNormTrailingArchFn
-	layerNormTrailingArchPriority RegisterPriority
+	layerNormTrailingArchEntries []layerNormTrailingArchEntry
+	layerNormTrailingArchFn      LayerNormTrailingArchFn
 )
 
-// SetLayerNormTrailingArchDispatcher registers the architecture-specific LayerNorm dispatcher.
-// Higher priority replaces lower priority dispatcher.
+// SetLayerNormTrailingArchDispatcher registers an architecture-specific LayerNorm dispatcher.
+// Dispatchers are tried in descending order of priority; if a higher-priority dispatcher returns false, the next one is tried.
 func SetLayerNormTrailingArchDispatcher(priority RegisterPriority, fn LayerNormTrailingArchFn) {
-	if priority >= layerNormTrailingArchPriority {
-		layerNormTrailingArchPriority = priority
-		layerNormTrailingArchFn = fn
+	if priority < 0 || fn == nil {
+		return
+	}
+	idx := 0
+	for idx < len(layerNormTrailingArchEntries) && layerNormTrailingArchEntries[idx].priority > priority {
+		idx++
+	}
+	if idx < len(layerNormTrailingArchEntries) && layerNormTrailingArchEntries[idx].priority == priority {
+		layerNormTrailingArchEntries[idx].fn = fn
+	} else {
+		layerNormTrailingArchEntries = slices.Insert(layerNormTrailingArchEntries, idx, layerNormTrailingArchEntry{priority: priority, fn: fn})
+	}
+	rebuildLayerNormTrailingArchFn()
+}
+
+func rebuildLayerNormTrailingArchFn() {
+	switch len(layerNormTrailingArchEntries) {
+	case 0:
+		layerNormTrailingArchFn = nil
+	case 1:
+		layerNormTrailingArchFn = layerNormTrailingArchEntries[0].fn
+	default:
+		entries := slices.Clone(layerNormTrailingArchEntries)
+		layerNormTrailingArchFn = func(
+			inPtr, outPtr, gammaPtr, betaPtr unsafe.Pointer,
+			outerSize, normSize int,
+			epsilon float64,
+			dtype dtypes.DType,
+		) bool {
+			for _, e := range entries {
+				if e.fn(inPtr, outPtr, gammaPtr, betaPtr, outerSize, normSize, epsilon, dtype) {
+					return true
+				}
+			}
+			return false
+		}
 	}
 }
 

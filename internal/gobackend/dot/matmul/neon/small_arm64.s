@@ -1,0 +1,2344 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build arm64 && goexperiment.simd
+
+#include "textflag.h"
+
+// ARM64 NEON / FP16 / BF16 instruction macros:
+#define FMLA_4S_LANE(Vd, Vn, Vm, lane) WORD $(0x4F801000 | (((lane)&2)<<10) | (((lane)&1)<<21) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define FMLA_2D_LANE(Vd, Vn, Vm, lane) WORD $(0x4FC01000 | (((lane)&1)<<11) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define FCVTL_4S_4H(Vd, Vn) WORD $(0x0E217800 | ((Vn)<<5) | (Vd))
+#define FCVTL2_4S_8H(Vd, Vn) WORD $(0x4E217800 | ((Vn)<<5) | (Vd))
+#define USHLL_4S_4H_16(Vd, Vn) WORD $(0x2E613800 | ((Vn)<<5) | (Vd))
+#define USHLL2_4S_8H_16(Vd, Vn) WORD $(0x6E613800 | ((Vn)<<5) | (Vd))
+#define FADDP_4S(Vd, Vn, Vm) WORD $(0x6E20D400 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define FADDP_2D(Vd, Vn, Vm) WORD $(0x6E60D400 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define BFDOT(Vd, Vn, Vm) WORD $(0x6E40FC00 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define BFDOT_LANE(Vd, Vn, Vm, lane) WORD $(0x4F40F000 | (((lane)&1)<<21) | (((lane)&2)<<10) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define ZIP1_8H(Vd, Vn, Vm) WORD $(0x4E403800 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define ZIP2_8H(Vd, Vn, Vm) WORD $(0x4E407800 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+#define LDR_H_POST2(Vt, Rn) WORD $(0x7C402400 | ((Rn)<<5) | (Vt))
+#define ST1_S_LANE(Vt, lane, Rn) WORD $(0x0D008000 | (((lane)&2)<<29) | (((lane)&1)<<12) | ((Rn)<<5) | (Vt))
+#define ST1_D_LANE(Vt, lane, Rn) WORD $(0x0D008400 | (((lane)&1)<<30) | ((Rn)<<5) | (Vt))
+
+// ===========================================================================
+// NonTransposed Small Matrix Assembly Microkernels
+// ===========================================================================
+
+// func neonSmallNonTransposedTile4x16Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x16Float32Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_nt_4x16_f32_k4:
+	CMP $4, R5
+	BLT s_nt_4x16_f32_k1
+
+	VLD1.P 16(R0), [V16.S4]
+	VLD1.P 16(R1), [V17.S4]
+	VLD1.P 16(R2), [V18.S4]
+	VLD1.P 16(R3), [V19.S4]
+
+	// k + 0
+	VLD1 (R4), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.S4, V25.S4, V26.S4, V27.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 24, 16, 1)
+	FMLA_4S_LANE(1, 25, 16, 1)
+	FMLA_4S_LANE(2, 26, 16, 1)
+	FMLA_4S_LANE(3, 27, 16, 1)
+	FMLA_4S_LANE(4, 24, 17, 1)
+	FMLA_4S_LANE(5, 25, 17, 1)
+	FMLA_4S_LANE(6, 26, 17, 1)
+	FMLA_4S_LANE(7, 27, 17, 1)
+	FMLA_4S_LANE(8, 24, 18, 1)
+	FMLA_4S_LANE(9, 25, 18, 1)
+	FMLA_4S_LANE(10, 26, 18, 1)
+	FMLA_4S_LANE(11, 27, 18, 1)
+	FMLA_4S_LANE(12, 24, 19, 1)
+	FMLA_4S_LANE(13, 25, 19, 1)
+	FMLA_4S_LANE(14, 26, 19, 1)
+	FMLA_4S_LANE(15, 27, 19, 1)
+
+	// k + 2
+	VLD1 (R4), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 22, 16, 2)
+	FMLA_4S_LANE(3, 23, 16, 2)
+	FMLA_4S_LANE(4, 20, 17, 2)
+	FMLA_4S_LANE(5, 21, 17, 2)
+	FMLA_4S_LANE(6, 22, 17, 2)
+	FMLA_4S_LANE(7, 23, 17, 2)
+	FMLA_4S_LANE(8, 20, 18, 2)
+	FMLA_4S_LANE(9, 21, 18, 2)
+	FMLA_4S_LANE(10, 22, 18, 2)
+	FMLA_4S_LANE(11, 23, 18, 2)
+	FMLA_4S_LANE(12, 20, 19, 2)
+	FMLA_4S_LANE(13, 21, 19, 2)
+	FMLA_4S_LANE(14, 22, 19, 2)
+	FMLA_4S_LANE(15, 23, 19, 2)
+
+	// k + 3
+	VLD1 (R4), [V24.S4, V25.S4, V26.S4, V27.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 24, 16, 3)
+	FMLA_4S_LANE(1, 25, 16, 3)
+	FMLA_4S_LANE(2, 26, 16, 3)
+	FMLA_4S_LANE(3, 27, 16, 3)
+	FMLA_4S_LANE(4, 24, 17, 3)
+	FMLA_4S_LANE(5, 25, 17, 3)
+	FMLA_4S_LANE(6, 26, 17, 3)
+	FMLA_4S_LANE(7, 27, 17, 3)
+	FMLA_4S_LANE(8, 24, 18, 3)
+	FMLA_4S_LANE(9, 25, 18, 3)
+	FMLA_4S_LANE(10, 26, 18, 3)
+	FMLA_4S_LANE(11, 27, 18, 3)
+	FMLA_4S_LANE(12, 24, 19, 3)
+	FMLA_4S_LANE(13, 25, 19, 3)
+	FMLA_4S_LANE(14, 26, 19, 3)
+	FMLA_4S_LANE(15, 27, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x16_f32_k4
+
+s_nt_4x16_f32_k1:
+	CBZ R5, s_nt_4x16_f32_store
+
+	FMOVS.P 4(R0), F16
+	FMOVS.P 4(R1), F17
+	FMOVS.P 4(R2), F18
+	FMOVS.P 4(R3), F19
+	VLD1 (R4), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R6, R4
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x16_f32_k1
+
+s_nt_4x16_f32_store:
+	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R7)
+	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R8)
+	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R9)
+	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x4Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x4Float32Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+s_nt_4x4_f32_k4:
+	CMP $4, R5
+	BLT s_nt_4x4_f32_k1
+
+	VLD1.P 16(R0), [V16.S4]
+	VLD1.P 16(R1), [V17.S4]
+	VLD1.P 16(R2), [V18.S4]
+	VLD1.P 16(R3), [V19.S4]
+
+	VLD1 (R4), [V20.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 20, 17, 0)
+	FMLA_4S_LANE(2, 20, 18, 0)
+	FMLA_4S_LANE(3, 20, 19, 0)
+
+	VLD1 (R4), [V21.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 21, 16, 1)
+	FMLA_4S_LANE(1, 21, 17, 1)
+	FMLA_4S_LANE(2, 21, 18, 1)
+	FMLA_4S_LANE(3, 21, 19, 1)
+
+	VLD1 (R4), [V22.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 22, 16, 2)
+	FMLA_4S_LANE(1, 22, 17, 2)
+	FMLA_4S_LANE(2, 22, 18, 2)
+	FMLA_4S_LANE(3, 22, 19, 2)
+
+	VLD1 (R4), [V23.S4]
+	ADD R6, R4
+	FMLA_4S_LANE(0, 23, 16, 3)
+	FMLA_4S_LANE(1, 23, 17, 3)
+	FMLA_4S_LANE(2, 23, 18, 3)
+	FMLA_4S_LANE(3, 23, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x4_f32_k4
+
+s_nt_4x4_f32_k1:
+	CBZ R5, s_nt_4x4_f32_store
+
+	FMOVS.P 4(R0), F16
+	FMOVS.P 4(R1), F17
+	FMOVS.P 4(R2), F18
+	FMOVS.P 4(R3), F19
+	VLD1 (R4), [V20.S4]
+	ADD R6, R4
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 20, 17, 0)
+	FMLA_4S_LANE(2, 20, 18, 0)
+	FMLA_4S_LANE(3, 20, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x4_f32_k1
+
+s_nt_4x4_f32_store:
+	VST1 [V0.S4], (R7)
+	VST1 [V1.S4], (R8)
+	VST1 [V2.S4], (R9)
+	VST1 [V3.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x16Float16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x16Float16Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_nt_4x16_f16_k4:
+	CMP $4, R5
+	BLT s_nt_4x16_f16_k1
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+
+	// k + 0
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FCVTL_4S_4H(22, 25)
+	FCVTL2_4S_8H(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FCVTL_4S_4H(22, 25)
+	FCVTL2_4S_8H(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 1)
+	FMLA_4S_LANE(1, 21, 16, 1)
+	FMLA_4S_LANE(2, 22, 16, 1)
+	FMLA_4S_LANE(3, 23, 16, 1)
+	FMLA_4S_LANE(4, 20, 17, 1)
+	FMLA_4S_LANE(5, 21, 17, 1)
+	FMLA_4S_LANE(6, 22, 17, 1)
+	FMLA_4S_LANE(7, 23, 17, 1)
+	FMLA_4S_LANE(8, 20, 18, 1)
+	FMLA_4S_LANE(9, 21, 18, 1)
+	FMLA_4S_LANE(10, 22, 18, 1)
+	FMLA_4S_LANE(11, 23, 18, 1)
+	FMLA_4S_LANE(12, 20, 19, 1)
+	FMLA_4S_LANE(13, 21, 19, 1)
+	FMLA_4S_LANE(14, 22, 19, 1)
+	FMLA_4S_LANE(15, 23, 19, 1)
+
+	// k + 2
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FCVTL_4S_4H(22, 25)
+	FCVTL2_4S_8H(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 22, 16, 2)
+	FMLA_4S_LANE(3, 23, 16, 2)
+	FMLA_4S_LANE(4, 20, 17, 2)
+	FMLA_4S_LANE(5, 21, 17, 2)
+	FMLA_4S_LANE(6, 22, 17, 2)
+	FMLA_4S_LANE(7, 23, 17, 2)
+	FMLA_4S_LANE(8, 20, 18, 2)
+	FMLA_4S_LANE(9, 21, 18, 2)
+	FMLA_4S_LANE(10, 22, 18, 2)
+	FMLA_4S_LANE(11, 23, 18, 2)
+	FMLA_4S_LANE(12, 20, 19, 2)
+	FMLA_4S_LANE(13, 21, 19, 2)
+	FMLA_4S_LANE(14, 22, 19, 2)
+	FMLA_4S_LANE(15, 23, 19, 2)
+
+	// k + 3
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FCVTL_4S_4H(22, 25)
+	FCVTL2_4S_8H(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 3)
+	FMLA_4S_LANE(1, 21, 16, 3)
+	FMLA_4S_LANE(2, 22, 16, 3)
+	FMLA_4S_LANE(3, 23, 16, 3)
+	FMLA_4S_LANE(4, 20, 17, 3)
+	FMLA_4S_LANE(5, 21, 17, 3)
+	FMLA_4S_LANE(6, 22, 17, 3)
+	FMLA_4S_LANE(7, 23, 17, 3)
+	FMLA_4S_LANE(8, 20, 18, 3)
+	FMLA_4S_LANE(9, 21, 18, 3)
+	FMLA_4S_LANE(10, 22, 18, 3)
+	FMLA_4S_LANE(11, 23, 18, 3)
+	FMLA_4S_LANE(12, 20, 19, 3)
+	FMLA_4S_LANE(13, 21, 19, 3)
+	FMLA_4S_LANE(14, 22, 19, 3)
+	FMLA_4S_LANE(15, 23, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x16_f16_k4
+
+s_nt_4x16_f16_k1:
+	CBZ R5, s_nt_4x16_f16_store
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FCVTL_4S_4H(22, 25)
+	FCVTL2_4S_8H(23, 25)
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x16_f16_k1
+
+s_nt_4x16_f16_store:
+	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R7)
+	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R8)
+	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R9)
+	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x8Float16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x8Float16Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+
+s_nt_4x8_f16_k4:
+	CMP $4, R5
+	BLT s_nt_4x8_f16_k1
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+
+	// k + 0
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 20, 17, 0)
+	FMLA_4S_LANE(3, 21, 17, 0)
+	FMLA_4S_LANE(4, 20, 18, 0)
+	FMLA_4S_LANE(5, 21, 18, 0)
+	FMLA_4S_LANE(6, 20, 19, 0)
+	FMLA_4S_LANE(7, 21, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 1)
+	FMLA_4S_LANE(1, 21, 16, 1)
+	FMLA_4S_LANE(2, 20, 17, 1)
+	FMLA_4S_LANE(3, 21, 17, 1)
+	FMLA_4S_LANE(4, 20, 18, 1)
+	FMLA_4S_LANE(5, 21, 18, 1)
+	FMLA_4S_LANE(6, 20, 19, 1)
+	FMLA_4S_LANE(7, 21, 19, 1)
+
+	// k + 2
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 20, 17, 2)
+	FMLA_4S_LANE(3, 21, 17, 2)
+	FMLA_4S_LANE(4, 20, 18, 2)
+	FMLA_4S_LANE(5, 21, 18, 2)
+	FMLA_4S_LANE(6, 20, 19, 2)
+	FMLA_4S_LANE(7, 21, 19, 2)
+
+	// k + 3
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 3)
+	FMLA_4S_LANE(1, 21, 16, 3)
+	FMLA_4S_LANE(2, 20, 17, 3)
+	FMLA_4S_LANE(3, 21, 17, 3)
+	FMLA_4S_LANE(4, 20, 18, 3)
+	FMLA_4S_LANE(5, 21, 18, 3)
+	FMLA_4S_LANE(6, 20, 19, 3)
+	FMLA_4S_LANE(7, 21, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x8_f16_k4
+
+s_nt_4x8_f16_k1:
+	CBZ R5, s_nt_4x8_f16_store
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	FCVTL_4S_4H(20, 24)
+	FCVTL2_4S_8H(21, 24)
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 20, 17, 0)
+	FMLA_4S_LANE(3, 21, 17, 0)
+	FMLA_4S_LANE(4, 20, 18, 0)
+	FMLA_4S_LANE(5, 21, 18, 0)
+	FMLA_4S_LANE(6, 20, 19, 0)
+	FMLA_4S_LANE(7, 21, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x8_f16_k1
+
+s_nt_4x8_f16_store:
+	VST1 [V0.S4, V1.S4], (R7)
+	VST1 [V2.S4, V3.S4], (R8)
+	VST1 [V4.S4, V5.S4], (R9)
+	VST1 [V6.S4, V7.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x16BFloat16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer,
+//     useBFDOT bool)
+TEXT ·neonSmallNonTransposedTile4x16BFloat16Asm(SB), NOSPLIT, $0-89
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+	MOVBU useBFDOT+88(FP), R11
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+	CBZ R11, s_nt_4x16_bf16_k4
+
+s_nt_4x16_bf16_bfdot_k8:
+	CMP $8, R5
+	BLT s_nt_4x16_bf16_k4
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+
+	// Pair 0 (k+0, k+1)
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8, V27.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	ZIP1_8H(22, 25, 27)
+	ZIP2_8H(23, 25, 27)
+	BFDOT_LANE(0, 20, 16, 0)
+	BFDOT_LANE(1, 21, 16, 0)
+	BFDOT_LANE(2, 22, 16, 0)
+	BFDOT_LANE(3, 23, 16, 0)
+	BFDOT_LANE(4, 20, 17, 0)
+	BFDOT_LANE(5, 21, 17, 0)
+	BFDOT_LANE(6, 22, 17, 0)
+	BFDOT_LANE(7, 23, 17, 0)
+	BFDOT_LANE(8, 20, 18, 0)
+	BFDOT_LANE(9, 21, 18, 0)
+	BFDOT_LANE(10, 22, 18, 0)
+	BFDOT_LANE(11, 23, 18, 0)
+	BFDOT_LANE(12, 20, 19, 0)
+	BFDOT_LANE(13, 21, 19, 0)
+	BFDOT_LANE(14, 22, 19, 0)
+	BFDOT_LANE(15, 23, 19, 0)
+
+	// Pair 1 (k+2, k+3)
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8, V27.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	ZIP1_8H(22, 25, 27)
+	ZIP2_8H(23, 25, 27)
+	BFDOT_LANE(0, 20, 16, 1)
+	BFDOT_LANE(1, 21, 16, 1)
+	BFDOT_LANE(2, 22, 16, 1)
+	BFDOT_LANE(3, 23, 16, 1)
+	BFDOT_LANE(4, 20, 17, 1)
+	BFDOT_LANE(5, 21, 17, 1)
+	BFDOT_LANE(6, 22, 17, 1)
+	BFDOT_LANE(7, 23, 17, 1)
+	BFDOT_LANE(8, 20, 18, 1)
+	BFDOT_LANE(9, 21, 18, 1)
+	BFDOT_LANE(10, 22, 18, 1)
+	BFDOT_LANE(11, 23, 18, 1)
+	BFDOT_LANE(12, 20, 19, 1)
+	BFDOT_LANE(13, 21, 19, 1)
+	BFDOT_LANE(14, 22, 19, 1)
+	BFDOT_LANE(15, 23, 19, 1)
+
+	// Pair 2 (k+4, k+5)
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8, V27.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	ZIP1_8H(22, 25, 27)
+	ZIP2_8H(23, 25, 27)
+	BFDOT_LANE(0, 20, 16, 2)
+	BFDOT_LANE(1, 21, 16, 2)
+	BFDOT_LANE(2, 22, 16, 2)
+	BFDOT_LANE(3, 23, 16, 2)
+	BFDOT_LANE(4, 20, 17, 2)
+	BFDOT_LANE(5, 21, 17, 2)
+	BFDOT_LANE(6, 22, 17, 2)
+	BFDOT_LANE(7, 23, 17, 2)
+	BFDOT_LANE(8, 20, 18, 2)
+	BFDOT_LANE(9, 21, 18, 2)
+	BFDOT_LANE(10, 22, 18, 2)
+	BFDOT_LANE(11, 23, 18, 2)
+	BFDOT_LANE(12, 20, 19, 2)
+	BFDOT_LANE(13, 21, 19, 2)
+	BFDOT_LANE(14, 22, 19, 2)
+	BFDOT_LANE(15, 23, 19, 2)
+
+	// Pair 3 (k+6, k+7)
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8, V27.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	ZIP1_8H(22, 25, 27)
+	ZIP2_8H(23, 25, 27)
+	BFDOT_LANE(0, 20, 16, 3)
+	BFDOT_LANE(1, 21, 16, 3)
+	BFDOT_LANE(2, 22, 16, 3)
+	BFDOT_LANE(3, 23, 16, 3)
+	BFDOT_LANE(4, 20, 17, 3)
+	BFDOT_LANE(5, 21, 17, 3)
+	BFDOT_LANE(6, 22, 17, 3)
+	BFDOT_LANE(7, 23, 17, 3)
+	BFDOT_LANE(8, 20, 18, 3)
+	BFDOT_LANE(9, 21, 18, 3)
+	BFDOT_LANE(10, 22, 18, 3)
+	BFDOT_LANE(11, 23, 18, 3)
+	BFDOT_LANE(12, 20, 19, 3)
+	BFDOT_LANE(13, 21, 19, 3)
+	BFDOT_LANE(14, 22, 19, 3)
+	BFDOT_LANE(15, 23, 19, 3)
+
+	SUB $8, R5
+	B s_nt_4x16_bf16_bfdot_k8
+
+s_nt_4x16_bf16_k4:
+	CMP $4, R5
+	BLT s_nt_4x16_bf16_k1
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+
+	// k + 0
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	USHLL_4S_4H_16(22, 25)
+	USHLL2_4S_8H_16(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	USHLL_4S_4H_16(22, 25)
+	USHLL2_4S_8H_16(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 1)
+	FMLA_4S_LANE(1, 21, 16, 1)
+	FMLA_4S_LANE(2, 22, 16, 1)
+	FMLA_4S_LANE(3, 23, 16, 1)
+	FMLA_4S_LANE(4, 20, 17, 1)
+	FMLA_4S_LANE(5, 21, 17, 1)
+	FMLA_4S_LANE(6, 22, 17, 1)
+	FMLA_4S_LANE(7, 23, 17, 1)
+	FMLA_4S_LANE(8, 20, 18, 1)
+	FMLA_4S_LANE(9, 21, 18, 1)
+	FMLA_4S_LANE(10, 22, 18, 1)
+	FMLA_4S_LANE(11, 23, 18, 1)
+	FMLA_4S_LANE(12, 20, 19, 1)
+	FMLA_4S_LANE(13, 21, 19, 1)
+	FMLA_4S_LANE(14, 22, 19, 1)
+	FMLA_4S_LANE(15, 23, 19, 1)
+
+	// k + 2
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	USHLL_4S_4H_16(22, 25)
+	USHLL2_4S_8H_16(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 22, 16, 2)
+	FMLA_4S_LANE(3, 23, 16, 2)
+	FMLA_4S_LANE(4, 20, 17, 2)
+	FMLA_4S_LANE(5, 21, 17, 2)
+	FMLA_4S_LANE(6, 22, 17, 2)
+	FMLA_4S_LANE(7, 23, 17, 2)
+	FMLA_4S_LANE(8, 20, 18, 2)
+	FMLA_4S_LANE(9, 21, 18, 2)
+	FMLA_4S_LANE(10, 22, 18, 2)
+	FMLA_4S_LANE(11, 23, 18, 2)
+	FMLA_4S_LANE(12, 20, 19, 2)
+	FMLA_4S_LANE(13, 21, 19, 2)
+	FMLA_4S_LANE(14, 22, 19, 2)
+	FMLA_4S_LANE(15, 23, 19, 2)
+
+	// k + 3
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	USHLL_4S_4H_16(22, 25)
+	USHLL2_4S_8H_16(23, 25)
+	FMLA_4S_LANE(0, 20, 16, 3)
+	FMLA_4S_LANE(1, 21, 16, 3)
+	FMLA_4S_LANE(2, 22, 16, 3)
+	FMLA_4S_LANE(3, 23, 16, 3)
+	FMLA_4S_LANE(4, 20, 17, 3)
+	FMLA_4S_LANE(5, 21, 17, 3)
+	FMLA_4S_LANE(6, 22, 17, 3)
+	FMLA_4S_LANE(7, 23, 17, 3)
+	FMLA_4S_LANE(8, 20, 18, 3)
+	FMLA_4S_LANE(9, 21, 18, 3)
+	FMLA_4S_LANE(10, 22, 18, 3)
+	FMLA_4S_LANE(11, 23, 18, 3)
+	FMLA_4S_LANE(12, 20, 19, 3)
+	FMLA_4S_LANE(13, 21, 19, 3)
+	FMLA_4S_LANE(14, 22, 19, 3)
+	FMLA_4S_LANE(15, 23, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x16_bf16_k4
+
+s_nt_4x16_bf16_k1:
+	CBZ R5, s_nt_4x16_bf16_store
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+
+	VLD1 (R4), [V24.H8, V25.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	USHLL_4S_4H_16(22, 25)
+	USHLL2_4S_8H_16(23, 25)
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x16_bf16_k1
+
+s_nt_4x16_bf16_store:
+	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R7)
+	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R8)
+	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R9)
+	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x8BFloat16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer,
+//     useBFDOT bool)
+TEXT ·neonSmallNonTransposedTile4x8BFloat16Asm(SB), NOSPLIT, $0-89
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+	MOVBU useBFDOT+88(FP), R11
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+
+	CBZ R11, s_nt_4x8_bf16_k4
+
+s_nt_4x8_bf16_bfdot_k8:
+	CMP $8, R5
+	BLT s_nt_4x8_bf16_k4
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+
+	// Pair 0 (k+0, k+1)
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	BFDOT_LANE(0, 20, 16, 0)
+	BFDOT_LANE(1, 21, 16, 0)
+	BFDOT_LANE(2, 20, 17, 0)
+	BFDOT_LANE(3, 21, 17, 0)
+	BFDOT_LANE(4, 20, 18, 0)
+	BFDOT_LANE(5, 21, 18, 0)
+	BFDOT_LANE(6, 20, 19, 0)
+	BFDOT_LANE(7, 21, 19, 0)
+
+	// Pair 1 (k+2, k+3)
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	BFDOT_LANE(0, 20, 16, 1)
+	BFDOT_LANE(1, 21, 16, 1)
+	BFDOT_LANE(2, 20, 17, 1)
+	BFDOT_LANE(3, 21, 17, 1)
+	BFDOT_LANE(4, 20, 18, 1)
+	BFDOT_LANE(5, 21, 18, 1)
+	BFDOT_LANE(6, 20, 19, 1)
+	BFDOT_LANE(7, 21, 19, 1)
+
+	// Pair 2 (k+4, k+5)
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	BFDOT_LANE(0, 20, 16, 2)
+	BFDOT_LANE(1, 21, 16, 2)
+	BFDOT_LANE(2, 20, 17, 2)
+	BFDOT_LANE(3, 21, 17, 2)
+	BFDOT_LANE(4, 20, 18, 2)
+	BFDOT_LANE(5, 21, 18, 2)
+	BFDOT_LANE(6, 20, 19, 2)
+	BFDOT_LANE(7, 21, 19, 2)
+
+	// Pair 3 (k+6, k+7)
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	VLD1 (R4), [V26.H8]
+	ADD R6, R4
+	ZIP1_8H(20, 24, 26)
+	ZIP2_8H(21, 24, 26)
+	BFDOT_LANE(0, 20, 16, 3)
+	BFDOT_LANE(1, 21, 16, 3)
+	BFDOT_LANE(2, 20, 17, 3)
+	BFDOT_LANE(3, 21, 17, 3)
+	BFDOT_LANE(4, 20, 18, 3)
+	BFDOT_LANE(5, 21, 18, 3)
+	BFDOT_LANE(6, 20, 19, 3)
+	BFDOT_LANE(7, 21, 19, 3)
+
+	SUB $8, R5
+	B s_nt_4x8_bf16_bfdot_k8
+
+s_nt_4x8_bf16_k4:
+	CMP $4, R5
+	BLT s_nt_4x8_bf16_k1
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+
+	// k + 0
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 20, 17, 0)
+	FMLA_4S_LANE(3, 21, 17, 0)
+	FMLA_4S_LANE(4, 20, 18, 0)
+	FMLA_4S_LANE(5, 21, 18, 0)
+	FMLA_4S_LANE(6, 20, 19, 0)
+	FMLA_4S_LANE(7, 21, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 1)
+	FMLA_4S_LANE(1, 21, 16, 1)
+	FMLA_4S_LANE(2, 20, 17, 1)
+	FMLA_4S_LANE(3, 21, 17, 1)
+	FMLA_4S_LANE(4, 20, 18, 1)
+	FMLA_4S_LANE(5, 21, 18, 1)
+	FMLA_4S_LANE(6, 20, 19, 1)
+	FMLA_4S_LANE(7, 21, 19, 1)
+
+	// k + 2
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 20, 17, 2)
+	FMLA_4S_LANE(3, 21, 17, 2)
+	FMLA_4S_LANE(4, 20, 18, 2)
+	FMLA_4S_LANE(5, 21, 18, 2)
+	FMLA_4S_LANE(6, 20, 19, 2)
+	FMLA_4S_LANE(7, 21, 19, 2)
+
+	// k + 3
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+	FMLA_4S_LANE(0, 20, 16, 3)
+	FMLA_4S_LANE(1, 21, 16, 3)
+	FMLA_4S_LANE(2, 20, 17, 3)
+	FMLA_4S_LANE(3, 21, 17, 3)
+	FMLA_4S_LANE(4, 20, 18, 3)
+	FMLA_4S_LANE(5, 21, 18, 3)
+	FMLA_4S_LANE(6, 20, 19, 3)
+	FMLA_4S_LANE(7, 21, 19, 3)
+
+	SUB $4, R5
+	B s_nt_4x8_bf16_k4
+
+s_nt_4x8_bf16_k1:
+	CBZ R5, s_nt_4x8_bf16_store
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+
+	VLD1 (R4), [V24.H8]
+	ADD R6, R4
+	USHLL_4S_4H_16(20, 24)
+	USHLL2_4S_8H_16(21, 24)
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 20, 17, 0)
+	FMLA_4S_LANE(3, 21, 17, 0)
+	FMLA_4S_LANE(4, 20, 18, 0)
+	FMLA_4S_LANE(5, 21, 18, 0)
+	FMLA_4S_LANE(6, 20, 19, 0)
+	FMLA_4S_LANE(7, 21, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x8_bf16_k1
+
+s_nt_4x8_bf16_store:
+	VST1 [V0.S4, V1.S4], (R7)
+	VST1 [V2.S4, V3.S4], (R8)
+	VST1 [V4.S4, V5.S4], (R9)
+	VST1 [V6.S4, V7.S4], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x8Float64Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x8Float64Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_nt_4x8_f64_k2:
+	CMP $2, R5
+	BLT s_nt_4x8_f64_k1
+
+	VLD1.P 16(R0), [V16.D2]
+	VLD1.P 16(R1), [V17.D2]
+	VLD1.P 16(R2), [V18.D2]
+	VLD1.P 16(R3), [V19.D2]
+
+	// k + 0
+	VLD1 (R4), [V20.D2, V21.D2, V22.D2, V23.D2]
+	ADD R6, R4
+	FMLA_2D_LANE(0, 20, 16, 0)
+	FMLA_2D_LANE(1, 21, 16, 0)
+	FMLA_2D_LANE(2, 22, 16, 0)
+	FMLA_2D_LANE(3, 23, 16, 0)
+	FMLA_2D_LANE(4, 20, 17, 0)
+	FMLA_2D_LANE(5, 21, 17, 0)
+	FMLA_2D_LANE(6, 22, 17, 0)
+	FMLA_2D_LANE(7, 23, 17, 0)
+	FMLA_2D_LANE(8, 20, 18, 0)
+	FMLA_2D_LANE(9, 21, 18, 0)
+	FMLA_2D_LANE(10, 22, 18, 0)
+	FMLA_2D_LANE(11, 23, 18, 0)
+	FMLA_2D_LANE(12, 20, 19, 0)
+	FMLA_2D_LANE(13, 21, 19, 0)
+	FMLA_2D_LANE(14, 22, 19, 0)
+	FMLA_2D_LANE(15, 23, 19, 0)
+
+	// k + 1
+	VLD1 (R4), [V24.D2, V25.D2, V26.D2, V27.D2]
+	ADD R6, R4
+	FMLA_2D_LANE(0, 24, 16, 1)
+	FMLA_2D_LANE(1, 25, 16, 1)
+	FMLA_2D_LANE(2, 26, 16, 1)
+	FMLA_2D_LANE(3, 27, 16, 1)
+	FMLA_2D_LANE(4, 24, 17, 1)
+	FMLA_2D_LANE(5, 25, 17, 1)
+	FMLA_2D_LANE(6, 26, 17, 1)
+	FMLA_2D_LANE(7, 27, 17, 1)
+	FMLA_2D_LANE(8, 24, 18, 1)
+	FMLA_2D_LANE(9, 25, 18, 1)
+	FMLA_2D_LANE(10, 26, 18, 1)
+	FMLA_2D_LANE(11, 27, 18, 1)
+	FMLA_2D_LANE(12, 24, 19, 1)
+	FMLA_2D_LANE(13, 25, 19, 1)
+	FMLA_2D_LANE(14, 26, 19, 1)
+	FMLA_2D_LANE(15, 27, 19, 1)
+
+	SUB $2, R5
+	B s_nt_4x8_f64_k2
+
+s_nt_4x8_f64_k1:
+	CBZ R5, s_nt_4x8_f64_store
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	VLD1 (R4), [V20.D2, V21.D2, V22.D2, V23.D2]
+	ADD R6, R4
+
+	FMLA_2D_LANE(0, 20, 16, 0)
+	FMLA_2D_LANE(1, 21, 16, 0)
+	FMLA_2D_LANE(2, 22, 16, 0)
+	FMLA_2D_LANE(3, 23, 16, 0)
+	FMLA_2D_LANE(4, 20, 17, 0)
+	FMLA_2D_LANE(5, 21, 17, 0)
+	FMLA_2D_LANE(6, 22, 17, 0)
+	FMLA_2D_LANE(7, 23, 17, 0)
+	FMLA_2D_LANE(8, 20, 18, 0)
+	FMLA_2D_LANE(9, 21, 18, 0)
+	FMLA_2D_LANE(10, 22, 18, 0)
+	FMLA_2D_LANE(11, 23, 18, 0)
+	FMLA_2D_LANE(12, 20, 19, 0)
+	FMLA_2D_LANE(13, 21, 19, 0)
+	FMLA_2D_LANE(14, 22, 19, 0)
+	FMLA_2D_LANE(15, 23, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x8_f64_k1
+
+s_nt_4x8_f64_store:
+	VST1 [V0.D2, V1.D2, V2.D2, V3.D2], (R7)
+	VST1 [V4.D2, V5.D2, V6.D2, V7.D2], (R8)
+	VST1 [V8.D2, V9.D2, V10.D2, V11.D2], (R9)
+	VST1 [V12.D2, V13.D2, V14.D2, V15.D2], (R10)
+	RET
+
+// func neonSmallNonTransposedTile4x2Float64Asm(
+//     lRow0, lRow1, lRow2, lRow3, rhsCol unsafe.Pointer,
+//     contractingSize, rhsRowStrideBytes int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+TEXT ·neonSmallNonTransposedTile4x2Float64Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rhsCol+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD rhsRowStrideBytes+48(FP), R6
+	MOVD outRow0+56(FP), R7
+	MOVD outRow1+64(FP), R8
+	MOVD outRow2+72(FP), R9
+	MOVD outRow3+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+s_nt_4x2_f64_k2:
+	CMP $2, R5
+	BLT s_nt_4x2_f64_k1
+
+	VLD1.P 16(R0), [V16.D2]
+	VLD1.P 16(R1), [V17.D2]
+	VLD1.P 16(R2), [V18.D2]
+	VLD1.P 16(R3), [V19.D2]
+
+	VLD1 (R4), [V20.D2]
+	ADD R6, R4
+	FMLA_2D_LANE(0, 20, 16, 0)
+	FMLA_2D_LANE(1, 20, 17, 0)
+	FMLA_2D_LANE(2, 20, 18, 0)
+	FMLA_2D_LANE(3, 20, 19, 0)
+
+	VLD1 (R4), [V21.D2]
+	ADD R6, R4
+	FMLA_2D_LANE(0, 21, 16, 1)
+	FMLA_2D_LANE(1, 21, 17, 1)
+	FMLA_2D_LANE(2, 21, 18, 1)
+	FMLA_2D_LANE(3, 21, 19, 1)
+
+	SUB $2, R5
+	B s_nt_4x2_f64_k2
+
+s_nt_4x2_f64_k1:
+	CBZ R5, s_nt_4x2_f64_store
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	VLD1 (R4), [V20.D2]
+	ADD R6, R4
+
+	FMLA_2D_LANE(0, 20, 16, 0)
+	FMLA_2D_LANE(1, 20, 17, 0)
+	FMLA_2D_LANE(2, 20, 18, 0)
+	FMLA_2D_LANE(3, 20, 19, 0)
+
+	SUB $1, R5
+	B s_nt_4x2_f64_k1
+
+s_nt_4x2_f64_store:
+	VST1 [V0.D2], (R7)
+	VST1 [V1.D2], (R8)
+	VST1 [V2.D2], (R9)
+	VST1 [V3.D2], (R10)
+	RET
+
+// ===========================================================================
+// Transposed Small Matrix Assembly Microkernels
+// ===========================================================================
+
+// func neonSmallTransposedTile4x4Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0, rCol1, rCol2, rCol3 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x4Float32Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD rCol1+40(FP), R5
+	MOVD rCol2+48(FP), R6
+	MOVD rCol3+56(FP), R7
+	MOVD contractingSize+64(FP), R8
+	MOVD outPtr+72(FP), R9
+	MOVD outStrideBytes+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_t_4x4_f32_k8:
+	CMP $8, R8
+	BLT s_t_4x4_f32_k4
+
+	VLD1.P 32(R0), [V16.S4, V17.S4]
+	VLD1.P 32(R1), [V18.S4, V19.S4]
+	VLD1.P 32(R2), [V20.S4, V21.S4]
+	VLD1.P 32(R3), [V22.S4, V23.S4]
+	VLD1.P 32(R4), [V24.S4, V25.S4]
+	VLD1.P 32(R5), [V26.S4, V27.S4]
+	VLD1.P 32(R6), [V28.S4, V29.S4]
+	VLD1.P 32(R7), [V30.S4, V31.S4]
+
+	VFMLA V24.S4, V16.S4, V0.S4
+	VFMLA V26.S4, V16.S4, V1.S4
+	VFMLA V28.S4, V16.S4, V2.S4
+	VFMLA V30.S4, V16.S4, V3.S4
+	VFMLA V24.S4, V18.S4, V4.S4
+	VFMLA V26.S4, V18.S4, V5.S4
+	VFMLA V28.S4, V18.S4, V6.S4
+	VFMLA V30.S4, V18.S4, V7.S4
+	VFMLA V24.S4, V20.S4, V8.S4
+	VFMLA V26.S4, V20.S4, V9.S4
+	VFMLA V28.S4, V20.S4, V10.S4
+	VFMLA V30.S4, V20.S4, V11.S4
+	VFMLA V24.S4, V22.S4, V12.S4
+	VFMLA V26.S4, V22.S4, V13.S4
+	VFMLA V28.S4, V22.S4, V14.S4
+	VFMLA V30.S4, V22.S4, V15.S4
+
+	VFMLA V25.S4, V17.S4, V0.S4
+	VFMLA V27.S4, V17.S4, V1.S4
+	VFMLA V29.S4, V17.S4, V2.S4
+	VFMLA V31.S4, V17.S4, V3.S4
+	VFMLA V25.S4, V19.S4, V4.S4
+	VFMLA V27.S4, V19.S4, V5.S4
+	VFMLA V29.S4, V19.S4, V6.S4
+	VFMLA V31.S4, V19.S4, V7.S4
+	VFMLA V25.S4, V21.S4, V8.S4
+	VFMLA V27.S4, V21.S4, V9.S4
+	VFMLA V29.S4, V21.S4, V10.S4
+	VFMLA V31.S4, V21.S4, V11.S4
+	VFMLA V25.S4, V23.S4, V12.S4
+	VFMLA V27.S4, V23.S4, V13.S4
+	VFMLA V29.S4, V23.S4, V14.S4
+	VFMLA V31.S4, V23.S4, V15.S4
+
+	SUB $8, R8
+	B s_t_4x4_f32_k8
+
+s_t_4x4_f32_k4:
+	CMP $4, R8
+	BLT s_t_4x4_f32_k1
+
+	VLD1.P 16(R0), [V16.S4]
+	VLD1.P 16(R1), [V17.S4]
+	VLD1.P 16(R2), [V18.S4]
+	VLD1.P 16(R3), [V19.S4]
+	VLD1.P 16(R4), [V20.S4]
+	VLD1.P 16(R5), [V21.S4]
+	VLD1.P 16(R6), [V22.S4]
+	VLD1.P 16(R7), [V23.S4]
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V21.S4, V16.S4, V1.S4
+	VFMLA V22.S4, V16.S4, V2.S4
+	VFMLA V23.S4, V16.S4, V3.S4
+	VFMLA V20.S4, V17.S4, V4.S4
+	VFMLA V21.S4, V17.S4, V5.S4
+	VFMLA V22.S4, V17.S4, V6.S4
+	VFMLA V23.S4, V17.S4, V7.S4
+	VFMLA V20.S4, V18.S4, V8.S4
+	VFMLA V21.S4, V18.S4, V9.S4
+	VFMLA V22.S4, V18.S4, V10.S4
+	VFMLA V23.S4, V18.S4, V11.S4
+	VFMLA V20.S4, V19.S4, V12.S4
+	VFMLA V21.S4, V19.S4, V13.S4
+	VFMLA V22.S4, V19.S4, V14.S4
+	VFMLA V23.S4, V19.S4, V15.S4
+
+	SUB $4, R8
+	B s_t_4x4_f32_k4
+
+s_t_4x4_f32_k1:
+	CBZ R8, s_t_4x4_f32_reduce
+
+	FMOVS.P 4(R0), F16
+	FMOVS.P 4(R1), F17
+	FMOVS.P 4(R2), F18
+	FMOVS.P 4(R3), F19
+	FMOVS.P 4(R4), F20
+	FMOVS.P 4(R5), F21
+	FMOVS.P 4(R6), F22
+	FMOVS.P 4(R7), F23
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V21.S4, V16.S4, V1.S4
+	VFMLA V22.S4, V16.S4, V2.S4
+	VFMLA V23.S4, V16.S4, V3.S4
+	VFMLA V20.S4, V17.S4, V4.S4
+	VFMLA V21.S4, V17.S4, V5.S4
+	VFMLA V22.S4, V17.S4, V6.S4
+	VFMLA V23.S4, V17.S4, V7.S4
+	VFMLA V20.S4, V18.S4, V8.S4
+	VFMLA V21.S4, V18.S4, V9.S4
+	VFMLA V22.S4, V18.S4, V10.S4
+	VFMLA V23.S4, V18.S4, V11.S4
+	VFMLA V20.S4, V19.S4, V12.S4
+	VFMLA V21.S4, V19.S4, V13.S4
+	VFMLA V22.S4, V19.S4, V14.S4
+	VFMLA V23.S4, V19.S4, V15.S4
+
+	SUB $1, R8
+	B s_t_4x4_f32_k1
+
+s_t_4x4_f32_reduce:
+	// Row 0 -> V0.S4
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+	// Row 1 -> V4.S4
+	FADDP_4S(4, 4, 5)
+	FADDP_4S(6, 6, 7)
+	FADDP_4S(4, 4, 6)
+	// Row 2 -> V8.S4
+	FADDP_4S(8, 8, 9)
+	FADDP_4S(10, 10, 11)
+	FADDP_4S(8, 8, 10)
+	// Row 3 -> V12.S4
+	FADDP_4S(12, 12, 13)
+	FADDP_4S(14, 14, 15)
+	FADDP_4S(12, 12, 14)
+
+	VST1 [V0.S4], (R9)
+	ADD R10, R9
+	VST1 [V4.S4], (R9)
+	ADD R10, R9
+	VST1 [V8.S4], (R9)
+	ADD R10, R9
+	VST1 [V12.S4], (R9)
+	RET
+
+// func neonSmallTransposedTile4x1Float32Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x1Float32Asm(SB), NOSPLIT, $0-64
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD outPtr+48(FP), R6
+	MOVD outStrideBytes+56(FP), R7
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+s_t_4x1_f32_k8:
+	CMP $8, R5
+	BLT s_t_4x1_f32_k4
+
+	VLD1.P 32(R0), [V16.S4, V17.S4]
+	VLD1.P 32(R1), [V18.S4, V19.S4]
+	VLD1.P 32(R2), [V20.S4, V21.S4]
+	VLD1.P 32(R3), [V22.S4, V23.S4]
+	VLD1.P 32(R4), [V24.S4, V25.S4]
+
+	VFMLA V24.S4, V16.S4, V0.S4
+	VFMLA V24.S4, V18.S4, V1.S4
+	VFMLA V24.S4, V20.S4, V2.S4
+	VFMLA V24.S4, V22.S4, V3.S4
+	VFMLA V25.S4, V17.S4, V0.S4
+	VFMLA V25.S4, V19.S4, V1.S4
+	VFMLA V25.S4, V21.S4, V2.S4
+	VFMLA V25.S4, V23.S4, V3.S4
+
+	SUB $8, R5
+	B s_t_4x1_f32_k8
+
+s_t_4x1_f32_k4:
+	CMP $4, R5
+	BLT s_t_4x1_f32_k1
+
+	VLD1.P 16(R0), [V16.S4]
+	VLD1.P 16(R1), [V17.S4]
+	VLD1.P 16(R2), [V18.S4]
+	VLD1.P 16(R3), [V19.S4]
+	VLD1.P 16(R4), [V20.S4]
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V20.S4, V17.S4, V1.S4
+	VFMLA V20.S4, V18.S4, V2.S4
+	VFMLA V20.S4, V19.S4, V3.S4
+
+	SUB $4, R5
+	B s_t_4x1_f32_k4
+
+s_t_4x1_f32_k1:
+	CBZ R5, s_t_4x1_f32_reduce
+
+	FMOVS.P 4(R0), F16
+	FMOVS.P 4(R1), F17
+	FMOVS.P 4(R2), F18
+	FMOVS.P 4(R3), F19
+	FMOVS.P 4(R4), F20
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V20.S4, V17.S4, V1.S4
+	VFMLA V20.S4, V18.S4, V2.S4
+	VFMLA V20.S4, V19.S4, V3.S4
+
+	SUB $1, R5
+	B s_t_4x1_f32_k1
+
+s_t_4x1_f32_reduce:
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+
+	ST1_S_LANE(0, 0, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 1, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 2, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 3, 6)
+	RET
+
+// func neonSmallTransposedTile4x4Float16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0, rCol1, rCol2, rCol3 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x4Float16Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD rCol1+40(FP), R5
+	MOVD rCol2+48(FP), R6
+	MOVD rCol3+56(FP), R7
+	MOVD contractingSize+64(FP), R8
+	MOVD outPtr+72(FP), R9
+	MOVD outStrideBytes+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_t_4x4_f16_k8:
+	CMP $8, R8
+	BLT s_t_4x4_f16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+	VLD1.P 16(R5), [V21.H8]
+	VLD1.P 16(R6), [V22.H8]
+	VLD1.P 16(R7), [V23.H8]
+
+	// Lower 4 elements (k+0..k+3)
+	FCVTL_4S_4H(24, 16)
+	FCVTL_4S_4H(25, 17)
+	FCVTL_4S_4H(26, 18)
+	FCVTL_4S_4H(27, 19)
+	FCVTL_4S_4H(28, 20)
+	FCVTL_4S_4H(29, 21)
+	FCVTL_4S_4H(30, 22)
+	FCVTL_4S_4H(31, 23)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V29.S4, V24.S4, V1.S4
+	VFMLA V30.S4, V24.S4, V2.S4
+	VFMLA V31.S4, V24.S4, V3.S4
+	VFMLA V28.S4, V25.S4, V4.S4
+	VFMLA V29.S4, V25.S4, V5.S4
+	VFMLA V30.S4, V25.S4, V6.S4
+	VFMLA V31.S4, V25.S4, V7.S4
+	VFMLA V28.S4, V26.S4, V8.S4
+	VFMLA V29.S4, V26.S4, V9.S4
+	VFMLA V30.S4, V26.S4, V10.S4
+	VFMLA V31.S4, V26.S4, V11.S4
+	VFMLA V28.S4, V27.S4, V12.S4
+	VFMLA V29.S4, V27.S4, V13.S4
+	VFMLA V30.S4, V27.S4, V14.S4
+	VFMLA V31.S4, V27.S4, V15.S4
+
+	// Upper 4 elements (k+4..k+7)
+	FCVTL2_4S_8H(24, 16)
+	FCVTL2_4S_8H(25, 17)
+	FCVTL2_4S_8H(26, 18)
+	FCVTL2_4S_8H(27, 19)
+	FCVTL2_4S_8H(28, 20)
+	FCVTL2_4S_8H(29, 21)
+	FCVTL2_4S_8H(30, 22)
+	FCVTL2_4S_8H(31, 23)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V29.S4, V24.S4, V1.S4
+	VFMLA V30.S4, V24.S4, V2.S4
+	VFMLA V31.S4, V24.S4, V3.S4
+	VFMLA V28.S4, V25.S4, V4.S4
+	VFMLA V29.S4, V25.S4, V5.S4
+	VFMLA V30.S4, V25.S4, V6.S4
+	VFMLA V31.S4, V25.S4, V7.S4
+	VFMLA V28.S4, V26.S4, V8.S4
+	VFMLA V29.S4, V26.S4, V9.S4
+	VFMLA V30.S4, V26.S4, V10.S4
+	VFMLA V31.S4, V26.S4, V11.S4
+	VFMLA V28.S4, V27.S4, V12.S4
+	VFMLA V29.S4, V27.S4, V13.S4
+	VFMLA V30.S4, V27.S4, V14.S4
+	VFMLA V31.S4, V27.S4, V15.S4
+
+	SUB $8, R8
+	B s_t_4x4_f16_k8
+
+s_t_4x4_f16_k1:
+	CBZ R8, s_t_4x4_f16_reduce
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	LDR_H_POST2(20, 4)
+	LDR_H_POST2(21, 5)
+	LDR_H_POST2(22, 6)
+	LDR_H_POST2(23, 7)
+
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+	FCVTL_4S_4H(20, 20)
+	FCVTL_4S_4H(21, 21)
+	FCVTL_4S_4H(22, 22)
+	FCVTL_4S_4H(23, 23)
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V21.S4, V16.S4, V1.S4
+	VFMLA V22.S4, V16.S4, V2.S4
+	VFMLA V23.S4, V16.S4, V3.S4
+	VFMLA V20.S4, V17.S4, V4.S4
+	VFMLA V21.S4, V17.S4, V5.S4
+	VFMLA V22.S4, V17.S4, V6.S4
+	VFMLA V23.S4, V17.S4, V7.S4
+	VFMLA V20.S4, V18.S4, V8.S4
+	VFMLA V21.S4, V18.S4, V9.S4
+	VFMLA V22.S4, V18.S4, V10.S4
+	VFMLA V23.S4, V18.S4, V11.S4
+	VFMLA V20.S4, V19.S4, V12.S4
+	VFMLA V21.S4, V19.S4, V13.S4
+	VFMLA V22.S4, V19.S4, V14.S4
+	VFMLA V23.S4, V19.S4, V15.S4
+
+	SUB $1, R8
+	B s_t_4x4_f16_k1
+
+s_t_4x4_f16_reduce:
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+	FADDP_4S(4, 4, 5)
+	FADDP_4S(6, 6, 7)
+	FADDP_4S(4, 4, 6)
+	FADDP_4S(8, 8, 9)
+	FADDP_4S(10, 10, 11)
+	FADDP_4S(8, 8, 10)
+	FADDP_4S(12, 12, 13)
+	FADDP_4S(14, 14, 15)
+	FADDP_4S(12, 12, 14)
+
+	VST1 [V0.S4], (R9)
+	ADD R10, R9
+	VST1 [V4.S4], (R9)
+	ADD R10, R9
+	VST1 [V8.S4], (R9)
+	ADD R10, R9
+	VST1 [V12.S4], (R9)
+	RET
+
+// func neonSmallTransposedTile4x1Float16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x1Float16Asm(SB), NOSPLIT, $0-64
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD outPtr+48(FP), R6
+	MOVD outStrideBytes+56(FP), R7
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+s_t_4x1_f16_k8:
+	CMP $8, R5
+	BLT s_t_4x1_f16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+
+	FCVTL_4S_4H(24, 16)
+	FCVTL_4S_4H(25, 17)
+	FCVTL_4S_4H(26, 18)
+	FCVTL_4S_4H(27, 19)
+	FCVTL_4S_4H(28, 20)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V28.S4, V25.S4, V1.S4
+	VFMLA V28.S4, V26.S4, V2.S4
+	VFMLA V28.S4, V27.S4, V3.S4
+
+	FCVTL2_4S_8H(24, 16)
+	FCVTL2_4S_8H(25, 17)
+	FCVTL2_4S_8H(26, 18)
+	FCVTL2_4S_8H(27, 19)
+	FCVTL2_4S_8H(28, 20)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V28.S4, V25.S4, V1.S4
+	VFMLA V28.S4, V26.S4, V2.S4
+	VFMLA V28.S4, V27.S4, V3.S4
+
+	SUB $8, R5
+	B s_t_4x1_f16_k8
+
+s_t_4x1_f16_k1:
+	CBZ R5, s_t_4x1_f16_reduce
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	LDR_H_POST2(20, 4)
+
+	FCVTL_4S_4H(16, 16)
+	FCVTL_4S_4H(17, 17)
+	FCVTL_4S_4H(18, 18)
+	FCVTL_4S_4H(19, 19)
+	FCVTL_4S_4H(20, 20)
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V20.S4, V17.S4, V1.S4
+	VFMLA V20.S4, V18.S4, V2.S4
+	VFMLA V20.S4, V19.S4, V3.S4
+
+	SUB $1, R5
+	B s_t_4x1_f16_k1
+
+s_t_4x1_f16_reduce:
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+
+	ST1_S_LANE(0, 0, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 1, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 2, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 3, 6)
+	RET
+
+// func neonSmallTransposedTile4x4BFloat16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0, rCol1, rCol2, rCol3 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int, useBFDOT bool)
+TEXT ·neonSmallTransposedTile4x4BFloat16Asm(SB), NOSPLIT, $0-89
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD rCol1+40(FP), R5
+	MOVD rCol2+48(FP), R6
+	MOVD rCol3+56(FP), R7
+	MOVD contractingSize+64(FP), R8
+	MOVD outPtr+72(FP), R9
+	MOVD outStrideBytes+80(FP), R10
+	MOVBU useBFDOT+88(FP), R11
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+	CBZ R11, s_t_4x4_bf16_k8
+
+s_t_4x4_bf16_bfdot_k8:
+	CMP $8, R8
+	BLT s_t_4x4_bf16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+	VLD1.P 16(R5), [V21.H8]
+	VLD1.P 16(R6), [V22.H8]
+	VLD1.P 16(R7), [V23.H8]
+
+	BFDOT(0, 16, 20)
+	BFDOT(1, 16, 21)
+	BFDOT(2, 16, 22)
+	BFDOT(3, 16, 23)
+	BFDOT(4, 17, 20)
+	BFDOT(5, 17, 21)
+	BFDOT(6, 17, 22)
+	BFDOT(7, 17, 23)
+	BFDOT(8, 18, 20)
+	BFDOT(9, 18, 21)
+	BFDOT(10, 18, 22)
+	BFDOT(11, 18, 23)
+	BFDOT(12, 19, 20)
+	BFDOT(13, 19, 21)
+	BFDOT(14, 19, 22)
+	BFDOT(15, 19, 23)
+
+	SUB $8, R8
+	B s_t_4x4_bf16_bfdot_k8
+
+s_t_4x4_bf16_k8:
+	CMP $8, R8
+	BLT s_t_4x4_bf16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+	VLD1.P 16(R5), [V21.H8]
+	VLD1.P 16(R6), [V22.H8]
+	VLD1.P 16(R7), [V23.H8]
+
+	USHLL_4S_4H_16(24, 16)
+	USHLL_4S_4H_16(25, 17)
+	USHLL_4S_4H_16(26, 18)
+	USHLL_4S_4H_16(27, 19)
+	USHLL_4S_4H_16(28, 20)
+	USHLL_4S_4H_16(29, 21)
+	USHLL_4S_4H_16(30, 22)
+	USHLL_4S_4H_16(31, 23)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V29.S4, V24.S4, V1.S4
+	VFMLA V30.S4, V24.S4, V2.S4
+	VFMLA V31.S4, V24.S4, V3.S4
+	VFMLA V28.S4, V25.S4, V4.S4
+	VFMLA V29.S4, V25.S4, V5.S4
+	VFMLA V30.S4, V25.S4, V6.S4
+	VFMLA V31.S4, V25.S4, V7.S4
+	VFMLA V28.S4, V26.S4, V8.S4
+	VFMLA V29.S4, V26.S4, V9.S4
+	VFMLA V30.S4, V26.S4, V10.S4
+	VFMLA V31.S4, V26.S4, V11.S4
+	VFMLA V28.S4, V27.S4, V12.S4
+	VFMLA V29.S4, V27.S4, V13.S4
+	VFMLA V30.S4, V27.S4, V14.S4
+	VFMLA V31.S4, V27.S4, V15.S4
+
+	USHLL2_4S_8H_16(24, 16)
+	USHLL2_4S_8H_16(25, 17)
+	USHLL2_4S_8H_16(26, 18)
+	USHLL2_4S_8H_16(27, 19)
+	USHLL2_4S_8H_16(28, 20)
+	USHLL2_4S_8H_16(29, 21)
+	USHLL2_4S_8H_16(30, 22)
+	USHLL2_4S_8H_16(31, 23)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V29.S4, V24.S4, V1.S4
+	VFMLA V30.S4, V24.S4, V2.S4
+	VFMLA V31.S4, V24.S4, V3.S4
+	VFMLA V28.S4, V25.S4, V4.S4
+	VFMLA V29.S4, V25.S4, V5.S4
+	VFMLA V30.S4, V25.S4, V6.S4
+	VFMLA V31.S4, V25.S4, V7.S4
+	VFMLA V28.S4, V26.S4, V8.S4
+	VFMLA V29.S4, V26.S4, V9.S4
+	VFMLA V30.S4, V26.S4, V10.S4
+	VFMLA V31.S4, V26.S4, V11.S4
+	VFMLA V28.S4, V27.S4, V12.S4
+	VFMLA V29.S4, V27.S4, V13.S4
+	VFMLA V30.S4, V27.S4, V14.S4
+	VFMLA V31.S4, V27.S4, V15.S4
+
+	SUB $8, R8
+	B s_t_4x4_bf16_k8
+
+s_t_4x4_bf16_k1:
+	CBZ R8, s_t_4x4_bf16_reduce
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	LDR_H_POST2(20, 4)
+	LDR_H_POST2(21, 5)
+	LDR_H_POST2(22, 6)
+	LDR_H_POST2(23, 7)
+
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+	USHLL_4S_4H_16(20, 20)
+	USHLL_4S_4H_16(21, 21)
+	USHLL_4S_4H_16(22, 22)
+	USHLL_4S_4H_16(23, 23)
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V21.S4, V16.S4, V1.S4
+	VFMLA V22.S4, V16.S4, V2.S4
+	VFMLA V23.S4, V16.S4, V3.S4
+	VFMLA V20.S4, V17.S4, V4.S4
+	VFMLA V21.S4, V17.S4, V5.S4
+	VFMLA V22.S4, V17.S4, V6.S4
+	VFMLA V23.S4, V17.S4, V7.S4
+	VFMLA V20.S4, V18.S4, V8.S4
+	VFMLA V21.S4, V18.S4, V9.S4
+	VFMLA V22.S4, V18.S4, V10.S4
+	VFMLA V23.S4, V18.S4, V11.S4
+	VFMLA V20.S4, V19.S4, V12.S4
+	VFMLA V21.S4, V19.S4, V13.S4
+	VFMLA V22.S4, V19.S4, V14.S4
+	VFMLA V23.S4, V19.S4, V15.S4
+
+	SUB $1, R8
+	B s_t_4x4_bf16_k1
+
+s_t_4x4_bf16_reduce:
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+	FADDP_4S(4, 4, 5)
+	FADDP_4S(6, 6, 7)
+	FADDP_4S(4, 4, 6)
+	FADDP_4S(8, 8, 9)
+	FADDP_4S(10, 10, 11)
+	FADDP_4S(8, 8, 10)
+	FADDP_4S(12, 12, 13)
+	FADDP_4S(14, 14, 15)
+	FADDP_4S(12, 12, 14)
+
+	VST1 [V0.S4], (R9)
+	ADD R10, R9
+	VST1 [V4.S4], (R9)
+	ADD R10, R9
+	VST1 [V8.S4], (R9)
+	ADD R10, R9
+	VST1 [V12.S4], (R9)
+	RET
+
+// func neonSmallTransposedTile4x1BFloat16Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int, useBFDOT bool)
+TEXT ·neonSmallTransposedTile4x1BFloat16Asm(SB), NOSPLIT, $0-65
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD outPtr+48(FP), R6
+	MOVD outStrideBytes+56(FP), R7
+	MOVBU useBFDOT+64(FP), R8
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+	CBZ R8, s_t_4x1_bf16_k8
+
+s_t_4x1_bf16_bfdot_k8:
+	CMP $8, R5
+	BLT s_t_4x1_bf16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+
+	BFDOT(0, 16, 20)
+	BFDOT(1, 17, 20)
+	BFDOT(2, 18, 20)
+	BFDOT(3, 19, 20)
+
+	SUB $8, R5
+	B s_t_4x1_bf16_bfdot_k8
+
+s_t_4x1_bf16_k8:
+	CMP $8, R5
+	BLT s_t_4x1_bf16_k1
+
+	VLD1.P 16(R0), [V16.H8]
+	VLD1.P 16(R1), [V17.H8]
+	VLD1.P 16(R2), [V18.H8]
+	VLD1.P 16(R3), [V19.H8]
+	VLD1.P 16(R4), [V20.H8]
+
+	USHLL_4S_4H_16(24, 16)
+	USHLL_4S_4H_16(25, 17)
+	USHLL_4S_4H_16(26, 18)
+	USHLL_4S_4H_16(27, 19)
+	USHLL_4S_4H_16(28, 20)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V28.S4, V25.S4, V1.S4
+	VFMLA V28.S4, V26.S4, V2.S4
+	VFMLA V28.S4, V27.S4, V3.S4
+
+	USHLL2_4S_8H_16(24, 16)
+	USHLL2_4S_8H_16(25, 17)
+	USHLL2_4S_8H_16(26, 18)
+	USHLL2_4S_8H_16(27, 19)
+	USHLL2_4S_8H_16(28, 20)
+
+	VFMLA V28.S4, V24.S4, V0.S4
+	VFMLA V28.S4, V25.S4, V1.S4
+	VFMLA V28.S4, V26.S4, V2.S4
+	VFMLA V28.S4, V27.S4, V3.S4
+
+	SUB $8, R5
+	B s_t_4x1_bf16_k8
+
+s_t_4x1_bf16_k1:
+	CBZ R5, s_t_4x1_bf16_reduce
+
+	LDR_H_POST2(16, 0)
+	LDR_H_POST2(17, 1)
+	LDR_H_POST2(18, 2)
+	LDR_H_POST2(19, 3)
+	LDR_H_POST2(20, 4)
+
+	USHLL_4S_4H_16(16, 16)
+	USHLL_4S_4H_16(17, 17)
+	USHLL_4S_4H_16(18, 18)
+	USHLL_4S_4H_16(19, 19)
+	USHLL_4S_4H_16(20, 20)
+
+	VFMLA V20.S4, V16.S4, V0.S4
+	VFMLA V20.S4, V17.S4, V1.S4
+	VFMLA V20.S4, V18.S4, V2.S4
+	VFMLA V20.S4, V19.S4, V3.S4
+
+	SUB $1, R5
+	B s_t_4x1_bf16_k1
+
+s_t_4x1_bf16_reduce:
+	FADDP_4S(0, 0, 1)
+	FADDP_4S(2, 2, 3)
+	FADDP_4S(0, 0, 2)
+
+	ST1_S_LANE(0, 0, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 1, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 2, 6)
+	ADD R7, R6
+	ST1_S_LANE(0, 3, 6)
+	RET
+
+// func neonSmallTransposedTile4x4Float64Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0, rCol1, rCol2, rCol3 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x4Float64Asm(SB), NOSPLIT, $0-88
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD rCol1+40(FP), R5
+	MOVD rCol2+48(FP), R6
+	MOVD rCol3+56(FP), R7
+	MOVD contractingSize+64(FP), R8
+	MOVD outPtr+72(FP), R9
+	MOVD outStrideBytes+80(FP), R10
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+s_t_4x4_f64_k2:
+	CMP $2, R8
+	BLT s_t_4x4_f64_k1
+
+	VLD1.P 16(R0), [V16.D2]
+	VLD1.P 16(R1), [V17.D2]
+	VLD1.P 16(R2), [V18.D2]
+	VLD1.P 16(R3), [V19.D2]
+	VLD1.P 16(R4), [V20.D2]
+	VLD1.P 16(R5), [V21.D2]
+	VLD1.P 16(R6), [V22.D2]
+	VLD1.P 16(R7), [V23.D2]
+
+	VFMLA V20.D2, V16.D2, V0.D2
+	VFMLA V21.D2, V16.D2, V1.D2
+	VFMLA V22.D2, V16.D2, V2.D2
+	VFMLA V23.D2, V16.D2, V3.D2
+	VFMLA V20.D2, V17.D2, V4.D2
+	VFMLA V21.D2, V17.D2, V5.D2
+	VFMLA V22.D2, V17.D2, V6.D2
+	VFMLA V23.D2, V17.D2, V7.D2
+	VFMLA V20.D2, V18.D2, V8.D2
+	VFMLA V21.D2, V18.D2, V9.D2
+	VFMLA V22.D2, V18.D2, V10.D2
+	VFMLA V23.D2, V18.D2, V11.D2
+	VFMLA V20.D2, V19.D2, V12.D2
+	VFMLA V21.D2, V19.D2, V13.D2
+	VFMLA V22.D2, V19.D2, V14.D2
+	VFMLA V23.D2, V19.D2, V15.D2
+
+	SUB $2, R8
+	B s_t_4x4_f64_k2
+
+s_t_4x4_f64_k1:
+	CBZ R8, s_t_4x4_f64_reduce
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	FMOVD.P 8(R4), F20
+	FMOVD.P 8(R5), F21
+	FMOVD.P 8(R6), F22
+	FMOVD.P 8(R7), F23
+
+	VFMLA V20.D2, V16.D2, V0.D2
+	VFMLA V21.D2, V16.D2, V1.D2
+	VFMLA V22.D2, V16.D2, V2.D2
+	VFMLA V23.D2, V16.D2, V3.D2
+	VFMLA V20.D2, V17.D2, V4.D2
+	VFMLA V21.D2, V17.D2, V5.D2
+	VFMLA V22.D2, V17.D2, V6.D2
+	VFMLA V23.D2, V17.D2, V7.D2
+	VFMLA V20.D2, V18.D2, V8.D2
+	VFMLA V21.D2, V18.D2, V9.D2
+	VFMLA V22.D2, V18.D2, V10.D2
+	VFMLA V23.D2, V18.D2, V11.D2
+	VFMLA V20.D2, V19.D2, V12.D2
+	VFMLA V21.D2, V19.D2, V13.D2
+	VFMLA V22.D2, V19.D2, V14.D2
+	VFMLA V23.D2, V19.D2, V15.D2
+
+	SUB $1, R8
+	B s_t_4x4_f64_k1
+
+s_t_4x4_f64_reduce:
+	FADDP_2D(0, 0, 1)
+	FADDP_2D(1, 2, 3)
+	FADDP_2D(4, 4, 5)
+	FADDP_2D(5, 6, 7)
+	FADDP_2D(8, 8, 9)
+	FADDP_2D(9, 10, 11)
+	FADDP_2D(12, 12, 13)
+	FADDP_2D(13, 14, 15)
+
+	VST1 [V0.D2, V1.D2], (R9)
+	ADD R10, R9
+	VST1 [V4.D2, V5.D2], (R9)
+	ADD R10, R9
+	VST1 [V8.D2, V9.D2], (R9)
+	ADD R10, R9
+	VST1 [V12.D2, V13.D2], (R9)
+	RET
+
+// func neonSmallTransposedTile4x1Float64Asm(
+//     lRow0, lRow1, lRow2, lRow3, rCol0 unsafe.Pointer,
+//     contractingSize int, outPtr unsafe.Pointer, outStrideBytes int)
+TEXT ·neonSmallTransposedTile4x1Float64Asm(SB), NOSPLIT, $0-64
+	MOVD lRow0+0(FP), R0
+	MOVD lRow1+8(FP), R1
+	MOVD lRow2+16(FP), R2
+	MOVD lRow3+24(FP), R3
+	MOVD rCol0+32(FP), R4
+	MOVD contractingSize+40(FP), R5
+	MOVD outPtr+48(FP), R6
+	MOVD outStrideBytes+56(FP), R7
+
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+
+s_t_4x1_f64_k2:
+	CMP $2, R5
+	BLT s_t_4x1_f64_k1
+
+	VLD1.P 16(R0), [V16.D2]
+	VLD1.P 16(R1), [V17.D2]
+	VLD1.P 16(R2), [V18.D2]
+	VLD1.P 16(R3), [V19.D2]
+	VLD1.P 16(R4), [V20.D2]
+
+	VFMLA V20.D2, V16.D2, V0.D2
+	VFMLA V20.D2, V17.D2, V1.D2
+	VFMLA V20.D2, V18.D2, V2.D2
+	VFMLA V20.D2, V19.D2, V3.D2
+
+	SUB $2, R5
+	B s_t_4x1_f64_k2
+
+s_t_4x1_f64_k1:
+	CBZ R5, s_t_4x1_f64_reduce
+
+	FMOVD.P 8(R0), F16
+	FMOVD.P 8(R1), F17
+	FMOVD.P 8(R2), F18
+	FMOVD.P 8(R3), F19
+	FMOVD.P 8(R4), F20
+
+	VFMLA V20.D2, V16.D2, V0.D2
+	VFMLA V20.D2, V17.D2, V1.D2
+	VFMLA V20.D2, V18.D2, V2.D2
+	VFMLA V20.D2, V19.D2, V3.D2
+
+	SUB $1, R5
+	B s_t_4x1_f64_k1
+
+s_t_4x1_f64_reduce:
+	FADDP_2D(0, 0, 1)
+	FADDP_2D(2, 2, 3)
+
+	ST1_D_LANE(0, 0, 6)
+	ADD R7, R6
+	ST1_D_LANE(0, 1, 6)
+	ADD R7, R6
+	ST1_D_LANE(2, 0, 6)
+	ADD R7, R6
+	ST1_D_LANE(2, 1, 6)
+	RET

@@ -302,6 +302,12 @@ var choose2DSplit = Choose2DSplit
 
 // AppendWorkItems appends the matrix-multiplication WorkItems optimized for maxWorkers (>=1) to dst
 // and returns the resulting slice. Passing a stack-allocated backing slice avoids heap allocations.
+//
+// It uses a 3-phase tapered chunking strategy for asymmetric multi-core systems:
+//  1. Head (multi-batch chunks when batchSize is large): groups ~remaining/(2*maxWorkers) whole batches.
+//  2. Middle (single-batch chunks): 1 whole batch per WorkItem.
+//  3. Tail (sub-batch < 1 batch 2D tiles): splits the final batches across (M, N) into 2D sub-tiles
+//     so slower cores (e.g. E-cores or NEON fallback workers) never hold an entire batch hostage at the barrier.
 func AppendWorkItems(
 	dst []WorkItem,
 	batchSize, lhsCrossSize, rhsCrossSize int,
@@ -316,43 +322,145 @@ func AppendWorkItems(
 		})
 	}
 
-	if batchSize >= 2*maxWorkers {
-		// Split the work on the batch dimension only, targeting 2*maxWorkers items for load balancing.
-		numItems := min(batchSize, 2*maxWorkers)
-		for i := range numItems {
-			batchStart := (i*batchSize + numItems - 1) / numItems
-			batchEnd := ((i+1)*batchSize + numItems - 1) / numItems
-			dst = append(dst, WorkItem{
-				batchStart, batchEnd,
-				0, lhsCrossSize,
-				0, rhsCrossSize,
-			})
-		}
-		return dst
-	}
-
-	if batchSize >= maxWorkers {
-		// Plenty of batch items: each worker gets whole batch items dynamically.
-		for batchIdx := 0; batchIdx < batchSize; batchIdx++ {
-			dst = append(dst, WorkItem{
-				batchIdx, batchIdx + 1,
-				0, lhsCrossSize,
-				0, rhsCrossSize,
-			})
-		}
-		return dst
-	}
-
-	// batchSize < maxWorkers: distribute workers across the batch items,
-	// using 2D grid partitioning on each matrix slice.
-	// Target 2 * maxWorkers total work items to avoid tail-wave stalls and allow dynamic load balancing.
-	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
-	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
-
 	mr := max(1, params.LHSL1KernelRows)
 	nr := max(1, params.RHSL1KernelCols)
 	totalMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
 	totalNBlocks := max(1, (rhsCrossSize+nr-1)/nr)
+	maxCap := max(64, cap(dst))
+
+	if batchSize >= maxWorkers {
+		// Determine whether the final few batches should be sub-split into < 1 batch 2D tiles.
+		tailSubSplitBatches := 0
+		actualSubM, actualSubN := 1, 1
+		if totalMBlocks*totalNBlocks > 1 && lhsCrossSize*rhsCrossSize >= 4*mr*nr && batchSize > 1 {
+			subM, subN := choose2DSplit(lhsCrossSize, rhsCrossSize, min(8, maxWorkers), params)
+			actualSubM = min(max(1, subM), totalMBlocks)
+			actualSubN = min(max(1, subN), totalNBlocks)
+			tilesPerTailBatch := actualSubM * actualSubN
+			if tilesPerTailBatch > 1 {
+				if batchSize < 2*maxWorkers {
+					tailSubSplitBatches = min(batchSize-1, max(1, maxWorkers/3))
+				} else {
+					tailSubSplitBatches = min(4, max(1, maxWorkers/3))
+				}
+				for tailSubSplitBatches > 0 && tailSubSplitBatches*tilesPerTailBatch > maxCap/3 {
+					tailSubSplitBatches--
+				}
+			}
+		}
+
+		fullBatches := batchSize - tailSubSplitBatches
+		headCap := max(1, maxCap-tailSubSplitBatches*actualSubM*actualSubN)
+		divisor := 2 * maxWorkers
+
+		// Phase 1 & 2: Tapered multi-batch -> single-batch chunks.
+		for b := 0; b < fullBatches; {
+			rem := fullBatches - b
+			slotsLeft := max(1, headCap-len(dst))
+			chunk := max(1, (rem+divisor-1)/divisor)
+			minChunkForCap := (rem + slotsLeft - 1) / slotsLeft
+			chunk = min(rem, max(chunk, minChunkForCap))
+			dst = append(dst, WorkItem{
+				b, b + chunk,
+				0, lhsCrossSize,
+				0, rhsCrossSize,
+			})
+			b += chunk
+		}
+
+		// Phase 3: Sub-batch (< 1 batch) 2D tail chunks.
+		for b := fullBatches; b < batchSize; b++ {
+			for m := range actualSubM {
+				lhsRowStart := ((m*totalMBlocks + actualSubM - 1) / actualSubM) * mr
+				lhsRowEnd := min(lhsCrossSize, (((m+1)*totalMBlocks+actualSubM-1)/actualSubM)*mr)
+				if lhsRowStart >= lhsRowEnd {
+					continue
+				}
+				for n := range actualSubN {
+					rhsColStart := ((n*totalNBlocks + actualSubN - 1) / actualSubN) * nr
+					rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualSubN-1)/actualSubN)*nr)
+					if rhsColStart >= rhsColEnd {
+						continue
+					}
+					dst = append(dst, WorkItem{
+						b, b + 1,
+						lhsRowStart, lhsRowEnd,
+						rhsColStart, rhsColEnd,
+					})
+				}
+			}
+		}
+		return dst
+	}
+
+	// batchSize < maxWorkers: distribute workers across the batch items using 2D grid partitioning.
+	// When the matrix has enough M blocks, split the first ~75% of M blocks into standard coarse tiles
+	// and taper the final ~25% of M blocks into finer tiles so straggler cores finish quickly.
+	if totalMBlocks >= 8 && totalMBlocks*totalNBlocks*batchSize >= 4*maxWorkers {
+		headMBlocks := (totalMBlocks * 3) / 4
+		tailMBlocks := totalMBlocks - headMBlocks
+		headRows := headMBlocks * mr
+
+		targetHead := (2*maxWorkers + batchSize - 1) / batchSize
+		headNumM, headNumN := choose2DSplit(headRows, rhsCrossSize, targetHead, params)
+		actualHeadM := min(max(1, headNumM), headMBlocks)
+		actualHeadN := min(max(1, headNumN), totalNBlocks)
+
+		targetTail := (2*maxWorkers + batchSize - 1) / batchSize
+		tailNumM, tailNumN := choose2DSplit(lhsCrossSize-headRows, rhsCrossSize, targetTail, params)
+		actualTailM := min(max(1, tailNumM), tailMBlocks)
+		actualTailN := min(max(1, tailNumN), totalNBlocks)
+
+		if (actualHeadM*actualHeadN+actualTailM*actualTailN)*batchSize <= maxCap {
+			for m := range actualHeadM {
+				lhsRowStart := ((m*headMBlocks + actualHeadM - 1) / actualHeadM) * mr
+				lhsRowEnd := min(headRows, (((m+1)*headMBlocks+actualHeadM-1)/actualHeadM)*mr)
+				if lhsRowStart >= lhsRowEnd {
+					continue
+				}
+				for n := range actualHeadN {
+					rhsColStart := ((n*totalNBlocks + actualHeadN - 1) / actualHeadN) * nr
+					rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualHeadN-1)/actualHeadN)*nr)
+					if rhsColStart >= rhsColEnd {
+						continue
+					}
+					for batchIdx := range batchSize {
+						dst = append(dst, WorkItem{
+							batchIdx, batchIdx + 1,
+							lhsRowStart, lhsRowEnd,
+							rhsColStart, rhsColEnd,
+						})
+					}
+				}
+			}
+			for m := range actualTailM {
+				lhsRowStart := headRows + ((m*tailMBlocks+actualTailM-1)/actualTailM)*mr
+				lhsRowEnd := min(lhsCrossSize, headRows+(((m+1)*tailMBlocks+actualTailM-1)/actualTailM)*mr)
+				if lhsRowStart >= lhsRowEnd {
+					continue
+				}
+				for n := range actualTailN {
+					rhsColStart := ((n*totalNBlocks + actualTailN - 1) / actualTailN) * nr
+					rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualTailN-1)/actualTailN)*nr)
+					if rhsColStart >= rhsColEnd {
+						continue
+					}
+					for batchIdx := range batchSize {
+						dst = append(dst, WorkItem{
+							batchIdx, batchIdx + 1,
+							lhsRowStart, lhsRowEnd,
+							rhsColStart, rhsColEnd,
+						})
+					}
+				}
+			}
+			return dst
+		}
+	}
+
+	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
+	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
+
 	actualM := min(max(1, numM), totalMBlocks)
 	actualN := min(max(1, numN), totalNBlocks)
 

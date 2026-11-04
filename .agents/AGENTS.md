@@ -259,10 +259,10 @@ Masks are returned by comparison operations (e.g., `v.Equal(zero)` returns a `Ma
 
 While `archsimd` is cross-architecture, some operations may only be available on certain platforms or require specific CPU features (like AVX-512). Always check for support using `archsimd.X86.AVX512()` or similar checks in `init()`.
 
-### Gating Tests by Runtime Support (AVX2 / AVX-512)
+### Gating Tests by Runtime Support (AVX2 / AVX-512 / NEON / SVE / SME)
 
-SIMD and assembly implementations for specific architectures (such as AVX2 or AVX-512) are compiled and linked into test binaries whenever the OS/architecture matches (e.g. `amd64`), but the binary may run on a host machine that does not support those instructions:
-- **Always gate tests with runtime checks**: Every test targeting architecture-specific SIMD or assembly (e.g., in `avx2/` and `avx512/` subpackages) **must** verify that the instructions are supported and allowed on the current host, skipping gracefully if not:
+SIMD and assembly implementations for specific architectures (such as AVX2, AVX-512, or ARM64 NEON/SVE/SME) are compiled and linked into test binaries whenever the OS/architecture matches (e.g. `amd64` or `arm64`), but the binary may run on a host machine that does not support those instructions or where the user disabled them via environment variables:
+- **Always gate tests with runtime checks**: Every test targeting architecture-specific SIMD or assembly (e.g., in `avx2/`, `avx512/`, `neon/`, `sve/`, or `sme/` subpackages) **must** verify that the instructions are supported and allowed on the current host, skipping gracefully if not:
   ```go
   // In AVX2 tests:
   if !gobackend.IsAVX2Allowed {
@@ -273,9 +273,14 @@ SIMD and assembly implementations for specific architectures (such as AVX2 or AV
   if !gobackend.IsAVX512Allowed {
       t.Skip("AVX-512 is not supported or allowed on this host")
   }
+
+  // In ARM64 NEON tests:
+  if !gobackend.IsNEONAllowed {
+      t.Skip("ARM64 NEON is not supported or allowed on this host")
+  }
   ```
-- **Use `gobackend.IsAVX2Allowed` / `gobackend.IsAVX512Allowed`**: In `internal/gobackend/...`, prefer these helpers over raw `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`, as they check both hardware CPUID support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`). Outside `internal/gobackend` (e.g. in `dtypes/float16`), check `archsimd.X86.AVX2()` / `archsimd.X86.AVX512()`.
-- **Never invoke instructions directly in tests without gating**: Without this check, executing unsupported instructions triggers a `SIGILL` (illegal instruction) crash on machines that lack those CPU extensions (e.g., running AVX-512 code on a CPU without AVX-512, or in virtualized/containerized environments).
+- **Use `gobackend.Is*Allowed` helpers**: In `internal/gobackend/...`, prefer `gobackend.IsAVX2Allowed`, `gobackend.IsAVX512Allowed`, `gobackend.IsNEONAllowed`, `gobackend.IsARM64FP16Allowed`, `gobackend.IsARM64BF16Allowed`, `gobackend.IsARM64DotProdAllowed`, `gobackend.IsARM64I8MMAllowed`, `gobackend.IsSVEAllowed`, and `gobackend.IsSMEAllowed`, as they check both hardware support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`, `GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`).
+- **Never invoke instructions directly in tests without gating**: Without this check, executing unsupported instructions triggers a `SIGILL` (illegal instruction) crash on machines that lack those CPU extensions.
 
 ## Guidelines for Writing SIMD Assembly (AMD64 / AVX2 & AVX-512)
 
@@ -387,9 +392,121 @@ SIMD operations carry fixed overheads (register setup, horizontal reductions, ma
 
 ### 7. Gating Assembly Tests by Runtime Support
 
-Handwritten assembly functions (in `*_amd64.s`) bypass Go compiler checks and will immediately trigger a `SIGILL` crash if invoked on a CPU lacking the required instruction set:
-- Always gate unit tests in `avx2/` and `avx512/` subpackages by calling `if !gobackend.IsAVX2Allowed { t.Skip(...) }` or `if !gobackend.IsAVX512Allowed { t.Skip(...) }` at the top of each test function.
+Handwritten assembly functions (in `*_amd64.s` or `*_arm64.s`) bypass Go compiler checks and will immediately trigger a `SIGILL` crash if invoked on a CPU lacking the required instruction set:
+- Always gate unit tests in `avx2/`, `avx512/`, `neon/`, `sve/`, and `sme/` subpackages by calling `if !gobackend.IsAVX2Allowed { t.Skip(...) }`, `if !gobackend.IsAVX512Allowed { t.Skip(...) }`, `if !gobackend.IsNEONAllowed { t.Skip(...) }`, etc., at the top of each test function.
 - Never write tests that execute raw assembly kernels without this gate.
+
+## ARM64 SIMD Support (NEON, SVE/SVE2 & SME)
+
+ARM64 SIMD acceleration follows the same multi-tier architecture as AMD64:
+1. **Portable `simd` / cross-arch `simd/archsimd` tier**: Shared 128-bit SIMD loops in `internal/gobackend/ops/*_simd.go` (`//go:build (amd64 || arm64) && goexperiment.simd`), `internal/fastmath`, and `internal/gobackend/activations` compile directly to ARM64 NEON via Go 1.27's `simd/archsimd` 128-bit types (`Float32x4`, `Float64x2`, `Int32x4`, `Uint32x4`, `Int16x8`, `Uint16x8`, `Int8x16`, `Uint8x16`, `Int64x2`, `Uint64x2`).
+2. **Architecture-specific packages (`neon/`, and optionally `sve/` / `sme/`)**: Dedicated subdirectories under `ops/`, `fusedops/`, and `dot/matmul/` that register at explicit priority levels and fall back cleanly (`gobackend.ErrFallback` or `false` on sub-dispatcher hooks) when dimensions are below thresholds or a layout/dtype is unhandled.
+
+### 1. Registration Priority Ladder & Sub-Dispatcher Chaining
+
+Operations and sub-dispatchers (`SetBinaryTrailingArchDispatcher`, `SetReduceTrailingSumArchDispatcher`, `SetReduceLeadingSumArchDispatcher`, `SetLayerNormTrailingArchDispatcher`, `SetSDPAArchDispatcher`) use the following priority ladder in `internal/gobackend/exec.go`:
+- `PriorityGeneric = 0` (scalar fallback)
+- `PriorityTyped = 1` (typed Go loops)
+- `PrioritySIMD = 6` (portable Go `simd` / `archsimd` implementation)
+- `PriorityArch = 10` (`PriorityNEON = PriorityArch`, `PriorityAVX2 = PriorityArch`)
+- `PriorityAVX512 = PriorityArch + 1`, `PrioritySVE = PriorityArch + 1`
+- `PrioritySME = PriorityArch + 2`
+- `PriorityUser = 100`
+
+Sub-dispatchers maintain a priority-sorted slice of registered hooks: if a higher-priority hook (e.g. `PrioritySME` or `PrioritySVE`) returns `false` for a given tensor shape or dtype, the dispatcher automatically chains to the next lower-priority hook (e.g. `PriorityNEON`) before falling back to generic SIMD or scalar code.
+
+### 2. Runtime CPU Feature Detection & Environment Variables
+
+In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwin.go` via `syscall.SysctlUint32` and `simd_arm64_linux.go` via `/proc/self/auxv` `AT_HWCAP`/`AT_HWCAP2`), the backend exposes:
+- `IsNEONAllowed`: Baseline ARM64 AdvSIMD (gated by `GOMLX_GO_SIMD` and `GOMLX_GO_SIMD_NEON`).
+- `IsARM64FP16Allowed`: `FEAT_FP16` half-precision vector arithmetic & conversions (`FCVTL` / `FCVTN`).
+- `IsARM64BF16Allowed`: `FEAT_BF16` (`BFDOT`, `BFMMLA`, `BFCVTN`).
+- `IsARM64DotProdAllowed`: `FEAT_DotProd` (`SDOT`, `UDOT` for Int8/Uint8 dot products).
+- `IsARM64I8MMAllowed`: `FEAT_I8MM` (`SMMLA`, `UMMLA`, `USMMLA` 8-bit matrix multiply-accumulate).
+- `IsSVEAllowed`: `FEAT_SVE` / `FEAT_SVE2` (gated by `GOMLX_GO_SIMD_SVE`, for AWS Graviton3/4, Grace, Neoverse).
+- `IsSMEAllowed`: `FEAT_SME` / `FEAT_SME2` (gated by `GOMLX_GO_SIMD_SME`, for Apple M4+).
+
+### 3. Phased Implementation Roadmap
+
+- **Detection & Priority Infrastructure**: CPU feature detection (`IsNEONAllowed`, `IsARM64FP16Allowed`, `IsARM64BF16Allowed`, `IsARM64DotProdAllowed`, `IsARM64I8MMAllowed`, `IsSVEAllowed`, `IsSMEAllowed`), environment variables (`GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`), priority constants, and chained sub-dispatchers.
+- **Phase 1 — Half-Precision Conversions & Reduction Thresholds**:
+  - `dtypes/float16/neon.go` (`Float16x8` load/store/conversions to pair of `archsimd.Float32x4` and `ToFloat32SIMD`/`FromFloat32SIMD` slice helpers).
+  - `dtypes/bfloat16/neon.go` (`BFloat16x8` load/store/conversions to pair of `archsimd.Float32x4` using `ExtendLo4ToUint32` / `HiToLo` and IEEE-754 round-to-nearest-even narrowing).
+  - `internal/gobackend/ops/reduce_thresholds_arm64.go` (ARM64 NEON empirically tuned SIMD reduction thresholds).
+- **Phase 4 — Standard Operations (`ops/neon`, `where_arm64`, `epilogue_arm64`)**:
+  - `internal/gobackend/ops/neon`: NEON trailing-axis sum (`DispatchTrailingSumNEON`), leading-axis sum (`DispatchLeadingSumNEON`), and trailing-broadcast binary ops (`DispatchBinaryTrailingNEON`) across `Float32`, `Float64`, `Float16`, `BFloat16`, and integer types.
+  - `internal/gobackend/ops/where_arm64.go`: Vectorized `whereFloat32Arch` (`VV`, `VS`, `SV`, `SS` modes).
+  - `internal/gobackend/dot/matmul/epilogue_arm64.go`: Vectorized `addBiasFloat32Arch` and `copyAndAddBiasFloat32Arch`.
+- **Phase 5 — ARM64 Assembly Guidelines**: Documented below.
+- **Future Phases (Fused Ops & `DotGeneral` / `matmul`)**:
+  - `internal/gobackend/fusedops/neon`: Fused LayerNorm, Softmax, GeLU, SDPA (`D=32, 64, 128`), and QuantizedDense (`FEAT_DotProd` `SDOT`/`UDOT`).
+  - `internal/gobackend/dot/matmul/neon` (and optional `sve`/`sme`): Dedicated register-tiled GEMM microkernels (e.g. $8 \times 12$ `Float32x4` tile utilizing 24 of the 32 NEON vector registers `V0`–`V31`), benchmarked across small and large matrix regimes.
+
+## Guidelines for Writing SIMD Assembly (ARM64 / NEON, SVE & SME)
+
+When implementing or modifying ARM64 assembly routines in `./internal/gobackend/...` or `./dtypes/...`, follow these guidelines:
+
+### 1. Directory and File Organization
+- Separate subdirectories: `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`).
+- **Go Declaration (`*_arm64.go`)**: Forward-declare assembly functions with `//go:noescape`.
+- **Assembly Implementation (`*_arm64.s`)**:
+  - Build tag: `//go:build arm64 && goexperiment.simd` (or `//go:build arm64`).
+  - Include `#include "textflag.h"`.
+  - Function header: `TEXT ·funcName(SB), NOSPLIT, $0-<frameSize>`.
+
+### 2. ARM64 Register File & Tiling Budget (`V0`–`V31`)
+- **32 128-bit Vector Registers (`V0`–`V31`)**:
+  - Unlike AVX2 (which has only 16 YMM registers), ARM64 NEON always provides **32 128-bit registers** (`V0`–`V31`), matching AVX-512's register count!
+  - In `Float32` GEMM microkernels, an **$8 \times 12$ tile** (8 rows $\times$ 3 vectors of 4 floats) uses **24 accumulator registers (`V0`–`V23`)**, **3 RHS vector registers (`V24`–`V26`)**, and **2–4 LHS registers (`V28`–`V31`)** = 29–31 registers with **zero stack spills**.
+- **General-Purpose Registers (`R0`–`R27`, `R29`, `R30`)**:
+  - `R0`–`R17` are caller-saved scratch registers.
+  - **Never clobber `R18`** (platform reserved register on macOS/iOS; modifying `R18` causes immediate crashes on Darwin) or **`R28`** (Go's current goroutine pointer `g`).
+
+### 3. Non-Destructive FMA and Lane-Indexed Broadcasts
+- **Non-Destructive `VFMLA`**:
+  - ARM64 `VFMLA Vsrc1.S4, Vsrc2.S4, Vdst.S4` accumulates `Vdst += Vsrc1 * Vsrc2` without overwriting `Vsrc1` or `Vsrc2`.
+- **Element-Indexed FMA (Zero Broadcast Instruction Overhead)**:
+  - NEON supports multiplying a vector directly by a scalar lane of another vector register (`FMLA Vd.4S, Vn.4S, Vm.S[lane]`).
+  - Instead of executing separate broadcast/splat (`VDUP`) instructions for each LHS element, load 4 contiguous LHS elements into `V28.S4` once and issue 4 indexed FMAs against lanes `0, 1, 2, 3`, eliminating 75% of LHS load/broadcast instructions.
+
+### 4. No AVX $\leftrightarrow$ SSE Transition Penalty on NEON (and `SMSTOP` + Signal Canary for SME)
+- **NEON (`V0`–`V31`)**: Scalar floating-point (`F0`–`F31` / `S0`–`S31` / `D0`–`D31`) and 128-bit NEON vector instructions share the exact same architectural register file without state transition penalties. No `VZEROUPPER` equivalent is required when returning from NEON routines.
+- **SME (`SMSTART` / `SMSTOP` and `ZA` Multi-Tile Latency Hiding)**:
+  - If an SME routine enters Streaming SVE / ZA-array mode via `SMSTART`, it **must** execute `SMSTOP` before `RET` (as required by the platform ABI and Go runtime).
+  - On 512-bit SVL implementations (e.g. Apple M4/M5/M6), the 4 KB `ZA` matrix array is partitioned into four $16 \times 16$ `.S` tiles (`ZA0.S`–`ZA3.S`). Because `ZA` tile accumulation has a ~4-cycle latency, single-tile $16 \times 16$ kernels stall on back-to-back `FMOPA ZA0.S` instructions; use 4-tile $32 \times 32$ ($2 \times 2$ tiles `ZA0..3.S`) or $16 \times 64$ ($1 \times 4$ tiles `ZA0..3.S`) kernels for full speed (>2.1 TFlops/s per core), stepping down to $16 \times 16$ only when $M < 32$ or $N < 32$.
+  - **`darwin/arm64` Async Signal (`SIGURG`) Safety in Streaming Mode**: On macOS (`darwin/arm64`), the POSIX signal context (`_STRUCT_ARM_NEON_STATE64`) only saves/restores the lower 128 bits (`Q0`–`Q31`) of `Z0`–`Z31`. When Go delivers an async `SIGURG` signal during `SMSTART`, `ZA` is preserved, but `sigreturn` zeroes bits `[511:128]` (lanes `4..15`) of all `Z` registers. Always protect SME streaming loops with a `Z31` upper-lane canary (`MOV Z31.S, #1` before the loop, `LASTB W11, P7, Z31.S` + `CBZ R11, retry` before writing `ZA` to memory; see `internal/gobackend/dot/matmul/neon/sme_arm64.s`).
+  - **Asymmetric Cluster-Shared SME Units & Global Hybrid SME+NEON Co-Execution**: On Apple M-series SoCs (e.g. M6 with 2 Super, 4 Performance, and 6 Efficiency cores), each of the 3 CPU clusters shares a single physical SME unit (~2.0 TFlops/s on Super/Performance, ~0.9 TFlops/s on Efficiency), whereas 128-bit NEON pipelines are private per core. In multi-worker SME operations (`internal/gobackend/dot/matmul/neon/sme_arm64.go`), pin workers to OS threads (`runtime.LockOSThread()`), probe the thread's cluster once at the start of the op via `CNTVCT_EL0` (`smeProbeCoreClockTicks` with 1 retry and adjacent fast-cluster thermal fallback), and acquire a global per-cluster SME lock (`globalSMEClusterLocks`); workers whose cluster SME unit is already occupied execute strided per-core NEON microkernels (`neonLargeKernelFromSME*`) directly on the shared SME-packed panels.
+
+### 5. Horizontal Reductions on NEON
+- **Integer Horizontal Sum (`VADDV`)**:
+  - Single-instruction across-vector reduction for `Int8x16`, `Uint8x16`, `Int16x8`, `Uint16x8`, `Int32x4`, `Uint32x4` (exposed in Go 1.27 `archsimd` as `.ReduceSum()`).
+- **Floating-Point Pairwise Reduction (`VFADDP`)**:
+  - For IEEE-754 compliant ordered reduction or fast tree reduction of `Float32x4`, use `FADDP` (`ConcatAddPairs` in `archsimd` or `FADDP V0.S4, V0.S4, V0.S4` followed by `FADDP` to scalar).
+  - Note: When reducing multiple rows simultaneously (e.g. 4 rows in `V0`–`V3`), interleave pairwise reductions across rows (`VFADDP V0.S4, V1.S4, V0.S4`; `VFADDP V2.S4, V3.S4, V2.S4`; `VFADDP V0.S4, V2.S4, V0.S4`) to produce 4 row sums in a single `Float32x4` vector and store all 4 sums with one `VST1`!
+- **Horizontal Max/Min (`FMAXNMV` / `FMINNMV` / `FMAXV` / `FMINV`)**:
+  - Exposed in `archsimd` as `.ReduceMax()` and `.ReduceMin()`.
+
+### 6. Half-Precision (`Float16` / `BFloat16`) & Int8 Acceleration
+- **`Float16` (`FEAT_FP16`)**:
+  - `FCVTL` / `FCVTL2` (4 or 8 `Float16` $\to$ `Float32x4`) and `FCVTN` / `FCVTN2` (`Float32x4` $\to$ `Float16`) convert 8 half-precision floats in 2 instructions (~2 cycles total).
+- **`BFloat16`**:
+  - Widening `BFloat16x8` $\to$ two `Float32x4` vectors uses `UXTL` / `UXTL2` + left shift by 16 (`SHL $16`), or `SSHLL` / `USHLL` (exposed in `archsimd` via `ExtendLo4ToUint32()` and `HiToLo().ExtendLo4ToUint32()`).
+- **Encoding Newer ARMv8.2+ and Element-Indexed Instructions in Plan9 Assembly**:
+  - Where Go's Plan9 assembler does not yet provide mnemonics for element-indexed `FMLA` or newer ARMv8.2+/v8.6+ instructions (`FCVTL`, `FCVTL2`, `SHLL`, `SHLL2`, `SDOT`, `UDOT`, `BFDOT`, `SMMLA`), encode them using `WORD $0x...` macros with clear comments showing the exact ARM architectural mnemonic and register operands:
+    ```c
+    // FMLA Vd.4S, Vn.4S, Vm.S[lane] (sz=10 at bits [23:22]):
+    #define FMLA_4S_LANE(Vd, Vn, Vm, lane) \
+        WORD $(0x4F801000 | (((lane)&1)<<21) | (((lane)&2)<<10) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+    // FMLA Vd.2D, Vn.2D, Vm.D[lane] (sz=11 at bits [23:22]):
+    #define FMLA_2D_LANE(Vd, Vn, Vm, lane) \
+        WORD $(0x4FC01000 | (((lane)&1)<<11) | ((Vm)<<16) | ((Vn)<<5) | (Vd))
+    // FCVTL Vd.4S, Vn.4H and FCVTL2 Vd.4S, Vn.8H:
+    #define FCVTL_4S_4H(Vd, Vn)  WORD $(0x0E217800 | ((Vn)<<5) | (Vd))
+    #define FCVTL2_4S_8H(Vd, Vn) WORD $(0x4E217800 | ((Vn)<<5) | (Vd))
+    // SHLL Vd.4S, Vn.4H, #16 and SHLL2 Vd.4S, Vn.8H, #16 (BFloat16 -> Float32 widening):
+    #define SHLL_4S_4H_16(Vd, Vn)  WORD $(0x2E613800 | ((Vn)<<5) | (Vd))
+    #define SHLL2_4S_8H_16(Vd, Vn) WORD $(0x6E613800 | ((Vn)<<5) | (Vd))
+    ```
 
 ## Guidelines for Fused Kernels and Intra-Op Parallelization
 
@@ -415,15 +532,17 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
   - `backend.Scheduler` manages a persistent pool of worker goroutines (sized to `runtime.GOMAXPROCS(0)` by default, configurable via `parallelism=N`) with a strict priority hierarchy: **Inter-Call > Intra-Op > Inter-Op**.
   - **Automatic Inter-Call Scaling**: `FunctionExecutable.Execute` registers active executions via `Scheduler.EnterExecution()` / `LeaveExecution()`. `Scheduler.EffectiveParallelism()` automatically divides available parallelism across concurrent `Execute()` calls ($\max(1, \lfloor P / C \rfloor)$). When $C \ge P$, `EffectiveParallelism() == 1`, and ops run inline on the caller goroutine with zero synchronization or scheduling overhead.
   - **Deadlock-Free Work-Helping**: When an op fans out intra-op tasks via `ParallelizeChunks` or `RunIntraOpTasks`, the calling goroutine actively drains and executes its own op's tasks before waiting on the `sync.WaitGroup`, guaranteeing forward progress without deadlocks even when nested inside `ops_parallel` inter-op tasks.
-- **Contiguous Chunk Partitioning (`ParallelizeChunks`)**:
+- **Contiguous Chunk Partitioning (`ParallelizeChunks` — Guided Self-Scheduling)**:
   - Prefer `backend.Scheduler.ParallelizeChunks(totalItems, minChunkSize, func(start, end int) { ... })` to partition outer dimensions (`[0, totalItems)`) into contiguous ranges `[start, end)`.
-  - `ParallelizeChunks` splits work into at most $2 \times \text{EffectiveParallelism}()$ contiguous chunks (each at least `minChunkSize`), preventing false sharing (64-byte cache line bouncing) and amortizing scheduling overhead.
+  - `ParallelizeChunks` uses **Guided Self-Scheduling (GSS)** via an atomic compare-and-swap on `nextIdx`: each worker dynamically claims $\max(\text{minChunkSize}, \lceil \text{remaining} / (2 \times \text{numWorkers}) \rceil)$ items. This hands out large contiguous chunks at the start (amortizing scheduling overhead and preserving cache locality) and progressively smaller chunks at the tail (preventing slower Efficiency cores on asymmetric ARM64/x86 CPUs from becoming stragglers).
   - If `totalItems <= minChunkSize` or `!backend.Scheduler.IsEnabled()` (including when `EffectiveParallelism() <= 1`), `ParallelizeChunks` executes `fn(0, totalItems)` directly inline with zero allocations.
 - **Kernel Metadata for Adaptive Chunking**:
   - Different kernel implementations (e.g., scalar `nosimd` vs. `simd` vs. `avx2`/`avx512`, or simple ReLU vs. transcendental GeLU/Erf) have vastly different per-element costs.
   - Rather than hardcoding chunk sizes in the executor or inferring SIMD support from registration priority, kernels register associated metadata (e.g., `activations.KernelMetadata{MinParallelChunk: ...}`) so each kernel specifies its own minimum parallel chunk size (and package-level metadata structs can be tuned per platform at runtime).
-- **Custom Multi-Worker Loops (`RunIntraOpTasks`)**:
-  - When workers require per-worker state (e.g., per-worker scratch buffers or panel buffers in `MatMul`) or dynamic work-stealing over irregular tasks, use `backend.Scheduler.RunIntraOpTasks(numWorkers, func(workerIdx int) { ... })` combined with a shared `atomic.Int64` counter over contiguous tiles/chunks.
+- **Asymmetric Multi-Worker Loops (`SaturateUpTo`, 3-Phase Tapered Chunking, & Dual-Ended Queue)**:
+  - When workers require per-worker state (e.g., per-worker scratch buffers or panel buffers in `MatMul`), use `backend.Scheduler.SaturateUpTo(numWorkers, fn)`.
+  - For 3D batched / 2D tiled GEMM (`matmul.AppendWorkItems`), work items are ordered from coarse to fine using **3-Phase Tapered Chunking** (Head multi-batch chunks $\to$ Middle 1-batch chunks $\to$ Tail `< 1 batch` 2D sub-tiles along `M` and `N`).
+  - On asymmetric architectures with both fast SME coprocessors and slower per-core NEON units (`internal/gobackend/dot/matmul/neon/large.go`), workers coordinate via a lock-free 64-bit `bounds atomic.Uint64` (`(head << 32) | tail`) dual-ended queue: SME workers pop coarse chunks from `head` while NEON workers pop fine sub-batch tiles from `tail` (and yield the final tail items when `rem <= 3*smeActive`, or `rem <= 6*smeActive` on slow E-cores).
 
 ### 4. In-Cache Reductions & Register Accumulation
 - **Never Materialize Intermediate Full Matrices**: Materializing $S_q \times S_{kv}$ attention logit matrices in DRAM creates severe memory-bandwidth bottlenecks for sequence lengths $S \ge 512$.

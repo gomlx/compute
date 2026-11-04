@@ -3,6 +3,8 @@
 package gobackend
 
 import (
+	"slices"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 )
@@ -24,17 +26,50 @@ import (
 //	output[a*B + b] = lhs[a] op rhs[a*B + b]
 type BinaryTrailingArchFn func(op compute.OpType, isLHS bool, lhs, rhs, output *Buffer, A, B int, dtype dtypes.DType) bool
 
+type binaryTrailingArchEntry struct {
+	priority RegisterPriority
+	fn       BinaryTrailingArchFn
+}
+
 var (
-	binaryTrailingArchFn       BinaryTrailingArchFn
-	binaryTrailingArchPriority RegisterPriority
+	binaryTrailingArchEntries []binaryTrailingArchEntry
+	binaryTrailingArchFn      BinaryTrailingArchFn
 )
 
-// SetBinaryTrailingArchDispatcher registers the architecture-specific binary trailing broadcast dispatcher with a priority.
-// Higher priority replaces lower priority dispatcher.
+// SetBinaryTrailingArchDispatcher registers an architecture-specific binary trailing broadcast dispatcher with a priority.
+// Dispatchers are tried in descending order of priority; if a higher-priority dispatcher returns false, the next one is tried.
 func SetBinaryTrailingArchDispatcher(priority RegisterPriority, fn BinaryTrailingArchFn) {
-	if priority >= binaryTrailingArchPriority {
-		binaryTrailingArchPriority = priority
-		binaryTrailingArchFn = fn
+	if priority < 0 || fn == nil {
+		return
+	}
+	idx := 0
+	for idx < len(binaryTrailingArchEntries) && binaryTrailingArchEntries[idx].priority > priority {
+		idx++
+	}
+	if idx < len(binaryTrailingArchEntries) && binaryTrailingArchEntries[idx].priority == priority {
+		binaryTrailingArchEntries[idx].fn = fn
+	} else {
+		binaryTrailingArchEntries = slices.Insert(binaryTrailingArchEntries, idx, binaryTrailingArchEntry{priority: priority, fn: fn})
+	}
+	rebuildBinaryTrailingArchFn()
+}
+
+func rebuildBinaryTrailingArchFn() {
+	switch len(binaryTrailingArchEntries) {
+	case 0:
+		binaryTrailingArchFn = nil
+	case 1:
+		binaryTrailingArchFn = binaryTrailingArchEntries[0].fn
+	default:
+		entries := slices.Clone(binaryTrailingArchEntries)
+		binaryTrailingArchFn = func(op compute.OpType, isLHS bool, lhs, rhs, output *Buffer, A, B int, dtype dtypes.DType) bool {
+			for _, e := range entries {
+				if e.fn(op, isLHS, lhs, rhs, output, A, B, dtype) {
+					return true
+				}
+			}
+			return false
+		}
 	}
 }
 

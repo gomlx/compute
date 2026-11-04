@@ -20,4 +20,13 @@ var (
 	// Note that this only controls AVX512-specific implementations (e.g. specialized matmul and activations);
 	// generic portable SIMD operations will still use hardware vector features if available.
 	IsAVX512Allowed = envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true) && archsimd.X86.AVX512()
+
+	// ARM64 feature flags are always false on amd64.
+	IsNEONAllowed         = false
+	IsARM64FP16Allowed    = false
+	IsARM64BF16Allowed    = false
+	IsARM64DotProdAllowed = false
+	IsARM64I8MMAllowed    = false
+	IsSVEAllowed          = false
+	IsSMEAllowed          = false
 )

@@ -80,6 +80,9 @@ func registerBaseline() {
 		f32Registry.Register("Tanh", "NoSIMD", PriorityNoSIMD, activations.TanhNoSIMD[float32])
 		f32Registry.Register("Tanh", "PortableSIMD", PriorityPortableSIMD, activations.TanhFloat32SIMD)
 
+		f32Registry.Register("GeluExact", "NoSIMD", PriorityNoSIMD, activations.GeluExactNoSIMD[float32])
+		f32Registry.Register("GeluExact", "PortableSIMD", PriorityPortableSIMD, activations.GeluExactFloat32SIMD)
+
 		f32Registry.Register("GeluApprox", "NoSIMD", PriorityNoSIMD, activations.GeluApproxNoSIMD[float32])
 		f32Registry.Register("GeluApprox", "PortableSIMD", PriorityPortableSIMD, activations.GeluApproxFloat32SIMD)
 
