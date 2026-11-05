@@ -130,6 +130,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("float64/VeryLarge", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float64)
 		got, err := testutil.Exec1(backend, nil, func(f compute.Function, _ []compute.Value) (compute.Value, error) {
 			lhsShape := shapes.Make(dtypes.Float64, 16, 13, 384)
 			lhsFlat := make([]float64, lhsShape.Size())
@@ -341,6 +342,7 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 	})
 
 	t.Run("float64/small-matmul", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Float64)
 		a := [][]float64{{1, 2}, {3, 4}}
 		b := [][]float64{{10, 11}, {12, 13}}
 

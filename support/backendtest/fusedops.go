@@ -270,6 +270,7 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 		})
 
 		t.Run("Float64", func(t *testing.T) {
+			testutil.SkipIfMissingDType(t, b, dtypes.Float64)
 			xF64 := [][]float64{{1, 2, 3}, {4, 5, 6}}
 			wF64 := [][]float64{{1, 0, 0, 1}, {0, 1, 0, 1}, {0, 0, 1, 1}}
 			bF64 := []float64{10, 20, 30, 40}

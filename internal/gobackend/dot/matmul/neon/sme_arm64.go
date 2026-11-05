@@ -321,6 +321,20 @@ func calibrateSMEClusters() {
 	})
 }
 
+// SMEAcquireCluster probes the current OS thread's CPU cluster and attempts to acquire
+// that cluster's global SME unit lock.
+// If acquired, returns (clusterIdx, true, false) and the caller MUST call SMEReleaseCluster(clusterIdx).
+// If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
+// is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
+func SMEAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
+	return smeAcquireCluster()
+}
+
+// SMEReleaseCluster releases a previously acquired global SME cluster lock.
+func SMEReleaseCluster(cluster int) {
+	smeReleaseCluster(cluster)
+}
+
 // smeAcquireCluster probes the current OS thread's CPU cluster and attempts to acquire
 // that cluster's global SME unit lock.
 // If acquired, returns (clusterIdx, true, false) and the caller MUST call smeReleaseCluster(clusterIdx).

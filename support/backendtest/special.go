@@ -989,9 +989,16 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 		t.Run("Max", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeReduceMax)
-			got, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
-			if ok, diff := testutil.IsEqual(-1.0e6, got); !ok {
-				t.Errorf("ReduceMax mismatch:\n%s", diff)
+			if b.Capabilities().DTypes[dtypes.Float64] {
+				got, _ := testutil.Exec1(b, []any{[]float64{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+				if ok, diff := testutil.IsEqual(-1.0e6, got); !ok {
+					t.Errorf("ReduceMax mismatch:\n%s", diff)
+				}
+			} else {
+				got, _ := testutil.Exec1(b, []any{[]float32{-1e8, -1e6, -1e16}}, func(f compute.Function, p []compute.Value) (compute.Value, error) { return f.ReduceMax(p[0], 0) })
+				if ok, diff := testutil.IsEqual(float32(-1.0e6), got); !ok {
+					t.Errorf("ReduceMax mismatch:\n%s", diff)
+				}
 			}
 		})
 

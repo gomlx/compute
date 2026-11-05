@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -10,6 +11,39 @@ import (
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
+
+func convertSliceFloat32ToFloat64(v any) any {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Slice {
+		return float64(v.(float32))
+	}
+	var outType reflect.Type
+	elemType := rv.Type().Elem()
+	if elemType.Kind() == reflect.Float32 {
+		outType = reflect.SliceOf(reflect.TypeFor[float64]())
+	} else {
+		// Recurse to find outType
+		if rv.Len() > 0 {
+			firstElem := convertSliceFloat32ToFloat64(rv.Index(0).Interface())
+			outType = reflect.SliceOf(reflect.TypeOf(firstElem))
+		} else {
+			// Build type by replacing innermost float32 with float64
+			depth := 1
+			for t := elemType; t.Kind() == reflect.Slice; t = t.Elem() {
+				depth++
+			}
+			outType = reflect.TypeFor[float64]()
+			for range depth {
+				outType = reflect.SliceOf(outType)
+			}
+		}
+	}
+	out := reflect.MakeSlice(outType, rv.Len(), rv.Len())
+	for i := range rv.Len() {
+		out.Index(i).Set(reflect.ValueOf(convertSliceFloat32ToFloat64(rv.Index(i).Interface())))
+	}
+	return out.Interface()
+}
 
 var AllConvGeneralTestDTypes = []dtypes.DType{
 	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16, dtypes.Int32, dtypes.Uint64}
@@ -269,14 +303,92 @@ func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguratio
 				},
 			},
 		},
+		{
+			name:   "1D ChannelsLast",
+			input:  S(F32, 1, 4, 2),
+			kernel: S(F32, 2, 2, 2),
+			axes: compute.ConvolveAxesConfig{
+				InputBatch:           0,
+				InputSpatial:         []int{1},
+				InputChannels:        2,
+				KernelSpatial:        []int{0},
+				KernelInputChannels:  1,
+				KernelOutputChannels: 2,
+				OutputBatch:          0,
+				OutputSpatial:        []int{1},
+				OutputChannels:       2,
+			},
+			strides:           []int{1},
+			paddings:          [][2]int{{0, 0}},
+			inputDilations:    []int{1},
+			kernelDilations:   []int{1},
+			channelGroupCount: 1,
+			batchGroupCount:   1,
+			want:              [][][]float64{{{28, 34}, {52, 66}, {76, 98}}},
+		},
+		{
+			name:   "2D ChannelsLast",
+			input:  S(F32, 1, 3, 3, 2),
+			kernel: S(F32, 2, 2, 2, 2),
+			axes: compute.ConvolveAxesConfig{
+				InputBatch:           0,
+				InputSpatial:         []int{1, 2},
+				InputChannels:        3,
+				KernelSpatial:        []int{0, 1},
+				KernelInputChannels:  2,
+				KernelOutputChannels: 3,
+				OutputBatch:          0,
+				OutputSpatial:        []int{1, 2},
+				OutputChannels:       3,
+			},
+			strides:           []int{1, 1},
+			paddings:          [][2]int{{0, 0}, {0, 0}},
+			inputDilations:    []int{1, 1},
+			kernelDilations:   []int{1, 1},
+			channelGroupCount: 1,
+			batchGroupCount:   1,
+			want:              [][][][]float64{{{{368, 404}, {480, 532}}, {{704, 788}, {816, 916}}}},
+		},
+		{
+			name:   "2D ChannelsLast VJP wrt Kernel",
+			input:  S(F32, 1, 3, 3, 2),
+			kernel: S(F32, 1, 2, 2, 2),
+			axes: compute.ConvolveAxesConfig{
+				InputBatch:           3,
+				InputSpatial:         []int{1, 2},
+				InputChannels:        0,
+				KernelSpatial:        []int{1, 2},
+				KernelInputChannels:  0,
+				KernelOutputChannels: 3,
+				OutputBatch:          2,
+				OutputSpatial:        []int{0, 1},
+				OutputChannels:       3,
+			},
+			strides:           []int{1, 1},
+			paddings:          [][2]int{{0, 0}, {0, 0}},
+			inputDilations:    []int{1, 1},
+			kernelDilations:   []int{1, 1},
+			channelGroupCount: 1,
+			batchGroupCount:   1,
+			want: [][][][]float64{
+				{{{76, 92}, {88, 108}}, {{100, 124}, {112, 140}}},
+				{{{148, 188}, {160, 204}}, {{172, 220}, {184, 236}}},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// The result should be the same for the all dtypes:
 			for _, dtype := range testDTypes {
 				t.Run(dtype.String(), func(t *testing.T) {
+					testutil.SkipIfMissingDType(t, b, dtype)
 					tc.input.DType = dtype
 					tc.kernel.DType = dtype
+
+					outDType := dtypes.Float64
+					if !b.Capabilities().DTypes[dtypes.Float64] {
+						outDType = dtypes.Float32
+					}
 
 					buildFn := func(f compute.Function, params []compute.Value) (compute.Value, error) {
 						flatInputShape := shapes.Make(tc.input.DType, tc.input.Size())
@@ -303,8 +415,8 @@ func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguratio
 						if err != nil {
 							return nil, err
 						}
-						// We convert the result to float64 to make it easy to check.
-						return f.ConvertDType(output, dtypes.Float64)
+						// We convert the result to float64 (or float32) to make it easy to check.
+						return f.ConvertDType(output, outDType)
 					}
 
 					outputValue, err := testutil.Exec1(b, nil, buildFn)
@@ -314,6 +426,9 @@ func TestConvGeneral(t *testing.T, b compute.Backend, opts *AllTestsConfiguratio
 							return
 						}
 						t.Fatalf("Failed to execute ConvGeneral for dtype %s: %+v", dtype, err)
+					}
+					if outDType == dtypes.Float32 {
+						outputValue = convertSliceFloat32ToFloat64(outputValue)
 					}
 
 					if !dtype.IsHalfPrecision() {

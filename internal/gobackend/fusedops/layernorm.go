@@ -145,8 +145,211 @@ func layerNorm[T float32 | float64](backend *gobackend.Backend, input, output, g
 		} else {
 			layerNormTrailingAxes(inData, outData, gammaData, betaData, normSize, epsilon)
 		}
+	} else if aDim, bDim, cDim, dDim, ok := classifyStridedLayerNormAxes(dims, axes); ok {
+		totalElements := len(inData)
+		sliceSize := bDim * cDim * dDim
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && aDim > 1 && totalElements > minLayerNormParallelElements {
+			minA := max(1, minLayerNormParallelElements/max(1, sliceSize))
+			backend.Scheduler.ParallelizeChunks(aDim, minA, func(aStart, aEnd int) {
+				inSlice := inData[aStart*sliceSize : aEnd*sliceSize]
+				outSlice := outData[aStart*sliceSize : aEnd*sliceSize]
+				layerNormStridedAxes(inSlice, outSlice, gammaData, betaData, aEnd-aStart, bDim, cDim, dDim, epsilon)
+			})
+		} else {
+			layerNormStridedAxes(inData, outData, gammaData, betaData, aDim, bDim, cDim, dDim, epsilon)
+		}
 	} else {
 		layerNormArbitraryAxes(inData, outData, gammaData, betaData, dims, axes, normSize, epsilon)
+	}
+}
+
+// classifyStridedLayerNormAxes checks if dims and axes can be collapsed into [A, B, C, D]
+// where A and C are kept dimensions and B and D are normalized dimensions (normSize = B * D).
+// This covers [K, R, K] (D=1), [R, K] (A=1, D=1), [K, R, K, R] (e.g. 5D GroupNorm [B, H, W, G, C/G] on [1, 2, 4]),
+// and [R, K, R] (A=1).
+func classifyStridedLayerNormAxes(dims, axes []int) (aDim, bDim, cDim, dDim int, ok bool) {
+	rank := len(dims)
+	if rank == 0 || len(axes) == 0 {
+		return 0, 0, 0, 0, false
+	}
+	// Verify axes are in ascending order so gamma/beta indexing matches lexicographical order.
+	for i := 1; i < len(axes); i++ {
+		if axes[i] <= axes[i-1] {
+			return 0, 0, 0, 0, false
+		}
+	}
+	isNorm := make([]bool, rank)
+	for _, a := range axes {
+		isNorm[a] = true
+	}
+
+	aDim, bDim, cDim, dDim = 1, 1, 1, 1
+	phase := 0 // 0: kept(A), 1: norm(B), 2: kept(C), 3: norm(D)
+	for axis, dim := range dims {
+		norm := isNorm[axis]
+		switch phase {
+		case 0:
+			if !norm {
+				aDim *= dim
+			} else {
+				phase = 1
+				bDim *= dim
+			}
+		case 1:
+			if norm {
+				bDim *= dim
+			} else {
+				phase = 2
+				cDim *= dim
+			}
+		case 2:
+			if !norm {
+				cDim *= dim
+			} else {
+				phase = 3
+				dDim *= dim
+			}
+		case 3:
+			if norm {
+				dDim *= dim
+			} else {
+				return 0, 0, 0, 0, false
+			}
+		}
+	}
+	if phase < 2 {
+		return 0, 0, 0, 0, false
+	}
+	return aDim, bDim, cDim, dDim, true
+}
+
+// layerNormStridedAxes executes LayerNorm on a collapsed [A, B, C, D] tensor where
+// B and D are the normalized axes (normSize = B * D) and A, C are kept axes.
+func layerNormStridedAxes[T float32 | float64](
+	inData, outData, gammaData, betaData []T,
+	aDim, bDim, cDim, dDim int,
+	epsilon float64,
+) {
+	normSize := bDim * dDim
+	if normSize == 0 || aDim == 0 || cDim == 0 {
+		return
+	}
+	normSizeF := T(normSize)
+	strideBCD := bDim * cDim * dDim
+	strideCD := cDim * dDim
+
+	var stackMeans [256]T
+	var stackVars [256]T
+	var means, vars []T
+	if cDim <= len(stackMeans) {
+		means = stackMeans[:cDim]
+		vars = stackVars[:cDim]
+	} else {
+		means = make([]T, cDim)
+		vars = make([]T, cDim)
+	}
+
+	for a := range aDim {
+		baseA := a * strideBCD
+		clear(means)
+		clear(vars)
+
+		// Pass 1: accumulate sums per c across B * D.
+		for b := range bDim {
+			baseB := baseA + b*strideCD
+			for c := range cDim {
+				row := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+				var s T
+				for _, v := range row {
+					s += v
+				}
+				means[c] += s
+			}
+		}
+		for c := range cDim {
+			means[c] /= normSizeF
+		}
+
+		// Pass 2: accumulate variance sums per c across B * D.
+		for b := range bDim {
+			baseB := baseA + b*strideCD
+			for c := range cDim {
+				mean := means[c]
+				row := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+				var vSum T
+				for _, v := range row {
+					diff := v - mean
+					vSum += diff * diff
+				}
+				vars[c] += vSum
+			}
+		}
+		for c := range cDim {
+			vars[c] = T(1.0 / math.Sqrt(float64(vars[c]/normSizeF)+epsilon))
+		}
+
+		// Pass 3: normalize and apply optional gamma/beta.
+		switch {
+		case gammaData != nil && betaData != nil:
+			for b := range bDim {
+				baseB := baseA + b*strideCD
+				gbBase := b * dDim
+				gRow := gammaData[gbBase : gbBase+dDim]
+				bRow := betaData[gbBase : gbBase+dDim]
+				for c := range cDim {
+					mean := means[c]
+					invStd := vars[c]
+					inRow := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+					outRow := outData[baseB+c*dDim : baseB+(c+1)*dDim]
+					for d, v := range inRow {
+						outRow[d] = (v-mean)*invStd*gRow[d] + bRow[d]
+					}
+				}
+			}
+		case gammaData != nil:
+			for b := range bDim {
+				baseB := baseA + b*strideCD
+				gbBase := b * dDim
+				gRow := gammaData[gbBase : gbBase+dDim]
+				for c := range cDim {
+					mean := means[c]
+					invStd := vars[c]
+					inRow := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+					outRow := outData[baseB+c*dDim : baseB+(c+1)*dDim]
+					for d, v := range inRow {
+						outRow[d] = (v - mean) * invStd * gRow[d]
+					}
+				}
+			}
+		case betaData != nil:
+			for b := range bDim {
+				baseB := baseA + b*strideCD
+				gbBase := b * dDim
+				bRow := betaData[gbBase : gbBase+dDim]
+				for c := range cDim {
+					mean := means[c]
+					invStd := vars[c]
+					inRow := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+					outRow := outData[baseB+c*dDim : baseB+(c+1)*dDim]
+					for d, v := range inRow {
+						outRow[d] = (v-mean)*invStd + bRow[d]
+					}
+				}
+			}
+		default:
+			for b := range bDim {
+				baseB := baseA + b*strideCD
+				for c := range cDim {
+					mean := means[c]
+					invStd := vars[c]
+					inRow := inData[baseB+c*dDim : baseB+(c+1)*dDim]
+					outRow := outData[baseB+c*dDim : baseB+(c+1)*dDim]
+					for d, v := range inRow {
+						outRow[d] = (v - mean) * invStd
+					}
+				}
+			}
+		}
 	}
 }
 

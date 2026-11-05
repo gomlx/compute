@@ -148,6 +148,21 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 	dtype := operandShape.DType
 
 	windowShape := shapes.Make(dtype, effWindowDimensions...)
+	windowSize := windowShape.Size()
+
+	// Fast path for 1D/2D ChannelsLast unpooling where batch and channel windows/strides are 1.
+	if (rank == 3 || rank == 4) &&
+		effWindowDimensions[0] == 1 && effWindowDimensions[rank-1] == 1 &&
+		effStrides[0] == 1 && effStrides[rank-1] == 1 &&
+		effPaddings[0][0] == 0 && effPaddings[0][1] == 0 &&
+		effPaddings[rank-1][0] == 0 && effPaddings[rank-1][1] == 0 {
+		execSelectAndScatterChannelsLastGeneric(
+			backend, operandFlat, sourceFlat, outputFlat,
+			operandShape.Dimensions, sourceShape.Dimensions,
+			effWindowDimensions, effStrides, effPaddings, isMin,
+		)
+		return
+	}
 
 	operandStrides := make([]int, rank)
 	stride := 1
@@ -172,32 +187,43 @@ func execSelectAndScatterGeneric[T gobackend.PODNumericConstraints](
 		for sourceFlatIdx := startFlatIdx; sourceFlatIdx < endFlatIdx; sourceFlatIdx++ {
 			bestOperandFlatIdx := -1
 			var bestOperandVal T
-		iterWindowIndices:
-			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+			clear(windowIndices)
+			for wStep := 0; wStep < windowSize; wStep++ {
+				valid := true
 				operandFlatIdx := 0
 				for axis := range rank {
 					operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
 					if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
-						continue iterWindowIndices
+						valid = false
+						break
 					}
 					operandFlatIdx += operandIdx * operandStrides[axis]
 				}
-				val := operandFlat[operandFlatIdx]
-				if bestOperandFlatIdx == -1 {
-					bestOperandFlatIdx = operandFlatIdx
-					bestOperandVal = val
-				} else if isMin {
-					valIsNaN := val != val
-					if val < bestOperandVal || valIsNaN {
-						bestOperandVal = val
+				if valid {
+					val := operandFlat[operandFlatIdx]
+					if bestOperandFlatIdx == -1 {
 						bestOperandFlatIdx = operandFlatIdx
-					}
-				} else {
-					valIsNaN := val != val
-					if val > bestOperandVal || valIsNaN {
 						bestOperandVal = val
-						bestOperandFlatIdx = operandFlatIdx
+					} else if isMin {
+						valIsNaN := val != val
+						if val < bestOperandVal || valIsNaN {
+							bestOperandVal = val
+							bestOperandFlatIdx = operandFlatIdx
+						}
+					} else {
+						valIsNaN := val != val
+						if val > bestOperandVal || valIsNaN {
+							bestOperandVal = val
+							bestOperandFlatIdx = operandFlatIdx
+						}
 					}
+				}
+				for axis := rank - 1; axis >= 0; axis-- {
+					windowIndices[axis]++
+					if windowIndices[axis] < effWindowDimensions[axis] {
+						break
+					}
+					windowIndices[axis] = 0
 				}
 			}
 			if bestOperandFlatIdx != -1 {
@@ -279,6 +305,7 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 	dtype := operandShape.DType
 
 	windowShape := shapes.Make(dtype, effWindowDimensions...)
+	windowSize := windowShape.Size()
 
 	operandStrides := make([]int, rank)
 	stride := 1
@@ -303,32 +330,43 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 		for sourceFlatIdx := startFlatIdx; sourceFlatIdx < endFlatIdx; sourceFlatIdx++ {
 			bestOperandFlatIdx := -1
 			var bestOperandVal float32
-		iterWindowIndices:
-			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+			clear(windowIndices)
+			for wStep := 0; wStep < windowSize; wStep++ {
+				valid := true
 				operandFlatIdx := 0
 				for axis := range rank {
 					operandIdx := sourceIndices[axis]*effStrides[axis] - effPaddings[axis][0] + windowIndices[axis]
 					if operandIdx < 0 || operandIdx >= operandShape.Dimensions[axis] {
-						continue iterWindowIndices
+						valid = false
+						break
 					}
 					operandFlatIdx += operandIdx * operandStrides[axis]
 				}
-				val := operandFlat[operandFlatIdx].Float32()
-				if bestOperandFlatIdx == -1 {
-					bestOperandFlatIdx = operandFlatIdx
-					bestOperandVal = val
-				} else if isMin {
-					valIsNaN := val != val
-					if val < bestOperandVal || valIsNaN {
-						bestOperandVal = val
+				if valid {
+					val := operandFlat[operandFlatIdx].Float32()
+					if bestOperandFlatIdx == -1 {
 						bestOperandFlatIdx = operandFlatIdx
-					}
-				} else {
-					valIsNaN := val != val
-					if val > bestOperandVal || valIsNaN {
 						bestOperandVal = val
-						bestOperandFlatIdx = operandFlatIdx
+					} else if isMin {
+						valIsNaN := val != val
+						if val < bestOperandVal || valIsNaN {
+							bestOperandVal = val
+							bestOperandFlatIdx = operandFlatIdx
+						}
+					} else {
+						valIsNaN := val != val
+						if val > bestOperandVal || valIsNaN {
+							bestOperandVal = val
+							bestOperandFlatIdx = operandFlatIdx
+						}
 					}
+				}
+				for axis := rank - 1; axis >= 0; axis-- {
+					windowIndices[axis]++
+					if windowIndices[axis] < effWindowDimensions[axis] {
+						break
+					}
+					windowIndices[axis] = 0
 				}
 			}
 			if bestOperandFlatIdx != -1 {
@@ -393,4 +431,110 @@ func execSelectAndScatterGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPre
 	}
 
 	runChunk(0, lenSource, outputFlat)
+}
+
+func execSelectAndScatterChannelsLastGeneric[T gobackend.PODNumericConstraints](
+	backend *gobackend.Backend,
+	operandFlat, sourceFlat, outputFlat []T,
+	inDims, srcDims []int,
+	effWindowDimensions, effStrides []int,
+	effPaddings [][2]int,
+	isMin bool,
+) {
+	rank := len(inDims)
+	batchSize := inDims[0]
+	channels := inDims[rank-1]
+	if batchSize == 0 || channels == 0 || len(sourceFlat) == 0 {
+		return
+	}
+
+	var inH, inW, srcH, srcW, winH, winW, strideH, strideW, padTop, padLeft int
+	if rank == 3 {
+		inH, inW = 1, inDims[1]
+		srcH, srcW = 1, srcDims[1]
+		winH, winW = 1, effWindowDimensions[1]
+		strideH, strideW = 1, effStrides[1]
+		padTop, padLeft = 0, effPaddings[1][0]
+	} else {
+		inH, inW = inDims[1], inDims[2]
+		srcH, srcW = srcDims[1], srcDims[2]
+		winH, winW = effWindowDimensions[1], effWindowDimensions[2]
+		strideH, strideW = effStrides[1], effStrides[2]
+		padTop, padLeft = effPaddings[1][0], effPaddings[2][0]
+	}
+
+	inRowStride := inW * channels
+	inBatchStride := inH * inRowStride
+	srcRowStride := srcW * channels
+	srcBatchStride := srcH * srcRowStride
+
+	runBatches := func(startBatch, endBatch int) {
+		for b := startBatch; b < endBatch; b++ {
+			inBatchBase := b * inBatchStride
+			srcBatchBase := b * srcBatchStride
+
+			for sy := range srcH {
+				inY0 := sy*strideH - padTop
+				wyStart := max(0, -inY0)
+				wyEnd := min(winH, inH-inY0)
+				if wyStart >= wyEnd {
+					continue
+				}
+				srcRowBase := srcBatchBase + sy*srcRowStride
+
+				for sx := range srcW {
+					inX0 := sx*strideW - padLeft
+					wxStart := max(0, -inX0)
+					wxEnd := min(winW, inW-inX0)
+					if wxStart >= wxEnd {
+						continue
+					}
+					srcPixelBase := srcRowBase + sx*channels
+					firstRowBase := inBatchBase + (inY0+wyStart)*inRowStride + (inX0+wxStart)*channels
+
+					if isMin {
+						for c := range channels {
+							bestIdx := firstRowBase + c
+							bestVal := operandFlat[bestIdx]
+							for wy := wyStart; wy < wyEnd; wy++ {
+								rowBase := inBatchBase + (inY0+wy)*inRowStride
+								for wx := wxStart; wx < wxEnd; wx++ {
+									idx := rowBase + (inX0+wx)*channels + c
+									val := operandFlat[idx]
+									if val < bestVal || val != val {
+										bestVal = val
+										bestIdx = idx
+									}
+								}
+							}
+							outputFlat[bestIdx] += sourceFlat[srcPixelBase+c]
+						}
+					} else {
+						for c := range channels {
+							bestIdx := firstRowBase + c
+							bestVal := operandFlat[bestIdx]
+							for wy := wyStart; wy < wyEnd; wy++ {
+								rowBase := inBatchBase + (inY0+wy)*inRowStride
+								for wx := wxStart; wx < wxEnd; wx++ {
+									idx := rowBase + (inX0+wx)*channels + c
+									val := operandFlat[idx]
+									if val > bestVal || val != val {
+										bestVal = val
+										bestIdx = idx
+									}
+								}
+							}
+							outputFlat[bestIdx] += sourceFlat[srcPixelBase+c]
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && batchSize > 1 && len(sourceFlat) >= 512 {
+		backend.Scheduler.ParallelizeChunks(batchSize, 1, runBatches)
+		return
+	}
+	runBatches(0, batchSize)
 }
