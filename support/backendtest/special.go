@@ -1427,6 +1427,88 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual(want1, y1); !ok {
 			t.Errorf("ScatterSum mismatch:\n%s", diff)
 		}
+
+		// Case 2: ScatterSum along axis 0 with multi-rank leading batch dimensions in indices and updates.
+		operandData2 := [][]float32{{0, 0}, {0, 0}, {0, 0}, {0, 0}}
+		indicesData2 := [][][][]int32{{{{1}}}, {{{3}}}}
+		updatesData2 := [][][][]float32{{{{10, 20}}}, {{{30, 40}}}}
+		y2, err := testutil.Exec1(b, []any{operandData2, indicesData2, updatesData2}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.ScatterSum(p[0], p[1], p[2], 3, []int{3}, []int{0}, []int{0}, false, false)
+		})
+		if err != nil {
+			t.Fatalf("ScatterSum (multi-rank batch) failed: %v", err)
+		}
+		want2 := [][]float32{{0, 0}, {10, 20}, {0, 0}, {30, 40}}
+		if ok, diff := testutil.IsEqual(want2, y2); !ok {
+			t.Errorf("ScatterSum (multi-rank batch) mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("Pad", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypePad)
+
+		t.Run("EdgePadding", func(t *testing.T) {
+			x := [][]float32{{1, 2}, {3, 4}}
+			fill := float32(-1)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: 1, End: 1},
+					compute.PadAxis{Start: 2, End: 0},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(edge) failed: %v", err)
+			}
+			want := [][]float32{
+				{-1, -1, -1, -1},
+				{-1, -1, 1, 2},
+				{-1, -1, 3, 4},
+				{-1, -1, -1, -1},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(edge) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("InteriorPadding", func(t *testing.T) {
+			x := [][]float32{{1, 2}, {3, 4}}
+			fill := float32(0)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: 1, End: 0, Interior: 1},
+					compute.PadAxis{Start: 0, End: 1, Interior: 2},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(interior) failed: %v", err)
+			}
+			want := [][]float32{
+				{0, 0, 0, 0, 0},
+				{1, 0, 0, 2, 0},
+				{0, 0, 0, 0, 0},
+				{3, 0, 0, 4, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(interior) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("NegativeAndInteriorPadding", func(t *testing.T) {
+			x := []float32{10, 20, 30}
+			fill := float32(-1)
+			// Interior=1 -> [10, -1, 20, -1, 30] (len 5)
+			// Start=-1, End=-1 -> [-1, 20, -1] (len 3)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Pad(params[0], params[1], compute.PadAxis{Start: -1, End: -1, Interior: 1})
+			})
+			if err != nil {
+				t.Fatalf("Pad(negative+interior) failed: %v", err)
+			}
+			want := []float32{-1, 20, -1}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(negative+interior) mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Slice", func(t *testing.T) {
