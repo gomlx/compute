@@ -308,31 +308,69 @@ func ExtractPatches2DFloat32(p *Conv2DParams, input, patchBuf []float32, mStart,
 			if inX0 >= 0 && inX0+kW <= inW {
 				// Fast interior pixel: each ky row is a single contiguous slice of kW * inC floats.
 				xOff := inX0 * inC
-				for ky := range kH {
-					dstSlice := dstRow[ky*kWC : (ky+1)*kWC]
-					inY := outY*sH + ky*kerDilH - padTop
-					if uint(inY) < uint(inH) {
-						srcOff := inY*inRowStride + xOff
-						copy(dstSlice, inBatch[srcOff:srcOff+kWC])
-					} else {
-						clear(dstSlice)
+				if kWC <= 8 {
+					for ky := range kH {
+						dstSlice := dstRow[ky*kWC : (ky+1)*kWC]
+						inY := outY*sH + ky*kerDilH - padTop
+						if uint(inY) < uint(inH) {
+							srcSlice := inBatch[inY*inRowStride+xOff : inY*inRowStride+xOff+kWC]
+							for i := range kWC {
+								dstSlice[i] = srcSlice[i]
+							}
+						} else {
+							for i := range kWC {
+								dstSlice[i] = 0
+							}
+						}
+					}
+				} else {
+					for ky := range kH {
+						dstSlice := dstRow[ky*kWC : (ky+1)*kWC]
+						inY := outY*sH + ky*kerDilH - padTop
+						if uint(inY) < uint(inH) {
+							srcOff := inY*inRowStride + xOff
+							copy(dstSlice, inBatch[srcOff:srcOff+kWC])
+						} else {
+							clear(dstSlice)
+						}
 					}
 				}
 			} else {
 				// Border pixel: valid kx in [kxStart, kxEnd) are still contiguous when kerDilW == 1.
-				clear(dstRow)
+				if K <= 16 {
+					for i := range K {
+						dstRow[i] = 0
+					}
+				} else {
+					clear(dstRow)
+				}
 				kxStart := max(0, -inX0)
 				kxEnd := min(kW, inW-inX0)
 				if kxStart < kxEnd {
 					spanFloats := (kxEnd - kxStart) * inC
 					dstXOff := kxStart * inC
 					srcXOff := (inX0 + kxStart) * inC
-					for ky := range kH {
-						inY := outY*sH + ky*kerDilH - padTop
-						if uint(inY) < uint(inH) {
-							dstOff := ky*kWC + dstXOff
-							srcOff := inY*inRowStride + srcXOff
-							copy(dstRow[dstOff:dstOff+spanFloats], inBatch[srcOff:srcOff+spanFloats])
+					if spanFloats <= 8 {
+						for ky := range kH {
+							inY := outY*sH + ky*kerDilH - padTop
+							if uint(inY) < uint(inH) {
+								dstOff := ky*kWC + dstXOff
+								srcOff := inY*inRowStride + srcXOff
+								dstSlice := dstRow[dstOff : dstOff+spanFloats]
+								srcSlice := inBatch[srcOff : srcOff+spanFloats]
+								for i := range spanFloats {
+									dstSlice[i] = srcSlice[i]
+								}
+							}
+						}
+					} else {
+						for ky := range kH {
+							inY := outY*sH + ky*kerDilH - padTop
+							if uint(inY) < uint(inH) {
+								dstOff := ky*kWC + dstXOff
+								srcOff := inY*inRowStride + srcXOff
+								copy(dstRow[dstOff:dstOff+spanFloats], inBatch[srcOff:srcOff+spanFloats])
+							}
 						}
 					}
 				}

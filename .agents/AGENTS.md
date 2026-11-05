@@ -345,8 +345,9 @@ done:
 - **AVX2 Budget (16 YMM registers: `Y0`–`Y15`)**:
   - Size register tiles so that accumulators and working vectors strictly fit within 16 registers.
   - Example: Small transposed GEMM `Tile4x2` uses 8 accumulators (`Y0`–`Y7`), 4 LHS loads (`Y8`–`Y11`), and 2 RHS loads (`Y12`–`Y13`) = 14 registers. Zero stack spills.
+  - Example: 1D/2D `ConvGeneral` (`internal/gobackend/ops/avx2/conv_amd64.s`) uses a $4 \times 16$ tile (`ConvAVX2Kernel4x16Float32Asm`, `ConvKernelGradAVX2_4x16Float32Asm`) with 8 accumulators (`Y0`–`Y7`), 4 2-stage ping-pong RHS registers (`Y8`–`Y11`), and 1 broadcast scratch register (`Y12`), reading directly from 4 row pointers via `VBROADCASTSS` with zero LHS transposition overhead. For small `InChannels` (e.g. `Cin == 1` in VJP wrt kernel), `ConvKernelGradAVX2_1x16Float32Asm` unrolls $4\times$ across 4 independent accumulator pairs (`Y0`–`Y7`) to hide 4-cycle FMA latency.
 - **AVX-512 Budget (32 ZMM registers: `Z0`–`Z31` + 8 Mask registers: `K0`–`K7`)**:
-  - Allows 16 dedicated accumulators (`Z0`–`Z15`) in an $8 \times 32$ tile (2 RHS vectors, 8 LHS broadcasts).
+  - Allows 16 dedicated accumulators (`Z0`–`Z15`) in an $8 \times 32$ tile (2 RHS vectors, 8 LHS broadcasts), as used in GEMM and 1D/2D `ConvGeneral` (`ConvAVX512Kernel8x32Float32Asm`, `ConvKernelGradAVX512_8x32Float32Asm` in `internal/gobackend/ops/avx512/conv_amd64.s`), plus $4 \times 32$ and $1 \times 32$ multi-bank unrolled variants (`ConvAVX512Kernel4x32Float32Asm`, `ConvKernelGradAVX512_4x32Float32Asm`, `ConvKernelGradAVX512_1x32Float32Asm`).
   - Use 2-stage ping-pong register buffers (interleaving Buffer A and Buffer B loads) to hide memory latency.
 - **Non-Destructive Accumulation (`VFMADD231PS` vs `VFMADD213PS`)**:
   - In Go's `archsimd`, `MulAdd` emits `VFMADD213PS` which overwrites operand $a$, causing register pressure and spills.
