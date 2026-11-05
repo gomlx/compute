@@ -83,6 +83,29 @@ row64_loop_f32:
 	JMP col64_loop_f32
 
 col16_f32:
+	CMPQ R12, $32
+	JL col16_single_f32
+
+	MOVQ SI, R13
+	VMOVUPS (R13), Z0
+	VMOVUPS 64(R13), Z1
+	MOVQ R11, CX
+	ADDQ R10, R13
+
+row32_loop_f32:
+	VADDPS (R13), Z0, Z0
+	VADDPS 64(R13), Z1, Z1
+	ADDQ R10, R13
+	DECQ CX
+	JNZ row32_loop_f32
+
+	VMOVUPS Z0, (DI)
+	VMOVUPS Z1, 64(DI)
+	ADDQ $128, DI
+	ADDQ $128, SI
+	SUBQ $32, R12
+
+col16_single_f32:
 	CMPQ R12, $16
 	JL col8_f32
 
@@ -101,7 +124,6 @@ row16_loop_f32:
 	ADDQ $64, DI
 	ADDQ $64, SI
 	SUBQ $16, R12
-	JMP col16_f32
 
 col8_f32:
 	CMPQ R12, $8
