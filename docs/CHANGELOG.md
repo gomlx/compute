@@ -1,3 +1,6 @@
+- 2026-11-05:
+  - Updated `support/backendtest/convgeneral.go` to skip unsupported dtypes and handle backends without `Float64` support (such as the Apple `mps` backend) by converting `Float32` outputs to `float64` before comparing against `Float64` reference values.
+
 - 2026-11-04:
   - Added comprehensive ARM64 NEON and Scalable Matrix Extension (`FEAT_SME`) SIMD acceleration across the Go backend (`internal/gobackend/...`, `dtypes/float16`, `dtypes/bfloat16`):
     - **Runtime Feature Detection (`internal/gobackend/simd_arm64*.go`)**: Added ARM64 capability detection and environment controls (`GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`) for `IsNEONAllowed`, `IsARM64FP16Allowed`, `IsARM64BF16Allowed`, `IsARM64DotProdAllowed`, `IsARM64I8MMAllowed`, `IsSVEAllowed`, and `IsSMEAllowed`.

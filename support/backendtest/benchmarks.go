@@ -40,6 +40,9 @@ func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
 	b.Run("DotGeneral", func(b *testing.B) {
 		BenchmarkDotGeneral(b, backend)
 	})
+	b.Run("ConvGeneral", func(b *testing.B) {
+		BenchmarkConvGeneral(b, backend)
+	})
 }
 
 // benchMust panics on error, used in benchmark setup.

@@ -106,15 +106,19 @@ const (
 	// ReduceMiddle indicates a contiguous middle segment of axes is reduced: operand [A, B, C] -> output [A, C].
 	ReduceMiddle
 
+	// ReduceStrided indicates two non-contiguous reduced segments where the second is trailing:
+	// operand [A, B, C, D] -> output [A, C] (with A >= 1, e.g. 5D GroupNorm [Batch, H*W, G, C/G] reduced on [1, 2, 4]).
+	ReduceStrided
+
 	// ReduceGeneral indicates arbitrary non-contiguous axes requiring index calculation.
 	ReduceGeneral
 )
 
 // ReduceConfig contains pre-computed metadata for reduction operations.
 type ReduceConfig struct {
-	Axes    []int
-	Pattern ReducePattern
-	A, B, C int
+	Axes       []int
+	Pattern    ReducePattern
+	A, B, C, D int
 }
 
 var (
@@ -138,6 +142,7 @@ func (c *ReduceConfig) EqualNodeData(other gobackend.NodeDataComparable) bool {
 		c.A == otherC.A &&
 		c.B == otherC.B &&
 		c.C == otherC.C &&
+		c.D == otherC.D &&
 		slices.Equal(c.Axes, otherC.Axes)
 }
 
@@ -192,6 +197,52 @@ func DetermineReduceConfig(shape shapes.Shape, axes []int) ReduceConfig {
 	}
 
 	if !isContiguous {
+		// Check if the axes form two reduced blocks where the second is trailing: [A, B, C, D] -> [A, C] (A >= 1).
+		isRed := make([]bool, rank)
+		for _, ax := range sortedAxes {
+			if ax >= 0 && ax < rank {
+				isRed[ax] = true
+			}
+		}
+		a, b, c, d := 1, 1, 1, 1
+		phase := 0 // 0: kept(A), 1: reduced(B), 2: kept(C), 3: reduced(D)
+		valid := true
+		for axis, dim := range shape.Dimensions {
+			red := isRed[axis]
+			switch phase {
+			case 0:
+				if !red {
+					a *= dim
+				} else {
+					phase = 1
+					b *= dim
+				}
+			case 1:
+				if red {
+					b *= dim
+				} else {
+					phase = 2
+					c *= dim
+				}
+			case 2:
+				if !red {
+					c *= dim
+				} else {
+					phase = 3
+					d *= dim
+				}
+			case 3:
+				if red {
+					d *= dim
+				} else {
+					valid = false
+				}
+			}
+		}
+		if valid && phase == 3 {
+			cfg.Pattern = ReduceStrided
+			cfg.A, cfg.B, cfg.C, cfg.D = a, b, c, d
+		}
 		return cfg
 	}
 
@@ -355,15 +406,17 @@ func execReduce(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		return output, nil
 	}
 
+	dtype := output.RawShape.DType
 	var it *ReduceOutputIterator
-	if (node.OpType == compute.OpTypeReduceSum || node.OpType == compute.OpTypeReduceMax || node.OpType == compute.OpTypeReduceMin) && cfg.Pattern != ReduceGeneral {
+	isHalf := dtype == dtypes.BFloat16 || dtype == dtypes.Float16
+	if (node.OpType == compute.OpTypeReduceSum || node.OpType == compute.OpTypeReduceMax || node.OpType == compute.OpTypeReduceMin) &&
+		cfg.Pattern != ReduceGeneral && !(isHalf && cfg.Pattern == ReduceStrided) {
 		it = &ReduceOutputIterator{Config: cfg, Backend: backend}
 	} else {
 		it = NewReduceOutputIterator(operand.RawShape.Dimensions, reduceAxes)
 		it.Config = cfg
 		it.Backend = backend
 	}
-	dtype := output.RawShape.DType
 
 	var reduceFn GenericReduceFn
 	switch node.OpType { //nolint:exhaustive
@@ -623,6 +676,45 @@ func execReduceMaxGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		}
 		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
 			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/(B*C)), runA)
+		} else {
+			runA(0, A)
+		}
+		return nil
+
+	case ReduceStrided:
+		A, B, C, D := it.Config.A, it.Config.B, it.Config.C, it.Config.D
+		if A == 0 || B == 0 || C == 0 || D == 0 {
+			lowest := dtype.LowestValue().(T)
+			for i := range outputFlat {
+				outputFlat[i] = lowest
+			}
+			return nil
+		}
+		lowest := dtype.LowestValue().(T)
+		strideBCD := B * C * D
+		strideCD := C * D
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outSlice := outputFlat[a*C : (a+1)*C]
+				for c := range C {
+					outSlice[c] = lowest
+				}
+				baseA := a * strideBCD
+				for b := range B {
+					baseB := baseA + b*strideCD
+					for c := range C {
+						row := operandFlat[baseB+c*D : baseB+(c+1)*D]
+						m := outSlice[c]
+						for _, v := range row {
+							m = max(m, v)
+						}
+						outSlice[c] = m
+					}
+				}
+			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/strideBCD), runA)
 		} else {
 			runA(0, A)
 		}
@@ -919,6 +1011,45 @@ func execReduceMinGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		}
 		return nil
 
+	case ReduceStrided:
+		A, B, C, D := it.Config.A, it.Config.B, it.Config.C, it.Config.D
+		if A == 0 || B == 0 || C == 0 || D == 0 {
+			highest := dtype.HighestValue().(T)
+			for i := range outputFlat {
+				outputFlat[i] = highest
+			}
+			return nil
+		}
+		highest := dtype.HighestValue().(T)
+		strideBCD := B * C * D
+		strideCD := C * D
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outSlice := outputFlat[a*C : (a+1)*C]
+				for c := range C {
+					outSlice[c] = highest
+				}
+				baseA := a * strideBCD
+				for b := range B {
+					baseB := baseA + b*strideCD
+					for c := range C {
+						row := operandFlat[baseB+c*D : baseB+(c+1)*D]
+						m := outSlice[c]
+						for _, v := range row {
+							m = min(m, v)
+						}
+						outSlice[c] = m
+					}
+				}
+			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/strideBCD), runA)
+		} else {
+			runA(0, A)
+		}
+		return nil
+
 	default:
 		initialValue := dtype.HighestValue().(T)
 		for outputIdx := range outputFlat {
@@ -1208,6 +1339,47 @@ func execReduceSumGeneric[T gobackend.PODNumericConstraints](operand, output *go
 		}
 		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
 			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/(B*C)), runA)
+		} else {
+			runA(0, A)
+		}
+		return nil
+
+	case ReduceStrided:
+		A, B, C, D := it.Config.A, it.Config.B, it.Config.C, it.Config.D
+		if A == 0 || B == 0 || C == 0 || D == 0 {
+			clear(outputFlat)
+			return nil
+		}
+		strideBCD := B * C * D
+		strideCD := C * D
+		runA := func(aStart, aEnd int) {
+			for a := aStart; a < aEnd; a++ {
+				outSlice := outputFlat[a*C : (a+1)*C]
+				clear(outSlice)
+				baseA := a * strideBCD
+				for b := range B {
+					baseB := baseA + b*strideCD
+					for c := range C {
+						row := operandFlat[baseB+c*D : baseB+(c+1)*D]
+						var s0, s1, s2, s3 T
+						i := 0
+						for ; i+4 <= D; i += 4 {
+							s0 += row[i]
+							s1 += row[i+1]
+							s2 += row[i+2]
+							s3 += row[i+3]
+						}
+						sum := (s0 + s1) + (s2 + s3)
+						for ; i < D; i++ {
+							sum += row[i]
+						}
+						outSlice[c] += sum
+					}
+				}
+			}
+		}
+		if it.Backend != nil && it.Backend.Scheduler != nil && it.Backend.Scheduler.IsEnabled() && len(operandFlat) >= 16384 && A > 1 {
+			it.Backend.Scheduler.ParallelizeChunks(A, max(1, 16384/strideBCD), runA)
 		} else {
 			runA(0, A)
 		}

@@ -127,6 +127,29 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 		effWindowDilations = xslices.SliceWithValue(rank, 1)
 	}
 
+	// Fast path for 1D/2D ChannelsLast Float32 pooling (Max, Min, Sum) with unit batch/channel windows and no dilation.
+	if dtype == dtypes.Float32 && (rank == 3 || rank == 4) &&
+		(opData.reductionType == compute.ReduceOpMax || opData.reductionType == compute.ReduceOpMin || opData.reductionType == compute.ReduceOpSum) &&
+		effWindowDimensions[0] == 1 && effWindowDimensions[rank-1] == 1 &&
+		effStrides[0] == 1 && effStrides[rank-1] == 1 &&
+		effPaddings[0][0] == 0 && effPaddings[0][1] == 0 &&
+		effPaddings[rank-1][0] == 0 && effPaddings[rank-1][1] == 0 {
+		noDilation := true
+		for axis := range rank {
+			if effBaseDilations[axis] != 1 || effWindowDilations[axis] != 1 {
+				noDilation = false
+				break
+			}
+		}
+		if noDilation {
+			execReduceWindowChannelsLastFloat32(
+				backend, operand, output, opData.reductionType,
+				effWindowDimensions, effStrides, effPaddings,
+			)
+			return output, nil
+		}
+	}
+
 	// Initialize output and updateFn according to the reduction type
 	var buildUpdateFnMap *gobackend.DTypeMap
 	switch opData.reductionType { //nolint:exhaustive
@@ -193,6 +216,8 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	outputStrides := outputShape.Strides()
 	outputDimensions := outputShape.Dimensions
 
+	windowSize := windowShape.Size()
+
 	runChunk := func(startFlatIdx, endFlatIdx int) {
 		windowIndices := make([]int, rank)
 		operandIndices := make([]int, rank)
@@ -205,31 +230,42 @@ func execReduceWindow(backend *gobackend.Backend, node *gobackend.Node, inputs [
 		}
 
 		for outputFlatIdx := startFlatIdx; outputFlatIdx < endFlatIdx; outputFlatIdx++ {
-		iterWindowIndices:
-			for _, windowIndices = range windowShape.IterOn(windowIndices) {
+			clear(windowIndices)
+			for wStep := 0; wStep < windowSize; wStep++ {
+				valid := true
+				operandFlatIdx := 0
 				for axis := range rank {
 					operandIdx := outputIndices[axis]*effStrides[axis] + operandShifts[axis]
 					operandIdx += windowIndices[axis] * effWindowDilations[axis]
 					if operandIdx < 0 {
-						continue iterWindowIndices
+						valid = false
+						break
 					}
 					if effBaseDilations[axis] > 1 {
 						if operandIdx%effBaseDilations[axis] != 0 {
-							continue iterWindowIndices
+							valid = false
+							break
 						}
 						operandIdx /= effBaseDilations[axis]
 					}
 					if operandIdx >= operandShape.Dimensions[axis] {
-						continue iterWindowIndices
+						valid = false
+						break
 					}
-					operandIndices[axis] = operandIdx
-				}
-				operandFlatIdx := 0
-				for axis, operandIdx := range operandIndices {
 					operandFlatIdx += operandIdx * operandStrides[axis]
 				}
-				updateFn(operandFlatIdx, outputFlatIdx)
+				if valid {
+					updateFn(operandFlatIdx, outputFlatIdx)
+				}
+				for axis := rank - 1; axis >= 0; axis-- {
+					windowIndices[axis]++
+					if windowIndices[axis] < effWindowDimensions[axis] {
+						break
+					}
+					windowIndices[axis] = 0
+				}
 			}
+			_ = operandIndices
 
 			for i := rank - 1; i >= 0; i-- {
 				outputIndices[i]++
@@ -355,4 +391,134 @@ func reduceWindowMaxBuildUpdateFnBool(operand, output *gobackend.Buffer) reduceW
 	return func(operandFlatIdx, outputFlatIdx int) {
 		outputFlat[outputFlatIdx] = outputFlat[outputFlatIdx] || operandFlat[operandFlatIdx]
 	}
+}
+
+func execReduceWindowChannelsLastFloat32(
+	backend *gobackend.Backend,
+	operand, output *gobackend.Buffer,
+	reductionType compute.ReduceOpType,
+	effWindowDimensions, effStrides []int,
+	effPaddings [][2]int,
+) {
+	inDims := operand.RawShape.Dimensions
+	outDims := output.RawShape.Dimensions
+	rank := len(inDims)
+
+	batchSize := inDims[0]
+	channels := inDims[rank-1]
+	var inH, inW, outH, outW, winH, winW, strideH, strideW, padTop, padLeft int
+	if rank == 3 {
+		inH, inW = 1, inDims[1]
+		outH, outW = 1, outDims[1]
+		winH, winW = 1, effWindowDimensions[1]
+		strideH, strideW = 1, effStrides[1]
+		padTop, padLeft = 0, effPaddings[1][0]
+	} else {
+		inH, inW = inDims[1], inDims[2]
+		outH, outW = outDims[1], outDims[2]
+		winH, winW = effWindowDimensions[1], effWindowDimensions[2]
+		strideH, strideW = effStrides[1], effStrides[2]
+		padTop, padLeft = effPaddings[1][0], effPaddings[2][0]
+	}
+
+	inFlat := operand.Flat.([]float32)
+	outFlat := output.Flat.([]float32)
+	inRowStride := inW * channels
+	inBatchStride := inH * inRowStride
+	outHW := outH * outW
+	totalPixels := batchSize * outHW
+	if totalPixels == 0 || channels == 0 {
+		return
+	}
+
+	var initVal float32
+	switch reductionType { //nolint:exhaustive
+	case compute.ReduceOpMax:
+		initVal = dtypes.Float32.LowestValue().(float32)
+	case compute.ReduceOpMin:
+		initVal = dtypes.Float32.HighestValue().(float32)
+	default:
+		initVal = 0
+	}
+
+	runPixels := func(startPixel, endPixel int) {
+		for pixelIdx := startPixel; pixelIdx < endPixel; pixelIdx++ {
+			b := pixelIdx / outHW
+			rem := pixelIdx % outHW
+			outY := rem / outW
+			outX := rem % outW
+
+			inY0 := outY*strideH - padTop
+			inX0 := outX*strideW - padLeft
+			wyStart := max(0, -inY0)
+			wyEnd := min(winH, inH-inY0)
+			wxStart := max(0, -inX0)
+			wxEnd := min(winW, inW-inX0)
+
+			dst := outFlat[pixelIdx*channels : (pixelIdx+1)*channels]
+			if wyStart >= wyEnd || wxStart >= wxEnd {
+				for c := range channels {
+					dst[c] = initVal
+				}
+				continue
+			}
+
+			first := true
+			inBatchBase := b * inBatchStride
+			switch reductionType { //nolint:exhaustive
+			case compute.ReduceOpMax:
+				for wy := wyStart; wy < wyEnd; wy++ {
+					rowBase := inBatchBase + (inY0+wy)*inRowStride
+					for wx := wxStart; wx < wxEnd; wx++ {
+						src := inFlat[rowBase+(inX0+wx)*channels : rowBase+(inX0+wx+1)*channels]
+						if first {
+							copy(dst, src)
+							first = false
+						} else {
+							for c := range channels {
+								if src[c] > dst[c] || src[c] != src[c] {
+									dst[c] = src[c]
+								}
+							}
+						}
+					}
+				}
+			case compute.ReduceOpMin:
+				for wy := wyStart; wy < wyEnd; wy++ {
+					rowBase := inBatchBase + (inY0+wy)*inRowStride
+					for wx := wxStart; wx < wxEnd; wx++ {
+						src := inFlat[rowBase+(inX0+wx)*channels : rowBase+(inX0+wx+1)*channels]
+						if first {
+							copy(dst, src)
+							first = false
+						} else {
+							for c := range channels {
+								if src[c] < dst[c] || src[c] != src[c] {
+									dst[c] = src[c]
+								}
+							}
+						}
+					}
+				}
+			case compute.ReduceOpSum:
+				clear(dst)
+				for wy := wyStart; wy < wyEnd; wy++ {
+					rowBase := inBatchBase + (inY0+wy)*inRowStride
+					for wx := wxStart; wx < wxEnd; wx++ {
+						src := inFlat[rowBase+(inX0+wx)*channels : rowBase+(inX0+wx+1)*channels]
+						for c := range channels {
+							dst[c] += src[c]
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalPixels*channels >= 1024 {
+		chunkPixels := max(1, 256/max(1, channels))
+		backend.Scheduler.ParallelizeChunks(totalPixels, chunkPixels, runPixels)
+		return
+	}
+	runPixels(0, totalPixels)
 }

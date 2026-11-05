@@ -107,7 +107,7 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 - Use the locally defined `support/testutil` for test utilities for equality (or InDelta or InRelativeDelta comparisons of buffers, etc.).
 - **Standard Benchmarks**:
   - `support/backendtest` also provides a standard benchmark suite (call `backendtest.RunAllBenchmarks(b *testing.B, backend compute.Backend)` in `support/backendtest/benchmarks.go`).
-  - Includes benchmarks for standard operations (`BenchmarkDotGeneral`, `BenchmarkDense`, `BenchmarkQuantizedDense`, `BenchmarkSoftmax`, `BenchmarkGelu`, `BenchmarkLayerNorm`).
+  - Includes benchmarks for standard operations (`BenchmarkDotGeneral`, `BenchmarkConvGeneral`, `BenchmarkDense`, `BenchmarkQuantizedDense`, `BenchmarkSoftmax`, `BenchmarkGelu`, `BenchmarkLayerNorm`).
   - **How to run**: `support/backendtest` is backend-agnostic and does not instantiate a backend directly. Run benchmarks via a concrete backend package (e.g. `gobackend`), for example:
     ```bash
     # Run all benchmarks on the Go backend:
@@ -433,8 +433,9 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
   - `dtypes/float16/neon.go` (`Float16x8` load/store/conversions to pair of `archsimd.Float32x4` and `ToFloat32SIMD`/`FromFloat32SIMD` slice helpers).
   - `dtypes/bfloat16/neon.go` (`BFloat16x8` load/store/conversions to pair of `archsimd.Float32x4` using `ExtendLo4ToUint32` / `HiToLo` and IEEE-754 round-to-nearest-even narrowing).
   - `internal/gobackend/ops/reduce_thresholds_arm64.go` (ARM64 NEON empirically tuned SIMD reduction thresholds).
-- **Phase 4 — Standard Operations (`ops/neon`, `where_arm64`, `epilogue_arm64`)**:
+- **Phase 4 — Standard Operations (`ops/neon`, `where_arm64`, `epilogue_arm64`, `convgeneral_arm64`)**:
   - `internal/gobackend/ops/neon`: NEON trailing-axis sum (`DispatchTrailingSumNEON`), leading-axis sum (`DispatchLeadingSumNEON`), and trailing-broadcast binary ops (`DispatchBinaryTrailingNEON`) across `Float32`, `Float64`, `Float16`, `BFloat16`, and integer types.
+  - `internal/gobackend/ops/convgeneral_arm64.go` and `internal/gobackend/ops/neon/conv_arm64.s`: 1D and 2D `ChannelsLast` `ConvGeneral` acceleration for both forward/input-VJP (`ConvNEONKernel4x16Float32Asm`, `ConvSMEKernel32x32Float32Asm`, `ConvSMEKernel16x16Float32Asm`, `ConvPackLHS8StridedFloat32Asm`) and zero-packing outer-product kernel-VJP (`ConvKernelGradNEON4x16Float32Asm`, `ConvKernelGradNEON1x16Float32Asm`, `ConvKernelGradSME32x32Float32Asm`), plus $1\times 1$ unit-stride zero-copy GEMM fast path.
   - `internal/gobackend/ops/where_arm64.go`: Vectorized `whereFloat32Arch` (`VV`, `VS`, `SV`, `SS` modes).
   - `internal/gobackend/dot/matmul/epilogue_arm64.go`: Vectorized `addBiasFloat32Arch` and `copyAndAddBiasFloat32Arch`.
 - **Phase 5 — ARM64 Assembly Guidelines**: Documented below.

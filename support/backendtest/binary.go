@@ -205,6 +205,7 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 		})
 
 		t.Run("Large-2D", func(t *testing.T) {
+			testutil.SkipIfMissingDType(t, b, dtypes.Float64)
 			x := [][]float64{
 				{0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026, 0.4026},
 				{0.383, 0.383, 0.383, 0.383, 0.383, 0.383, 0.383, 0.383},

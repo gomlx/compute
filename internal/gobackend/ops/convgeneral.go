@@ -125,6 +125,12 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 			params.dilatedInputSpatialDims[spatialIdx] = (dim-1)*inputDilations[spatialIdx] + 1
 		}
 	}
+	params.conv2D = computeConv2DParams(
+		input.Shape, kernel.Shape, outputShape,
+		axes, strides, paddings,
+		inputDilations, kernelDilations,
+		params.channelGroupCount, params.batchGroupCount,
+	)
 	node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{input, kernel}, params)
 	return node, nil
 }
@@ -144,12 +150,16 @@ type convNode struct {
 	// dilatedInputSpatialDims holds the dimensions of the input spatial axes after applying the dilations.
 	// For non-dilated dimensions it's the same as the original dimension.
 	dilatedInputSpatialDims []int
+
+	// conv2D holds precomputed 1D/2D ChannelsLast parameters for SIMD executors.
+	conv2D Conv2DParams
 }
 
 // Recompute implements gobackend.RecomputableNodeData for convNode.
 func (c *convNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
 	inputShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
 	kernelShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
+	outputShape := resolvedNodes[originalNode.Index].Shape
 
 	newData := &convNode{
 		axes:               c.axes,
@@ -176,6 +186,12 @@ func (c *convNode) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 			newData.dilatedInputSpatialDims[spatialIdx] = (dim-1)*c.inputDilations[spatialIdx] + 1
 		}
 	}
+	newData.conv2D = computeConv2DParams(
+		inputShape, kernelShape, outputShape,
+		newData.axes, newData.strides, newData.paddings,
+		newData.inputDilations, newData.kernelDilations,
+		newData.channelGroupCount, newData.batchGroupCount,
+	)
 
 	return newData, nil
 }
