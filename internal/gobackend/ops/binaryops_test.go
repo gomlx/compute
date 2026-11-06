@@ -173,5 +173,68 @@ func TestBinaryBroadcastPatterns(t *testing.T) {
 		expected := []bool{true, false, true, false, true, false}
 		runBinaryTest(t, "LessThan_LeadingRHS", ops.LessThan, s2x3, lhs, s1x3, rhs, expected)
 	})
+
+	t.Run("OuterInnerRHS_Add_Mul", func(t *testing.T) {
+		// [2, 3, 2] op [1, 3, 1] -> [2, 3, 2]
+		s2x3x2 := shapes.Make(dtypes.Float32, 2, 3, 2)
+		s1x3x1 := shapes.Make(dtypes.Float32, 1, 3, 1)
+		lhs := []float32{
+			1, 2, 3, 4, 5, 6,
+			10, 20, 30, 40, 50, 60,
+		}
+		rhs := []float32{10, 100, 1000}
+		expectedAdd := []float32{
+			11, 12, 103, 104, 1005, 1006,
+			20, 30, 130, 140, 1050, 1060,
+		}
+		runBinaryTest(t, "Add_OuterInnerRHS", ops.Add, s2x3x2, lhs, s1x3x1, rhs, expectedAdd)
+
+		expectedMul := []float32{
+			10, 20, 300, 400, 5000, 6000,
+			100, 200, 3000, 4000, 50000, 60000,
+		}
+		runBinaryTest(t, "Mul_OuterInnerRHS", ops.Mul, s2x3x2, lhs, s1x3x1, rhs, expectedMul)
+	})
+
+	t.Run("OuterInnerLHS_Sub", func(t *testing.T) {
+		// [1, 3, 1] - [2, 3, 2] -> [2, 3, 2]
+		s1x3x1 := shapes.Make(dtypes.Float32, 1, 3, 1)
+		s2x3x2 := shapes.Make(dtypes.Float32, 2, 3, 2)
+		lhs := []float32{10, 100, 1000}
+		rhs := []float32{
+			1, 2, 3, 4, 5, 6,
+			10, 20, 30, 40, 50, 60,
+		}
+		expectedSub := []float32{
+			9, 8, 97, 96, 995, 994,
+			0, -10, 70, 60, 950, 940,
+		}
+		runBinaryTest(t, "Sub_OuterInnerLHS", ops.Sub, s1x3x1, lhs, s2x3x2, rhs, expectedSub)
+	})
+
+	t.Run("MidRHS_Large_Parallel", func(t *testing.T) {
+		// [8, 32, 64] + [8, 1, 64] -> [8, 32, 64] (total 16384 or [16, 64, 64] = 65536 elements)
+		A, B, C := 16, 64, 64
+		sLHS := shapes.Make(dtypes.Float32, A, B, C)
+		sRHS := shapes.Make(dtypes.Float32, A, 1, C)
+		lhs := make([]float32, A*B*C)
+		rhs := make([]float32, A*C)
+		expected := make([]float32, A*B*C)
+		for i := range lhs {
+			lhs[i] = float32((i % 97) - 48)
+		}
+		for i := range rhs {
+			rhs[i] = float32((i % 31) + 1)
+		}
+		for a := range A {
+			for b := range B {
+				for c := range C {
+					idx := (a*B+b)*C + c
+					expected[idx] = lhs[idx] + rhs[a*C+c]
+				}
+			}
+		}
+		runBinaryTest(t, "Add_MidRHS_Large", ops.Add, sLHS, lhs, sRHS, rhs, expected)
+	})
 }
 
