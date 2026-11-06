@@ -1911,4 +1911,236 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			}
 		})
 	})
+
+	t.Run("DynamicSlice", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicSlice)
+
+		t.Run("1D_Clamped", func(t *testing.T) {
+			// Operand [10, 20, 30, 40, 50], startIndex [4] with sliceSize [3] -> clamped to startIndex [2] -> [30, 40, 50].
+			y, err := testutil.Exec1(b, []any{[]float32{10, 20, 30, 40, 50}, int32(4)},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.DynamicSlice(p[0], []compute.Value{p[1]}, []int{3})
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("DynamicSlice not implemented: %v", err)
+				}
+				t.Fatalf("DynamicSlice(1D_Clamped) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]float32{30, 40, 50}, y); !ok {
+				t.Errorf("DynamicSlice(1D_Clamped) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_ScalarIndices", func(t *testing.T) {
+			operand := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}
+			y, err := testutil.Exec1(b, []any{operand, int32(1), int32(2)},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.DynamicSlice(p[0], []compute.Value{p[1], p[2]}, []int{2, 2})
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("DynamicSlice not implemented: %v", err)
+				}
+				t.Fatalf("DynamicSlice(2D_ScalarIndices) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{7, 8}, {11, 12}}, y); !ok {
+				t.Errorf("DynamicSlice(2D_ScalarIndices) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_VectorIndices", func(t *testing.T) {
+			operand := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}
+			y, err := testutil.Exec1(b, []any{operand, []int32{0, 1}},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.DynamicSlice(p[0], []compute.Value{p[1]}, []int{2, 2})
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("DynamicSlice not implemented: %v", err)
+				}
+				t.Fatalf("DynamicSlice(2D_VectorIndices) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{2, 3}, {6, 7}}, y); !ok {
+				t.Errorf("DynamicSlice(2D_VectorIndices) mismatch:\n%s", diff)
+			}
+		})
+	})
+
+	t.Run("DynamicUpdateSlice", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeDynamicUpdateSlice)
+
+		t.Run("1D_Clamped", func(t *testing.T) {
+			// Operand [1, 2, 3, 4, 5], update [90, 91], startIndex [4] -> clamped to [3] -> [1, 2, 3, 90, 91].
+			y, err := testutil.Exec1(b, []any{[]float32{1, 2, 3, 4, 5}, []float32{90, 91}, int32(4)},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.DynamicUpdateSlice(p[0], p[1], []compute.Value{p[2]})
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("DynamicUpdateSlice not implemented: %v", err)
+				}
+				t.Fatalf("DynamicUpdateSlice(1D_Clamped) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([]float32{1, 2, 3, 90, 91}, y); !ok {
+				t.Errorf("DynamicUpdateSlice(1D_Clamped) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("2D_ScalarIndices", func(t *testing.T) {
+			operand := [][]float32{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}
+			update := [][]float32{{50, 60}, {80, 90}}
+			y, err := testutil.Exec1(b, []any{operand, update, int32(1), int32(1)},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.DynamicUpdateSlice(p[0], p[1], []compute.Value{p[2], p[3]})
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("DynamicUpdateSlice not implemented: %v", err)
+				}
+				t.Fatalf("DynamicUpdateSlice(2D_ScalarIndices) failed: %v", err)
+			}
+			if ok, diff := testutil.IsEqual([][]float32{{1, 2, 3}, {4, 50, 60}, {7, 80, 90}}, y); !ok {
+				t.Errorf("DynamicUpdateSlice(2D_ScalarIndices) mismatch:\n%s", diff)
+			}
+		})
+	})
+
+	t.Run("BatchNorm", func(t *testing.T) {
+		t.Run("Inference", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBatchNormForInference)
+			operand := [][]float32{{1, 2}, {3, 6}}
+			scale := []float32{2, 0.5}
+			offset := []float32{1, -1}
+			mean := []float32{2, 4}
+			variance := []float32{1, 4}
+			y, err := testutil.Exec1(b, []any{operand, scale, offset, mean, variance},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.BatchNormForInference(p[0], p[1], p[2], p[3], p[4], 0, 1)
+				})
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("BatchNormForInference not implemented: %v", err)
+				}
+				t.Fatalf("BatchNormForInference failed: %v", err)
+			}
+			// col 0: ((x - 2)/1)*2 + 1 -> x=1: -1, x=3: 3
+			// col 1: ((x - 4)/2)*0.5 - 1 -> x=2: -1.5, x=6: -0.5
+			if ok, diff := testutil.IsInDelta([][]float32{{-1, -1.5}, {3, -0.5}}, y, 1e-4); !ok {
+				t.Errorf("BatchNormForInference mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Training", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBatchNormForTraining)
+			builder := b.Builder("test_bn_training")
+			mainFn := builder.Main()
+			op, _ := mainFn.Parameter("op", shapes.Make(dtypes.Float32, 2, 2), nil)
+			scale, _ := mainFn.Parameter("scale", shapes.Make(dtypes.Float32, 2), nil)
+			offset, _ := mainFn.Parameter("offset", shapes.Make(dtypes.Float32, 2), nil)
+			norm, mean, variance, err := mainFn.BatchNormForTraining(op, scale, offset, 0, 1)
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("BatchNormForTraining not implemented: %v", err)
+				}
+				t.Fatalf("BatchNormForTraining failed: %v", err)
+			}
+			_ = mainFn.Return([]compute.Value{norm, mean, variance}, nil)
+
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+			defer exec.Finalize()
+
+			bOp, _ := testutil.ToBuffer(b, [][]float32{{1, 2}, {3, 6}})
+			bScale, _ := testutil.ToBuffer(b, []float32{2, 0.5})
+			bOffset, _ := testutil.ToBuffer(b, []float32{1, -1})
+			defer bOp.Finalize()
+			defer bScale.Finalize()
+			defer bOffset.Finalize()
+
+			outs, err := exec.Execute([]compute.Buffer{bOp, bScale, bOffset}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			for _, o := range outs {
+				defer o.Finalize()
+			}
+			gotNorm, _ := testutil.FromBuffer(b, outs[0])
+			gotMean, _ := testutil.FromBuffer(b, outs[1])
+			gotVar, _ := testutil.FromBuffer(b, outs[2])
+
+			if ok, diff := testutil.IsInDelta([][]float32{{-1, -1.5}, {3, -0.5}}, gotNorm, 1e-4); !ok {
+				t.Errorf("BatchNormForTraining norm mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta([]float32{2, 4}, gotMean, 1e-4); !ok {
+				t.Errorf("BatchNormForTraining mean mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta([]float32{1, 4}, gotVar, 1e-4); !ok {
+				t.Errorf("BatchNormForTraining variance mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Gradient", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeBatchNormGradient)
+			builder := b.Builder("test_bn_grad")
+			mainFn := builder.Main()
+			op, _ := mainFn.Parameter("op", shapes.Make(dtypes.Float32, 2, 2), nil)
+			scale, _ := mainFn.Parameter("scale", shapes.Make(dtypes.Float32, 2), nil)
+			mean, _ := mainFn.Parameter("mean", shapes.Make(dtypes.Float32, 2), nil)
+			variance, _ := mainFn.Parameter("var", shapes.Make(dtypes.Float32, 2), nil)
+			gradOut, _ := mainFn.Parameter("gradOut", shapes.Make(dtypes.Float32, 2, 2), nil)
+			gOp, gScale, gOffset, err := mainFn.BatchNormGradient(op, scale, mean, variance, gradOut, 0, 1)
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("BatchNormGradient not implemented: %v", err)
+				}
+				t.Fatalf("BatchNormGradient failed: %v", err)
+			}
+			_ = mainFn.Return([]compute.Value{gOp, gScale, gOffset}, nil)
+
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+			defer exec.Finalize()
+
+			bOp, _ := testutil.ToBuffer(b, [][]float32{{1, 2}, {3, 6}})
+			bScale, _ := testutil.ToBuffer(b, []float32{2, 0.5})
+			bMean, _ := testutil.ToBuffer(b, []float32{2, 4})
+			bVar, _ := testutil.ToBuffer(b, []float32{1, 4})
+			bGradOut, _ := testutil.ToBuffer(b, [][]float32{{1, 2}, {3, 4}})
+			defer bOp.Finalize()
+			defer bScale.Finalize()
+			defer bMean.Finalize()
+			defer bVar.Finalize()
+			defer bGradOut.Finalize()
+
+			outs, err := exec.Execute([]compute.Buffer{bOp, bScale, bMean, bVar, bGradOut}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			for _, o := range outs {
+				defer o.Finalize()
+			}
+			gotGOp, _ := testutil.FromBuffer(b, outs[0])
+			gotGScale, _ := testutil.FromBuffer(b, outs[1])
+			gotGOffset, _ := testutil.FromBuffer(b, outs[2])
+
+			// xHat = [[-1, -1], [1, 1]]
+			// gOffset = sum(gradOut, axis=0) = [1+3, 2+4] = [4, 6]
+			// gScale = sum(gradOut * xHat, axis=0) = [-1+3, -2+4] = [2, 2]
+			// gOp = [[0, 0], [0, 0]] (for N=2, 2*gradOut - gOffset - xHat*gScale = 0)
+			if ok, diff := testutil.IsInDelta([][]float32{{0, 0}, {0, 0}}, gotGOp, 1e-4); !ok {
+				t.Errorf("BatchNormGradient gradOperand mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta([]float32{2, 2}, gotGScale, 1e-4); !ok {
+				t.Errorf("BatchNormGradient gradScale mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta([]float32{4, 6}, gotGOffset, 1e-4); !ok {
+				t.Errorf("BatchNormGradient gradOffset mismatch:\n%s", diff)
+			}
+		})
+	})
 }
