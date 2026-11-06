@@ -174,12 +174,6 @@ some of the example models to benchmark your backend against some of the others.
   - `GOMLX_GO_AVX512_KC`, `GOMLX_GO_AVX512_MC`, `GOMLX_GO_AVX512_NC` (and corresponding `GOMLX_GO_AVX2_*`, `GOMLX_GO_NEON_*`, `GOMLX_GO_NOSIMD_*`): cache blocking tuning parameters for matrix multiplication.
   - `GOMLX_GO_DOT_MATMUL`: set to `0` or `false` to disable the default matrix multiplication implementation in the native Go backend. The default is enabled.
   - `GOMLX_GO_FUSION`: if set to `0`, `false` to disable fused operations in the native Go backend. The default is enabled.
-- For the [XLA backend](https://github.com/gomlx/go-xla/tree/main/compute/xla)
-  - `PJRT_PLUGIN_LIBRARY_PATH`: the underlying XLA backend uses this variable as an extra directory to search for plugin locations.
-    It searches for the systems library paths (`$LD_LIBRARY_PATH`, `/etc/ld.so.conf`), the default `/usr/local/lib/gomlx/pjrt` and `$PJRT_PLUGIN_LIBRARY_PATH` if set.
-  - `GOMLX_NO_AUTO_INSTALL`: if set to `1`, GoMLX will not automatically install PJRTs when running on a system without them.
-  - `XLA_FLAGS`: optional controls for XLA backend. It should be set to a semicolon (";") separated list of options. If you set to `--help` 
-    the backend will print out some help for all options. There is also a description on the page [XLA Flags Guidance](https://openxla.org/xla/flags_guidance).
 
 ## WebAssembly (WASM) Support
 
