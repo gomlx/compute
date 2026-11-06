@@ -75,9 +75,8 @@ The `compute.Backend` API is currently implemented by:
   using ORT. It includes an optional auto-installer. Offers broader support for hardware, dynamic shape support on
   some platforms, and accelerated WebAssembly (using `"onnx:webgpu"`) with some caveats.
 - The project [go-darwinml](https://github.com/gomlx/go-darwinml/):
-  **experimental** support for Apple's CoreML, with acceleration for GPU (Metal)
-  and CPU (arm64). It is currently broken and looking for collaborators -- or donations to acquire hardware
-  to support it.
+  currently supports for Apple's MPSGraph (`"mps"` backend), with acceleration for GPU (Metal)
+  and CPU (arm64).
 
 ## Using the `compute.Backend` interface
 
@@ -118,7 +117,7 @@ func main() {
 
 We are exploring support (Backend implementations) for:
 
-* Integrate more SIMD using go-highway for the Go backend.
+* [Apple MLX](https://github.com/ml-explore/mlx) based backend.
 * [LiteRT](https://github.com/google-ai-edge/litert): Add LiteRT-based Backend implementation. Broad support for
   edge hardware (as well as WebAssembly), and supposedly very efficient.
 * [llama.cpp](https://github.com/ggml-org/llama.cpp): using [github.com/hybridgroup/yzma](https://github.com/hybridgroup/yzma), a "pure-go" binding.
