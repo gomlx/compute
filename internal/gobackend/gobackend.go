@@ -13,6 +13,7 @@ package gobackend
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,9 @@ import (
 
 // BackendName to be used in GOMLX_BACKEND to specify this backend.
 const BackendName = "go"
+
+// ActiveArchitectures lists the active OS/architecture and enabled SIMD architectures.
+var ActiveArchitectures = []string{runtime.GOOS + "/" + runtime.GOARCH}
 
 // Registers New() as the default constructor for "go" backend.
 func init() {
@@ -177,7 +181,8 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return fmt.Sprintf("Go Portable Compute Backend (parallelism=%d)", b.Scheduler.MaxParallelism())
+	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d)",
+		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism())
 }
 
 // NumDevices return the number of devices available for this Backend.
