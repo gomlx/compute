@@ -1022,6 +1022,12 @@ func simdV2V1AddFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Add(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Add(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Add(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1116,6 +1122,12 @@ func simdV2V1MulFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Mul(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Mul(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Mul(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1210,6 +1222,12 @@ func simdV2V1SubFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Sub(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Sub(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Sub(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1300,6 +1318,12 @@ func simdV1V2SubFloat32(lhs, rhs, out []float32, A, B int) {
 		rRow := rhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lhs[i+vLen:]).Sub(simd.LoadFloat32s(rRow[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lhs[i+2*vLen:]).Sub(simd.LoadFloat32s(rRow[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lhs[i+3*vLen:]).Sub(simd.LoadFloat32s(rRow[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
 		}
