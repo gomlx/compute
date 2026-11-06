@@ -149,5 +149,78 @@ GOEXPERIMENT=simd GOMLX_BACKEND=go go run ./examples/FlowMatching/demo/ -set="tr
 | **5. `FusedLayerNorm` Middle-Axes SIMD** | Vectorize `[aDim, bDim, cDim]` LayerNorm across contiguous `cDim` | **577.2 ms** (`578.3 ms` prof) | 136.46 s | 2,880.1 MB | Eliminated scalar `layerNormStridedAxes` (`7.51 s` $\to$ `4.60 s` SIMD) |
 | **6. `ConvGeneral` Direct 2D & `VJPKernel` Slicing** | Direct zero-`im2col` 2D AVX-512/AVX2 kernels + `(BatchSize, OutH)` slice parallelization | **563.0 ms** (`564.2 ms` prof) | 133.51 s | 2,842.7 MB | **`-14.2 ms/step`**; `ExtractPatches2DFloat32` eliminated (`6.37 s` $\to$ `<0.67 s`), `ConvGeneral` at `2.0–2.9 TFlops/s` |
 
+---
+
+## 4. ARM64 (NEON & NEON+SME) Optimizations on Apple M6 (`pea`, 12 Cores)
+
+### Hardware & Commands
+- **Hardware**: Apple M6 (12 cores across 3 asymmetric clusters: Super, Performance, and Efficiency, each with a cluster-shared 512-bit SME matrix coprocessor and per-core 128-bit NEON pipelines).
+- **Commands** (run on `pea` from `/home/janpf/Projects/gomlx/gomlx`):
+  ```bash
+  # Default (NEON + SME):
+  GOMLX_BACKEND=go go run ./examples/FlowMatching/demo/ -set="train_steps=10" -eval=false
+
+  # NEON-only (SME disabled):
+  GOMLX_GO_SIMD_SME=0 GOMLX_BACKEND=go go run ./examples/FlowMatching/demo/ -set="train_steps=10" -eval=false
+  ```
+
+### ARM64-Specific Optimizations Implemented
+1. **Cross-Architecture Wins (Opportunities 1, 2, 4, 5)**:
+   - `ReduceMiddle` SIMD dispatch (`reduce_simd.go`), parallel cache-tiled `transpose2D` + buffer pooling in `FusedDenseVJP` (`dense_vjp.go`), `BroadcastOuterInnerRHS/LHS` + `BroadcastMid` `v2v1` dispatch (`broadcast.go`, `binaryops_simd.go`), and middle-axis `FusedLayerNorm` SIMD (`layernorm_simd.go`) automatically compile to ARM64 NEON via `simd/archsimd`.
+   - Additionally unrolled the general `i` loop of `simdV2V1AddFloat32`, `simdV2V1MulFloat32`, `simdV2V1SubFloat32`, and `simdV1V2SubFloat32` by `4*vLen` (`16` floats per step on ARM64 where `vLen = 4`) so `C = 64, 96, 128` channels execute 4 back-to-back 128-bit NEON vector ops per loop iteration.
+   - Added a 32-element (`8` `Float32x4` accumulators `acc0..acc7`) strip-mined loop (`for ; b+32 <= B; b += 32`) in `reduceLeadingSumFloat32NEON` (`internal/gobackend/ops/neon/neon.go`) so `C = 32, 64, 96, 128` keep 32 channels pinned in NEON registers across all `H*W` rows.
+2. **Direct Zero-`im2col` 2D NEON Microkernel (`ConvNEONDirect2DKernel4x16Float32Asm`)**:
+   - Added `ConvNEONDirect2DKernel4x16Float32Asm` in `internal/gobackend/ops/neon/conv_arm64.s`, multiplying 4 horizontally adjacent interior output pixels directly from `input` across `numKy = kyEnd - kyStart` valid filter rows of width `kWC = kW * InC` (`lhsRowStrideBytes = sW * InC * 4`, `lhsKyJumpBytes = (KerDilH*InW - kW) * InC * 4`), eliminating `ExtractPatches2DFloat32` and `patchBuf` allocations/copies for interior pixels in both `execConvStandardNEON` and hybrid NEON co-workers in `execConvStandardSME`.
+3. **Direct Zero-`im2col` SME LHS Packing & Fast-Cluster Dual-Worker Pipelining (`execConvStandardSME`)**:
+   - Updated `processMTileSME` (`internal/gobackend/ops/convgeneral_arm64.go`) to pack interior 8-pixel stripes directly from `input` into `packedLHS` via `ConvPackLHS8StridedFloat32Asm` (`srcRowStrideBytes = sW * InC * 4`) over `ky in [kyStart, kyEnd)`, and on left/right boundary stripes to pack all in-bounds `kx in [kxValidStart, kxValidEnd)` directly from `input` while only buffering the single boundary `kx` (`8 * InC` floats), eliminating >95% of `ExtractPatches2DFloat32` calls.
+   - Because each SME worker in `execConvStandardSME` is a two-stage pipeline (Stage 1: pack 32 rows into `packedLHS` on the private CPU core NEON pipeline outside `SMSTART`; Stage 2: multiply `packedLHS` by `packedRHS` on the cluster-shared SME unit inside `SMSTART`), added `SMEAcquireClusterWithLimit(2, 1)` (`internal/gobackend/dot/matmul/neon/sme_arm64.go`) so 2 workers per fast cluster (Super and Performance) overlap CPU-core LHS packing with SME-unit `FMOPA` execution, and prevented the slower Efficiency cluster SME unit (`clusterID == 2`) from grabbing the final tail tiles.
+4. **2D `(Cin x Cout)` Panel Tiling & Unified `(BatchSize, OutH)` Reduction Slicing in `execConvKernelGradNEON` & `execConvKernelGradSME`**:
+   - Updated `ConvKernelGradNEON4x16Float32Asm` and `ConvKernelGradNEON1x16Float32Asm` (`internal/gobackend/ops/neon/conv_arm64.s`) to accumulate (`+=`) into `outPtr`.
+   - Updated `execConvKernelGradNEON` (`internal/gobackend/ops/convgeneral_arm64.go`) to tile `InChannels` by `rowTile = 8` (`2D` `(Cin x Cout)` panel tiling so each `(ky, kx, cIn, cOut)` task stays in L1/L2 cache instead of re-streaming `v` across all `InChannels`) and slice `totalOutRows = BatchSize * OutH` into `numSlices` (`1, 2, 4, or 8`) slices, more than doubling `VJPKernel3x3:32x64x64x32` throughput (`341.3 GFlops/s` $\to$ `747.8 GFlops/s`, **2.19× faster**).
+   - Updated `execConvKernelGradSME` to slice `totalOutRows` into `numSlices` (`1, 2, or 4`) when `baseTasks` is small and prevent the Efficiency cluster SME unit (`clusterID == 2`) from stalling the final tail tasks.
+
+### Apple M6 (`pea`) `FlowMatching` Training Benchmark Summary
+
+| Mode | Original Baseline (`7439d2f`) | After Cross-Arch Opportunities 1–5 (`b2e358e`) | After ARM64 NEON & SME Optimizations | Total Reduction | Total Speedup |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **NEON + SME (`GOMLX_BACKEND=go`)** | **596.6 ms** | **472.1 ms** (-20.9%) | **400.3 – 400.8 ms** | **-196.3 ms/step (-32.9%)** | **1.49×** |
+| **NEON-only (`GOMLX_GO_SIMD_SME=0`)** | **850.2 ms** | **717.4 ms** (-15.6%) | **565.2 ms** | **-285.0 ms/step (-33.5%)** | **1.50×** |
+
+### Apple M6 (`pea`) `BenchmarkCompliance/ConvGeneral` Results
+
+#### NEON + SME (`default`)
+
+| Benchmark Suite / Case | Before ARM64 `ConvGeneral` Opts | After ARM64 `ConvGeneral` Opts | Speedup |
+| :--- | ---: | ---: | ---: |
+| `MNIST-CNN/Conv1Fwd:32x28x28x1_k3x3x1x32` | 231.1 µs (62.5 GFlops/s) | **198.4 µs (72.8 GFlops/s)** | **+16.5%** |
+| `MNIST-CNN/Conv2Fwd:32x14x14x32_k3x3x32x64` | 346.6 µs (667.1 GFlops/s) | **306.3 µs (755.0 GFlops/s)** | **+13.2%** |
+| `MNIST-CNN/Conv2VJPInput:32x14x14x64_k3x3x32x64` | 376.8 µs (613.6 GFlops/s) | **333.2 µs (693.8 GFlops/s)** | **+13.1%** |
+| `Diffusion-LargeBatch/Fwd3x3:32x64x64x32_k3x3x32x32` | 3.29 ms (734.9 GFlops/s) | **2.27 ms (1,062 GFlops/s)** | **+44.5%** |
+| `Diffusion-LargeBatch/Fwd3x3:32x32x32x64_k3x3x64x64` | 2.11 ms (1,143 GFlops/s) | **1.52 ms (1,590 GFlops/s)** | **+39.1%** |
+| `Diffusion-LargeBatch/VJPInput3x3:32x64x64x32_k3x3x32x32` | 3.29 ms (734.9 GFlops/s) | **2.28 ms (1,062 GFlops/s)** | **+44.5%** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x64x64x32_v32x64x64x32` | 1.31 ms (1,842 GFlops/s) | **1.15 – 1.32 ms (1,831–2,097 GFlops/s)** | **+0–13.8%** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x32x32x64_v32x32x32x64` | 1.15 ms (2,102 GFlops/s) | **1.11 ms (2,175 GFlops/s)** | **+3.5%** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x16x16x96_v32x16x16x96` | 591.3 µs (2,298 GFlops/s) | **586.7 µs (2,316 GFlops/s)** | **+0.8%** |
+| `SmallBatch-LargeSpatial/Fwd3x3:1x256x256x32_k3x3x32x32` | 1.65 ms (730.5 GFlops/s) | **1.16 ms (1,045 GFlops/s)** | **+43.1%** |
+| `SmallBatch-LargeSpatial/Fwd3x3:2x128x128x64_k3x3x64x64` | 2.09 ms (1,155 GFlops/s) | **1.55 ms (1,561 GFlops/s)** | **+35.2%** |
+| `SmallBatch-LargeSpatial/VJPKernel3x3:1x256x256x32_v1x256x256x32` | 557.4 µs (2,167 GFlops/s) | **564.2 – 570.5 µs (2,117–2,141 GFlops/s)** | ~1.00× |
+| `SmallBatch-LargeSpatial/VJPKernel3x3:2x128x128x64_v2x128x128x64` | 1.13 ms (2,133 GFlops/s) | **1.12 – 1.15 ms (2,097–2,154 GFlops/s)** | ~1.00× |
+
+#### NEON-only (`GOMLX_GO_SIMD_SME=0`)
+
+| Benchmark Suite / Case | Before ARM64 `ConvGeneral` Opts | After ARM64 `ConvGeneral` Opts | Speedup |
+| :--- | ---: | ---: | ---: |
+| `Diffusion-LargeBatch/Fwd3x3:32x64x64x32_k3x3x32x32` | 3.13 ms (772.9 GFlops/s) | **2.68 ms (902.5 GFlops/s)** | **+16.8%** |
+| `Diffusion-LargeBatch/Fwd3x3:32x32x32x64_k3x3x64x64` | 2.75 ms (878.2 GFlops/s) | **2.59 ms (931.0 GFlops/s)** | **+6.0%** |
+| `Diffusion-LargeBatch/VJPInput3x3:32x64x64x32_k3x3x32x32` | 3.09 ms (781.1 GFlops/s) | **2.65 ms (913.1 GFlops/s)** | **+16.9%** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x64x64x32_v32x64x64x32` | 7.08 ms (341.3 GFlops/s) | **3.23 ms (747.8 GFlops/s)** | **+119.1% (2.19×)** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x32x32x64_v32x32x32x64` | 4.25 ms (568.0 GFlops/s) | **3.36 ms (718.7 GFlops/s)** | **+26.5%** |
+| `Diffusion-LargeBatch/VJPKernel3x3:32x16x16x96_v32x16x16x96` | 1.89 ms (720.7 GFlops/s) | **1.82 ms (746.3 GFlops/s)** | **+3.6%** |
+| `SmallBatch-LargeSpatial/Fwd3x3:1x256x256x32_k3x3x32x32` | 1.60 ms (752.9 GFlops/s) | **1.38 ms (877.5 GFlops/s)** | **+16.5%** |
+| `SmallBatch-LargeSpatial/Fwd3x3:2x128x128x64_k3x3x64x64` | 2.72 ms (888.8 GFlops/s) | **2.54 ms (951.7 GFlops/s)** | **+7.1%** |
+| `SmallBatch-LargeSpatial/VJPKernel3x3:1x256x256x32_v1x256x256x32` | 1.89 ms (640.5 GFlops/s) | **1.54 ms (784.7 GFlops/s)** | **+22.5%** |
+| `SmallBatch-LargeSpatial/VJPKernel3x3:2x128x128x64_v2x128x128x64` | 4.28 ms (564.6 GFlops/s) | **3.38 ms (715.8 GFlops/s)** | **+26.8%** |
+
+
 
 
