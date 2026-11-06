@@ -21,6 +21,9 @@ The default `compute.New()` function creates a backend object using any register
 
 ## 🚀 New
 
+- **Convolutions & Diffusion / U-Net Training Optimizations (`AVX2` / `AVX-512` & `NEON` / `SME`)**:
+  - Added direct zero-`im2col` 2D forward/VJP-input convolution assembly microkernels and cache-sliced `(BatchSize, OutH)` outer-product kernel-gradient (`VJPKernel`) execution across AMD64 (`AVX2`, `AVX-512`) and ARM64 (`NEON`, `SME`), alongside parallel cache-tiled `FusedDenseVJP`, middle-axis `FusedLayerNorm` & `ReduceMiddle` SIMD, and 3-segment binary broadcast fast paths ([`docs/DiffusionOptimization.md`](docs/DiffusionOptimization.md)).
+  - Accelerates `FlowMatching` U-Net diffusion training by **1.64× on AMD64 (`AVX-512`)** (`925.8 ms` $\to$ `563.0 ms`/step, outperforming `xla:cpu`) and **1.49×–1.50× on Apple M6** (`596.6 ms` $\to$ `400.3 ms`/step with `NEON+SME`, and `850.2 ms` $\to$ `565.2 ms`/step with `NEON-only`), while cutting heap allocations per step in half.
 - **ARM64 NEON & Apple SME SIMD Acceleration (`darwin/arm64` and `linux/arm64`)**:
   - Added handwritten ARM64 NEON and Scalable Matrix Extension (`FEAT_SME`) SIMD kernels across `DotGeneral` / `FusedDense` (`Float32`, `Float16`, `BFloat16`, `Float64`), `FusedScaledDotProductAttention` (`SDPA`), reductions (`ReduceSum`, `ReduceMax`, `ReduceMin`, `ReduceProduct`), trailing-axis binary broadcasts, `Where`, and hardware half-precision conversions (`Float16` and `BFloat16`).
   - Asymmetric CPU cluster probing (`CNTVCT_EL0`) and hybrid SME + NEON co-execution dynamically balance work across Super, Performance, and Efficiency cores without tail stragglers:
