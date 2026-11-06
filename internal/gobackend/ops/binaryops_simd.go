@@ -963,11 +963,71 @@ func simdV2V1AddFloat32(lhs, rhs, out []float32, A, B int) {
 		}
 		return
 	}
+	if B == 4*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Add(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Add(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Add(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Add(vR3).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Add(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Add(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Add(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Add(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Add(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Add(vR5).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		vR6 := simd.LoadFloat32s(rhs[6*vLen:])
+		vR7 := simd.LoadFloat32s(rhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Add(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Add(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Add(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Add(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Add(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Add(vR5).Store(out[off+5*vLen:])
+			simd.LoadFloat32s(lhs[off+6*vLen:]).Add(vR6).Store(out[off+6*vLen:])
+			simd.LoadFloat32s(lhs[off+7*vLen:]).Add(vR7).Store(out[off+7*vLen:])
+		}
+		return
+	}
 	for a := range A {
 		off := a * B
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Add(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Add(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Add(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1003,11 +1063,71 @@ func simdV2V1MulFloat32(lhs, rhs, out []float32, A, B int) {
 		}
 		return
 	}
+	if B == 4*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Mul(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Mul(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Mul(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Mul(vR3).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Mul(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Mul(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Mul(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Mul(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Mul(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Mul(vR5).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		vR6 := simd.LoadFloat32s(rhs[6*vLen:])
+		vR7 := simd.LoadFloat32s(rhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Mul(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Mul(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Mul(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Mul(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Mul(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Mul(vR5).Store(out[off+5*vLen:])
+			simd.LoadFloat32s(lhs[off+6*vLen:]).Mul(vR6).Store(out[off+6*vLen:])
+			simd.LoadFloat32s(lhs[off+7*vLen:]).Mul(vR7).Store(out[off+7*vLen:])
+		}
+		return
+	}
 	for a := range A {
 		off := a * B
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Mul(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Mul(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Mul(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1043,11 +1163,71 @@ func simdV2V1SubFloat32(lhs, rhs, out []float32, A, B int) {
 		}
 		return
 	}
+	if B == 4*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Sub(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Sub(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Sub(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Sub(vR3).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Sub(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Sub(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Sub(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Sub(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Sub(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Sub(vR5).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		vR6 := simd.LoadFloat32s(rhs[6*vLen:])
+		vR7 := simd.LoadFloat32s(rhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Sub(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Sub(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Sub(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Sub(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Sub(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Sub(vR5).Store(out[off+5*vLen:])
+			simd.LoadFloat32s(lhs[off+6*vLen:]).Sub(vR6).Store(out[off+6*vLen:])
+			simd.LoadFloat32s(lhs[off+7*vLen:]).Sub(vR7).Store(out[off+7*vLen:])
+		}
+		return
+	}
 	for a := range A {
 		off := a * B
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lRow[i+vLen:]).Sub(simd.LoadFloat32s(rhs[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lRow[i+2*vLen:]).Sub(simd.LoadFloat32s(rhs[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lRow[i+3*vLen:]).Sub(simd.LoadFloat32s(rhs[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1079,11 +1259,71 @@ func simdV1V2SubFloat32(lhs, rhs, out []float32, A, B int) {
 		}
 		return
 	}
+	if B == 4*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Sub(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Sub(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Sub(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Sub(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		vL4 := simd.LoadFloat32s(lhs[4*vLen:])
+		vL5 := simd.LoadFloat32s(lhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Sub(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Sub(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Sub(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Sub(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+			vL4.Sub(simd.LoadFloat32s(rhs[off+4*vLen:])).Store(out[off+4*vLen:])
+			vL5.Sub(simd.LoadFloat32s(rhs[off+5*vLen:])).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		vL4 := simd.LoadFloat32s(lhs[4*vLen:])
+		vL5 := simd.LoadFloat32s(lhs[5*vLen:])
+		vL6 := simd.LoadFloat32s(lhs[6*vLen:])
+		vL7 := simd.LoadFloat32s(lhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Sub(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Sub(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Sub(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Sub(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+			vL4.Sub(simd.LoadFloat32s(rhs[off+4*vLen:])).Store(out[off+4*vLen:])
+			vL5.Sub(simd.LoadFloat32s(rhs[off+5*vLen:])).Store(out[off+5*vLen:])
+			vL6.Sub(simd.LoadFloat32s(rhs[off+6*vLen:])).Store(out[off+6*vLen:])
+			vL7.Sub(simd.LoadFloat32s(rhs[off+7*vLen:])).Store(out[off+7*vLen:])
+		}
+		return
+	}
 	for a := range A {
 		off := a * B
 		rRow := rhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
+			simd.LoadFloat32s(lhs[i+vLen:]).Sub(simd.LoadFloat32s(rRow[i+vLen:])).Store(oRow[i+vLen:])
+			simd.LoadFloat32s(lhs[i+2*vLen:]).Sub(simd.LoadFloat32s(rRow[i+2*vLen:])).Store(oRow[i+2*vLen:])
+			simd.LoadFloat32s(lhs[i+3*vLen:]).Sub(simd.LoadFloat32s(rRow[i+3*vLen:])).Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
 		}
@@ -1112,6 +1352,60 @@ func simdV2V1DivFloat32(lhs, rhs, out []float32, A, B int) {
 			off := a * B
 			simd.LoadFloat32s(lhs[off:]).Div(vR0).Store(out[off:])
 			simd.LoadFloat32s(lhs[off+vLen:]).Div(vR1).Store(out[off+vLen:])
+		}
+		return
+	}
+	if B == 4*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Div(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Div(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Div(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Div(vR3).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Div(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Div(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Div(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Div(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Div(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Div(vR5).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vR0 := simd.LoadFloat32s(rhs)
+		vR1 := simd.LoadFloat32s(rhs[vLen:])
+		vR2 := simd.LoadFloat32s(rhs[2*vLen:])
+		vR3 := simd.LoadFloat32s(rhs[3*vLen:])
+		vR4 := simd.LoadFloat32s(rhs[4*vLen:])
+		vR5 := simd.LoadFloat32s(rhs[5*vLen:])
+		vR6 := simd.LoadFloat32s(rhs[6*vLen:])
+		vR7 := simd.LoadFloat32s(rhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			simd.LoadFloat32s(lhs[off:]).Div(vR0).Store(out[off:])
+			simd.LoadFloat32s(lhs[off+vLen:]).Div(vR1).Store(out[off+vLen:])
+			simd.LoadFloat32s(lhs[off+2*vLen:]).Div(vR2).Store(out[off+2*vLen:])
+			simd.LoadFloat32s(lhs[off+3*vLen:]).Div(vR3).Store(out[off+3*vLen:])
+			simd.LoadFloat32s(lhs[off+4*vLen:]).Div(vR4).Store(out[off+4*vLen:])
+			simd.LoadFloat32s(lhs[off+5*vLen:]).Div(vR5).Store(out[off+5*vLen:])
+			simd.LoadFloat32s(lhs[off+6*vLen:]).Div(vR6).Store(out[off+6*vLen:])
+			simd.LoadFloat32s(lhs[off+7*vLen:]).Div(vR7).Store(out[off+7*vLen:])
 		}
 		return
 	}
@@ -1148,6 +1442,60 @@ func simdV1V2DivFloat32(lhs, rhs, out []float32, A, B int) {
 			off := a * B
 			vL0.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
 			vL1.Div(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+		}
+		return
+	}
+	if B == 4*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Div(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Div(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Div(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+		}
+		return
+	}
+	if B == 6*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		vL4 := simd.LoadFloat32s(lhs[4*vLen:])
+		vL5 := simd.LoadFloat32s(lhs[5*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Div(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Div(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Div(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+			vL4.Div(simd.LoadFloat32s(rhs[off+4*vLen:])).Store(out[off+4*vLen:])
+			vL5.Div(simd.LoadFloat32s(rhs[off+5*vLen:])).Store(out[off+5*vLen:])
+		}
+		return
+	}
+	if B == 8*vLen {
+		vL0 := simd.LoadFloat32s(lhs)
+		vL1 := simd.LoadFloat32s(lhs[vLen:])
+		vL2 := simd.LoadFloat32s(lhs[2*vLen:])
+		vL3 := simd.LoadFloat32s(lhs[3*vLen:])
+		vL4 := simd.LoadFloat32s(lhs[4*vLen:])
+		vL5 := simd.LoadFloat32s(lhs[5*vLen:])
+		vL6 := simd.LoadFloat32s(lhs[6*vLen:])
+		vL7 := simd.LoadFloat32s(lhs[7*vLen:])
+		for a := range A {
+			off := a * B
+			vL0.Div(simd.LoadFloat32s(rhs[off:])).Store(out[off:])
+			vL1.Div(simd.LoadFloat32s(rhs[off+vLen:])).Store(out[off+vLen:])
+			vL2.Div(simd.LoadFloat32s(rhs[off+2*vLen:])).Store(out[off+2*vLen:])
+			vL3.Div(simd.LoadFloat32s(rhs[off+3*vLen:])).Store(out[off+3*vLen:])
+			vL4.Div(simd.LoadFloat32s(rhs[off+4*vLen:])).Store(out[off+4*vLen:])
+			vL5.Div(simd.LoadFloat32s(rhs[off+5*vLen:])).Store(out[off+5*vLen:])
+			vL6.Div(simd.LoadFloat32s(rhs[off+6*vLen:])).Store(out[off+6*vLen:])
+			vL7.Div(simd.LoadFloat32s(rhs[off+7*vLen:])).Store(out[off+7*vLen:])
 		}
 		return
 	}
@@ -1754,7 +2102,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastMidRHS:
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		bc := B * C
-		if canParallelize && A >= 8 && bc <= 4096 {
+		if canParallelize && A >= 8 {
 			minA := max(1, binarySIMDChunkElements/max(1, bc))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
@@ -1774,11 +2122,23 @@ func dispatchBinarySIMD[T any](
 			abTotal := A * B
 			minAB := max(1, binarySIMDChunkElements/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
-				for ab := abStart; ab < abEnd; ab++ {
-					a := ab / B
-					lOff := ab * C
-					rOff := a * C
-					vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[lOff:lOff+C])
+				if v2v1 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := ab * C
+						rOff := a * C
+						v2v1(lhs[lOff:lOff+bCount*C], rhs[rOff:rOff+C], output[lOff:lOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						lOff := ab * C
+						rOff := a * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[lOff:lOff+C])
+					}
 				}
 			})
 		} else {
@@ -1798,7 +2158,7 @@ func dispatchBinarySIMD[T any](
 	case bcastCfg.Pattern == gobackend.BroadcastMidLHS:
 		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
 		bc := B * C
-		if canParallelize && A >= 8 && bc <= 4096 {
+		if canParallelize && A >= 8 {
 			minA := max(1, binarySIMDChunkElements/max(1, bc))
 			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
 				for a := aStart; a < aEnd; a++ {
@@ -1818,11 +2178,23 @@ func dispatchBinarySIMD[T any](
 			abTotal := A * B
 			minAB := max(1, binarySIMDChunkElements/max(1, C))
 			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
-				for ab := abStart; ab < abEnd; ab++ {
-					a := ab / B
-					lOff := a * C
-					rOff := ab * C
-					vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[rOff:rOff+C])
+				if v1v2 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := a * C
+						rOff := ab * C
+						v1v2(lhs[lOff:lOff+C], rhs[rOff:rOff+bCount*C], output[rOff:rOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						lOff := a * C
+						rOff := ab * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[rOff:rOff+C])
+					}
 				}
 			})
 		} else {
@@ -1836,6 +2208,72 @@ func dispatchBinarySIMD[T any](
 						o := rOff + b*C
 						vv(lhs[lOff:lOff+C], rhs[o:o+C], output[o:o+C])
 					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastOuterInnerRHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A >= 8 {
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					aOff := a * bc
+					for b := range B {
+						off := aOff + b*C
+						vs(lhs[off:off+C], rhs[b], output[off:off+C])
+					}
+				}
+			})
+		} else if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					b := ab % B
+					off := ab * C
+					vs(lhs[off:off+C], rhs[b], output[off:off+C])
+				}
+			})
+		} else {
+			for a := range A {
+				aOff := a * bc
+				for b := range B {
+					off := aOff + b*C
+					vs(lhs[off:off+C], rhs[b], output[off:off+C])
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastOuterInnerLHS:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A >= 8 {
+			minA := max(1, binarySIMDChunkElements/max(1, bc))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				for a := aStart; a < aEnd; a++ {
+					aOff := a * bc
+					for b := range B {
+						off := aOff + b*C
+						sv(lhs[b], rhs[off:off+C], output[off:off+C])
+					}
+				}
+			})
+		} else if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					b := ab % B
+					off := ab * C
+					sv(lhs[b], rhs[off:off+C], output[off:off+C])
+				}
+			})
+		} else {
+			for a := range A {
+				aOff := a * bc
+				for b := range B {
+					off := aOff + b*C
+					sv(lhs[b], rhs[off:off+C], output[off:off+C])
 				}
 			}
 		}

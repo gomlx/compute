@@ -106,6 +106,38 @@ func TestReduceFastPaths(t *testing.T) {
 		runReduceTest(t, "ReduceMiddle_Sum", ops.ReduceSum, s2x3x4, data2x3x4, []int{1}, expected)
 	})
 
+	t.Run("ReduceMiddle_Large_Sum_Max_Min_Product", func(t *testing.T) {
+		// [4, 16, 35] reduce axis 1 -> [4, 35] (exercises SIMD vector loop + tail)
+		A, B, C := 4, 16, 35
+		s := shapes.Make(dtypes.Float32, A, B, C)
+		data := make([]float32, A*B*C)
+		expectedSum := make([]float32, A*C)
+		expectedMax := make([]float32, A*C)
+		expectedMin := make([]float32, A*C)
+		for a := range A {
+			for c := range C {
+				var sum, maxVal, minVal float32
+				for b := range B {
+					val := float32((a*B*C+b*C+c)%17 - 8)
+					data[(a*B+b)*C+c] = val
+					sum += val
+					if b == 0 || val > maxVal {
+						maxVal = val
+					}
+					if b == 0 || val < minVal {
+						minVal = val
+					}
+				}
+				expectedSum[a*C+c] = sum
+				expectedMax[a*C+c] = maxVal
+				expectedMin[a*C+c] = minVal
+			}
+		}
+		runReduceTest(t, "ReduceMiddle_Large_Sum", ops.ReduceSum, s, data, []int{1}, expectedSum)
+		runReduceTest(t, "ReduceMiddle_Large_Max", ops.ReduceMax, s, data, []int{1}, expectedMax)
+		runReduceTest(t, "ReduceMiddle_Large_Min", ops.ReduceMin, s, data, []int{1}, expectedMin)
+	})
+
 	t.Run("ReduceTrailing_Max", func(t *testing.T) {
 		// [2, 3] reduce axis 1 -> [2]: row 0 = 3, row 1 = 6
 		runReduceTest(t, "ReduceTrailing_Max", ops.ReduceMax, s2x3, data2x3, []int{1}, []float32{3, 6})

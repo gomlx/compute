@@ -112,40 +112,98 @@ func execConvStandardNEON(
 	const mTile = 32
 	numMTiles := (M + mTile - 1) / mTile
 
-	processMTile := func(mStart, mCount int, patchBuf []float32) {
-		var lhsSlice []float32
-		if p.Is1x1Unit {
-			if mCount%4 == 0 {
-				lhsSlice = input[mStart*K : (mStart+mCount)*K]
-			} else {
-				copy(patchBuf[:mCount*K], input[mStart*K:(mStart+mCount)*K])
-				lhsSlice = patchBuf
-			}
-		} else {
-			ExtractPatches2DFloat32(p, input, patchBuf, mStart, mCount)
-			lhsSlice = patchBuf
-		}
+	canDirect2D := !p.Is1x1Unit && p.InDilH == 1 && p.InDilW == 1 && p.KerDilW == 1
+	outHW := p.OutH * p.OutW
+	inHW := p.InH * p.InW
+	kWC := p.KernelW * p.InChannels
+	directStrideBytes := p.StrideW * p.InChannels * 4
+	directKyJumpBytes := (p.KerDilH*p.InW - p.KernelW) * p.InChannels * 4
+	patchBufSize := 4 * K
 
+	processMTile := func(mStart, mCount int, patchBuf []float32) {
 		var edgeOut [4 * 16]float32
-		lhsRowStrideBytes := K * 4
 		outRowStrideBytes := N * 4
 
 		for r := 0; r < mCount; r += 4 {
+			m0 := mStart + r
 			validRows := min(4, mCount-r)
-			lhsRowPtr := unsafe.Pointer(&lhsSlice[r*K])
 
+			if canDirect2D && validRows == 4 && outHW > 0 {
+				b := m0 / outHW
+				rem := m0 % outHW
+				outY := rem / p.OutW
+				outX := rem % p.OutW
+				if outX+4 <= p.OutW {
+					inX0 := outX*p.StrideW - p.PadLeft
+					if inX0 >= 0 && inX0+3*p.StrideW+p.KernelW <= p.InW {
+						baseInY := outY*p.StrideH - p.PadTop
+						kyStart := 0
+						if baseInY < 0 {
+							kyStart = (-baseInY + p.KerDilH - 1) / p.KerDilH
+						}
+						kyEnd := p.KernelH
+						if maxInY := baseInY + (p.KernelH-1)*p.KerDilH; maxInY >= p.InH {
+							kyEnd = (p.InH - 1 - baseInY) / p.KerDilH + 1
+							if kyEnd < 0 {
+								kyEnd = 0
+							}
+						}
+						numKy := kyEnd - kyStart
+						if numKy <= 0 {
+							clear(out[m0*N : (m0+4)*N])
+							continue
+						}
+						inYStart := baseInY + kyStart*p.KerDilH
+						lhsPtr := unsafe.Pointer(&input[(b*inHW+inYStart*p.InW+inX0)*p.InChannels])
+						rhsKyOffset := kyStart * kWC * 16
+
+						for panelIdx := range numPanels {
+							colStart := panelIdx * 16
+							validCols := min(16, N-colStart)
+							rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize+rhsKyOffset])
+
+							if validCols == 16 {
+								outPtr := unsafe.Pointer(&out[m0*N+colStart])
+								neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPanelPtr, outPtr, kWC, numKy, directStrideBytes, directKyJumpBytes, 64, outRowStrideBytes)
+							} else {
+								neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]), kWC, numKy, directStrideBytes, directKyJumpBytes, 64, 64)
+								for ir := range 4 {
+									dstOff := (m0+ir)*N + colStart
+									copy(out[dstOff:dstOff+validCols], edgeOut[ir*16:ir*16+validCols])
+								}
+							}
+						}
+						continue
+					}
+				}
+			}
+
+			var lhsRowPtr unsafe.Pointer
+			if p.Is1x1Unit {
+				if validRows == 4 {
+					lhsRowPtr = unsafe.Pointer(&input[m0*K])
+				} else {
+					copy(patchBuf[:validRows*K], input[m0*K:(m0+validRows)*K])
+					lhsRowPtr = unsafe.Pointer(&patchBuf[0])
+				}
+			} else {
+				ExtractPatches2DFloat32(p, input, patchBuf, m0, validRows)
+				lhsRowPtr = unsafe.Pointer(&patchBuf[0])
+			}
+
+			lhsRowStrideBytes := K * 4
 			for panelIdx := range numPanels {
 				colStart := panelIdx * 16
 				validCols := min(16, N-colStart)
 				rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize])
 
 				if validRows == 4 && validCols == 16 {
-					outPtr := unsafe.Pointer(&out[(mStart+r)*N+colStart])
+					outPtr := unsafe.Pointer(&out[m0*N+colStart])
 					neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPanelPtr, outPtr, K, lhsRowStrideBytes, 64, outRowStrideBytes)
 				} else {
 					neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]), K, lhsRowStrideBytes, 64, 64)
 					for ir := range validRows {
-						dstOff := (mStart+r+ir)*N + colStart
+						dstOff := (m0+ir)*N + colStart
 						copy(out[dstOff:dstOff+validCols], edgeOut[ir*16:ir*16+validCols])
 					}
 				}
@@ -157,7 +215,7 @@ func execConvStandardNEON(
 	if maxWorkers <= 1 || M*K*N < 16384 {
 		var patchBuf []float32
 		if !p.Is1x1Unit || M%4 != 0 {
-			patchBufObj, bufSlice, err := getScratchFloat32(backend, mTile*K)
+			patchBufObj, bufSlice, err := getScratchFloat32(backend, patchBufSize)
 			if err != nil {
 				backend.PutBuffer(output)
 				return nil, err
@@ -177,7 +235,7 @@ func execConvStandardNEON(
 	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
 		var patchBuf []float32
 		if !p.Is1x1Unit || M%4 != 0 {
-			patchBufObj, bufSlice, err := getScratchFloat32(backend, mTile*K)
+			patchBufObj, bufSlice, err := getScratchFloat32(backend, patchBufSize)
 			if err != nil {
 				return
 			}
@@ -221,8 +279,10 @@ func execConvStandardSME(
 		return output, nil
 	}
 
-	// For tiny pixel counts where SME streaming transition overhead dominates, use NEON.
-	if M < 8 && N < 8 {
+	// For tiny pixel counts or very shallow contracting dimensions with a single output panel
+	// (e.g. MNIST Conv1 where K=9, N=32), SME LHS transposition + streaming transition overhead
+	// exceeds direct NEON execution.
+	if (M < 8 && N < 8) || (K < 32 && N <= 32) {
 		return execConvStandardNEON(backend, p, inputBuf, kernelBuf, outputShape)
 	}
 
@@ -296,7 +356,119 @@ func execConvStandardSME(
 	const mTile = 32
 	numMTiles := (M + mTile - 1) / mTile
 
+	canDirect2D := !p.Is1x1Unit && p.InDilH == 1 && p.InDilW == 1 && p.KerDilW == 1
+	outHW := p.OutH * p.OutW
+	inHW := p.InH * p.InW
+	kWC := p.KernelW * p.InChannels
+	directStrideBytes := p.StrideW * p.InChannels * 4
+	directKyJumpBytes := (p.KerDilH*p.InW - p.KernelW) * p.InChannels * 4
+
 	processMTileSME := func(mStart, mCount int, patchBuf, packedLHS []float32) {
+		if canDirect2D && outHW > 0 {
+			b0 := mStart / outHW
+			rem0 := mStart % outHW
+			outY0 := rem0 / p.OutW
+			outX0 := rem0 % p.OutW
+			if outX0+mCount <= p.OutW {
+				baseInY := outY0*p.StrideH - p.PadTop
+				kyStart := 0
+				if baseInY < 0 {
+					kyStart = (-baseInY + p.KerDilH - 1) / p.KerDilH
+				}
+				kyEnd := p.KernelH
+				if maxInY := baseInY + (p.KernelH-1)*p.KerDilH; maxInY >= p.InH {
+					kyEnd = (p.InH - 1 - baseInY) / p.KerDilH + 1
+					if kyEnd < 0 {
+						kyEnd = 0
+					}
+				}
+				numKy := kyEnd - kyStart
+				if numKy <= 0 {
+					clear(out[mStart*N : (mStart+mCount)*N])
+					return
+				}
+				kValid := numKy * kWC
+				for s := 0; s < mCount; s += 8 {
+					validStripe := min(8, mCount-s)
+					stripeOutX := outX0 + s
+					inX0 := stripeOutX*p.StrideW - p.PadLeft
+					if validStripe == 8 {
+						if inX0 >= 0 && inX0+7*p.StrideW+p.KernelW <= p.InW {
+							for ky := kyStart; ky < kyEnd; ky++ {
+								inY := baseInY + ky*p.KerDilH
+								inIdx := (b0*inHW + inY*p.InW + inX0) * p.InChannels
+								dstIdx := (ky-kyStart)*kWC*32 + s
+								neon.ConvPackLHS8StridedFloat32Asm(
+									unsafe.Pointer(&input[inIdx]),
+									unsafe.Pointer(&packedLHS[dstIdx]),
+									kWC, directStrideBytes, 128,
+								)
+							}
+						} else {
+							kxValidStart := max(0, -inX0)
+							kxValidEnd := min(p.KernelW, p.InW-(inX0+7*p.StrideW))
+							inCStrideBytes := p.InChannels * 4
+							for ky := kyStart; ky < kyEnd; ky++ {
+								inY := baseInY + ky*p.KerDilH
+								rowBase := (b0*inHW + inY*p.InW) * p.InChannels
+								kyDstBase := (ky-kyStart)*kWC*32 + s
+								if kxValidStart < kxValidEnd {
+									spanFloats := (kxValidEnd - kxValidStart) * p.InChannels
+									inIdx := rowBase + (inX0+kxValidStart)*p.InChannels
+									dstIdx := kyDstBase + kxValidStart*p.InChannels*32
+									neon.ConvPackLHS8StridedFloat32Asm(
+										unsafe.Pointer(&input[inIdx]),
+										unsafe.Pointer(&packedLHS[dstIdx]),
+										spanFloats, directStrideBytes, 128,
+									)
+								}
+								for kx := range p.KernelW {
+									if kxValidStart < kxValidEnd && kx >= kxValidStart && kx < kxValidEnd {
+										continue
+									}
+									for pIdx := range 8 {
+										dstOff := pIdx * p.InChannels
+										inX := inX0 + pIdx*p.StrideW + kx
+										if uint(inX) < uint(p.InW) {
+											srcOff := rowBase + inX*p.InChannels
+											copy(patchBuf[dstOff:dstOff+p.InChannels], input[srcOff:srcOff+p.InChannels])
+										} else {
+											clear(patchBuf[dstOff : dstOff+p.InChannels])
+										}
+									}
+									dstIdx := kyDstBase + kx*p.InChannels*32
+									neon.ConvPackLHS8StridedFloat32Asm(
+										unsafe.Pointer(&patchBuf[0]),
+										unsafe.Pointer(&packedLHS[dstIdx]),
+										p.InChannels, inCStrideBytes, 128,
+									)
+								}
+							}
+						}
+					} else {
+						ExtractPatches2DFloat32(p, input, patchBuf, mStart+s, validStripe)
+						neon.ConvPackLHS8StridedFloat32Asm(
+							unsafe.Pointer(&patchBuf[kyStart*kWC]),
+							unsafe.Pointer(&packedLHS[s]),
+							kValid, K*4, 128,
+						)
+					}
+				}
+
+				packedLHSPtr := unsafe.Pointer(&packedLHS[0])
+				outRowStrideBytes := N * 4
+				rhsKyOffset := kyStart * kWC * 32
+				for panelIdx := range numPanels {
+					colStart := panelIdx * 32
+					validCols := min(32, N-colStart)
+					rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize+rhsKyOffset])
+					outPtr := unsafe.Pointer(&out[mStart*N+colStart])
+					neon.ConvSMEKernel32x32Float32Asm(packedLHSPtr, rhsPanelPtr, outPtr, kValid, outRowStrideBytes, mCount, validCols)
+				}
+				return
+			}
+		}
+
 		var lhsSlice []float32
 		if p.Is1x1Unit && mCount == 32 {
 			lhsSlice = input[mStart*K : (mStart+32)*K]
@@ -332,25 +504,94 @@ func execConvStandardSME(
 	}
 
 	processMTileNEONFromSME := func(mStart, mCount int, patchBuf []float32) {
-		var lhsSlice []float32
-		if p.Is1x1Unit && mCount%4 == 0 {
-			lhsSlice = input[mStart*K : (mStart+mCount)*K]
-		} else if p.Is1x1Unit {
-			copy(patchBuf[:mCount*K], input[mStart*K:(mStart+mCount)*K])
-			lhsSlice = patchBuf
-		} else {
-			ExtractPatches2DFloat32(p, input, patchBuf, mStart, mCount)
-			lhsSlice = patchBuf
-		}
-
 		var edgeOut [4 * 16]float32
-		lhsRowStrideBytes := K * 4
 		outRowStrideBytes := N * 4
 
 		for r := 0; r < mCount; r += 4 {
+			m0 := mStart + r
 			validRows := min(4, mCount-r)
-			lhsRowPtr := unsafe.Pointer(&lhsSlice[r*K])
 
+			if canDirect2D && validRows == 4 && outHW > 0 {
+				b := m0 / outHW
+				rem := m0 % outHW
+				outY := rem / p.OutW
+				outX := rem % p.OutW
+				if outX+4 <= p.OutW {
+					inX0 := outX*p.StrideW - p.PadLeft
+					if inX0 >= 0 && inX0+3*p.StrideW+p.KernelW <= p.InW {
+						baseInY := outY*p.StrideH - p.PadTop
+						kyStart := 0
+						if baseInY < 0 {
+							kyStart = (-baseInY + p.KerDilH - 1) / p.KerDilH
+						}
+						kyEnd := p.KernelH
+						if maxInY := baseInY + (p.KernelH-1)*p.KerDilH; maxInY >= p.InH {
+							kyEnd = (p.InH - 1 - baseInY) / p.KerDilH + 1
+							if kyEnd < 0 {
+								kyEnd = 0
+							}
+						}
+						numKy := kyEnd - kyStart
+						if numKy <= 0 {
+							clear(out[m0*N : (m0+4)*N])
+							continue
+						}
+						inYStart := baseInY + kyStart*p.KerDilH
+						lhsPtr := unsafe.Pointer(&input[(b*inHW+inYStart*p.InW+inX0)*p.InChannels])
+						rhsKyOffset := kyStart * kWC * 32
+
+						for panelIdx := range numPanels {
+							colStart := panelIdx * 32
+							validCols := min(32, N-colStart)
+							panelBase := panelIdx*panelSize + rhsKyOffset
+
+							subCols0 := min(16, validCols)
+							rhsPtr0 := unsafe.Pointer(&packedRHS[panelBase])
+							if subCols0 == 16 {
+								outPtr0 := unsafe.Pointer(&out[m0*N+colStart])
+								neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPtr0, outPtr0, kWC, numKy, directStrideBytes, directKyJumpBytes, 128, outRowStrideBytes)
+							} else {
+								neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPtr0, unsafe.Pointer(&edgeOut[0]), kWC, numKy, directStrideBytes, directKyJumpBytes, 128, 64)
+								for ir := range 4 {
+									dstOff := (m0+ir)*N + colStart
+									copy(out[dstOff:dstOff+subCols0], edgeOut[ir*16:ir*16+subCols0])
+								}
+							}
+
+							if validCols > 16 {
+								subCols1 := validCols - 16
+								rhsPtr1 := unsafe.Pointer(&packedRHS[panelBase+16])
+								if subCols1 == 16 {
+									outPtr1 := unsafe.Pointer(&out[m0*N+colStart+16])
+									neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPtr1, outPtr1, kWC, numKy, directStrideBytes, directKyJumpBytes, 128, outRowStrideBytes)
+								} else {
+									neon.ConvNEONDirect2DKernel4x16Float32Asm(lhsPtr, rhsPtr1, unsafe.Pointer(&edgeOut[0]), kWC, numKy, directStrideBytes, directKyJumpBytes, 128, 64)
+									for ir := range 4 {
+										dstOff := (m0+ir)*N + colStart + 16
+										copy(out[dstOff:dstOff+subCols1], edgeOut[ir*16:ir*16+subCols1])
+									}
+								}
+							}
+						}
+						continue
+					}
+				}
+			}
+
+			var lhsRowPtr unsafe.Pointer
+			if p.Is1x1Unit {
+				if validRows == 4 {
+					lhsRowPtr = unsafe.Pointer(&input[m0*K])
+				} else {
+					copy(patchBuf[:validRows*K], input[m0*K:(m0+validRows)*K])
+					lhsRowPtr = unsafe.Pointer(&patchBuf[0])
+				}
+			} else {
+				ExtractPatches2DFloat32(p, input, patchBuf, m0, validRows)
+				lhsRowPtr = unsafe.Pointer(&patchBuf[0])
+			}
+
+			lhsRowStrideBytes := K * 4
 			for panelIdx := range numPanels {
 				colStart := panelIdx * 32
 				validCols := min(32, N-colStart)
@@ -360,12 +601,12 @@ func execConvStandardSME(
 				subCols0 := min(16, validCols)
 				rhsPtr0 := unsafe.Pointer(&packedRHS[panelBase])
 				if validRows == 4 && subCols0 == 16 {
-					outPtr0 := unsafe.Pointer(&out[(mStart+r)*N+colStart])
+					outPtr0 := unsafe.Pointer(&out[m0*N+colStart])
 					neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPtr0, outPtr0, K, lhsRowStrideBytes, 128, outRowStrideBytes)
 				} else {
 					neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPtr0, unsafe.Pointer(&edgeOut[0]), K, lhsRowStrideBytes, 128, 64)
 					for ir := range validRows {
-						dstOff := (mStart+r+ir)*N + colStart
+						dstOff := (m0+ir)*N + colStart
 						copy(out[dstOff:dstOff+subCols0], edgeOut[ir*16:ir*16+subCols0])
 					}
 				}
@@ -375,12 +616,12 @@ func execConvStandardSME(
 					subCols1 := validCols - 16
 					rhsPtr1 := unsafe.Pointer(&packedRHS[panelBase+16])
 					if validRows == 4 && subCols1 == 16 {
-						outPtr1 := unsafe.Pointer(&out[(mStart+r)*N+colStart+16])
+						outPtr1 := unsafe.Pointer(&out[m0*N+colStart+16])
 						neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPtr1, outPtr1, K, lhsRowStrideBytes, 128, outRowStrideBytes)
 					} else {
 						neon.ConvNEONKernel4x16Float32Asm(lhsRowPtr, rhsPtr1, unsafe.Pointer(&edgeOut[0]), K, lhsRowStrideBytes, 128, 64)
 						for ir := range validRows {
-							dstOff := (mStart+r+ir)*N + colStart + 16
+							dstOff := (m0+ir)*N + colStart + 16
 							copy(out[dstOff:dstOff+subCols1], edgeOut[ir*16:ir*16+subCols1])
 						}
 					}
@@ -415,14 +656,21 @@ func execConvStandardSME(
 
 	var nextTile atomic.Int64
 	var activeSME atomic.Int32
+	var activeFastSME atomic.Int32
 	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		clusterID, useSME, isSlowECore := matmulneon.SMEAcquireCluster()
+		clusterID, useSME, isSlowECore := matmulneon.SMEAcquireClusterWithLimit(2, 1)
 		if useSME {
 			activeSME.Add(1)
+			if clusterID == 0 || clusterID == 1 {
+				activeFastSME.Add(1)
+			}
 			defer func() {
+				if clusterID == 0 || clusterID == 1 {
+					activeFastSME.Add(-1)
+				}
 				activeSME.Add(-1)
 				matmulneon.SMEReleaseCluster(clusterID)
 			}()
@@ -448,10 +696,18 @@ func execConvStandardSME(
 		}
 
 		for {
-			if !useSME {
+			if useSME {
+				if clusterID == 2 {
+					rem := numMTiles - int(nextTile.Load())
+					fastSME := int(activeFastSME.Load())
+					if fastSME > 0 && rem <= 2*fastSME {
+						break
+					}
+				}
+			} else {
 				rem := numMTiles - int(nextTile.Load())
-				smeCount := int(activeSME.Load())
-				if smeCount > 0 && rem <= 4*smeCount {
+				smeCount := int(activeFastSME.Load())
+				if smeCount > 0 && rem <= 2*smeCount {
 					break
 				}
 			}
@@ -473,7 +729,7 @@ func execConvStandardSME(
 
 // execConvKernelGradNEON computes VJP wrt Kernel (Conv2DKernelGrad) using NEON outer-product
 // microkernels (ConvKernelGradNEON4x16Float32Asm and ConvKernelGradNEON1x16Float32Asm) with
-// zero packing and zero intermediate buffers.
+// zero packing, 2D (Cin x Cout) panel tiling, and unified (BatchSize, OutH) reduction slicing.
 func execConvKernelGradNEON(
 	backend *gobackend.Backend,
 	p *Conv2DParams,
@@ -498,20 +754,100 @@ func execConvKernelGradNEON(
 
 	kH, kW := p.KernelH, p.KernelW
 	inC, outC := p.InChannels, p.OutChannels
+	const rowTile = 8
+	numRowPanels := (inC + rowTile - 1) / rowTile
 	numColPanels := (outC + 15) / 16
-	totalTasks := kH * kW * numColPanels
+	panelsPerFilter := numRowPanels * numColPanels
+	baseTasks := kH * kW * panelsPerFilter
 
-	processTask := func(taskIdx int) {
-		panelIdx := taskIdx % numColPanels
-		spatialIdx := taskIdx / numColPanels
-		ky := spatialIdx / kW
-		kx := spatialIdx % kW
-		cOutStart := panelIdx * 16
-		validCols := min(16, outC-cOutStart)
-		convKernelGradNEONTileFloat32(p, x, v, out, ky, kx, 0, inC, cOutStart, validCols)
+	maxParallelism := backend.Scheduler.AdjustedMaxParallelism()
+	totalOutRows := p.BatchSize * p.OutH
+	totalPixels := totalOutRows * p.OutW
+	numSlices := 1
+	if maxParallelism > 1 && totalOutRows >= 4 && totalPixels >= 16384 {
+		switch {
+		case totalPixels >= 131072 && totalOutRows >= 16:
+			numSlices = 8
+		case totalPixels >= 65536 && totalOutRows >= 8:
+			numSlices = 4
+		default:
+			numSlices = 2
+		}
+		for numSlices > 1 && totalOutRows/numSlices < 2 {
+			numSlices /= 2
+		}
 	}
 
-	maxWorkers := min(totalTasks, backend.Scheduler.AdjustedMaxParallelism())
+	outSize := len(out)
+	partialSlices := make([][]float32, numSlices)
+	partialSlices[0] = out
+	if numSlices > 1 {
+		partialBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, (numSlices-1)*outSize))
+		if err != nil {
+			backend.PutBuffer(output)
+			return nil, err
+		}
+		partialBuf.Zeros()
+		defer backend.PutBuffer(partialBuf)
+		partialFlat := partialBuf.Flat.([]float32)
+		for s := 1; s < numSlices; s++ {
+			partialSlices[s] = partialFlat[(s-1)*outSize : s*outSize]
+		}
+	}
+
+	rowsPerSlice := (totalOutRows + numSlices - 1) / numSlices
+	totalTasks := numSlices * baseTasks
+
+	runRange := func(dstOut []float32, ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd int) {
+		bFirst := rStart / p.OutH
+		yFirst := rStart % p.OutH
+		bLast := (rEnd - 1) / p.OutH
+		yLast := (rEnd-1)%p.OutH + 1
+
+		if bFirst == bLast {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, yLast)
+			return
+		}
+		bCur := bFirst
+		if yFirst > 0 {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, p.OutH)
+			bCur++
+		}
+		fullBatches := bLast - bCur
+		if yLast == p.OutH {
+			fullBatches++
+		}
+		if fullBatches > 0 {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bCur, fullBatches, 0, p.OutH)
+		}
+		if yLast < p.OutH {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bLast, 1, 0, yLast)
+		}
+	}
+
+	processTask := func(taskIdx int) {
+		sliceIdx := taskIdx / baseTasks
+		rStart := sliceIdx * rowsPerSlice
+		if rStart >= totalOutRows {
+			return
+		}
+		rEnd := min(totalOutRows, rStart+rowsPerSlice)
+
+		baseIdx := taskIdx % baseTasks
+		spatialIdx := baseIdx / panelsPerFilter
+		rem := baseIdx % panelsPerFilter
+		rowPanel := rem / numColPanels
+		colPanel := rem % numColPanels
+		ky := spatialIdx / kW
+		kx := spatialIdx % kW
+		cInStart := rowPanel * rowTile
+		validRows := min(rowTile, inC-cInStart)
+		cOutStart := colPanel * 16
+		validCols := min(16, outC-cOutStart)
+		runRange(partialSlices[sliceIdx], ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd)
+	}
+
+	maxWorkers := min(totalTasks, maxParallelism)
 	if maxWorkers <= 1 {
 		for taskIdx := range totalTasks {
 			processTask(taskIdx)
@@ -529,6 +865,10 @@ func execConvKernelGradNEON(
 			processTask(taskIdx)
 		}
 	})
+
+	for s := 1; s < numSlices; s++ {
+		simdAddVVFloat32(out, partialSlices[s], out)
+	}
 	return output, nil
 }
 
@@ -568,17 +908,58 @@ func execConvKernelGradSME(
 	numRowPanels := (inC + 31) / 32
 	numColPanels := (outC + 31) / 32
 	panelsPerFilter := numRowPanels * numColPanels
-	totalTasks := kH * kW * panelsPerFilter
+	baseTasks := kH * kW * panelsPerFilter
 
-	processTaskSME := func(ky, kx, cInStart, validRows, cOutStart, validCols int) {
+	maxParallelism := backend.Scheduler.AdjustedMaxParallelism()
+	totalOutRows := p.BatchSize * p.OutH
+	totalPixels := totalOutRows * p.OutW
+	numSlices := 1
+	if maxParallelism > 1 && totalOutRows >= 16 && totalPixels >= 32768 {
+		switch {
+		case baseTasks < 18 && totalPixels >= 65536 && totalOutRows >= 32:
+			numSlices = 4
+		case baseTasks < 36 || totalPixels >= 131072:
+			numSlices = 2
+		}
+	}
+
+	outSize := len(out)
+	partialSlices := make([][]float32, numSlices)
+	partialSlices[0] = out
+	if numSlices > 1 {
+		partialBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, (numSlices-1)*outSize))
+		if err != nil {
+			backend.PutBuffer(output)
+			return nil, err
+		}
+		partialBuf.Zeros()
+		defer backend.PutBuffer(partialBuf)
+		partialFlat := partialBuf.Flat.([]float32)
+		for s := 1; s < numSlices; s++ {
+			partialSlices[s] = partialFlat[(s-1)*outSize : s*outSize]
+		}
+	}
+
+	rowsPerSlice := (totalOutRows + numSlices - 1) / numSlices
+	totalTasks := numSlices * baseTasks
+
+	runSubRangeSME := func(dstOut []float32, ky, kx, cInStart, validRows, cOutStart, validCols, bStart, bCount, ySliceStart, ySliceEnd int, acc *int) {
 		outYStart, outYEnd, inYStart, outXStart, outXEnd, inXStart := p.KernelGradValidRange(ky, kx)
+		if ySliceStart > outYStart {
+			diff := ySliceStart - outYStart
+			outYStart = ySliceStart
+			inYStart += diff * p.KerDilH
+		}
+		if ySliceEnd < outYEnd {
+			outYEnd = ySliceEnd
+		}
 		numY := outYEnd - outYStart
 		numX := outXEnd - outXStart
-		if numY <= 0 || numX <= 0 {
+		if numY <= 0 || numX <= 0 || bCount <= 0 {
 			return
 		}
 
-		batchSize := p.BatchSize
+		batchSize := bCount
 		xStepFloats := p.KerDilW * inC
 		vStepFloats := outC
 		xYStrideFloats := p.KerDilH * p.InW * inC
@@ -595,75 +976,70 @@ func execConvKernelGradSME(
 			}
 		}
 
-		xBaseIdx := (inYStart*p.InW+inXStart)*inC + cInStart
-		vBaseIdx := (outYStart*p.OutW+outXStart)*outC + cOutStart
+		xBaseIdx := bStart*xBatchStrideFloats + (inYStart*p.InW+inXStart)*inC + cInStart
+		vBaseIdx := bStart*vBatchStrideFloats + (outYStart*p.OutW+outXStart)*outC + cOutStart
 		outBaseIdx := ((ky*kW+kx)*inC+cInStart)*outC + cOutStart
 
-		// Chunk large contracting domains into <= 2048 pixels per SME call so async SIGURG
-		// preemption signals never cause long retry loops.
-		const maxPixelsPerChunk = 2048
-		totalPixels := batchSize * numY * numX
-		if totalPixels <= maxPixelsPerChunk {
+		// Chunk large contracting domains into <= 4096 pixels per SME call so async SIGURG
+		// preemption signals never cause long retry loops while minimizing SMSTART/SMSTOP transitions.
+		const maxPixelsPerChunk = 4096
+		chunkPixels := batchSize * numY * numX
+		if chunkPixels <= maxPixelsPerChunk {
 			neon.ConvKernelGradSME32x32Float32Asm(
 				unsafe.Pointer(&x[xBaseIdx]),
 				unsafe.Pointer(&v[vBaseIdx]),
-				unsafe.Pointer(&out[outBaseIdx]),
+				unsafe.Pointer(&dstOut[outBaseIdx]),
 				batchSize, numY, numX,
 				xBatchStrideFloats*4, vBatchStrideFloats*4,
 				xYStrideFloats*4, vYStrideFloats*4,
 				xStepFloats*4, vStepFloats*4,
 				outC*4,
-				validRows, validCols, 0,
+				validRows, validCols, *acc,
 			)
+			*acc = 1
 			return
 		}
 
-		// When numY == 1 (collapsed contiguous spatial domain) and numX > maxPixelsPerChunk:
 		if numY == 1 && batchSize == 1 {
-			acc := 0
 			for xOff := 0; xOff < numX; xOff += maxPixelsPerChunk {
 				chunkX := min(maxPixelsPerChunk, numX-xOff)
 				neon.ConvKernelGradSME32x32Float32Asm(
 					unsafe.Pointer(&x[xBaseIdx+xOff*xStepFloats]),
 					unsafe.Pointer(&v[vBaseIdx+xOff*vStepFloats]),
-					unsafe.Pointer(&out[outBaseIdx]),
+					unsafe.Pointer(&dstOut[outBaseIdx]),
 					1, 1, chunkX,
 					xBatchStrideFloats*4, vBatchStrideFloats*4,
 					xYStrideFloats*4, vYStrideFloats*4,
 					xStepFloats*4, vStepFloats*4,
 					outC*4,
-					validRows, validCols, acc,
+					validRows, validCols, *acc,
 				)
-				acc = 1
+				*acc = 1
 			}
 			return
 		}
 
-		// Chunk across batchSize and/or numY so each call processes <= maxPixelsPerChunk pixels.
 		pixelsPerBatch := numY * numX
 		if pixelsPerBatch <= maxPixelsPerChunk {
 			batchChunk := max(1, maxPixelsPerChunk/pixelsPerBatch)
-			acc := 0
-			for bStart := 0; bStart < batchSize; bStart += batchChunk {
-				bCount := min(batchChunk, batchSize-bStart)
+			for bOff := 0; bOff < batchSize; bOff += batchChunk {
+				bc := min(batchChunk, batchSize-bOff)
 				neon.ConvKernelGradSME32x32Float32Asm(
-					unsafe.Pointer(&x[xBaseIdx+bStart*xBatchStrideFloats]),
-					unsafe.Pointer(&v[vBaseIdx+bStart*vBatchStrideFloats]),
-					unsafe.Pointer(&out[outBaseIdx]),
-					bCount, numY, numX,
+					unsafe.Pointer(&x[xBaseIdx+bOff*xBatchStrideFloats]),
+					unsafe.Pointer(&v[vBaseIdx+bOff*vBatchStrideFloats]),
+					unsafe.Pointer(&dstOut[outBaseIdx]),
+					bc, numY, numX,
 					xBatchStrideFloats*4, vBatchStrideFloats*4,
 					xYStrideFloats*4, vYStrideFloats*4,
 					xStepFloats*4, vStepFloats*4,
 					outC*4,
-					validRows, validCols, acc,
+					validRows, validCols, *acc,
 				)
-				acc = 1
+				*acc = 1
 			}
 			return
 		}
 
-		// A single batch has > maxPixelsPerChunk pixels: chunk across b and y (and x if numY == 1).
-		acc := 0
 		if numY == 1 {
 			for b := range batchSize {
 				xB := xBaseIdx + b*xBatchStrideFloats
@@ -673,15 +1049,15 @@ func execConvKernelGradSME(
 					neon.ConvKernelGradSME32x32Float32Asm(
 						unsafe.Pointer(&x[xB+xOff*xStepFloats]),
 						unsafe.Pointer(&v[vB+xOff*vStepFloats]),
-						unsafe.Pointer(&out[outBaseIdx]),
+						unsafe.Pointer(&dstOut[outBaseIdx]),
 						1, 1, chunkX,
 						xBatchStrideFloats*4, vBatchStrideFloats*4,
 						xYStrideFloats*4, vYStrideFloats*4,
 						xStepFloats*4, vStepFloats*4,
 						outC*4,
-						validRows, validCols, acc,
+						validRows, validCols, *acc,
 					)
-					acc = 1
+					*acc = 1
 				}
 			}
 			return
@@ -696,24 +1072,87 @@ func execConvKernelGradSME(
 				neon.ConvKernelGradSME32x32Float32Asm(
 					unsafe.Pointer(&x[xB+yStart*xYStrideFloats]),
 					unsafe.Pointer(&v[vB+yStart*vYStrideFloats]),
-					unsafe.Pointer(&out[outBaseIdx]),
+					unsafe.Pointer(&dstOut[outBaseIdx]),
 					1, yCount, numX,
 					xBatchStrideFloats*4, vBatchStrideFloats*4,
 					xYStrideFloats*4, vYStrideFloats*4,
 					xStepFloats*4, vStepFloats*4,
 					outC*4,
-					validRows, validCols, acc,
+					validRows, validCols, *acc,
 				)
-				acc = 1
+				*acc = 1
 			}
 		}
 	}
 
-	maxWorkers := min(totalTasks, backend.Scheduler.AdjustedMaxParallelism())
+	processRangeSME := func(dstOut []float32, ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd int) {
+		bFirst := rStart / p.OutH
+		yFirst := rStart % p.OutH
+		bLast := (rEnd - 1) / p.OutH
+		yLast := (rEnd-1)%p.OutH + 1
+
+		acc := 0
+		if bFirst == bLast {
+			runSubRangeSME(dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, yLast, &acc)
+			return
+		}
+		bCur := bFirst
+		if yFirst > 0 {
+			runSubRangeSME(dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, p.OutH, &acc)
+			bCur++
+		}
+		fullBatches := bLast - bCur
+		if yLast == p.OutH {
+			fullBatches++
+		}
+		if fullBatches > 0 {
+			runSubRangeSME(dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bCur, fullBatches, 0, p.OutH, &acc)
+		}
+		if yLast < p.OutH {
+			runSubRangeSME(dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bLast, 1, 0, yLast, &acc)
+		}
+	}
+
+	processRangeNEON := func(dstOut []float32, ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd int) {
+		bFirst := rStart / p.OutH
+		yFirst := rStart % p.OutH
+		bLast := (rEnd - 1) / p.OutH
+		yLast := (rEnd-1)%p.OutH + 1
+
+		if bFirst == bLast {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, yLast)
+			return
+		}
+		bCur := bFirst
+		if yFirst > 0 {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bFirst, 1, yFirst, p.OutH)
+			bCur++
+		}
+		fullBatches := bLast - bCur
+		if yLast == p.OutH {
+			fullBatches++
+		}
+		if fullBatches > 0 {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bCur, fullBatches, 0, p.OutH)
+		}
+		if yLast < p.OutH {
+			convKernelGradNEONTileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, bLast, 1, 0, yLast)
+		}
+	}
+
+	maxWorkers := min(totalTasks, maxParallelism)
 	if maxWorkers <= 1 {
 		for taskIdx := range totalTasks {
-			spatialIdx := taskIdx / panelsPerFilter
-			rem := taskIdx % panelsPerFilter
+			sliceIdx := taskIdx / baseTasks
+			rStart := sliceIdx * rowsPerSlice
+			if rStart >= totalOutRows {
+				continue
+			}
+			rEnd := min(totalOutRows, rStart+rowsPerSlice)
+
+			baseIdx := taskIdx % baseTasks
+			spatialIdx := baseIdx / panelsPerFilter
+			rem := baseIdx % panelsPerFilter
 			rowPanel := rem / numColPanels
 			colPanel := rem % numColPanels
 			ky := spatialIdx / kW
@@ -722,7 +1161,10 @@ func execConvKernelGradSME(
 			validRows := min(32, inC-cInStart)
 			cOutStart := colPanel * 32
 			validCols := min(32, outC-cOutStart)
-			processTaskSME(ky, kx, cInStart, validRows, cOutStart, validCols)
+			processRangeSME(partialSlices[sliceIdx], ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd)
+		}
+		for s := 1; s < numSlices; s++ {
+			simdAddVVFloat32(out, partialSlices[s], out)
 		}
 		return output, nil
 	}
@@ -750,12 +1192,25 @@ func execConvKernelGradSME(
 		}
 
 		for {
+			// Avoid letting the slower Efficiency cluster SME unit (clusterID == 2) grab one
+			// of the final 2 tasks when faster Super/Performance SME units are active.
+			if useSME && clusterID == 2 && activeSME.Load() > 1 && totalTasks-int(nextTask.Load()) <= 2 {
+				break
+			}
 			taskIdx := int(nextTask.Add(1) - 1)
 			if taskIdx >= totalTasks {
 				break
 			}
-			spatialIdx := taskIdx / panelsPerFilter
-			rem := taskIdx % panelsPerFilter
+			sliceIdx := taskIdx / baseTasks
+			rStart := sliceIdx * rowsPerSlice
+			if rStart >= totalOutRows {
+				continue
+			}
+			rEnd := min(totalOutRows, rStart+rowsPerSlice)
+
+			baseIdx := taskIdx % baseTasks
+			spatialIdx := baseIdx / panelsPerFilter
+			rem := baseIdx % panelsPerFilter
 			rowPanel := rem / numColPanels
 			colPanel := rem % numColPanels
 			ky := spatialIdx / kW
@@ -766,28 +1221,40 @@ func execConvKernelGradSME(
 			validCols := min(32, outC-cOutStart)
 
 			if useSME {
-				processTaskSME(ky, kx, cInStart, validRows, cOutStart, validCols)
+				processRangeSME(partialSlices[sliceIdx], ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd)
 			} else {
-				convKernelGradNEONTileFloat32(p, x, v, out, ky, kx, cInStart, validRows, cOutStart, validCols)
+				processRangeNEON(partialSlices[sliceIdx], ky, kx, cInStart, validRows, cOutStart, validCols, rStart, rEnd)
 			}
 		}
 	})
+
+	for s := 1; s < numSlices; s++ {
+		simdAddVVFloat32(out, partialSlices[s], out)
+	}
 	return output, nil
 }
 
 func convKernelGradNEONTileFloat32(
 	p *Conv2DParams,
 	x, v, out []float32,
-	ky, kx, cInStart, validRows, cOutStart, validCols int,
+	ky, kx, cInStart, validRows, cOutStart, validCols, bStart, bCount, ySliceStart, ySliceEnd int,
 ) {
 	outYStart, outYEnd, inYStart, outXStart, outXEnd, inXStart := p.KernelGradValidRange(ky, kx)
+	if ySliceStart > outYStart {
+		diff := ySliceStart - outYStart
+		outYStart = ySliceStart
+		inYStart += diff * p.KerDilH
+	}
+	if ySliceEnd < outYEnd {
+		outYEnd = ySliceEnd
+	}
 	numY := outYEnd - outYStart
 	numX := outXEnd - outXStart
-	if numY <= 0 || numX <= 0 {
+	if numY <= 0 || numX <= 0 || bCount <= 0 {
 		return
 	}
 
-	batchSize := p.BatchSize
+	batchSize := bCount
 	inC := p.InChannels
 	outC := p.OutChannels
 	xStepFloats := p.KerDilW * inC
@@ -806,16 +1273,19 @@ func convKernelGradNEONTileFloat32(
 		}
 	}
 
+	xBatchOffset := bStart * xBatchStrideFloats
+	vBatchOffset := bStart * vBatchStrideFloats
+
 	for colOff := 0; colOff < validCols; colOff += 16 {
 		cOut := cOutStart + colOff
 		subCols := min(16, validCols-colOff)
-		vBaseIdx := (outYStart*p.OutW+outXStart)*outC + cOut
+		vBaseIdx := vBatchOffset + (outYStart*p.OutW+outXStart)*outC + cOut
 
 		if subCols == 16 {
 			rOff := 0
 			for ; rOff+4 <= validRows; rOff += 4 {
 				cIn := cInStart + rOff
-				xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
+				xBaseIdx := xBatchOffset + (inYStart*p.InW+inXStart)*inC + cIn
 				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
 				neon.ConvKernelGradNEON4x16Float32Asm(
 					unsafe.Pointer(&x[xBaseIdx]),
@@ -830,7 +1300,7 @@ func convKernelGradNEONTileFloat32(
 			}
 			for ; rOff < validRows; rOff++ {
 				cIn := cInStart + rOff
-				xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
+				xBaseIdx := xBatchOffset + (inYStart*p.InW+inXStart)*inC + cIn
 				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
 				neon.ConvKernelGradNEON1x16Float32Asm(
 					unsafe.Pointer(&x[xBaseIdx]),
@@ -843,7 +1313,7 @@ func convKernelGradNEONTileFloat32(
 				)
 			}
 		} else {
-			xBaseIdx := (inYStart*p.InW+inXStart)*inC + cInStart
+			xBaseIdx := xBatchOffset + (inYStart*p.InW+inXStart)*inC + cInStart
 			outBaseIdx := ((ky*p.KernelW+kx)*inC+cInStart)*outC + cOut
 			convKernelGradTailFloat32(
 				x, v, out,
@@ -900,10 +1370,10 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+4])
-			acc1.Store(out[outOff+outRowStride : outOff+outRowStride+4])
-			acc2.Store(out[outOff+2*outRowStride : outOff+2*outRowStride+4])
-			acc3.Store(out[outOff+3*outRowStride : outOff+3*outRowStride+4])
+			acc0.Add(archsimd.LoadFloat32x4(out[outOff : outOff+4])).Store(out[outOff : outOff+4])
+			acc1.Add(archsimd.LoadFloat32x4(out[outOff+outRowStride : outOff+outRowStride+4])).Store(out[outOff+outRowStride : outOff+outRowStride+4])
+			acc2.Add(archsimd.LoadFloat32x4(out[outOff+2*outRowStride : outOff+2*outRowStride+4])).Store(out[outOff+2*outRowStride : outOff+2*outRowStride+4])
+			acc3.Add(archsimd.LoadFloat32x4(out[outOff+3*outRowStride : outOff+3*outRowStride+4])).Store(out[outOff+3*outRowStride : outOff+3*outRowStride+4])
 		}
 		for ; r < validRows; r++ {
 			acc0 := archsimd.BroadcastFloat32x4(0)
@@ -928,7 +1398,7 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+4])
+			acc0.Add(archsimd.LoadFloat32x4(out[outOff : outOff+4])).Store(out[outOff : outOff+4])
 		}
 	}
 
@@ -954,7 +1424,7 @@ func convKernelGradTailFloat32(
 				xB += xBatchStride
 				vB += vBatchStride
 			}
-			out[outBaseIdx+r*outRowStride+col] = sum
+			out[outBaseIdx+r*outRowStride+col] += sum
 		}
 	}
 }

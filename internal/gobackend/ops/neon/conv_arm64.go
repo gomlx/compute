@@ -17,6 +17,17 @@ func ConvNEONKernel4x16Float32Asm(
 	K, lhsRowStrideBytes, rhsStepBytes, outRowStrideBytes int,
 )
 
+// ConvNEONDirect2DKernel4x16Float32Asm computes a 4x16 float32 output tile directly from
+// 4 horizontally adjacent 2D input positions (with pixel byte stride lhsRowStrideBytes)
+// across numKy valid filter rows of width kWC = kW * inC (jumping by lhsKyJumpBytes after
+// each filter row), without intermediate im2col patch extraction.
+//
+//go:noescape
+func ConvNEONDirect2DKernel4x16Float32Asm(
+	lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+	kWC, numKy, lhsRowStrideBytes, lhsKyJumpBytes, rhsStepBytes, outRowStrideBytes int,
+)
+
 // ConvKernelGradNEON4x16Float32Asm accumulates a 4x16 float32 kernel-gradient tile
 // across the 3D domain (batchSize, numY, numX) directly from xBase and vBase and
 // stores the 4x16 result to outPtr.

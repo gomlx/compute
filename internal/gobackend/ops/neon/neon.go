@@ -323,6 +323,28 @@ func DispatchLeadingSumNEON(inPtr, outPtr unsafe.Pointer, A, B int, dtype dtypes
 
 func reduceLeadingSumFloat32NEON(in, out []float32, A, B int) {
 	b := 0
+	for ; b+32 <= B; b += 32 {
+		var acc0, acc1, acc2, acc3, acc4, acc5, acc6, acc7 archsimd.Float32x4
+		for a := range A {
+			off := a*B + b
+			acc0 = acc0.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off]))))
+			acc1 = acc1.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+4]))))
+			acc2 = acc2.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+8]))))
+			acc3 = acc3.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+12]))))
+			acc4 = acc4.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+16]))))
+			acc5 = acc5.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+20]))))
+			acc6 = acc6.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+24]))))
+			acc7 = acc7.Add(archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&in[off+28]))))
+		}
+		acc0.StoreArray((*[4]float32)(unsafe.Pointer(&out[b])))
+		acc1.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+4])))
+		acc2.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+8])))
+		acc3.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+12])))
+		acc4.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+16])))
+		acc5.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+20])))
+		acc6.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+24])))
+		acc7.StoreArray((*[4]float32)(unsafe.Pointer(&out[b+28])))
+	}
 	for ; b+16 <= B; b += 16 {
 		var acc0, acc1, acc2, acc3 archsimd.Float32x4
 		for a := range A {

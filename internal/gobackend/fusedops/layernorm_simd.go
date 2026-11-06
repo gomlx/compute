@@ -38,16 +38,25 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		normSize *= dims[a]
 	}
 
-	if !node.IsExecutorCached() {
-		// Check if normalization axes are contiguous trailing axes.
-		isTrailingAxes := true
-		for i, a := range axes {
-			if a != rank-len(axes)+i {
-				isTrailingAxes = false
-				break
-			}
+	isTrailingAxes := true
+	for i, a := range axes {
+		if a != rank-len(axes)+i {
+			isTrailingAxes = false
+			break
 		}
-		if !isTrailingAxes || normSize <= 0 {
+	}
+
+	var aDim, bDim, cDim int
+	isMiddleContiguous := false
+	if !isTrailingAxes {
+		if a, b, c, d, ok := classifyStridedLayerNormAxes(dims, axes); ok && d == 1 && c > 1 && dtype == dtypes.Float32 {
+			aDim, bDim, cDim = a, b, c
+			isMiddleContiguous = true
+		}
+	}
+
+	if !node.IsExecutorCached() {
+		if (!isTrailingAxes && !isMiddleContiguous) || normSize <= 0 {
 			return nil, gobackend.ErrFallback
 		}
 	}
@@ -66,6 +75,31 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	}
 	if len(inputs) > 2 {
 		beta = inputs[2]
+	}
+
+	if isMiddleContiguous {
+		inData := input.Flat.([]float32)
+		outData := output.Flat.([]float32)
+		var gData, bData []float32
+		if gamma != nil {
+			gData = gamma.Flat.([]float32)
+		}
+		if beta != nil {
+			bData = beta.Flat.([]float32)
+		}
+		totalElements := len(inData)
+		sliceSize := bDim * cDim
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && aDim > 1 && totalElements > minLayerNormParallelElements {
+			minA := max(1, minLayerNormParallelElements/max(1, sliceSize))
+			backend.Scheduler.ParallelizeChunks(aDim, minA, func(aStart, aEnd int) {
+				inSlice := inData[aStart*sliceSize : aEnd*sliceSize]
+				outSlice := outData[aStart*sliceSize : aEnd*sliceSize]
+				simdLayerNormMiddleAxesFloat32(inSlice, outSlice, gData, bData, aEnd-aStart, bDim, cDim, data.epsilon)
+			})
+		} else {
+			simdLayerNormMiddleAxesFloat32(inData, outData, gData, bData, aDim, bDim, cDim, data.epsilon)
+		}
+		return output, nil
 	}
 
 	outerSize := input.RawShape.Size() / normSize
@@ -664,6 +698,257 @@ func simdLayerNormTrailingAxesFloat64(
 				vNorm = vNorm.Add(vB)
 			}
 			vNorm.StorePart(outRow[i:])
+		}
+	}
+}
+
+// simdLayerNormMiddleAxesFloat32 executes LayerNorm on a collapsed [aDim, bDim, cDim] tensor
+// where bDim is the normalized dimension (normSize = bDim) and aDim, cDim are kept dimensions.
+// It vectorizes along the contiguous cDim dimension.
+func simdLayerNormMiddleAxesFloat32(
+	inData, outData, gammaData, betaData []float32,
+	aDim, bDim, cDim int,
+	epsilon float64,
+) {
+	if aDim == 0 || bDim == 0 || cDim == 0 {
+		return
+	}
+	invNormSizeF := 1.0 / float32(bDim)
+	strideBC := bDim * cDim
+	vZero := simd.BroadcastFloat32s(0)
+	vLen := vZero.Len()
+
+	var stackMeans [256]float32
+	var stackVars [256]float32
+	var means, vars []float32
+	if cDim <= len(stackMeans) {
+		means = stackMeans[:cDim]
+		vars = stackVars[:cDim]
+	} else {
+		means = make([]float32, cDim)
+		vars = make([]float32, cDim)
+	}
+
+	hasGamma := len(gammaData) >= bDim
+	hasBeta := len(betaData) >= bDim
+
+	for a := range aDim {
+		baseA := a * strideBC
+
+		// Pass 1 & 2: Compute mean[c] and invStd[c] across b in 0..bDim-1.
+		// Process c in register-pinned blocks of 4*vLen (64 floats), 2*vLen (32 floats), vLen (16 floats), and remainder.
+		c := 0
+		for ; c+4*vLen <= cDim; c += 4 * vLen {
+			vSum0, vSum1, vSum2, vSum3 := vZero, vZero, vZero, vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				vSum0 = vSum0.Add(simd.LoadFloat32s(inData[off:]))
+				vSum1 = vSum1.Add(simd.LoadFloat32s(inData[off+vLen:]))
+				vSum2 = vSum2.Add(simd.LoadFloat32s(inData[off+2*vLen:]))
+				vSum3 = vSum3.Add(simd.LoadFloat32s(inData[off+3*vLen:]))
+			}
+			vInvN := simd.BroadcastFloat32s(invNormSizeF)
+			vMean0 := vSum0.Mul(vInvN)
+			vMean1 := vSum1.Mul(vInvN)
+			vMean2 := vSum2.Mul(vInvN)
+			vMean3 := vSum3.Mul(vInvN)
+			vMean0.Store(means[c:])
+			vMean1.Store(means[c+vLen:])
+			vMean2.Store(means[c+2*vLen:])
+			vMean3.Store(means[c+3*vLen:])
+
+			vVar0, vVar1, vVar2, vVar3 := vZero, vZero, vZero, vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				d0 := simd.LoadFloat32s(inData[off:]).Sub(vMean0)
+				d1 := simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1)
+				d2 := simd.LoadFloat32s(inData[off+2*vLen:]).Sub(vMean2)
+				d3 := simd.LoadFloat32s(inData[off+3*vLen:]).Sub(vMean3)
+				vVar0 = d0.MulAdd(d0, vVar0)
+				vVar1 = d1.MulAdd(d1, vVar1)
+				vVar2 = d2.MulAdd(d2, vVar2)
+				vVar3 = d3.MulAdd(d3, vVar3)
+			}
+			vVar0.Store(vars[c:])
+			vVar1.Store(vars[c+vLen:])
+			vVar2.Store(vars[c+2*vLen:])
+			vVar3.Store(vars[c+3*vLen:])
+		}
+		for ; c+2*vLen <= cDim; c += 2 * vLen {
+			vSum0, vSum1 := vZero, vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				vSum0 = vSum0.Add(simd.LoadFloat32s(inData[off:]))
+				vSum1 = vSum1.Add(simd.LoadFloat32s(inData[off+vLen:]))
+			}
+			vInvN := simd.BroadcastFloat32s(invNormSizeF)
+			vMean0 := vSum0.Mul(vInvN)
+			vMean1 := vSum1.Mul(vInvN)
+			vMean0.Store(means[c:])
+			vMean1.Store(means[c+vLen:])
+
+			vVar0, vVar1 := vZero, vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				d0 := simd.LoadFloat32s(inData[off:]).Sub(vMean0)
+				d1 := simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1)
+				vVar0 = d0.MulAdd(d0, vVar0)
+				vVar1 = d1.MulAdd(d1, vVar1)
+			}
+			vVar0.Store(vars[c:])
+			vVar1.Store(vars[c+vLen:])
+		}
+		for ; c+vLen <= cDim; c += vLen {
+			vSum0 := vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				vSum0 = vSum0.Add(simd.LoadFloat32s(inData[off:]))
+			}
+			vInvN := simd.BroadcastFloat32s(invNormSizeF)
+			vMean0 := vSum0.Mul(vInvN)
+			vMean0.Store(means[c:])
+
+			vVar0 := vZero
+			for b := range bDim {
+				off := baseA + b*cDim + c
+				d0 := simd.LoadFloat32s(inData[off:]).Sub(vMean0)
+				vVar0 = d0.MulAdd(d0, vVar0)
+			}
+			vVar0.Store(vars[c:])
+		}
+		for ; c < cDim; c++ {
+			var s float32
+			for b := range bDim {
+				s += inData[baseA+b*cDim+c]
+			}
+			m := s * invNormSizeF
+			means[c] = m
+			var vSum float32
+			for b := range bDim {
+				d := inData[baseA+b*cDim+c] - m
+				vSum += d * d
+			}
+			vars[c] = vSum
+		}
+
+		for i := range cDim {
+			vars[i] = float32(1.0 / math.Sqrt(float64(vars[i]*invNormSizeF)+epsilon))
+		}
+
+		// Pass 3: Normalize out[b, c] = (in[b, c] - mean[c]) * invStd[c] * gamma[b] + beta[b]
+		c = 0
+		for ; c+4*vLen <= cDim; c += 4 * vLen {
+			vMean0 := simd.LoadFloat32s(means[c:])
+			vMean1 := simd.LoadFloat32s(means[c+vLen:])
+			vMean2 := simd.LoadFloat32s(means[c+2*vLen:])
+			vMean3 := simd.LoadFloat32s(means[c+3*vLen:])
+			vInvStd0 := simd.LoadFloat32s(vars[c:])
+			vInvStd1 := simd.LoadFloat32s(vars[c+vLen:])
+			vInvStd2 := simd.LoadFloat32s(vars[c+2*vLen:])
+			vInvStd3 := simd.LoadFloat32s(vars[c+3*vLen:])
+
+			switch {
+			case hasGamma && hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vG := simd.BroadcastFloat32s(gammaData[b])
+					vB := simd.BroadcastFloat32s(betaData[b])
+					vScale0 := vInvStd0.Mul(vG)
+					vScale1 := vInvStd1.Mul(vG)
+					vScale2 := vInvStd2.Mul(vG)
+					vScale3 := vInvStd3.Mul(vG)
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).MulAdd(vScale0, vB).Store(outData[off:])
+					simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1).MulAdd(vScale1, vB).Store(outData[off+vLen:])
+					simd.LoadFloat32s(inData[off+2*vLen:]).Sub(vMean2).MulAdd(vScale2, vB).Store(outData[off+2*vLen:])
+					simd.LoadFloat32s(inData[off+3*vLen:]).Sub(vMean3).MulAdd(vScale3, vB).Store(outData[off+3*vLen:])
+				}
+			case hasGamma:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vG := simd.BroadcastFloat32s(gammaData[b])
+					vScale0 := vInvStd0.Mul(vG)
+					vScale1 := vInvStd1.Mul(vG)
+					vScale2 := vInvStd2.Mul(vG)
+					vScale3 := vInvStd3.Mul(vG)
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).Mul(vScale0).Store(outData[off:])
+					simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1).Mul(vScale1).Store(outData[off+vLen:])
+					simd.LoadFloat32s(inData[off+2*vLen:]).Sub(vMean2).Mul(vScale2).Store(outData[off+2*vLen:])
+					simd.LoadFloat32s(inData[off+3*vLen:]).Sub(vMean3).Mul(vScale3).Store(outData[off+3*vLen:])
+				}
+			case hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vB := simd.BroadcastFloat32s(betaData[b])
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).MulAdd(vInvStd0, vB).Store(outData[off:])
+					simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1).MulAdd(vInvStd1, vB).Store(outData[off+vLen:])
+					simd.LoadFloat32s(inData[off+2*vLen:]).Sub(vMean2).MulAdd(vInvStd2, vB).Store(outData[off+2*vLen:])
+					simd.LoadFloat32s(inData[off+3*vLen:]).Sub(vMean3).MulAdd(vInvStd3, vB).Store(outData[off+3*vLen:])
+				}
+			default:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).Mul(vInvStd0).Store(outData[off:])
+					simd.LoadFloat32s(inData[off+vLen:]).Sub(vMean1).Mul(vInvStd1).Store(outData[off+vLen:])
+					simd.LoadFloat32s(inData[off+2*vLen:]).Sub(vMean2).Mul(vInvStd2).Store(outData[off+2*vLen:])
+					simd.LoadFloat32s(inData[off+3*vLen:]).Sub(vMean3).Mul(vInvStd3).Store(outData[off+3*vLen:])
+				}
+			}
+		}
+		for ; c+vLen <= cDim; c += vLen {
+			vMean0 := simd.LoadFloat32s(means[c:])
+			vInvStd0 := simd.LoadFloat32s(vars[c:])
+			switch {
+			case hasGamma && hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vScale0 := vInvStd0.Mul(simd.BroadcastFloat32s(gammaData[b]))
+					vB := simd.BroadcastFloat32s(betaData[b])
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).MulAdd(vScale0, vB).Store(outData[off:])
+				}
+			case hasGamma:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vScale0 := vInvStd0.Mul(simd.BroadcastFloat32s(gammaData[b]))
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).Mul(vScale0).Store(outData[off:])
+				}
+			case hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					vB := simd.BroadcastFloat32s(betaData[b])
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).MulAdd(vInvStd0, vB).Store(outData[off:])
+				}
+			default:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					simd.LoadFloat32s(inData[off:]).Sub(vMean0).Mul(vInvStd0).Store(outData[off:])
+				}
+			}
+		}
+		for ; c < cDim; c++ {
+			m := means[c]
+			invS := vars[c]
+			switch {
+			case hasGamma && hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					outData[off] = (inData[off]-m)*invS*gammaData[b] + betaData[b]
+				}
+			case hasGamma:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					outData[off] = (inData[off] - m) * invS * gammaData[b]
+				}
+			case hasBeta:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					outData[off] = (inData[off]-m)*invS + betaData[b]
+				}
+			default:
+				for b := range bDim {
+					off := baseA + b*cDim + c
+					outData[off] = (inData[off] - m) * invS
+				}
+			}
 		}
 	}
 }

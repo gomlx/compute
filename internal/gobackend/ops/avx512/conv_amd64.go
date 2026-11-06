@@ -28,6 +28,30 @@ func ConvAVX512Kernel4x32Float32Asm(
 	K, lhsRowStrideBytes, rhsStepBytes, outRowStrideBytes int,
 )
 
+// ConvAVX512Direct2DKernel8x32Float32Asm computes an 8x32 float32 output tile for
+// 8 horizontally adjacent interior 2D output pixels directly from the input tensor
+// without im2col patch extraction, iterating across numKy valid filter rows of
+// width kWC = kW * inC each and advancing LHS row pointers by lhsKyJumpBytes
+// between filter rows.
+//
+//go:noescape
+func ConvAVX512Direct2DKernel8x32Float32Asm(
+	lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+	kWC, numKy, lhsRowStrideBytes, lhsKyJumpBytes, rhsStepBytes, outRowStrideBytes int,
+)
+
+// ConvAVX512Direct2DKernel4x32Float32Asm computes a 4x32 float32 output tile for
+// 4 horizontally adjacent interior 2D output pixels directly from the input tensor
+// without im2col patch extraction, iterating across numKy valid filter rows of
+// width kWC = kW * inC each and advancing LHS row pointers by lhsKyJumpBytes
+// between filter rows.
+//
+//go:noescape
+func ConvAVX512Direct2DKernel4x32Float32Asm(
+	lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+	kWC, numKy, lhsRowStrideBytes, lhsKyJumpBytes, rhsStepBytes, outRowStrideBytes int,
+)
+
 // ConvKernelGradAVX512_8x32Float32Asm accumulates an 8x32 float32 kernel-gradient tile
 // across the 3D domain (batchSize, numY, numX) directly from xBase and vBase and
 // stores the 8x32 result to outPtr.

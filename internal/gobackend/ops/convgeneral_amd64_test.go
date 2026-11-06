@@ -260,6 +260,25 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			kernelDilations: []int{1, 1},
 			expectedKind:    Conv2DKernelGrad,
 		},
+		{
+			name:         "2D_Fwd_Direct2D_LargeSpatial",
+			inputDims:    []int{2, 32, 32, 16},
+			kernelDims:   []int{3, 3, 16, 35},
+			axes:         axes2DFwd,
+			strides:      []int{1, 1},
+			paddings:     [][2]int{{1, 1}, {1, 1}},
+			expectedKind: Conv2DStandard,
+		},
+		{
+			name:            "2D_VJPKernel_SmallBatch_LargeSpatial",
+			inputDims:       []int{1, 64, 64, 16},
+			kernelDims:      []int{1, 64, 64, 32},
+			axes:            axes2DVJPKernel,
+			strides:         []int{1, 1},
+			paddings:        [][2]int{{1, 1}, {1, 1}},
+			kernelDilations: []int{1, 1},
+			expectedKind:    Conv2DKernelGrad,
+		},
 
 		// 1D Convolutions (Forward, VJP wrt Input, VJP wrt Kernel)
 		{

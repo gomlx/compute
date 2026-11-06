@@ -208,12 +208,12 @@ var (
 
 func registerAVX2() {
 	// Float32
-	activations.Register[float32]("avx2:relu", compute.ActivationRelu, ReluAVX2, PriorityAVX2, &AVX2SimpleMetadata)
-	activations.Register[float32]("avx2:hardswish", compute.ActivationHardSwish, HardSwishAVX2, PriorityAVX2, &AVX2SimpleMetadata)
-	activations.Register[float32]("avx2:silu", compute.ActivationSilu, SiluAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx2:relu", compute.ActivationRelu, ReluKernelAVX2, PriorityAVX2, &AVX2SimpleMetadata)
+	activations.RegisterKernel[float32]("avx2:hardswish", compute.ActivationHardSwish, HardSwishKernelAVX2, PriorityAVX2, &AVX2SimpleMetadata)
+	activations.RegisterKernel[float32]("avx2:silu", compute.ActivationSilu, SiluKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
-	activations.Register[float32]("avx2:tanh", compute.ActivationTanh, TanhAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx2:tanh", compute.ActivationTanh, TanhKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// Float64
 	activations.RegisterKernel[float64]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
@@ -237,36 +237,46 @@ func registerAVX2() {
 }
 
 func ReluAVX2(data []float32) {
+	ReluKernelAVX2(data, data)
+}
+
+func ReluKernelAVX2(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x8(0)
 	i := 0
-	for ; i+8 <= len(data); i += 8 {
-		v := archsimd.LoadFloat32x8(data[i : i+8])
-		v.Max(vZero).Store(data[i : i+8])
+	for ; i+8 <= len(in); i += 8 {
+		v := archsimd.LoadFloat32x8(in[i : i+8])
+		v.Max(vZero).Store(out[i : i+8])
 	}
-	for ; i < len(data); i++ {
-		if data[i] < 0 {
-			data[i] = 0
+	for ; i < len(in); i++ {
+		if in[i] < 0 {
+			out[i] = 0
+		} else {
+			out[i] = in[i]
 		}
 	}
 }
 
 func HardSwishAVX2(data []float32) {
+	HardSwishKernelAVX2(data, data)
+}
+
+func HardSwishKernelAVX2(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x8(0)
 	vOne := archsimd.BroadcastFloat32x8(1)
 	vOneSixth := archsimd.BroadcastFloat32x8(1.0 / 6.0)
 	vHalf := archsimd.BroadcastFloat32x8(0.5)
 
 	i := 0
-	for ; i+8 <= len(data); i += 8 {
-		v := archsimd.LoadFloat32x8(data[i : i+8])
+	for ; i+8 <= len(in); i += 8 {
+		v := archsimd.LoadFloat32x8(in[i : i+8])
 		scaled := v.MulAdd(vOneSixth, vHalf)
 		clamped := scaled.Max(vZero).Min(vOne)
-		v.Mul(clamped).Store(data[i : i+8])
+		v.Mul(clamped).Store(out[i : i+8])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
+	for ; i < len(in); i++ {
+		x := in[i]
 		shapeX := min(max(x*(1.0/6.0)+0.5, 0), 1)
-		data[i] = x * shapeX
+		out[i] = x * shapeX
 	}
 }
 
@@ -289,18 +299,22 @@ func exp256(x archsimd.Float32x8) archsimd.Float32x8 {
 }
 
 func SiluAVX2(data []float32) {
+	SiluKernelAVX2(data, data)
+}
+
+func SiluKernelAVX2(in, out []float32) {
 	vOne := archsimd.BroadcastFloat32x8(1.0)
 	i := 0
-	for ; i+8 <= len(data); i += 8 {
-		v := archsimd.LoadFloat32x8(data[i : i+8])
+	for ; i+8 <= len(in); i += 8 {
+		v := archsimd.LoadFloat32x8(in[i : i+8])
 		negV := v.Neg()
 		expNegV := exp256(negV)
 		denom := vOne.Add(expNegV)
-		v.Div(denom).Store(data[i : i+8])
+		v.Div(denom).Store(out[i : i+8])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
-		data[i] = x / (1.0 + float32(math.Exp(float64(-x))))
+	for ; i < len(in); i++ {
+		x := in[i]
+		out[i] = x / (1.0 + float32(math.Exp(float64(-x))))
 	}
 }
 
@@ -315,13 +329,17 @@ func tanh256(x archsimd.Float32x8) archsimd.Float32x8 {
 }
 
 func TanhAVX2(data []float32) {
+	TanhKernelAVX2(data, data)
+}
+
+func TanhKernelAVX2(in, out []float32) {
 	i := 0
-	for ; i+8 <= len(data); i += 8 {
-		v := archsimd.LoadFloat32x8(data[i : i+8])
-		tanh256(v).Store(data[i : i+8])
+	for ; i+8 <= len(in); i += 8 {
+		v := archsimd.LoadFloat32x8(in[i : i+8])
+		tanh256(v).Store(out[i : i+8])
 	}
-	for ; i < len(data); i++ {
-		data[i] = float32(math.Tanh(float64(data[i])))
+	for ; i < len(in); i++ {
+		out[i] = float32(math.Tanh(float64(in[i])))
 	}
 }
 

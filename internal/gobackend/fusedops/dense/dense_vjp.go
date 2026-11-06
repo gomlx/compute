@@ -210,9 +210,57 @@ func execFusedDenseVJP(backend *gobackend.Backend, node *gobackend.Node, inputs 
 	return []*gobackend.Buffer{dxBuf, dwBuf}, nil
 }
 
-// transpose2D transposes a matrix of shape [rows, cols] to [cols, rows] using cache-friendly blocking.
-func transpose2D[T any](src []T, rows, cols int, dst []T) {
+// transpose2D transposes a matrix of shape [rows, cols] to [cols, rows] using cache-friendly blocking,
+// parallelized across workers when the matrix is large.
+func transpose2D[T any](backend *gobackend.Backend, src []T, rows, cols int, dst []T) {
 	const blockSize = 32
+	const minParallelWork = 16384
+	totalWork := rows * cols
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork >= minParallelWork {
+		if rows >= cols && rows > blockSize {
+			numRowBlocks := (rows + blockSize - 1) / blockSize
+			blocksPerChunk := max(1, minParallelWork/(blockSize*max(cols, 1)))
+			backend.Scheduler.ParallelizeChunks(numRowBlocks, blocksPerChunk, func(rb0, rbEnd int) {
+				rStart := rb0 * blockSize
+				rLimit := min(rbEnd*blockSize, rows)
+				for r0 := rStart; r0 < rLimit; r0 += blockSize {
+					rMax := min(r0+blockSize, rLimit)
+					for c0 := 0; c0 < cols; c0 += blockSize {
+						cMax := min(c0+blockSize, cols)
+						for r := r0; r < rMax; r++ {
+							rOffset := r * cols
+							for c := c0; c < cMax; c++ {
+								dst[c*rows+r] = src[rOffset+c]
+							}
+						}
+					}
+				}
+			})
+			return
+		} else if cols > blockSize {
+			numColBlocks := (cols + blockSize - 1) / blockSize
+			blocksPerChunk := max(1, minParallelWork/(blockSize*max(rows, 1)))
+			backend.Scheduler.ParallelizeChunks(numColBlocks, blocksPerChunk, func(cb0, cbEnd int) {
+				cStart := cb0 * blockSize
+				cLimit := min(cbEnd*blockSize, cols)
+				for r0 := 0; r0 < rows; r0 += blockSize {
+					rMax := min(r0+blockSize, rows)
+					for c0 := cStart; c0 < cLimit; c0 += blockSize {
+						cMax := min(c0+blockSize, cLimit)
+						for r := r0; r < rMax; r++ {
+							rOffset := r * cols
+							for c := c0; c < cMax; c++ {
+								dst[c*rows+r] = src[rOffset+c]
+							}
+						}
+					}
+				}
+			})
+			return
+		}
+	}
+
 	for r0 := 0; r0 < rows; r0 += blockSize {
 		rMax := min(r0+blockSize, rows)
 		for c0 := 0; c0 < cols; c0 += blockSize {
@@ -233,28 +281,29 @@ func reduceBiasFloat[T float32 | float64](backend *gobackend.Backend, dZ []T, m,
 		copy(dBias, dZ)
 		return
 	}
+	if m == 0 || n == 0 {
+		clear(dBias)
+		return
+	}
 
-	const minParallelChunk = 4096
+	const minParallelChunk = 16384
 	totalWork := m * n
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelChunk && n > 1 {
-		colsPerChunk := max(minParallelChunk/m, 1)
-		backend.Scheduler.ParallelizeChunks(n, colsPerChunk, func(c0, cEnd int) {
-			for c := c0; c < cEnd; c++ {
-				var sum T
-				for r := range m {
-					sum += dZ[r*n+c]
-				}
-				dBias[c] = sum
+	runCols := func(c0, cEnd int) {
+		cols := cEnd - c0
+		copy(dBias[c0:cEnd], dZ[c0:cEnd])
+		for r := 1; r < m; r++ {
+			row := dZ[r*n+c0 : r*n+cEnd]
+			out := dBias[c0:cEnd]
+			for c := range cols {
+				out[c] += row[c]
 			}
-		})
-	} else {
-		for c := range n {
-			var sum T
-			for r := range m {
-				sum += dZ[r*n+c]
-			}
-			dBias[c] = sum
 		}
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelChunk && n > 1 {
+		colsPerChunk := max(minParallelChunk/m, 16)
+		backend.Scheduler.ParallelizeChunks(n, colsPerChunk, runCols)
+	} else {
+		runCols(0, n)
 	}
 }
 
@@ -266,6 +315,7 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 	m := data.lhsCrossSize
 	n := data.rhsCrossSize
 	k := data.contractingSize
+	dtype := dOutput.RawShape.DType
 
 	xFlat := x.Flat.([]T)
 	wFlat := weight.Flat.([]T)
@@ -279,7 +329,12 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 	if data.options.Activation.Type == compute.ActivationNone {
 		dZ = dOutFlat
 	} else {
-		dZ = make([]T, m*n)
+		dZBuf, err := backend.GetBuffer(shapes.Make(dtype, m*n))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZBuf)
+		dZ = dZBuf.Flat.([]T)[:m*n]
 		if err := activations.ExecuteVJPFromOutput[T](backend, data.options.Activation.Type, yFlat, dOutFlat, dZ); err != nil {
 			return err
 		}
@@ -310,8 +365,13 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 	// DenseLayoutOutputsInput: dW = dZ^T @ x  ([N, M] x [M, K] -> [N, K])
 	switch data.options.WeightLayout {
 	case compute.DenseLayoutInputOutputs:
-		xT := make([]T, k*m)
-		transpose2D(xFlat, m, k, xT)
+		xTBuf, err := backend.GetBuffer(shapes.Make(dtype, k*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(xTBuf)
+		xT := xTBuf.Flat.([]T)[:k*m]
+		transpose2D(backend, xFlat, m, k, xT)
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, xT, dZ,
 			1, k, n, m,
@@ -322,8 +382,13 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 		}
 
 	case compute.DenseLayoutOutputsInput:
-		dZT := make([]T, n*m)
-		transpose2D(dZ, m, n, dZT)
+		dZTBuf, err := backend.GetBuffer(shapes.Make(dtype, n*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZTBuf)
+		dZT := dZTBuf.Flat.([]T)[:n*m]
+		transpose2D(backend, dZ, m, n, dZT)
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, dZT, xFlat,
 			1, n, k, m,
@@ -364,7 +429,12 @@ func execFusedDenseVJPBF16(
 	if data.options.Activation.Type == compute.ActivationNone {
 		dZ = dOutBF16
 	} else {
-		dZ = make([]bfloat16.BFloat16, m*n)
+		dZBuf, err := backend.GetBuffer(shapes.Make(dtypes.BFloat16, m*n))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZBuf)
+		dZ = dZBuf.Flat.([]bfloat16.BFloat16)[:m*n]
 		if err := activations.ExecuteVJPFromOutput[bfloat16.BFloat16](backend, data.options.Activation.Type, yBF16, dOutBF16, dZ); err != nil {
 			return err
 		}
@@ -379,8 +449,13 @@ func execFusedDenseVJPBF16(
 		dXLayout = dot.LayoutNonTransposed
 	}
 
-	tmpF32_dX := make([]float32, m*k)
-	err := matmul.ExecuteWithEpilogue(
+	tmpF32_dXBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, m*k))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tmpF32_dXBuf)
+	tmpF32_dX := tmpF32_dXBuf.Flat.([]float32)[:m*k]
+	err = matmul.ExecuteWithEpilogue(
 		backend, dXLayout, dZ, wBF16,
 		1, m, k, n,
 		tmpF32_dX, matmul.Epilogue[float32]{},
@@ -395,9 +470,19 @@ func execFusedDenseVJPBF16(
 	// Step 3: Compute dWeight.
 	switch data.options.WeightLayout {
 	case compute.DenseLayoutInputOutputs:
-		xT := make([]bfloat16.BFloat16, k*m)
-		transpose2D(xBF16, m, k, xT)
-		tmpF32_dW := make([]float32, k*n)
+		xTBuf, err := backend.GetBuffer(shapes.Make(dtypes.BFloat16, k*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(xTBuf)
+		xT := xTBuf.Flat.([]bfloat16.BFloat16)[:k*m]
+		transpose2D(backend, xBF16, m, k, xT)
+		tmpF32_dWBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, k*n))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tmpF32_dWBuf)
+		tmpF32_dW := tmpF32_dWBuf.Flat.([]float32)[:k*n]
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, xT, dZ,
 			1, k, n, m,
@@ -411,9 +496,19 @@ func execFusedDenseVJPBF16(
 		}
 
 	case compute.DenseLayoutOutputsInput:
-		dZT := make([]bfloat16.BFloat16, n*m)
-		transpose2D(dZ, m, n, dZT)
-		tmpF32_dW := make([]float32, n*k)
+		dZTBuf, err := backend.GetBuffer(shapes.Make(dtypes.BFloat16, n*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZTBuf)
+		dZT := dZTBuf.Flat.([]bfloat16.BFloat16)[:n*m]
+		transpose2D(backend, dZ, m, n, dZT)
+		tmpF32_dWBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n*k))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tmpF32_dWBuf)
+		tmpF32_dW := tmpF32_dWBuf.Flat.([]float32)[:n*k]
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, dZT, xBF16,
 			1, n, k, m,
@@ -463,7 +558,12 @@ func execFusedDenseVJPF16(
 	if data.options.Activation.Type == compute.ActivationNone {
 		dZ = dOutF16
 	} else {
-		dZ = make([]float16.Float16, m*n)
+		dZBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float16, m*n))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZBuf)
+		dZ = dZBuf.Flat.([]float16.Float16)[:m*n]
 		if err := activations.ExecuteVJPFromOutput[float16.Float16](backend, data.options.Activation.Type, yF16, dOutF16, dZ); err != nil {
 			return err
 		}
@@ -478,8 +578,13 @@ func execFusedDenseVJPF16(
 		dXLayout = dot.LayoutNonTransposed
 	}
 
-	tmpF32_dX := make([]float32, m*k)
-	err := matmul.ExecuteWithEpilogue(
+	tmpF32_dXBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, m*k))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tmpF32_dXBuf)
+	tmpF32_dX := tmpF32_dXBuf.Flat.([]float32)[:m*k]
+	err = matmul.ExecuteWithEpilogue(
 		backend, dXLayout, dZ, wF16,
 		1, m, k, n,
 		tmpF32_dX, matmul.Epilogue[float32]{},
@@ -494,9 +599,19 @@ func execFusedDenseVJPF16(
 	// Step 3: Compute dWeight.
 	switch data.options.WeightLayout {
 	case compute.DenseLayoutInputOutputs:
-		xT := make([]float16.Float16, k*m)
-		transpose2D(xF16, m, k, xT)
-		tmpF32_dW := make([]float32, k*n)
+		xTBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float16, k*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(xTBuf)
+		xT := xTBuf.Flat.([]float16.Float16)[:k*m]
+		transpose2D(backend, xF16, m, k, xT)
+		tmpF32_dWBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, k*n))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tmpF32_dWBuf)
+		tmpF32_dW := tmpF32_dWBuf.Flat.([]float32)[:k*n]
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, xT, dZ,
 			1, k, n, m,
@@ -510,9 +625,19 @@ func execFusedDenseVJPF16(
 		}
 
 	case compute.DenseLayoutOutputsInput:
-		dZT := make([]float16.Float16, n*m)
-		transpose2D(dZ, m, n, dZT)
-		tmpF32_dW := make([]float32, n*k)
+		dZTBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float16, n*m))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(dZTBuf)
+		dZT := dZTBuf.Flat.([]float16.Float16)[:n*m]
+		transpose2D(backend, dZ, m, n, dZT)
+		tmpF32_dWBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n*k))
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(tmpF32_dWBuf)
+		tmpF32_dW := tmpF32_dWBuf.Flat.([]float32)[:n*k]
 		err = matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, dZT, xF16,
 			1, n, k, m,

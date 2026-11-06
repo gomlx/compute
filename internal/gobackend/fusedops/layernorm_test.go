@@ -190,4 +190,90 @@ func TestSIMDLayerNorm(t *testing.T) {
 		}
 		runLayerNormTest(t, "Float64_Trailing16", dtypes.Float64, shape, in, []int{1}, 1e-5, gamma, beta)
 	})
+
+	t.Run("Float32_MiddleAxes_Spatial", func(t *testing.T) {
+		// [B, H, W, C] normalized over axes=[1, 2]
+		for _, cDim := range []int{16, 32, 64, 67} {
+			B, H, W, C := 4, 8, 8, cDim
+			bDim := H * W
+			shape := shapes.Make(dtypes.Float32, B, H, W, C)
+			in := make([]float32, B*bDim*C)
+			for i := range in {
+				in[i] = float32((i%89)-44) * 0.1
+			}
+			gamma := make([]float32, bDim)
+			beta := make([]float32, bDim)
+			for i := range bDim {
+				gamma[i] = 0.5 + float32(i%11)*0.1
+				beta[i] = -0.2 + float32(i%7)*0.05
+			}
+
+			backend, err := gobackend.NewBackend()
+			if err != nil {
+				t.Fatalf("Failed to create backend: %+v", err)
+			}
+			defer backend.Finalize()
+
+			for _, withAffine := range []bool{false, true} {
+				builder := backend.Builder("MiddleAxes")
+				mainFn := builder.Main()
+				xNode, _ := mainFn.Parameter("x", shape, nil)
+				inBuf, _ := backend.BufferFromFlatData(0, in, shape)
+				inBuffers := []compute.Buffer{inBuf}
+
+				var gNode, bNode compute.Value
+				if withAffine {
+					pShape := shapes.Make(dtypes.Float32, H, W)
+					gNode, _ = mainFn.Parameter("gamma", pShape, nil)
+					bNode, _ = mainFn.Parameter("beta", pShape, nil)
+					gBuf, _ := backend.BufferFromFlatData(0, gamma, pShape)
+					bBuf, _ := backend.BufferFromFlatData(0, beta, pShape)
+					inBuffers = append(inBuffers, gBuf, bBuf)
+				}
+				outNode, err := mainFn.FusedLayerNorm(xNode, []int{1, 2}, 1e-5, gNode, bNode)
+				if err != nil {
+					t.Fatalf("FusedLayerNorm failed: %+v", err)
+				}
+				_ = mainFn.Return([]compute.Value{outNode}, nil)
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Compile failed: %+v", err)
+				}
+				outputs, err := exec.Execute(inBuffers, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %+v", err)
+				}
+				got := outputs[0].(*gobackend.Buffer).Flat.([]float32)
+
+				expected := make([]float32, len(in))
+				for a := range B {
+					baseA := a * bDim * C
+					for c := range C {
+						var sum float32
+						for b := range bDim {
+							sum += in[baseA+b*C+c]
+						}
+						mean := sum / float32(bDim)
+						var varSum float32
+						for b := range bDim {
+							d := in[baseA+b*C+c] - mean
+							varSum += d * d
+						}
+						invStd := float32(1.0 / math.Sqrt(float64(varSum/float32(bDim))+1e-5))
+						for b := range bDim {
+							val := (in[baseA+b*C+c] - mean) * invStd
+							if withAffine {
+								val = val*gamma[b] + beta[b]
+							}
+							expected[baseA+b*C+c] = val
+						}
+					}
+				}
+				if ok, diff := testutil.IsInDelta(expected, got, 1e-4); !ok {
+					t.Errorf("Mismatch for C=%d withAffine=%v:\n%s", C, withAffine, diff)
+				}
+				exec.Finalize()
+			}
+		}
+	})
 }

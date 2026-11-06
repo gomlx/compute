@@ -204,14 +204,14 @@ var (
 
 func registerAVX512() {
 	// Float32
-	activations.Register[float32]("avx512:relu", compute.ActivationRelu, ReluAVX512, PriorityAVX512, &AVX512SimpleMetadata)
-	activations.Register[float32]("avx512:sigmoid", compute.ActivationSigmoid, SigmoidAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
-	activations.Register[float32]("avx512:hardsigmoid", compute.ActivationHardSigmoid, HardSigmoidAVX512, PriorityAVX512, &AVX512SimpleMetadata)
-	activations.Register[float32]("avx512:leakyrelu", compute.ActivationLeakyRelu, LeakyReluAVX512, PriorityAVX512, &AVX512SimpleMetadata)
-	activations.Register[float32]("avx512:selu", compute.ActivationSelu, SeluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
-	activations.Register[float32]("avx512:silu", compute.ActivationSilu, SiluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
-	activations.Register[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishAVX512, PriorityAVX512, &AVX512SimpleMetadata)
-	activations.Register[float32]("avx512:tanh", compute.ActivationTanh, TanhAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:relu", compute.ActivationRelu, ReluKernelAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.RegisterKernel[float32]("avx512:sigmoid", compute.ActivationSigmoid, SigmoidKernelAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:hardsigmoid", compute.ActivationHardSigmoid, HardSigmoidKernelAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.RegisterKernel[float32]("avx512:leakyrelu", compute.ActivationLeakyRelu, LeakyReluKernelAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.RegisterKernel[float32]("avx512:selu", compute.ActivationSelu, SeluKernelAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:silu", compute.ActivationSilu, SiluKernelAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterKernel[float32]("avx512:hardswish", compute.ActivationHardSwish, HardSwishKernelAVX512, PriorityAVX512, &AVX512SimpleMetadata)
+	activations.RegisterKernel[float32]("avx512:tanh", compute.ActivationTanh, TanhKernelAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
@@ -246,36 +246,46 @@ func registerAVX512() {
 }
 
 func ReluAVX512(data []float32) {
+	ReluKernelAVX512(data, data)
+}
+
+func ReluKernelAVX512(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
-		v.Max(vZero).Store(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
+		v.Max(vZero).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		if data[i] < 0 {
-			data[i] = 0
+	for ; i < len(in); i++ {
+		if in[i] < 0 {
+			out[i] = 0
+		} else {
+			out[i] = in[i]
 		}
 	}
 }
 
 func HardSwishAVX512(data []float32) {
+	HardSwishKernelAVX512(data, data)
+}
+
+func HardSwishKernelAVX512(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	vOne := archsimd.BroadcastFloat32x16(1)
 	vOneSixth := archsimd.BroadcastFloat32x16(1.0 / 6.0)
 	vHalf := archsimd.BroadcastFloat32x16(0.5)
 
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
 		scaled := v.MulAdd(vOneSixth, vHalf)
 		clamped := scaled.Max(vZero).Min(vOne)
-		v.Mul(clamped).Store(data[i : i+16])
+		v.Mul(clamped).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
+	for ; i < len(in); i++ {
+		x := in[i]
 		shapeX := min(max(x*(1.0/6.0)+0.5, 0), 1)
-		data[i] = x * shapeX
+		out[i] = x * shapeX
 	}
 }
 
@@ -298,18 +308,29 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 }
 
 func SiluAVX512(data []float32) {
+	SiluKernelAVX512(data, data)
+}
+
+func SiluKernelAVX512(in, out []float32) {
 	vOne := archsimd.BroadcastFloat32x16(1.0)
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
-		negV := v.Neg()
-		expNegV := exp512(negV)
-		denom := vOne.Add(expNegV)
-		v.Div(denom).Store(data[i : i+16])
+	for ; i+32 <= len(in); i += 32 {
+		v0 := archsimd.LoadFloat32x16(in[i : i+16])
+		v1 := archsimd.LoadFloat32x16(in[i+16 : i+32])
+		expNegV0 := exp512(v0.Neg())
+		expNegV1 := exp512(v1.Neg())
+		v0.Div(vOne.Add(expNegV0)).Store(out[i : i+16])
+		v1.Div(vOne.Add(expNegV1)).Store(out[i+16 : i+32])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
-		data[i] = x / (1.0 + float32(math.Exp(float64(-x))))
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
+		expNegV := exp512(v.Neg())
+		denom := vOne.Add(expNegV)
+		v.Div(denom).Store(out[i : i+16])
+	}
+	for ; i < len(in); i++ {
+		x := in[i]
+		out[i] = x / (1.0 + float32(math.Exp(float64(-x))))
 	}
 }
 
@@ -324,13 +345,17 @@ func tanh512(x archsimd.Float32x16) archsimd.Float32x16 {
 }
 
 func TanhAVX512(data []float32) {
+	TanhKernelAVX512(data, data)
+}
+
+func TanhKernelAVX512(in, out []float32) {
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
-		tanh512(v).Store(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
+		tanh512(v).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		data[i] = float32(math.Tanh(float64(data[i])))
+	for ; i < len(in); i++ {
+		out[i] = float32(math.Tanh(float64(in[i])))
 	}
 }
 
@@ -919,47 +944,61 @@ func tanhF16AVX512(data []float16.Float16) {
 }
 
 func SigmoidAVX512(data []float32) {
+	SigmoidKernelAVX512(data, data)
+}
+
+func SigmoidKernelAVX512(in, out []float32) {
 	vOne := archsimd.BroadcastFloat32x16(1.0)
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
 		expNegV := exp512(v.Neg())
 		denom := vOne.Add(expNegV)
-		vOne.Div(denom).Store(data[i : i+16])
+		vOne.Div(denom).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		data[i] = float32(1.0 / (1.0 + math.Exp(float64(-data[i]))))
+	for ; i < len(in); i++ {
+		out[i] = float32(1.0 / (1.0 + math.Exp(float64(-in[i]))))
 	}
 }
 
 func HardSigmoidAVX512(data []float32) {
+	HardSigmoidKernelAVX512(data, data)
+}
+
+func HardSigmoidKernelAVX512(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	vOne := archsimd.BroadcastFloat32x16(1)
 	vSlope := archsimd.BroadcastFloat32x16(0.2)
 	vBias := archsimd.BroadcastFloat32x16(0.5)
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
-		v.MulAdd(vSlope, vBias).Max(vZero).Min(vOne).Store(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
+		v.MulAdd(vSlope, vBias).Max(vZero).Min(vOne).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		data[i] = min(max(data[i]*0.2+0.5, 0), 1)
+	for ; i < len(in); i++ {
+		out[i] = min(max(in[i]*0.2+0.5, 0), 1)
 	}
 }
 
 func LeakyReluAVX512(data []float32) {
+	LeakyReluKernelAVX512(data, data)
+}
+
+func LeakyReluKernelAVX512(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	vAlpha := archsimd.BroadcastFloat32x16(0.3)
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
 		scaled := v.Mul(vAlpha)
 		mask := v.GreaterEqual(vZero)
-		v.Merge(scaled, mask).Store(data[i : i+16])
+		v.Merge(scaled, mask).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		if data[i] < 0 {
-			data[i] = 0.3 * data[i]
+	for ; i < len(in); i++ {
+		if in[i] < 0 {
+			out[i] = 0.3 * in[i]
+		} else {
+			out[i] = in[i]
 		}
 	}
 }
@@ -970,24 +1009,28 @@ const (
 )
 
 func SeluAVX512(data []float32) {
+	SeluKernelAVX512(data, data)
+}
+
+func SeluKernelAVX512(in, out []float32) {
 	vZero := archsimd.BroadcastFloat32x16(0)
 	vOne := archsimd.BroadcastFloat32x16(1)
 	vScale := archsimd.BroadcastFloat32x16(float32(seluScaleAVX512))
 	vScaleAlpha := archsimd.BroadcastFloat32x16(float32(seluScaleAlphaAVX512))
 	i := 0
-	for ; i+16 <= len(data); i += 16 {
-		v := archsimd.LoadFloat32x16(data[i : i+16])
+	for ; i+16 <= len(in); i += 16 {
+		v := archsimd.LoadFloat32x16(in[i : i+16])
 		pos := v.Mul(vScale)
 		neg := exp512(v).Sub(vOne).Mul(vScaleAlpha)
 		mask := v.Greater(vZero)
-		pos.Merge(neg, mask).Store(data[i : i+16])
+		pos.Merge(neg, mask).Store(out[i : i+16])
 	}
-	for ; i < len(data); i++ {
-		x := data[i]
+	for ; i < len(in); i++ {
+		x := in[i]
 		if x > 0 {
-			data[i] = float32(seluScaleAVX512 * float64(x))
+			out[i] = float32(seluScaleAVX512 * float64(x))
 		} else {
-			data[i] = float32(seluScaleAlphaAVX512 * (math.Exp(float64(x)) - 1.0))
+			out[i] = float32(seluScaleAlphaAVX512 * (math.Exp(float64(x)) - 1.0))
 		}
 	}
 }

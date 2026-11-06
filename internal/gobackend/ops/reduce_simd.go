@@ -57,6 +57,15 @@ func canExecuteReduceSIMD(cfg ReduceConfig, dtype dtypes.DType, supported []dtyp
 			return false
 		}
 		return true
+	case ReduceMiddle:
+		if cfg.B <= 1 || cfg.C < 1 {
+			return false
+		}
+		minC := reduceThresholds.LeadingMinB[dtype]
+		if minC == ThresholdAlwaysFallBack || (minC > 0 && cfg.C < minC) {
+			return false
+		}
+		return true
 	case ReduceAll:
 		if (cfg.A * cfg.B) <= 1 {
 			return false
@@ -4064,7 +4073,31 @@ func simdReduceAllProductUint16(in []uint16, out []uint16, dtype dtypes.DType) {
 	}
 	out[0] = uint16(res)
 }
+func runReduceMiddleSIMD[T any](backend *gobackend.Backend, in, out []T, A, B, C int, leadingFn func(in, out []T, B, C int)) {
+	if A == 0 || B == 0 || C == 0 {
+		clear(out)
+		return
+	}
+	strideBC := B * C
+	runA := func(aStart, aEnd int) {
+		for a := aStart; a < aEnd; a++ {
+			inSlice := in[a*strideBC : (a+1)*strideBC]
+			outSlice := out[a*C : (a+1)*C]
+			leadingFn(inSlice, outSlice, B, C)
+		}
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(in) >= 16384 && A > 1 {
+		backend.Scheduler.ParallelizeChunks(A, max(1, 16384/strideBC), runA)
+	} else {
+		runA(0, A)
+	}
+}
+
 func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, dtype dtypes.DType) error {
+	backend := operand.RawBackend
+	if backend == nil {
+		backend = output.RawBackend
+	}
 	if cfg.Pattern == ReduceTrailing {
 		if cfg.B <= 1 {
 			gobackend.CopyFlat(output.Flat, operand.Flat)
@@ -4099,6 +4132,47 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			}
 		}
 	}
+	if cfg.Pattern == ReduceMiddle {
+		if cfg.B <= 1 {
+			gobackend.CopyFlat(output.Flat, operand.Flat)
+			return nil
+		}
+		if archFn := gobackend.GetReduceLeadingSumArchDispatcher(); archFn != nil {
+			elemBytes := dtype.Size()
+			if elemBytes > 0 && len(operand.RawBytes) >= cfg.A*cfg.B*cfg.C*elemBytes && len(output.RawBytes) >= cfg.A*cfg.C*elemBytes {
+				var firstHandled bool
+				strideInBytes := cfg.B * cfg.C * elemBytes
+				strideOutBytes := cfg.C * elemBytes
+				inSub := &gobackend.Buffer{RawBytes: operand.RawBytes[:strideInBytes], Flat: operand.Flat}
+				outSub := &gobackend.Buffer{RawBytes: output.RawBytes[:strideOutBytes], Flat: output.Flat}
+				if archFn(inSub, outSub, cfg.B, cfg.C, dtype) {
+					firstHandled = true
+				}
+				if firstHandled {
+					if cfg.A > 1 {
+						runA := func(aStart, aEnd int) {
+							var localIn, localOut gobackend.Buffer
+							localIn.Flat = operand.Flat
+							localOut.Flat = output.Flat
+							for a := aStart; a < aEnd; a++ {
+								localIn.RawBytes = operand.RawBytes[a*strideInBytes : (a+1)*strideInBytes]
+								localOut.RawBytes = output.RawBytes[a*strideOutBytes : (a+1)*strideOutBytes]
+								archFn(&localIn, &localOut, cfg.B, cfg.C, dtype)
+							}
+						}
+						if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && cfg.A*cfg.B*cfg.C >= 16384 && cfg.A > 2 {
+							backend.Scheduler.ParallelizeChunks(cfg.A-1, max(1, 16384/(cfg.B*cfg.C)), func(start, end int) {
+								runA(start+1, end+1)
+							})
+						} else {
+							runA(1, cfg.A)
+						}
+					}
+					return nil
+				}
+			}
+		}
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)
@@ -4108,6 +4182,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumFloat32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumFloat32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumFloat32)
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4121,6 +4197,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumFloat64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumFloat64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumFloat64)
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4134,6 +4212,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumInt32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumInt32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumInt32)
 		case ReduceTrailing:
 			simdReduceTrailingSumInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4147,6 +4227,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumUint32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumUint32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumUint32)
 		case ReduceTrailing:
 			simdReduceTrailingSumUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4160,6 +4242,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumInt64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumInt64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumInt64)
 		case ReduceTrailing:
 			simdReduceTrailingSumInt64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4173,6 +4257,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumUint64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumUint64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumUint64)
 		case ReduceTrailing:
 			simdReduceTrailingSumUint64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4186,6 +4272,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingSumFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4199,6 +4287,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumBFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumBFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumBFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingSumBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4212,6 +4302,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumInt8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumInt8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumInt8)
 		case ReduceTrailing:
 			simdReduceTrailingSumInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4225,6 +4317,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumUint8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumUint8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumUint8)
 		case ReduceTrailing:
 			simdReduceTrailingSumUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4238,6 +4332,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumInt16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumInt16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumInt16)
 		case ReduceTrailing:
 			simdReduceTrailingSumInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4251,6 +4347,8 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllSumUint16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingSumUint16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingSumUint16)
 		case ReduceTrailing:
 			simdReduceTrailingSumUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4299,6 +4397,10 @@ func execReduceSumSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 }
 
 func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, dtype dtypes.DType) error {
+	backend := operand.RawBackend
+	if backend == nil {
+		backend = output.RawBackend
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)
@@ -4308,6 +4410,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxFloat32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxFloat32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxFloat32)
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4321,6 +4425,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxFloat64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxFloat64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxFloat64)
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4334,6 +4440,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxInt32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxInt32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxInt32)
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4347,6 +4455,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxUint32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxUint32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxUint32)
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4360,6 +4470,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingMaxFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4373,6 +4485,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxBFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxBFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxBFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingMaxBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4386,6 +4500,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxInt8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxInt8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxInt8)
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4399,6 +4515,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxUint8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxUint8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxUint8)
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4412,6 +4530,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxInt16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxInt16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxInt16)
 		case ReduceTrailing:
 			simdReduceTrailingMaxInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4425,6 +4545,8 @@ func dispatchReduceMaxSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMaxUint16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMaxUint16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMaxUint16)
 		case ReduceTrailing:
 			simdReduceTrailingMaxUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4473,6 +4595,10 @@ func execReduceMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 }
 
 func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, dtype dtypes.DType) error {
+	backend := operand.RawBackend
+	if backend == nil {
+		backend = output.RawBackend
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)
@@ -4482,6 +4608,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinFloat32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinFloat32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinFloat32)
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4495,6 +4623,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinFloat64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinFloat64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinFloat64)
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4508,6 +4638,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinInt32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinInt32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinInt32)
 		case ReduceTrailing:
 			simdReduceTrailingMinInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4521,6 +4653,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinUint32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinUint32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinUint32)
 		case ReduceTrailing:
 			simdReduceTrailingMinUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4534,6 +4668,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingMinFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4547,6 +4683,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinBFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinBFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinBFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingMinBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4560,6 +4698,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinInt8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinInt8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinInt8)
 		case ReduceTrailing:
 			simdReduceTrailingMinInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4573,6 +4713,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinUint8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinUint8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinUint8)
 		case ReduceTrailing:
 			simdReduceTrailingMinUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4586,6 +4728,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinInt16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinInt16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinInt16)
 		case ReduceTrailing:
 			simdReduceTrailingMinInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4599,6 +4743,8 @@ func dispatchReduceMinSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			simdReduceAllMinUint16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingMinUint16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingMinUint16)
 		case ReduceTrailing:
 			simdReduceTrailingMinUint16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4647,6 +4793,10 @@ func execReduceMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs 
 }
 
 func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, dtype dtypes.DType) error {
+	backend := operand.RawBackend
+	if backend == nil {
+		backend = output.RawBackend
+	}
 	switch dtype {
 	case dtypes.Float32:
 		in := operand.Flat.([]float32)
@@ -4656,6 +4806,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductFloat32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductFloat32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductFloat32)
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4669,6 +4821,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductFloat64(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductFloat64(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductFloat64)
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat64(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4682,6 +4836,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductInt32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductInt32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductInt32)
 		case ReduceTrailing:
 			simdReduceTrailingProductInt32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4695,6 +4851,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductUint32(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductUint32(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductUint32)
 		case ReduceTrailing:
 			simdReduceTrailingProductUint32(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4708,6 +4866,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingProductFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4721,6 +4881,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductBFloat16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductBFloat16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductBFloat16)
 		case ReduceTrailing:
 			simdReduceTrailingProductBFloat16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4734,6 +4896,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductInt8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductInt8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductInt8)
 		case ReduceTrailing:
 			simdReduceTrailingProductInt8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4747,6 +4911,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductUint8(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductUint8(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductUint8)
 		case ReduceTrailing:
 			simdReduceTrailingProductUint8(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4760,6 +4926,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductInt16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductInt16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductInt16)
 		case ReduceTrailing:
 			simdReduceTrailingProductInt16(in, out, cfg.A, cfg.B, dtype)
 		default:
@@ -4773,6 +4941,8 @@ func dispatchReduceProductSIMD(operand, output *gobackend.Buffer, cfg ReduceConf
 			simdReduceAllProductUint16(in, out, dtype)
 		case ReduceLeading:
 			simdReduceLeadingProductUint16(in, out, cfg.A, cfg.B)
+		case ReduceMiddle:
+			runReduceMiddleSIMD(backend, in, out, cfg.A, cfg.B, cfg.C, simdReduceLeadingProductUint16)
 		case ReduceTrailing:
 			simdReduceTrailingProductUint16(in, out, cfg.A, cfg.B, dtype)
 		default:

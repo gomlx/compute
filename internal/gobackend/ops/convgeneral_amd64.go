@@ -108,6 +108,161 @@ func execConvStandardAVX2(
 	defer backend.PutBuffer(packedRHSBuf)
 	PackConvKernelFloat32(p, kernel, packedRHS, panelCols)
 
+	// Direct zero-im2col 2D row fast path when InDilH == 1 && InDilW == 1 && KerDilW == 1.
+	if !p.Is1x1Unit && p.InDilH == 1 && p.InDilW == 1 && p.KerDilW == 1 {
+		outW := p.OutW
+		outXIntStart := 0
+		if p.PadLeft > 0 {
+			outXIntStart = min(outW, (p.PadLeft+p.StrideW-1)/p.StrideW)
+		}
+		outXIntEnd := outXIntStart
+		if maxInX0 := p.InW + p.PadLeft - p.KernelW; maxInX0 >= 0 {
+			outXIntEnd = max(outXIntStart, min(outW, maxInX0/p.StrideW+1))
+		}
+		numDirect := (outXIntEnd - outXIntStart) &^ 3
+		totalRows := p.BatchSize * p.OutH
+		kWC := p.KernelW * p.InChannels
+		if outW >= 16 && kWC >= 16 && numDirect >= 12 && totalRows >= 4 {
+			outXDirectEnd := outXIntStart + numDirect
+			leftCount := outXIntStart
+			rightCount := outW - outXDirectEnd
+			borderCount := leftCount + rightCount
+			borderBufRows := (borderCount + 3) &^ 3
+
+			directLhsRowStrideBytes := p.StrideW * p.InChannels * 4
+			directLhsKyJumpBytes := (p.KerDilH*p.InW - p.KernelW) * p.InChannels * 4
+			outRowStrideBytes := N * 4
+
+			processRow := func(byIdx int, patchBuf []float32) {
+				b := byIdx / p.OutH
+				outY := byIdx % p.OutH
+				rowMStart := byIdx * outW
+
+				kyStart := 0
+				if minNeed := p.PadTop - outY*p.StrideH; minNeed > 0 {
+					kyStart = min(p.KernelH, (minNeed+p.KerDilH-1)/p.KerDilH)
+				}
+				kyEnd := 0
+				if maxNeed := p.InH + p.PadTop - outY*p.StrideH; maxNeed > 0 {
+					kyEnd = min(p.KernelH, (maxNeed+p.KerDilH-1)/p.KerDilH)
+				}
+				numKy := kyEnd - kyStart
+				if numKy <= 0 {
+					clear(out[rowMStart*N : (rowMStart+outW)*N])
+					return
+				}
+
+				inYStart := outY*p.StrideH + kyStart*p.KerDilH - p.PadTop
+				inYBase := (b*p.InH + inYStart) * p.InW * p.InChannels
+				rhsKyOff := kyStart * kWC * panelCols
+				var edgeOut [4 * 16]float32
+
+				for outX := outXIntStart; outX+4 <= outXDirectEnd; outX += 4 {
+					inX0 := outX*p.StrideW - p.PadLeft
+					lhsPtr := unsafe.Pointer(&input[inYBase+inX0*p.InChannels])
+					for panelIdx := range numPanels {
+						colStart := panelIdx * 16
+						validCols := min(16, N-colStart)
+						rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize+rhsKyOff])
+						if validCols == 16 {
+							outPtr := unsafe.Pointer(&out[(rowMStart+outX)*N+colStart])
+							avx2.ConvAVX2Direct2DKernel4x16Float32Asm(
+								lhsPtr, rhsPanelPtr, outPtr,
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 64, outRowStrideBytes,
+							)
+						} else {
+							avx2.ConvAVX2Direct2DKernel4x16Float32Asm(
+								lhsPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]),
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 64, 64,
+							)
+							for ir := range 4 {
+								dstOff := (rowMStart+outX+ir)*N + colStart
+								copy(out[dstOff:dstOff+validCols], edgeOut[ir*16:ir*16+validCols])
+							}
+						}
+					}
+				}
+
+				if borderCount > 0 {
+					if leftCount > 0 {
+						ExtractPatches2DFloat32(p, input, patchBuf[:leftCount*K], rowMStart, leftCount)
+					}
+					if rightCount > 0 {
+						ExtractPatches2DFloat32(p, input, patchBuf[leftCount*K:borderCount*K], rowMStart+outXDirectEnd, rightCount)
+					}
+					for r := 0; r < borderCount; r += 4 {
+						validRows := min(4, borderCount-r)
+						lhsRowPtr := unsafe.Pointer(&patchBuf[r*K])
+						for panelIdx := range numPanels {
+							colStart := panelIdx * 16
+							validCols := min(16, N-colStart)
+							rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize])
+							avx2.ConvAVX2Kernel4x16Float32Asm(lhsRowPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]), K, K*4, 64, 64)
+							for ir := range validRows {
+								idx := r + ir
+								var outX int
+								if idx < leftCount {
+									outX = idx
+								} else {
+									outX = outXDirectEnd + (idx - leftCount)
+								}
+								dstOff := (rowMStart+outX)*N + colStart
+								copy(out[dstOff:dstOff+validCols], edgeOut[ir*16:ir*16+validCols])
+							}
+						}
+					}
+				}
+			}
+
+			maxWorkers := min(totalRows, backend.Scheduler.AdjustedMaxParallelism())
+			maxWorkers = min(maxWorkers, max(1, (M*K*N)/262144))
+			if maxWorkers <= 1 || M*K*N < 65536 {
+				var patchBuf []float32
+				if borderBufRows > 0 {
+					patchBufObj, bufSlice, err := getScratchFloat32(backend, borderBufRows*K)
+					if err != nil {
+						backend.PutBuffer(output)
+						return nil, err
+					}
+					defer backend.PutBuffer(patchBufObj)
+					patchBuf = bufSlice
+				}
+				for byIdx := range totalRows {
+					processRow(byIdx, patchBuf)
+				}
+				return output, nil
+			}
+
+			var allPatchBuf []float32
+			if borderBufRows > 0 {
+				patchBufObj, bufSlice, err := getScratchFloat32(backend, maxWorkers*borderBufRows*K)
+				if err != nil {
+					backend.PutBuffer(output)
+					return nil, err
+				}
+				defer backend.PutBuffer(patchBufObj)
+				allPatchBuf = bufSlice
+			}
+			var nextWorker atomic.Int64
+			var nextRow atomic.Int64
+			backend.Scheduler.SaturateUpTo(maxWorkers, func() {
+				var patchBuf []float32
+				if borderBufRows > 0 {
+					wIdx := int(nextWorker.Add(1) - 1)
+					patchBuf = allPatchBuf[wIdx*borderBufRows*K : (wIdx+1)*borderBufRows*K]
+				}
+				for {
+					byIdx := int(nextRow.Add(1) - 1)
+					if byIdx >= totalRows {
+						break
+					}
+					processRow(byIdx, patchBuf)
+				}
+			})
+			return output, nil
+		}
+	}
+
 	mTile := max(32, min(256, ((4096/max(1, K))+31)&^31))
 	numMTiles := (M + mTile - 1) / mTile
 
@@ -248,6 +403,191 @@ func execConvStandardAVX512(
 	}
 	defer backend.PutBuffer(packedRHSBuf)
 	PackConvKernelFloat32(p, kernel, packedRHS, panelCols)
+
+	// Direct zero-im2col 2D row fast path when InDilH == 1 && InDilW == 1 && KerDilW == 1.
+	if !p.Is1x1Unit && p.InDilH == 1 && p.InDilW == 1 && p.KerDilW == 1 {
+		outW := p.OutW
+		outXIntStart := 0
+		if p.PadLeft > 0 {
+			outXIntStart = min(outW, (p.PadLeft+p.StrideW-1)/p.StrideW)
+		}
+		outXIntEnd := outXIntStart
+		if maxInX0 := p.InW + p.PadLeft - p.KernelW; maxInX0 >= 0 {
+			outXIntEnd = max(outXIntStart, min(outW, maxInX0/p.StrideW+1))
+		}
+		numDirect := (outXIntEnd - outXIntStart) &^ 3
+		totalRows := p.BatchSize * p.OutH
+		kWC := p.KernelW * p.InChannels
+		if outW >= 16 && kWC >= 16 && numDirect >= 12 && totalRows >= 4 {
+			outXDirectEnd := outXIntStart + numDirect
+			leftCount := outXIntStart
+			rightCount := outW - outXDirectEnd
+			borderCount := leftCount + rightCount
+			borderBufRows := (borderCount + 7) &^ 7
+
+			directLhsRowStrideBytes := p.StrideW * p.InChannels * 4
+			directLhsKyJumpBytes := (p.KerDilH*p.InW - p.KernelW) * p.InChannels * 4
+			outRowStrideBytes := N * 4
+
+			processRow := func(byIdx int, patchBuf []float32) {
+				b := byIdx / p.OutH
+				outY := byIdx % p.OutH
+				rowMStart := byIdx * outW
+
+				kyStart := 0
+				if minNeed := p.PadTop - outY*p.StrideH; minNeed > 0 {
+					kyStart = min(p.KernelH, (minNeed+p.KerDilH-1)/p.KerDilH)
+				}
+				kyEnd := 0
+				if maxNeed := p.InH + p.PadTop - outY*p.StrideH; maxNeed > 0 {
+					kyEnd = min(p.KernelH, (maxNeed+p.KerDilH-1)/p.KerDilH)
+				}
+				numKy := kyEnd - kyStart
+				if numKy <= 0 {
+					clear(out[rowMStart*N : (rowMStart+outW)*N])
+					return
+				}
+
+				inYStart := outY*p.StrideH + kyStart*p.KerDilH - p.PadTop
+				inYBase := (b*p.InH + inYStart) * p.InW * p.InChannels
+				rhsKyOff := kyStart * kWC * panelCols
+				var edgeOut [8 * 32]float32
+
+				outX := outXIntStart
+				for ; outX+8 <= outXDirectEnd; outX += 8 {
+					inX0 := outX*p.StrideW - p.PadLeft
+					lhsPtr := unsafe.Pointer(&input[inYBase+inX0*p.InChannels])
+					for panelIdx := range numPanels {
+						colStart := panelIdx * 32
+						validCols := min(32, N-colStart)
+						rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize+rhsKyOff])
+						if validCols == 32 {
+							outPtr := unsafe.Pointer(&out[(rowMStart+outX)*N+colStart])
+							avx512.ConvAVX512Direct2DKernel8x32Float32Asm(
+								lhsPtr, rhsPanelPtr, outPtr,
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 128, outRowStrideBytes,
+							)
+						} else {
+							avx512.ConvAVX512Direct2DKernel8x32Float32Asm(
+								lhsPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]),
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 128, 128,
+							)
+							for ir := range 8 {
+								dstOff := (rowMStart+outX+ir)*N + colStart
+								copy(out[dstOff:dstOff+validCols], edgeOut[ir*32:ir*32+validCols])
+							}
+						}
+					}
+				}
+				for ; outX+4 <= outXDirectEnd; outX += 4 {
+					inX0 := outX*p.StrideW - p.PadLeft
+					lhsPtr := unsafe.Pointer(&input[inYBase+inX0*p.InChannels])
+					for panelIdx := range numPanels {
+						colStart := panelIdx * 32
+						validCols := min(32, N-colStart)
+						rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize+rhsKyOff])
+						if validCols == 32 {
+							outPtr := unsafe.Pointer(&out[(rowMStart+outX)*N+colStart])
+							avx512.ConvAVX512Direct2DKernel4x32Float32Asm(
+								lhsPtr, rhsPanelPtr, outPtr,
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 128, outRowStrideBytes,
+							)
+						} else {
+							avx512.ConvAVX512Direct2DKernel4x32Float32Asm(
+								lhsPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]),
+								kWC, numKy, directLhsRowStrideBytes, directLhsKyJumpBytes, 128, 128,
+							)
+							for ir := range 4 {
+								dstOff := (rowMStart+outX+ir)*N + colStart
+								copy(out[dstOff:dstOff+validCols], edgeOut[ir*32:ir*32+validCols])
+							}
+						}
+					}
+				}
+
+				if borderCount > 0 {
+					if leftCount > 0 {
+						ExtractPatches2DFloat32(p, input, patchBuf[:leftCount*K], rowMStart, leftCount)
+					}
+					if rightCount > 0 {
+						ExtractPatches2DFloat32(p, input, patchBuf[leftCount*K:borderCount*K], rowMStart+outXDirectEnd, rightCount)
+					}
+					for r := 0; r < borderCount; r += 8 {
+						validRows := min(8, borderCount-r)
+						lhsRowPtr := unsafe.Pointer(&patchBuf[r*K])
+						for panelIdx := range numPanels {
+							colStart := panelIdx * 32
+							validCols := min(32, N-colStart)
+							rhsPanelPtr := unsafe.Pointer(&packedRHS[panelIdx*panelSize])
+							if validRows <= 4 {
+								avx512.ConvAVX512Kernel4x32Float32Asm(lhsRowPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]), K, K*4, 128, 128)
+							} else {
+								avx512.ConvAVX512Kernel8x32Float32Asm(lhsRowPtr, rhsPanelPtr, unsafe.Pointer(&edgeOut[0]), K, K*4, 128, 128)
+							}
+							for ir := range validRows {
+								idx := r + ir
+								var outX int
+								if idx < leftCount {
+									outX = idx
+								} else {
+									outX = outXDirectEnd + (idx - leftCount)
+								}
+								dstOff := (rowMStart+outX)*N + colStart
+								copy(out[dstOff:dstOff+validCols], edgeOut[ir*32:ir*32+validCols])
+							}
+						}
+					}
+				}
+			}
+
+			maxWorkers := min(totalRows, backend.Scheduler.AdjustedMaxParallelism())
+			maxWorkers = min(maxWorkers, max(1, (M*K*N)/262144))
+			if maxWorkers <= 1 || M*K*N < 65536 {
+				var patchBuf []float32
+				if borderBufRows > 0 {
+					patchBufObj, bufSlice, err := getScratchFloat32(backend, borderBufRows*K)
+					if err != nil {
+						backend.PutBuffer(output)
+						return nil, err
+					}
+					defer backend.PutBuffer(patchBufObj)
+					patchBuf = bufSlice
+				}
+				for byIdx := range totalRows {
+					processRow(byIdx, patchBuf)
+				}
+				return output, nil
+			}
+
+			var allPatchBuf []float32
+			if borderBufRows > 0 {
+				patchBufObj, bufSlice, err := getScratchFloat32(backend, maxWorkers*borderBufRows*K)
+				if err != nil {
+					backend.PutBuffer(output)
+					return nil, err
+				}
+				defer backend.PutBuffer(patchBufObj)
+				allPatchBuf = bufSlice
+			}
+			var nextWorker atomic.Int64
+			var nextRow atomic.Int64
+			backend.Scheduler.SaturateUpTo(maxWorkers, func() {
+				var patchBuf []float32
+				if borderBufRows > 0 {
+					wIdx := int(nextWorker.Add(1) - 1)
+					patchBuf = allPatchBuf[wIdx*borderBufRows*K : (wIdx+1)*borderBufRows*K]
+				}
+				for {
+					byIdx := int(nextRow.Add(1) - 1)
+					if byIdx >= totalRows {
+						break
+					}
+					processRow(byIdx, patchBuf)
+				}
+			})
+			return output, nil
+		}
+	}
 
 	mTile := max(32, min(256, ((4096/max(1, K))+31)&^31))
 	numMTiles := (M + mTile - 1) / mTile
@@ -426,7 +766,9 @@ func execConvKernelGradAVX2(
 
 // execConvKernelGradAVX512 computes VJP wrt Kernel (Conv2DKernelGrad) using AVX-512 outer-product
 // microkernels (ConvKernelGradAVX512_8x32Float32Asm, 4x32, and 1x32) with zero packing and zero
-// intermediate buffers.
+// intermediate buffers. When the spatial/batch reduction domain (BatchSize * OutH) is large, it
+// tiles across (b, outY) rows so each L2-resident slice of x and v is reused across all filter
+// positions and channel tiles.
 func execConvKernelGradAVX512(
 	backend *gobackend.Backend,
 	p *Conv2DParams,
@@ -455,9 +797,48 @@ func execConvKernelGradAVX512(
 	numRowPanels := (inC + rowTile - 1) / rowTile
 	numColPanels := (outC + 31) / 32
 	panelsPerFilter := numRowPanels * numColPanels
-	totalTasks := kH * kW * panelsPerFilter
+	baseTasks := kH * kW * panelsPerFilter
+	totalBY := p.BatchSize * p.OutH
 
-	processTask := func(taskIdx int) {
+	maxParallelism := backend.Scheduler.AdjustedMaxParallelism()
+	totalPixels := totalBY * p.OutW
+	outSize := output.RawShape.Size()
+
+	// Choose numSlices (power of 2: 1, 2, 4, 8) to split the (BatchSize, OutH) reduction
+	// domain when baseTasks is small or unevenly distributed across maxParallelism,
+	// while keeping the 8x32 microkernel (rowTile = 8) for high arithmetic intensity.
+	numSlices := 1
+	if maxParallelism > 1 && totalPixels >= 4096 && outSize <= 262144 {
+		for numSlices < 8 && baseTasks*numSlices < maxParallelism*8 && totalPixels/(numSlices*2) >= 1536 {
+			if numSlices*outSize > 524288 {
+				break
+			}
+			nextSlices := numSlices * 2
+			if p.BatchSize >= nextSlices || (nextSlices%p.BatchSize == 0 && p.OutH >= (nextSlices/p.BatchSize)*4) {
+				numSlices = nextSlices
+			} else {
+				break
+			}
+		}
+	}
+
+	var scratchBuf *gobackend.Buffer
+	var scratchOut []float32
+	if numSlices > 1 {
+		var err error
+		scratchBuf, scratchOut, err = getScratchFloat32(backend, (numSlices-1)*outSize)
+		if err != nil {
+			backend.PutBuffer(output)
+			return nil, err
+		}
+		defer backend.PutBuffer(scratchBuf)
+		clear(scratchOut[:(numSlices-1)*outSize])
+	}
+
+	totalTasks := numSlices * baseTasks
+	processTask := func(globalIdx int) {
+		sliceIdx := globalIdx / baseTasks
+		taskIdx := globalIdx % baseTasks
 		spatialIdx := taskIdx / panelsPerFilter
 		rem := taskIdx % panelsPerFilter
 		rowPanel := rem / numColPanels
@@ -468,27 +849,51 @@ func execConvKernelGradAVX512(
 		validRows := min(rowTile, inC-cInStart)
 		cOutStart := colPanel * 32
 		validCols := min(32, outC-cOutStart)
-		convKernelGradAVX512TileFloat32(p, x, v, out, ky, kx, cInStart, validRows, cOutStart, validCols)
+
+		var dstOut []float32
+		if sliceIdx == 0 {
+			dstOut = out
+		} else {
+			dstOut = scratchOut[(sliceIdx-1)*outSize : sliceIdx*outSize]
+		}
+
+		byStart := (sliceIdx * totalBY) / numSlices
+		byEnd := ((sliceIdx + 1) * totalBY) / numSlices
+		convKernelGradAVX512TileFloat32(p, x, v, dstOut, ky, kx, cInStart, validRows, cOutStart, validCols, byStart, byEnd)
 	}
 
-	maxWorkers := min(totalTasks, backend.Scheduler.AdjustedMaxParallelism())
+	maxWorkers := min(totalTasks, maxParallelism)
 	if maxWorkers <= 1 {
 		for taskIdx := range totalTasks {
 			processTask(taskIdx)
 		}
-		return output, nil
+	} else {
+		var nextTask atomic.Int64
+		backend.Scheduler.SaturateUpTo(maxWorkers, func() {
+			for {
+				taskIdx := int(nextTask.Add(1) - 1)
+				if taskIdx >= totalTasks {
+					break
+				}
+				processTask(taskIdx)
+			}
+		})
 	}
 
-	var nextTask atomic.Int64
-	backend.Scheduler.SaturateUpTo(maxWorkers, func() {
-		for {
-			taskIdx := int(nextTask.Add(1) - 1)
-			if taskIdx >= totalTasks {
-				break
+	if numSlices > 1 {
+		for s := range numSlices - 1 {
+			src := scratchOut[s*outSize : (s+1)*outSize]
+			i := 0
+			for ; i+16 <= outSize; i += 16 {
+				vo := archsimd.LoadFloat32x16(out[i : i+16])
+				vs := archsimd.LoadFloat32x16(src[i : i+16])
+				vo.Add(vs).Store(out[i : i+16])
 			}
-			processTask(taskIdx)
+			for ; i < outSize; i++ {
+				out[i] += src[i]
+			}
 		}
-	})
+	}
 	return output, nil
 }
 
@@ -496,15 +901,15 @@ func convKernelGradAVX512TileFloat32(
 	p *Conv2DParams,
 	x, v, out []float32,
 	ky, kx, cInStart, validRows, cOutStart, validCols int,
+	byStart, byEnd int,
 ) {
 	outYStart, outYEnd, inYStart, outXStart, outXEnd, inXStart := p.KernelGradValidRange(ky, kx)
-	numY := outYEnd - outYStart
-	numX := outXEnd - outXStart
-	if numY <= 0 || numX <= 0 {
+	numYValid := outYEnd - outYStart
+	numXValid := outXEnd - outXStart
+	if numYValid <= 0 || numXValid <= 0 || byStart >= byEnd {
 		return
 	}
 
-	batchSize := p.BatchSize
 	inC := p.InChannels
 	outC := p.OutChannels
 	xStepFloats := p.KerDilW * inC
@@ -513,70 +918,103 @@ func convKernelGradAVX512TileFloat32(
 	vYStrideFloats := p.OutW * outC
 	xBatchStrideFloats := p.InH * p.InW * inC
 	vBatchStrideFloats := p.OutH * p.OutW * outC
+	canCollapseX := p.KerDilH == 1 && p.KerDilW == 1 && outXStart == 0 && outXEnd == p.OutW && inXStart == 0 && p.InW == p.OutW
 
-	if p.KerDilH == 1 && p.KerDilW == 1 && outXStart == 0 && outXEnd == p.OutW && inXStart == 0 && p.InW == p.OutW {
-		numX = numY * p.OutW
-		numY = 1
-		if outYStart == 0 && outYEnd == p.OutH && inYStart == 0 && p.InH == p.OutH {
-			numX = batchSize * numX
-			batchSize = 1
+	runSubRange := func(bStart, bCount, yStart, yEnd int) {
+		numY := yEnd - yStart
+		if numY <= 0 || bCount <= 0 {
+			return
+		}
+		batchSize := bCount
+		numX := numXValid
+		curInYStart := inYStart + (yStart-outYStart)*p.KerDilH
+		if canCollapseX {
+			numX = numY * p.OutW
+			numY = 1
+			if yStart == 0 && yEnd == p.OutH && curInYStart == 0 && p.InH == p.OutH {
+				numX = batchSize * numX
+				batchSize = 1
+			}
+		}
+
+		colOff := 0
+		for ; colOff+32 <= validCols; colOff += 32 {
+			cOut := cOutStart + colOff
+			vBaseIdx := bStart*vBatchStrideFloats + (yStart*p.OutW+outXStart)*outC + cOut
+
+			rOff := 0
+			for ; rOff+8 <= validRows; rOff += 8 {
+				cIn := cInStart + rOff
+				xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cIn
+				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
+				avx512.ConvKernelGradAVX512_8x32Float32Asm(
+					unsafe.Pointer(&x[xBaseIdx]),
+					unsafe.Pointer(&v[vBaseIdx]),
+					unsafe.Pointer(&out[outIdx]),
+					batchSize, numY, numX,
+					xBatchStrideFloats*4, vBatchStrideFloats*4,
+					xYStrideFloats*4, vYStrideFloats*4,
+					xStepFloats*4, vStepFloats*4,
+					outC*4,
+				)
+			}
+			for ; rOff+4 <= validRows; rOff += 4 {
+				cIn := cInStart + rOff
+				xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cIn
+				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
+				avx512.ConvKernelGradAVX512_4x32Float32Asm(
+					unsafe.Pointer(&x[xBaseIdx]),
+					unsafe.Pointer(&v[vBaseIdx]),
+					unsafe.Pointer(&out[outIdx]),
+					batchSize, numY, numX,
+					xBatchStrideFloats*4, vBatchStrideFloats*4,
+					xYStrideFloats*4, vYStrideFloats*4,
+					xStepFloats*4, vStepFloats*4,
+					outC*4,
+				)
+			}
+			for ; rOff < validRows; rOff++ {
+				cIn := cInStart + rOff
+				xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cIn
+				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
+				avx512.ConvKernelGradAVX512_1x32Float32Asm(
+					unsafe.Pointer(&x[xBaseIdx]),
+					unsafe.Pointer(&v[vBaseIdx]),
+					unsafe.Pointer(&out[outIdx]),
+					batchSize, numY, numX,
+					xBatchStrideFloats*4, vBatchStrideFloats*4,
+					xYStrideFloats*4, vYStrideFloats*4,
+					xStepFloats*4, vStepFloats*4,
+				)
+			}
+		}
+		if colOff < validCols {
+			convKernelGradAVX2SubRangeFloat32(p, x, v, out, ky, kx, cInStart, validRows, cOutStart+colOff, validCols-colOff, bStart, bCount, yStart, yEnd)
 		}
 	}
 
-	colOff := 0
-	for ; colOff+32 <= validCols; colOff += 32 {
-		cOut := cOutStart + colOff
-		vBaseIdx := (outYStart*p.OutW+outXStart)*outC + cOut
+	b0 := byStart / p.OutH
+	y0 := byStart % p.OutH
+	b1 := (byEnd - 1) / p.OutH
+	y1 := (byEnd-1)%p.OutH + 1
 
-		rOff := 0
-		for ; rOff+8 <= validRows; rOff += 8 {
-			cIn := cInStart + rOff
-			xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
-			outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
-			avx512.ConvKernelGradAVX512_8x32Float32Asm(
-				unsafe.Pointer(&x[xBaseIdx]),
-				unsafe.Pointer(&v[vBaseIdx]),
-				unsafe.Pointer(&out[outIdx]),
-				batchSize, numY, numX,
-				xBatchStrideFloats*4, vBatchStrideFloats*4,
-				xYStrideFloats*4, vYStrideFloats*4,
-				xStepFloats*4, vStepFloats*4,
-				outC*4,
-			)
-		}
-		for ; rOff+4 <= validRows; rOff += 4 {
-			cIn := cInStart + rOff
-			xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
-			outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
-			avx512.ConvKernelGradAVX512_4x32Float32Asm(
-				unsafe.Pointer(&x[xBaseIdx]),
-				unsafe.Pointer(&v[vBaseIdx]),
-				unsafe.Pointer(&out[outIdx]),
-				batchSize, numY, numX,
-				xBatchStrideFloats*4, vBatchStrideFloats*4,
-				xYStrideFloats*4, vYStrideFloats*4,
-				xStepFloats*4, vStepFloats*4,
-				outC*4,
-			)
-		}
-		for ; rOff < validRows; rOff++ {
-			cIn := cInStart + rOff
-			xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
-			outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
-			avx512.ConvKernelGradAVX512_1x32Float32Asm(
-				unsafe.Pointer(&x[xBaseIdx]),
-				unsafe.Pointer(&v[vBaseIdx]),
-				unsafe.Pointer(&out[outIdx]),
-				batchSize, numY, numX,
-				xBatchStrideFloats*4, vBatchStrideFloats*4,
-				xYStrideFloats*4, vYStrideFloats*4,
-				xStepFloats*4, vStepFloats*4,
-			)
-		}
+	if b0 == b1 {
+		runSubRange(b0, 1, max(outYStart, y0), min(outYEnd, y1))
+		return
 	}
-
-	if colOff < validCols {
-		convKernelGradAVX2TileFloat32(p, x, v, out, ky, kx, cInStart, validRows, cOutStart+colOff, validCols-colOff)
+	if y0 > 0 {
+		runSubRange(b0, 1, max(outYStart, y0), outYEnd)
+		b0++
+	}
+	fullBatches := b1 - b0
+	if y1 == p.OutH {
+		fullBatches++
+	}
+	if fullBatches > 0 {
+		runSubRange(b0, fullBatches, outYStart, outYEnd)
+	}
+	if y1 < p.OutH {
+		runSubRange(b1, 1, outYStart, min(outYEnd, y1))
 	}
 }
 
@@ -585,14 +1023,27 @@ func convKernelGradAVX2TileFloat32(
 	x, v, out []float32,
 	ky, kx, cInStart, validRows, cOutStart, validCols int,
 ) {
-	outYStart, outYEnd, inYStart, outXStart, outXEnd, inXStart := p.KernelGradValidRange(ky, kx)
-	numY := outYEnd - outYStart
+	outYStart, outYEnd, _, outXStart, outXEnd, _ := p.KernelGradValidRange(ky, kx)
+	if outYEnd <= outYStart || outXEnd <= outXStart {
+		return
+	}
+	convKernelGradAVX2SubRangeFloat32(p, x, v, out, ky, kx, cInStart, validRows, cOutStart, validCols, 0, p.BatchSize, outYStart, outYEnd)
+}
+
+func convKernelGradAVX2SubRangeFloat32(
+	p *Conv2DParams,
+	x, v, out []float32,
+	ky, kx, cInStart, validRows, cOutStart, validCols int,
+	bStart, bCount, yStart, yEnd int,
+) {
+	outYStart, _, inYStart, outXStart, outXEnd, inXStart := p.KernelGradValidRange(ky, kx)
+	numY := yEnd - yStart
 	numX := outXEnd - outXStart
-	if numY <= 0 || numX <= 0 {
+	if numY <= 0 || numX <= 0 || bCount <= 0 {
 		return
 	}
 
-	batchSize := p.BatchSize
+	batchSize := bCount
 	inC := p.InChannels
 	outC := p.OutChannels
 	xStepFloats := p.KerDilW * inC
@@ -601,11 +1052,12 @@ func convKernelGradAVX2TileFloat32(
 	vYStrideFloats := p.OutW * outC
 	xBatchStrideFloats := p.InH * p.InW * inC
 	vBatchStrideFloats := p.OutH * p.OutW * outC
+	curInYStart := inYStart + (yStart-outYStart)*p.KerDilH
 
 	if p.KerDilH == 1 && p.KerDilW == 1 && outXStart == 0 && outXEnd == p.OutW && inXStart == 0 && p.InW == p.OutW {
 		numX = numY * p.OutW
 		numY = 1
-		if outYStart == 0 && outYEnd == p.OutH && inYStart == 0 && p.InH == p.OutH {
+		if yStart == 0 && yEnd == p.OutH && curInYStart == 0 && p.InH == p.OutH {
 			numX = batchSize * numX
 			batchSize = 1
 		}
@@ -614,13 +1066,13 @@ func convKernelGradAVX2TileFloat32(
 	for colOff := 0; colOff < validCols; colOff += 16 {
 		cOut := cOutStart + colOff
 		subCols := min(16, validCols-colOff)
-		vBaseIdx := (outYStart*p.OutW+outXStart)*outC + cOut
+		vBaseIdx := bStart*vBatchStrideFloats + (yStart*p.OutW+outXStart)*outC + cOut
 
 		if subCols == 16 {
 			rOff := 0
 			for ; rOff+4 <= validRows; rOff += 4 {
 				cIn := cInStart + rOff
-				xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
+				xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cIn
 				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
 				avx2.ConvKernelGradAVX2_4x16Float32Asm(
 					unsafe.Pointer(&x[xBaseIdx]),
@@ -635,7 +1087,7 @@ func convKernelGradAVX2TileFloat32(
 			}
 			for ; rOff < validRows; rOff++ {
 				cIn := cInStart + rOff
-				xBaseIdx := (inYStart*p.InW+inXStart)*inC + cIn
+				xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cIn
 				outIdx := ((ky*p.KernelW+kx)*inC+cIn)*outC + cOut
 				avx2.ConvKernelGradAVX2_1x16Float32Asm(
 					unsafe.Pointer(&x[xBaseIdx]),
@@ -648,7 +1100,7 @@ func convKernelGradAVX2TileFloat32(
 				)
 			}
 		} else {
-			xBaseIdx := (inYStart*p.InW+inXStart)*inC + cInStart
+			xBaseIdx := bStart*xBatchStrideFloats + (curInYStart*p.InW+inXStart)*inC + cInStart
 			outBaseIdx := ((ky*p.KernelW+kx)*inC+cInStart)*outC + cOut
 			convKernelGradTailFloat32(
 				x, v, out,
@@ -705,10 +1157,10 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+8])
-			acc1.Store(out[outOff+outRowStride : outOff+outRowStride+8])
-			acc2.Store(out[outOff+2*outRowStride : outOff+2*outRowStride+8])
-			acc3.Store(out[outOff+3*outRowStride : outOff+3*outRowStride+8])
+			acc0.Add(archsimd.LoadFloat32x8(out[outOff : outOff+8])).Store(out[outOff : outOff+8])
+			acc1.Add(archsimd.LoadFloat32x8(out[outOff+outRowStride : outOff+outRowStride+8])).Store(out[outOff+outRowStride : outOff+outRowStride+8])
+			acc2.Add(archsimd.LoadFloat32x8(out[outOff+2*outRowStride : outOff+2*outRowStride+8])).Store(out[outOff+2*outRowStride : outOff+2*outRowStride+8])
+			acc3.Add(archsimd.LoadFloat32x8(out[outOff+3*outRowStride : outOff+3*outRowStride+8])).Store(out[outOff+3*outRowStride : outOff+3*outRowStride+8])
 		}
 		for ; r < validRows; r++ {
 			acc0 := archsimd.BroadcastFloat32x8(0)
@@ -733,7 +1185,7 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+8])
+			acc0.Add(archsimd.LoadFloat32x8(out[outOff : outOff+8])).Store(out[outOff : outOff+8])
 		}
 	}
 
@@ -769,10 +1221,10 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+4])
-			acc1.Store(out[outOff+outRowStride : outOff+outRowStride+4])
-			acc2.Store(out[outOff+2*outRowStride : outOff+2*outRowStride+4])
-			acc3.Store(out[outOff+3*outRowStride : outOff+3*outRowStride+4])
+			acc0.Add(archsimd.LoadFloat32x4(out[outOff : outOff+4])).Store(out[outOff : outOff+4])
+			acc1.Add(archsimd.LoadFloat32x4(out[outOff+outRowStride : outOff+outRowStride+4])).Store(out[outOff+outRowStride : outOff+outRowStride+4])
+			acc2.Add(archsimd.LoadFloat32x4(out[outOff+2*outRowStride : outOff+2*outRowStride+4])).Store(out[outOff+2*outRowStride : outOff+2*outRowStride+4])
+			acc3.Add(archsimd.LoadFloat32x4(out[outOff+3*outRowStride : outOff+3*outRowStride+4])).Store(out[outOff+3*outRowStride : outOff+3*outRowStride+4])
 		}
 		for ; r < validRows; r++ {
 			acc0 := archsimd.BroadcastFloat32x4(0)
@@ -797,7 +1249,7 @@ func convKernelGradTailFloat32(
 				vB += vBatchStride
 			}
 			outOff := outBaseIdx + r*outRowStride + col
-			acc0.Store(out[outOff : outOff+4])
+			acc0.Add(archsimd.LoadFloat32x4(out[outOff : outOff+4])).Store(out[outOff : outOff+4])
 		}
 	}
 
@@ -823,7 +1275,7 @@ func convKernelGradTailFloat32(
 				xB += xBatchStride
 				vB += vBatchStride
 			}
-			out[outBaseIdx+r*outRowStride+col] = sum
+			out[outBaseIdx+r*outRowStride+col] += sum
 		}
 	}
 }
