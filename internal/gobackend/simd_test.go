@@ -30,12 +30,17 @@ func TestPriorityConstants(t *testing.T) {
 }
 
 func TestSIMDDetectionFlags(t *testing.T) {
-	t.Logf("GOARCH=%s GOOS=%s: IsAVX2Allowed=%v IsAVX512Allowed=%v IsNEONAllowed=%v IsARM64FP16Allowed=%v IsARM64BF16Allowed=%v IsARM64DotProdAllowed=%v IsARM64I8MMAllowed=%v IsSVEAllowed=%v IsSMEAllowed=%v",
-		runtime.GOARCH, runtime.GOOS,
+	t.Logf("GOARCH=%s GOOS=%s: ActiveArchitectures=%v IsAVX2Allowed=%v IsAVX512Allowed=%v IsNEONAllowed=%v IsARM64FP16Allowed=%v IsARM64BF16Allowed=%v IsARM64DotProdAllowed=%v IsARM64I8MMAllowed=%v IsSVEAllowed=%v IsSMEAllowed=%v",
+		runtime.GOARCH, runtime.GOOS, ActiveArchitectures,
 		IsAVX2Allowed, IsAVX512Allowed,
 		IsNEONAllowed, IsARM64FP16Allowed, IsARM64BF16Allowed,
 		IsARM64DotProdAllowed, IsARM64I8MMAllowed,
 		IsSVEAllowed, IsSMEAllowed)
+
+	expectedOSArch := runtime.GOOS + "/" + runtime.GOARCH
+	if len(ActiveArchitectures) == 0 || ActiveArchitectures[0] != expectedOSArch {
+		t.Errorf("expected ActiveArchitectures[0] to be %q, got %v", expectedOSArch, ActiveArchitectures)
+	}
 
 	switch runtime.GOARCH {
 	case "arm64":

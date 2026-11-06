@@ -30,3 +30,13 @@ var (
 	IsSVEAllowed          = false
 	IsSMEAllowed          = false
 )
+
+func init() {
+	ActiveArchitectures = append(ActiveArchitectures, "SIMD")
+	if IsAVX2Allowed {
+		ActiveArchitectures = append(ActiveArchitectures, "AVX2")
+	}
+	if IsAVX512Allowed {
+		ActiveArchitectures = append(ActiveArchitectures, "AVX512")
+	}
+}

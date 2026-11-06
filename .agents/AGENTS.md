@@ -426,6 +426,7 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
 - `IsARM64I8MMAllowed`: `FEAT_I8MM` (`SMMLA`, `UMMLA`, `USMMLA` 8-bit matrix multiply-accumulate).
 - `IsSVEAllowed`: `FEAT_SVE` / `FEAT_SVE2` (gated by `GOMLX_GO_SIMD_SVE`, for AWS Graviton3/4, Grace, Neoverse).
 - `IsSMEAllowed`: `FEAT_SME` / `FEAT_SME2` (gated by `GOMLX_GO_SIMD_SME`, for Apple M4+).
+- `ActiveArchitectures`: Global `[]string` populated with `<GOOS>/<GOARCH>`, plus `"SIMD"` and any active specialized SIMD architectures (`"AVX2"`, `"AVX512"`, `"NEON"`, `"SVE"`, `"SME"`), rendered in `Backend.Description()`.
 
 ### 3. Phased Implementation Roadmap
 

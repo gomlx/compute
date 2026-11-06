@@ -46,3 +46,16 @@ var (
 	// IsSMEAllowed returns true if ARM64 SME is supported by the CPU and not disabled by GOMLX_GO_SIMD_SME.
 	IsSMEAllowed = envutil.MustReadBool(envutil.GoBackendSIMD_SME, true) && arm64CPU.hasSME
 )
+
+func init() {
+	ActiveArchitectures = append(ActiveArchitectures, "SIMD")
+	if IsNEONAllowed {
+		ActiveArchitectures = append(ActiveArchitectures, "NEON")
+	}
+	if IsSVEAllowed {
+		ActiveArchitectures = append(ActiveArchitectures, "SVE")
+	}
+	if IsSMEAllowed {
+		ActiveArchitectures = append(ActiveArchitectures, "SME")
+	}
+}
