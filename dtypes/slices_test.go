@@ -167,3 +167,38 @@ func TestCopyAnySlice(t *testing.T) {
 		CopyAnySlice(dst, src)
 	})
 }
+
+func TestFromAnySliceAndSafeCopy(t *testing.T) {
+	dt, length, err := FromAnySlice([]float32{1, 2, 3, 4})
+	if err != nil || dt != Float32 || length != 4 {
+		t.Fatalf("FromAnySlice([]float32): got (%v, %d, %v), want (Float32, 4, nil)", dt, length, err)
+	}
+	if _, _, err := FromAnySlice(float32(1)); err == nil {
+		t.Fatalf("FromAnySlice(scalar) should fail")
+	}
+
+	rawBytes, err := CheckAnySlice([]int32{10, 20}, Int32, 2)
+	if err != nil || len(rawBytes) != 8 {
+		t.Fatalf("CheckAnySlice([]int32): got len=%d, err=%v", len(rawBytes), err)
+	}
+	if _, err := CheckAnySlice([]int32{10, 20}, Int32, 3); err == nil {
+		t.Fatalf("CheckAnySlice with wrong length should fail")
+	}
+	if _, err := CheckAnySlice([]int32{10, 20}, Float32, 2); err == nil {
+		t.Fatalf("CheckAnySlice with wrong dtype should fail")
+	}
+
+	dst := make([]float32, 3)
+	if err := SafeCopyAnySlice(dst, []float32{4, 5, 6}); err != nil {
+		t.Fatalf("SafeCopyAnySlice failed: %v", err)
+	}
+	if !slices.Equal(dst, []float32{4, 5, 6}) {
+		t.Fatalf("SafeCopyAnySlice: got %v, want [4 5 6]", dst)
+	}
+	if err := SafeCopyAnySlice(dst, []float32{4, 5}); err == nil {
+		t.Fatalf("SafeCopyAnySlice with mismatched length should fail")
+	}
+	if err := SafeCopyAnySlice(dst, []int32{4, 5, 6}); err == nil {
+		t.Fatalf("SafeCopyAnySlice with mismatched dtype should fail")
+	}
+}
