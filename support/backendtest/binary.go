@@ -281,6 +281,22 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual([]int32{3, 1}, y1); !ok {
 			t.Errorf("y1 value mismatch (-want +got):\n%s", diff)
 		}
+
+		yNeg, err := testutil.Exec1(b, []any{[]int32{-7, -9, 7, 9}, []int32{4, -4, -4, 4}}, buildFnRem)
+		if err != nil {
+			t.Fatalf("Failed to execute Rem (negative int32): %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]int32{-3, -1, 3, 1}, yNeg); !ok {
+			t.Errorf("yNeg value mismatch (-want +got):\n%s", diff)
+		}
+
+		yFloat, err := testutil.Exec1(b, []any{[]float32{-7.5, 7.5}, []float32{2.0, -2.0}}, buildFnRem)
+		if err != nil {
+			t.Fatalf("Failed to execute Rem (float32): %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{-1.5, 1.5}, yFloat); !ok {
+			t.Errorf("yFloat value mismatch (-want +got):\n%s", diff)
+		}
 	})
 
 	t.Run("Pow", func(t *testing.T) {
@@ -411,6 +427,59 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 				t.Errorf("BitwiseXor mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("ShiftLeft", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeShiftLeft)
+			y, err := testutil.Exec1(b, []any{[]int32{-1, 3}, []int32{1, 2}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.ShiftLeft(p[0], p[1])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute ShiftLeft: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{-2, 12}, y); !ok {
+				t.Errorf("ShiftLeft mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("ShiftRightArithmetic", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeShiftRightArithmetic)
+			y, err := testutil.Exec1(b, []any{[]int32{-8, 8}, []int32{1, 1}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.ShiftRightArithmetic(p[0], p[1])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute ShiftRightArithmetic: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{-4, 4}, y); !ok {
+				t.Errorf("ShiftRightArithmetic mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("ShiftRightLogical", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeShiftRightLogical)
+			y, err := testutil.Exec1(b, []any{[]int32{-8, 8}, []int32{1, 1}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.ShiftRightLogical(p[0], p[1])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute ShiftRightLogical: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]int32{int32(uint32(0xFFFFFFF8) >> 1), 4}, y); !ok {
+				t.Errorf("ShiftRightLogical mismatch:\n%s", diff)
+			}
+		})
+	})
+
+	t.Run("Complex", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeComplex)
+		testutil.SkipIfMissingDType(t, b, dtypes.Complex64)
+		y, err := testutil.Exec1(b, []any{[]float32{3, -5}, []float32{4, 12}}, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+			return f.Complex(p[0], p[1])
+		})
+		if err != nil {
+			t.Fatalf("Failed to execute Complex: %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]complex64{3 + 4i, -5 + 12i}, y); !ok {
+			t.Errorf("Complex mismatch:\n%s", diff)
+		}
 	})
 
 	t.Run("Comparison", func(t *testing.T) {

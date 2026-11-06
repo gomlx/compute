@@ -134,6 +134,20 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 		}
 	})
 
+	t.Run("Clamp", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeClamp)
+		got, err := testutil.Exec1(b, []any{float32(-1), []float32{-5, -1, 0, 2, 10}, float32(3)},
+			func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.Clamp(p[0], p[1], p[2])
+			})
+		if err != nil {
+			t.Fatalf("Clamp failed: %v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{-1, -1, 0, 2, 3}, got); !ok {
+			t.Errorf("Clamp mismatch:\n%s", diff)
+		}
+	})
+
 	t.Run("Reshape", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeReshape)
 		// Reshape array to matrix.

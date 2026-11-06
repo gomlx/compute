@@ -144,6 +144,17 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsEqual(int8(3), y0); !ok {
 			t.Errorf("BitCount int8 mismatch:\n%s", diff)
 		}
+		if b.Capabilities().DTypes[dtypes.Uint64] {
+			y64, err := testutil.Exec1(b, []any{[]uint64{0, 1, 0xF0F0F0F00F0F0F0F, ^uint64(0)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnBitCount(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute BitCount uint64: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]uint64{0, 1, 32, 64}, y64); !ok {
+				t.Errorf("BitCount uint64 mismatch:\n%s", diff)
+			}
+		}
 	})
 	t.Run("Clz", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeClz)
@@ -156,6 +167,17 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		}
 		if ok, diff := testutil.IsEqual(int8(5), y0); !ok {
 			t.Errorf("Clz int8 mismatch:\n%s", diff)
+		}
+		if b.Capabilities().DTypes[dtypes.Uint64] {
+			y64, err := testutil.Exec1(b, []any{[]uint64{0, 1, 1 << 63, 1 << 32}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnClz(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Clz uint64: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual([]uint64{64, 63, 0, 31}, y64); !ok {
+				t.Errorf("Clz uint64 mismatch:\n%s", diff)
+			}
 		}
 	})
 	t.Run("Exp", func(t *testing.T) {
@@ -330,14 +352,57 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 	t.Run("IsFinite", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeIsFinite)
 		buildFnIsFinite := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.IsFinite(param) }
-		y0, err := testutil.Exec1(b, []any{float32(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		y0, err := testutil.Exec1(b, []any{[]float32{1.0, float32(math.NaN()), float32(math.Inf(1))}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnIsFinite(f, params[0])
 		})
 		if err != nil {
 			t.Fatalf("Failed to execute IsFinite: %+v", err)
 		}
-		if ok, diff := testutil.IsEqual(true, y0); !ok {
-			t.Errorf("IsFinite float32 (finite) mismatch:\n%s", diff)
+		if ok, diff := testutil.IsEqual([]bool{true, false, false}, y0); !ok {
+			t.Errorf("IsFinite float32 mismatch:\n%s", diff)
+		}
+	})
+	t.Run("IsNaN", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeIsNaN)
+		y0, err := testutil.Exec1(b, []any{[]float32{1.0, float32(math.NaN()), float32(math.Inf(1))}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+			return f.IsNaN(params[0])
+		})
+		if err != nil {
+			t.Fatalf("Failed to execute IsNaN: %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]bool{false, true, false}, y0); !ok {
+			t.Errorf("IsNaN float32 mismatch:\n%s", diff)
+		}
+	})
+	t.Run("ComplexUnary", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.Complex64)
+		testutil.SkipIfMissing(t, b, compute.OpTypeConj)
+		testutil.SkipIfMissing(t, b, compute.OpTypeReal)
+		testutil.SkipIfMissing(t, b, compute.OpTypeImag)
+		re, im, err := testutil.Exec2(b, []any{[]complex64{3 + 4i, -5 + 12i}},
+			func(f compute.Function, p []compute.Value) (compute.Value, compute.Value, error) {
+				conj, err := f.Conj(p[0])
+				if err != nil {
+					return nil, nil, err
+				}
+				r, err := f.Real(conj)
+				if err != nil {
+					return nil, nil, err
+				}
+				i, err := f.Imag(conj)
+				if err != nil {
+					return nil, nil, err
+				}
+				return r, i, nil
+			})
+		if err != nil {
+			t.Fatalf("Failed to execute Conj/Real/Imag: %+v", err)
+		}
+		if ok, diff := testutil.IsEqual([]float32{3, -5}, re); !ok {
+			t.Errorf("Real(Conj) mismatch:\n%s", diff)
+		}
+		if ok, diff := testutil.IsEqual([]float32{-4, -12}, im); !ok {
+			t.Errorf("Imag(Conj) mismatch:\n%s", diff)
 		}
 	})
 	t.Run("Erf", func(t *testing.T) {
