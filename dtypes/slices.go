@@ -1,11 +1,13 @@
 package dtypes
 
 import (
+	"strconv"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/dtypes/gotype"
+	"github.com/pkg/errors"
 )
 
 // UnsafeByteSliceFromAny casts a slice of any of the supported Go types (feed as type any) to a slice of bytes.
@@ -209,4 +211,96 @@ func CopyAnySlice(dst, src any) {
 	default:
 		panicf("unsupported dtype for CopyAnySlices: %T", dst)
 	}
+}
+
+// FromAnySlice returns the DType and length of a flat slice of any supported Go type without reflection.
+// It returns an error if flatAny is not a slice of a supported DType.
+func FromAnySlice(flatAny any) (dtype DType, length int, err error) {
+	switch flat := flatAny.(type) {
+	case []float64:
+		return Float64, len(flat), nil
+	case []float32:
+		return Float32, len(flat), nil
+	case []float16.Float16:
+		return Float16, len(flat), nil
+	case []bfloat16.BFloat16:
+		return BFloat16, len(flat), nil
+	case []int:
+		if strconv.IntSize == 32 {
+			return Int32, len(flat), nil
+		}
+		return Int64, len(flat), nil
+	case []int64:
+		return Int64, len(flat), nil
+	case []int32:
+		return Int32, len(flat), nil
+	case []int16:
+		return Int16, len(flat), nil
+	case []int8:
+		return Int8, len(flat), nil
+	case []uint64:
+		return Uint64, len(flat), nil
+	case []uint32:
+		return Uint32, len(flat), nil
+	case []uint16:
+		return Uint16, len(flat), nil
+	case []uint8:
+		return Uint8, len(flat), nil
+	case []bool:
+		return Bool, len(flat), nil
+	case []complex64:
+		return Complex64, len(flat), nil
+	case []complex128:
+		return Complex128, len(flat), nil
+	default:
+		return InvalidDType, 0, errors.Errorf("expected a slice of a supported DType, got %T", flatAny)
+	}
+}
+
+// CheckAnySlice validates that flatAny is a slice matching expectedDType and expectedLen,
+// and returns its underlying byte slice via UnsafeByteSliceFromAny.
+func CheckAnySlice(flatAny any, expectedDType DType, expectedLen int) ([]byte, error) {
+	dt, gotLen, err := FromAnySlice(flatAny)
+	if err != nil {
+		return nil, err
+	}
+	if expectedDType.IsPacked() {
+		if dt != Uint8 {
+			return nil, errors.Errorf("packed dtype %s expects []uint8 storage slice, got %s (%T)", expectedDType, dt, flatAny)
+		}
+		wantBytes := expectedDType.SizeForDimensions(expectedLen)
+		if gotLen != wantBytes {
+			return nil, errors.Errorf("packed dtype %s slice byte length %d does not match expected %d (for %d elements)",
+				expectedDType, gotLen, wantBytes, expectedLen)
+		}
+		return UnsafeByteSliceFromAny(flatAny), nil
+	}
+	if dt != expectedDType {
+		return nil, errors.Errorf("slice dtype %s (%T) does not match expected dtype %s", dt, flatAny, expectedDType)
+	}
+	if gotLen != expectedLen {
+		return nil, errors.Errorf("slice length %d does not match expected length %d for dtype %s", gotLen, expectedLen, expectedDType)
+	}
+	return UnsafeByteSliceFromAny(flatAny), nil
+}
+
+// SafeCopyAnySlice copies src into dst after verifying that both are slices of the same supported DType
+// and have the same length.
+func SafeCopyAnySlice(dst, src any) error {
+	dstDType, dstLen, err := FromAnySlice(dst)
+	if err != nil {
+		return errors.Wrap(err, "SafeCopyAnySlice(dst)")
+	}
+	srcDType, srcLen, err := FromAnySlice(src)
+	if err != nil {
+		return errors.Wrap(err, "SafeCopyAnySlice(src)")
+	}
+	if dstDType != srcDType {
+		return errors.Errorf("SafeCopyAnySlice: type mismatch dst=%s (%T) vs src=%s (%T)", dstDType, dst, srcDType, src)
+	}
+	if dstLen != srcLen {
+		return errors.Errorf("SafeCopyAnySlice: length mismatch dst=%d vs src=%d", dstLen, srcLen)
+	}
+	CopyAnySlice(dst, src)
+	return nil
 }
