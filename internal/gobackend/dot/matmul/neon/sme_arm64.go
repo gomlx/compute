@@ -327,7 +327,15 @@ func calibrateSMEClusters() {
 // If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
 // is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
 func SMEAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
-	return smeAcquireCluster()
+	return smeAcquireClusterWithLimit(SMEWorkersPerCluster, SMEWorkersPerCluster)
+}
+
+// SMEAcquireClusterWithLimit is like SMEAcquireCluster, but allows specifying a higher concurrency
+// limit on fast clusters (Super and Performance) for two-stage pipelines (such as ConvGeneral)
+// where each SME worker spends substantial time on its private CPU core packing LHS before
+// entering SMSTART.
+func SMEAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isSlowECore bool) {
+	return smeAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster)
 }
 
 // SMEReleaseCluster releases a previously acquired global SME cluster lock.
@@ -341,6 +349,10 @@ func SMEReleaseCluster(cluster int) {
 // If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
 // is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
 func smeAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
+	return smeAcquireClusterWithLimit(SMEWorkersPerCluster, SMEWorkersPerCluster)
+}
+
+func smeAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isSlowECore bool) {
 	if !SMEUseHybridNEON {
 		return -1, true, false
 	}
@@ -363,12 +375,15 @@ func smeAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
 		primaryCluster = 1
 	}
 
-	maxPerCluster := SMEWorkersPerCluster
 	tryClaim := func(c int) bool {
-		if globalSMEClusterLocks[c].active.Load() >= maxPerCluster {
+		limit := maxFastPerCluster
+		if c == 2 {
+			limit = maxSlowPerCluster
+		}
+		if globalSMEClusterLocks[c].active.Load() >= limit {
 			return false
 		}
-		if globalSMEClusterLocks[c].active.Add(1) <= maxPerCluster {
+		if globalSMEClusterLocks[c].active.Add(1) <= limit {
 			smeActiveTotal.Add(1)
 			return true
 		}

@@ -232,6 +232,205 @@ conv_neon_4x16_store:
 
 
 // ===========================================================================
+// 1b. ConvNEONDirect2DKernel4x16Float32Asm: Zero-im2col Direct 2D 4x16 NEON
+// ===========================================================================
+// Multiplies 4 horizontally adjacent interior output pixels directly from `input`
+// across `numKy` valid filter rows of width `kWC = kW * inC` (stepping by
+// `lhsKyJumpBytes` between filter rows) against a 16-column panel of `rhs`.
+//
+// func ConvNEONDirect2DKernel4x16Float32Asm(
+//     lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+//     kWC, numKy, lhsRowStrideBytes, lhsKyJumpBytes, rhsStepBytes, outRowStrideBytes int)
+TEXT ·ConvNEONDirect2DKernel4x16Float32Asm(SB), NOSPLIT, $0-72
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD kWC+24(FP), R3
+	MOVD numKy+32(FP), R11
+	MOVD lhsRowStrideBytes+40(FP), R8
+	MOVD lhsKyJumpBytes+48(FP), R12
+	MOVD rhsStepBytes+56(FP), R9
+	MOVD outRowStrideBytes+64(FP), R10
+
+	// Zero 16 accumulators V0..V15 (4 rows x 16 cols)
+	VEOR V0.B16, V0.B16, V0.B16
+	VEOR V1.B16, V1.B16, V1.B16
+	VEOR V2.B16, V2.B16, V2.B16
+	VEOR V3.B16, V3.B16, V3.B16
+	VEOR V4.B16, V4.B16, V4.B16
+	VEOR V5.B16, V5.B16, V5.B16
+	VEOR V6.B16, V6.B16, V6.B16
+	VEOR V7.B16, V7.B16, V7.B16
+	VEOR V8.B16, V8.B16, V8.B16
+	VEOR V9.B16, V9.B16, V9.B16
+	VEOR V10.B16, V10.B16, V10.B16
+	VEOR V11.B16, V11.B16, V11.B16
+	VEOR V12.B16, V12.B16, V12.B16
+	VEOR V13.B16, V13.B16, V13.B16
+	VEOR V14.B16, V14.B16, V14.B16
+	VEOR V15.B16, V15.B16, V15.B16
+
+	CBZ R11, conv_neon_d2d_4x16_store
+	CBZ R3, conv_neon_d2d_4x16_store
+
+	// Set up 4 row pointers R4, R5, R6, R7
+	MOVD R0, R4
+	ADD R8, R4, R5
+	ADD R8, R5, R6
+	ADD R8, R6, R7
+
+conv_neon_d2d_4x16_ky_loop:
+	MOVD R3, R13
+	CMP $4, R13
+	BLT conv_neon_d2d_4x16_rem
+
+conv_neon_d2d_4x16_loop4:
+	VLD1.P 16(R4), [V16.S4]
+	VLD1.P 16(R5), [V17.S4]
+	VLD1.P 16(R6), [V18.S4]
+	VLD1.P 16(R7), [V19.S4]
+
+	// Step k+0 (lane 0)
+	VLD1 (R1), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R9, R1, R1
+	// Preload Step k+1 (lane 1) RHS into V24..V27
+	VLD1 (R1), [V24.S4, V25.S4, V26.S4, V27.S4]
+	ADD R9, R1, R1
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	// Preload Step k+2 (lane 2) RHS into V20..V23
+	VLD1 (R1), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R9, R1, R1
+
+	// Step k+1 (lane 1)
+	FMLA_4S_LANE(0, 24, 16, 1)
+	FMLA_4S_LANE(1, 25, 16, 1)
+	FMLA_4S_LANE(2, 26, 16, 1)
+	FMLA_4S_LANE(3, 27, 16, 1)
+	FMLA_4S_LANE(4, 24, 17, 1)
+	FMLA_4S_LANE(5, 25, 17, 1)
+	FMLA_4S_LANE(6, 26, 17, 1)
+	FMLA_4S_LANE(7, 27, 17, 1)
+	FMLA_4S_LANE(8, 24, 18, 1)
+	FMLA_4S_LANE(9, 25, 18, 1)
+	FMLA_4S_LANE(10, 26, 18, 1)
+	FMLA_4S_LANE(11, 27, 18, 1)
+	FMLA_4S_LANE(12, 24, 19, 1)
+	FMLA_4S_LANE(13, 25, 19, 1)
+	FMLA_4S_LANE(14, 26, 19, 1)
+	FMLA_4S_LANE(15, 27, 19, 1)
+
+	// Preload Step k+3 (lane 3) RHS into V24..V27
+	VLD1 (R1), [V24.S4, V25.S4, V26.S4, V27.S4]
+	ADD R9, R1, R1
+
+	// Step k+2 (lane 2)
+	FMLA_4S_LANE(0, 20, 16, 2)
+	FMLA_4S_LANE(1, 21, 16, 2)
+	FMLA_4S_LANE(2, 22, 16, 2)
+	FMLA_4S_LANE(3, 23, 16, 2)
+	FMLA_4S_LANE(4, 20, 17, 2)
+	FMLA_4S_LANE(5, 21, 17, 2)
+	FMLA_4S_LANE(6, 22, 17, 2)
+	FMLA_4S_LANE(7, 23, 17, 2)
+	FMLA_4S_LANE(8, 20, 18, 2)
+	FMLA_4S_LANE(9, 21, 18, 2)
+	FMLA_4S_LANE(10, 22, 18, 2)
+	FMLA_4S_LANE(11, 23, 18, 2)
+	FMLA_4S_LANE(12, 20, 19, 2)
+	FMLA_4S_LANE(13, 21, 19, 2)
+	FMLA_4S_LANE(14, 22, 19, 2)
+	FMLA_4S_LANE(15, 23, 19, 2)
+
+	// Step k+3 (lane 3)
+	FMLA_4S_LANE(0, 24, 16, 3)
+	FMLA_4S_LANE(1, 25, 16, 3)
+	FMLA_4S_LANE(2, 26, 16, 3)
+	FMLA_4S_LANE(3, 27, 16, 3)
+	FMLA_4S_LANE(4, 24, 17, 3)
+	FMLA_4S_LANE(5, 25, 17, 3)
+	FMLA_4S_LANE(6, 26, 17, 3)
+	FMLA_4S_LANE(7, 27, 17, 3)
+	FMLA_4S_LANE(8, 24, 18, 3)
+	FMLA_4S_LANE(9, 25, 18, 3)
+	FMLA_4S_LANE(10, 26, 18, 3)
+	FMLA_4S_LANE(11, 27, 18, 3)
+	FMLA_4S_LANE(12, 24, 19, 3)
+	FMLA_4S_LANE(13, 25, 19, 3)
+	FMLA_4S_LANE(14, 26, 19, 3)
+	FMLA_4S_LANE(15, 27, 19, 3)
+
+	SUB $4, R13, R13
+	CMP $4, R13
+	BGE conv_neon_d2d_4x16_loop4
+
+conv_neon_d2d_4x16_rem:
+	CBZ R13, conv_neon_d2d_4x16_ky_next
+
+conv_neon_d2d_4x16_loop1:
+	FMOVS.P 4(R4), F16
+	FMOVS.P 4(R5), F17
+	FMOVS.P 4(R6), F18
+	FMOVS.P 4(R7), F19
+	VLD1 (R1), [V20.S4, V21.S4, V22.S4, V23.S4]
+	ADD R9, R1, R1
+
+	FMLA_4S_LANE(0, 20, 16, 0)
+	FMLA_4S_LANE(1, 21, 16, 0)
+	FMLA_4S_LANE(2, 22, 16, 0)
+	FMLA_4S_LANE(3, 23, 16, 0)
+	FMLA_4S_LANE(4, 20, 17, 0)
+	FMLA_4S_LANE(5, 21, 17, 0)
+	FMLA_4S_LANE(6, 22, 17, 0)
+	FMLA_4S_LANE(7, 23, 17, 0)
+	FMLA_4S_LANE(8, 20, 18, 0)
+	FMLA_4S_LANE(9, 21, 18, 0)
+	FMLA_4S_LANE(10, 22, 18, 0)
+	FMLA_4S_LANE(11, 23, 18, 0)
+	FMLA_4S_LANE(12, 20, 19, 0)
+	FMLA_4S_LANE(13, 21, 19, 0)
+	FMLA_4S_LANE(14, 22, 19, 0)
+	FMLA_4S_LANE(15, 23, 19, 0)
+
+	SUB $1, R13, R13
+	CBNZ R13, conv_neon_d2d_4x16_loop1
+
+conv_neon_d2d_4x16_ky_next:
+	ADD R12, R4, R4
+	ADD R12, R5, R5
+	ADD R12, R6, R6
+	ADD R12, R7, R7
+	SUB $1, R11, R11
+	CBNZ R11, conv_neon_d2d_4x16_ky_loop
+
+conv_neon_d2d_4x16_store:
+	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R2)
+	ADD R10, R2, R2
+	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R2)
+	ADD R10, R2, R2
+	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R2)
+	ADD R10, R2, R2
+	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R2)
+	RET
+
+
+// ===========================================================================
 // 2. convKernelGradNEON4x16Float32Asm: 4x16 Outer-Product Kernel Gradient
 // ===========================================================================
 // Accumulates a 4x16 tile of gradKernel[ky, kx, cIn:cIn+4, cOut:cOut+16] across
@@ -379,12 +578,35 @@ kgrad_neon_4x16_next_y:
 	CBNZ R13, kgrad_neon_4x16_b_loop
 
 kgrad_neon_4x16_store:
+	VLD1 (R2), [V20.S4, V21.S4, V22.S4, V23.S4]
+	VFADD V20.S4, V0.S4, V0.S4
+	VFADD V21.S4, V1.S4, V1.S4
+	VFADD V22.S4, V2.S4, V2.S4
+	VFADD V23.S4, V3.S4, V3.S4
 	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R2)
 	ADD R12, R2, R2
+
+	VLD1 (R2), [V20.S4, V21.S4, V22.S4, V23.S4]
+	VFADD V20.S4, V4.S4, V4.S4
+	VFADD V21.S4, V5.S4, V5.S4
+	VFADD V22.S4, V6.S4, V6.S4
+	VFADD V23.S4, V7.S4, V7.S4
 	VST1 [V4.S4, V5.S4, V6.S4, V7.S4], (R2)
 	ADD R12, R2, R2
+
+	VLD1 (R2), [V20.S4, V21.S4, V22.S4, V23.S4]
+	VFADD V20.S4, V8.S4, V8.S4
+	VFADD V21.S4, V9.S4, V9.S4
+	VFADD V22.S4, V10.S4, V10.S4
+	VFADD V23.S4, V11.S4, V11.S4
 	VST1 [V8.S4, V9.S4, V10.S4, V11.S4], (R2)
 	ADD R12, R2, R2
+
+	VLD1 (R2), [V20.S4, V21.S4, V22.S4, V23.S4]
+	VFADD V20.S4, V12.S4, V12.S4
+	VFADD V21.S4, V13.S4, V13.S4
+	VFADD V22.S4, V14.S4, V14.S4
+	VFADD V23.S4, V15.S4, V15.S4
 	VST1 [V12.S4, V13.S4, V14.S4, V15.S4], (R2)
 	RET
 
@@ -491,10 +713,15 @@ kgrad_neon_1x16_next_y:
 	CBNZ R13, kgrad_neon_1x16_b_loop
 
 kgrad_neon_1x16_store:
+	VLD1 (R2), [V20.S4, V21.S4, V22.S4, V23.S4]
 	VFADD V4.S4, V0.S4, V0.S4
 	VFADD V5.S4, V1.S4, V1.S4
 	VFADD V6.S4, V2.S4, V2.S4
 	VFADD V7.S4, V3.S4, V3.S4
+	VFADD V20.S4, V0.S4, V0.S4
+	VFADD V21.S4, V1.S4, V1.S4
+	VFADD V22.S4, V2.S4, V2.S4
+	VFADD V23.S4, V3.S4, V3.S4
 	VST1 [V0.S4, V1.S4, V2.S4, V3.S4], (R2)
 	RET
 

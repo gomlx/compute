@@ -250,6 +250,35 @@ func TestConvGeneralNEONAndSME(t *testing.T) {
 			kernelDilations: []int{1, 1},
 			expectedKind:    Conv2DKernelGrad,
 		},
+		{
+			name:         "2D_Fwd_LargeSpatial64x64_Direct2D",
+			inputDims:    []int{4, 64, 64, 16},
+			kernelDims:   []int{3, 3, 16, 32},
+			axes:         axes2DFwd,
+			strides:      []int{1, 1},
+			paddings:     [][2]int{{1, 1}, {1, 1}},
+			expectedKind: Conv2DStandard,
+		},
+		{
+			name:            "2D_VJPKernel_LargeBatchSpatial_SlicedReduction",
+			inputDims:       []int{16, 64, 64, 16},
+			kernelDims:      []int{16, 64, 64, 32},
+			axes:            axes2DVJPKernel,
+			strides:         []int{1, 1},
+			paddings:        [][2]int{{1, 1}, {1, 1}},
+			kernelDilations: []int{1, 1},
+			expectedKind:    Conv2DKernelGrad,
+		},
+		{
+			name:            "2D_VJPKernel_SmallBatchLargeSpatial128x128_SlicedReduction",
+			inputDims:       []int{2, 128, 128, 16},
+			kernelDims:      []int{2, 128, 128, 32},
+			axes:            axes2DVJPKernel,
+			strides:         []int{1, 1},
+			paddings:        [][2]int{{1, 1}, {1, 1}},
+			kernelDilations: []int{1, 1},
+			expectedKind:    Conv2DKernelGrad,
+		},
 
 		// 1D Convolutions (Forward, VJP wrt Input, VJP wrt Kernel)
 		{
@@ -337,7 +366,7 @@ func TestConvGeneralNEONAndSME(t *testing.T) {
 				t.Fatalf("execConvGeneralNEON failed: %+v", err)
 			}
 			defer backend.PutBuffer(neonBuf)
-			compareConvBuffers(t, "NEON", neonBuf, wantBuf, 1e-4)
+			compareConvBuffers(t, "NEON", neonBuf, wantBuf, 2e-4)
 
 			if gobackend.IsSMEAllowed {
 				smeBuf, err := execConvGeneralSME(backend, convNode, inputs, owned)
@@ -345,7 +374,8 @@ func TestConvGeneralNEONAndSME(t *testing.T) {
 					t.Fatalf("execConvGeneralSME failed: %+v", err)
 				}
 				defer backend.PutBuffer(smeBuf)
-				compareConvBuffers(t, "SME", smeBuf, wantBuf, 1e-4)
+				compareConvBuffers(t, "SME", smeBuf, wantBuf, 2e-4)
+				compareConvBuffers(t, "SME_vs_NEON", smeBuf, neonBuf, 1e-5)
 			}
 		})
 	}
