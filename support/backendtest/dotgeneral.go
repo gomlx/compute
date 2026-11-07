@@ -599,4 +599,45 @@ func TestDotGeneral(t *testing.T, backend compute.Backend) {
 				i, wantVal, gotVal, diff, diff/mean)
 		}
 	})
+
+	t.Run("int32/small-matmul", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Int32)
+		a := [][]int32{{1, 2}, {3, 4}}
+		rhs := [][]int32{{10, 20}, {30, 40}}
+		got, err := testutil.Exec1(backend, []any{a, rhs},
+			func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(p[0], []int{1}, nil, p[1], []int{0}, nil, compute.DotGeneralConfig{})
+			})
+		if err != nil {
+			if compute.IsNotImplemented(err) {
+				t.Skipf("Skipping int32 DotGeneral: %v", err)
+			}
+			t.Fatalf("DotGeneral int32 failed: %v", err)
+		}
+		want := [][]int32{{70, 100}, {150, 220}}
+		if ok, diff := testutil.IsEqual(want, got); !ok {
+			t.Errorf("DotGeneral int32 mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("complex64/small-matmul", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, backend, dtypes.Complex64)
+		a := [][]complex64{{1 + 2i, 3 - 1i}}
+		rhs := [][]complex64{{2 + 1i}, {1 + 3i}}
+		got, err := testutil.Exec1(backend, []any{a, rhs},
+			func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				return f.DotGeneral(p[0], []int{1}, nil, p[1], []int{0}, nil, compute.DotGeneralConfig{})
+			})
+		if err != nil {
+			if compute.IsNotImplemented(err) {
+				t.Skipf("Skipping complex64 DotGeneral: %v", err)
+			}
+			t.Fatalf("DotGeneral complex64 failed: %v", err)
+		}
+		// (1+2i)*(2+1i) + (3-1i)*(1+3i) = (0+5i) + (6+8i) = 6+13i
+		want := [][]complex64{{6 + 13i}}
+		if ok, diff := testutil.IsEqual(want, got); !ok {
+			t.Errorf("DotGeneral complex64 mismatch:\n%s", diff)
+		}
+	})
 }
