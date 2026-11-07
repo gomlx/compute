@@ -291,7 +291,7 @@ When implementing or modifying assembly routines in `./internal/gobackend/...`, 
 ### 1. Directory and File Organization
 
 Assembly implementations are organized in subdirectories per SIMD architecture:
-- Separate subdirectories: `avx2/` and `avx512/` under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512}`, `internal/gobackend/dot/matmul/{avx2,avx512}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+- Separate subdirectories: `avx2/` and `avx512/` under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512}`, `internal/gobackend/activations/{avx2,avx512}`, `internal/gobackend/dot/matmul/{avx2,avx512}`, `internal/gobackend/fusedops/{avx2,avx512}`).
 - **Go Declaration (`*_amd64.go`)**: Forward-declare assembly functions with `//go:noescape`, e.g.:
   ```go
   //go:noescape
