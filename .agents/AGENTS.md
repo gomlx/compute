@@ -563,3 +563,13 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
   - On AVX2 (`Float32x8`): $D=32$ unrolls into 4 vector registers (implemented in handwritten assembly `sdpaQueriesDim32NoMaskAVX2Asm` and `sdpaSoftmaxAndValueAccumDim32AVX2Asm` in `internal/gobackend/fusedops/avx2/sdpa_amd64.s`), $D=64$ into 8 vectors, $D=128$ into 16 vectors.
   - Completely unrolling the inner dimension eliminates loop overhead and allows optimal compiler/assembler instruction scheduling across FMA execution ports.
 
+### 6. Multi-RHS Single-LHS-Pack Execution & Inline Cache-Resident Epilogues (`ExecuteMultiRHSWithEpilogue`)
+- In fused multi-projection operations such as `FusedAttentionQKVProjection` (where the same input `xFlat` is multiplied by `wQ`, `wK`, and `wV`), invoking `matmul.ExecuteWithEpilogue` three separate times causes three major inefficiencies:
+  1. **Redundant LHS Packing**: When `qDim` or `kvDim` fits in a single column panel (`Nc = 512`), `numColPanels == 1` triggers `!canCacheAllLHS`, causing `xFlat` to be transposed/packed into panel layout three separate times (once each for `Q`, `K`, and `V`).
+  2. **Cold L3/DRAM Epilogue Reads**: Running `ApplyEpilogue` after the full-matrix GEMM barrier forces the bias/activation pass to re-read the entire `Q`, `K`, and `V` output tensors from L3 cache or DRAM instead of modifying each worker's freshly written `Mc` rows while hot in L1/L2 cache.
+  3. **Synchronization Overhead**: Three separate `ExecuteWithEpilogue` calls incur 6 parallel synchronization barriers per attention layer (`3 × SaturateUpTo` + `3 × ParallelizeChunks`).
+- **The Solution (`matmul.ExecuteMultiRHSWithEpilogue` & `matmul.AppendRowWorkItems`)**:
+  - Partition work across batch and LHS rows (`M`) only (`AppendRowWorkItems`), aligning coarse row chunks to `LHSPanelCrossSize` (`Mc = 32`).
+  - Within a single `SaturateUpTo` dispatch (`avx512LargeMultiFloat32` / `avx2LargeMultiFloat32` and generated half/double variants), each worker steps through its assigned row range `[LHSRowStart, LHSRowEnd)` in L2-resident sub-chunks (`1..4` `Mc` panels, 48–192 KB), packs `xFlat[subRowStart:subRowEnd]` into `packedLHS` **only once** on the first target (`Q`), reuses the L2-resident `packedLHS` across `K` and `V` (`lhsAlreadyPacked = true`), and immediately applies each target's bias/activation epilogue inline via `matmul.ApplyEpilogueRows` while the output rows are still hot in L1/L2 cache.
+
+

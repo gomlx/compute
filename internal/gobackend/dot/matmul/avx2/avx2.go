@@ -92,15 +92,23 @@ func RegisterAVX2ForTests() {
 func registerAVX2(forTests bool) {
 	dot.RegisterImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx2RouterFloat32, matmul.PriorityAVX2, forTests)
 	dot.RegisterImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx2RouterFloat32, matmul.PriorityAVX2, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx2LargeMultiFloat32)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx2LargeMultiFloat32)
 
 	dot.RegisterImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx2RouterBFloat16, matmul.PriorityAVX2, forTests)
 	dot.RegisterImplementation("simd:avx2", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx2RouterBFloat16, matmul.PriorityAVX2, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx2LargeMultiBFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx2LargeMultiBFloat16)
 
 	dot.RegisterImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx2RouterFloat16, matmul.PriorityAVX2, forTests)
 	dot.RegisterImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx2RouterFloat16, matmul.PriorityAVX2, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx2LargeMultiFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx2LargeMultiFloat16)
 
 	dot.RegisterImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx2RouterFloat64, matmul.PriorityAVX2, forTests)
 	dot.RegisterImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx2RouterFloat64, matmul.PriorityAVX2, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx2LargeMultiFloat64)
+	matmul.RegisterMultiRHSImplementation("simd:avx2", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx2LargeMultiFloat64)
 }
 
 // avx2ReduceSumFloat32x8 performs a horizontal reduction of a Float32x8 vector.

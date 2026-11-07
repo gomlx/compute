@@ -831,5 +831,120 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("Dynamic V mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("Large", func(t *testing.T) {
+			// Exercise the large-matrix Multi-RHS path (flops >= matmul.SmallMatMulSizeThreshold = 2,097,152)
+			// with non-multiple-of-32 rows, multiple sub-chunks, and both parameter and constant wQKV.
+			const (
+				mRows      = 131
+				inFeatures = 256
+				qDim       = 192
+				kvDim      = 96
+				totalOut   = qDim + 2*kvDim
+			)
+			x := make([][]float32, mRows)
+			for i := range mRows {
+				x[i] = make([]float32, inFeatures)
+				for k := range inFeatures {
+					x[i][k] = float32((i*17+k*31)%29-14) * 0.125
+				}
+			}
+			wQKV := make([][]float32, inFeatures)
+			wQKVFlat := make([]float32, inFeatures*totalOut)
+			for k := range inFeatures {
+				wQKV[k] = make([]float32, totalOut)
+				for j := range totalOut {
+					val := float32((k*13+j*23)%19-9) * 0.0625
+					wQKV[k][j] = val
+					wQKVFlat[k*totalOut+j] = val
+				}
+			}
+			bq := make([]float32, qDim)
+			for j := range qDim {
+				bq[j] = float32(j%11-5) * 0.25
+			}
+			bk := make([]float32, kvDim)
+			bv := make([]float32, kvDim)
+			for j := range kvDim {
+				bk[j] = float32(j%7-3) * 0.5
+				bv[j] = float32(j%13-6) * 0.125
+			}
+
+			wantQ := make([][]float32, mRows)
+			wantK := make([][]float32, mRows)
+			wantV := make([][]float32, mRows)
+			for i := range mRows {
+				wantQ[i] = make([]float32, qDim)
+				for j := range qDim {
+					sum := bq[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][j]
+					}
+					wantQ[i][j] = sum
+				}
+				wantK[i] = make([]float32, kvDim)
+				for j := range kvDim {
+					sum := bk[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][qDim+j]
+					}
+					wantK[i][j] = sum
+				}
+				wantV[i] = make([]float32, kvDim)
+				for j := range kvDim {
+					sum := bv[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][qDim+kvDim+j]
+					}
+					wantV[i][j] = sum
+				}
+			}
+
+			t.Run("ParamWeights", func(t *testing.T) {
+				gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+					return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], qDim, kvDim)
+				})
+				if err != nil && compute.IsNotImplemented(err) {
+					t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+				}
+				if err != nil {
+					t.Fatalf("Large QKV Projection (param weights) failed: %+v", err)
+				}
+				if ok, diff := testutil.IsInDelta(wantQ, gotQ, 1e-4); !ok {
+					t.Errorf("Large Q mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantK, gotK, 1e-4); !ok {
+					t.Errorf("Large K mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantV, gotV, 1e-4); !ok {
+					t.Errorf("Large V mismatch:\n%s", diff)
+				}
+			})
+
+			t.Run("ConstWeights", func(t *testing.T) {
+				gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+					wConst, err := f.Constant(wQKVFlat, inFeatures, totalOut)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					return f.FusedAttentionQKVProjection(params[0], wConst, params[1], params[2], params[3], qDim, kvDim)
+				})
+				if err != nil && compute.IsNotImplemented(err) {
+					t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+				}
+				if err != nil {
+					t.Fatalf("Large QKV Projection (const weights) failed: %+v", err)
+				}
+				if ok, diff := testutil.IsInDelta(wantQ, gotQ, 1e-4); !ok {
+					t.Errorf("Large ConstWeights Q mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantK, gotK, 1e-4); !ok {
+					t.Errorf("Large ConstWeights K mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantV, gotV, 1e-4); !ok {
+					t.Errorf("Large ConstWeights V mismatch:\n%s", diff)
+				}
+			})
+		})
 	})
 }

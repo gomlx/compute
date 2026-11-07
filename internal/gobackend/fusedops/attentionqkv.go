@@ -295,24 +295,33 @@ func qkvExecMatmul[T float32 | float64](
 	}
 
 	runThree := func(wQ, wK, wV []T, qDot, kDot, vDot *dot.NodeData) error {
-		if err := matmul.ExecuteWithEpilogue(
-			backend, dot.LayoutNonTransposed, xFlat, wQ,
-			1, lhsCrossSize, qDim, inFeatures,
-			qFlat, matmul.Epilogue[T]{Bias: biasQ}, qDot,
-		); err != nil {
-			return err
+		targets := [3]matmul.MultiRHSTarget[T, T]{
+			{
+				RHS:          wQ,
+				RHSCrossSize: qDim,
+				Output:       qFlat,
+				Epilogue:     matmul.Epilogue[T]{Bias: biasQ},
+				NodeData:     qDot,
+			},
+			{
+				RHS:          wK,
+				RHSCrossSize: kvDim,
+				Output:       kFlat,
+				Epilogue:     matmul.Epilogue[T]{Bias: biasK},
+				NodeData:     kDot,
+			},
+			{
+				RHS:          wV,
+				RHSCrossSize: kvDim,
+				Output:       vFlat,
+				Epilogue:     matmul.Epilogue[T]{Bias: biasV},
+				NodeData:     vDot,
+			},
 		}
-		if err := matmul.ExecuteWithEpilogue(
-			backend, dot.LayoutNonTransposed, xFlat, wK,
-			1, lhsCrossSize, kvDim, inFeatures,
-			kFlat, matmul.Epilogue[T]{Bias: biasK}, kDot,
-		); err != nil {
-			return err
-		}
-		return matmul.ExecuteWithEpilogue(
-			backend, dot.LayoutNonTransposed, xFlat, wV,
-			1, lhsCrossSize, kvDim, inFeatures,
-			vFlat, matmul.Epilogue[T]{Bias: biasV}, vDot,
+		return matmul.ExecuteMultiRHSWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat,
+			1, lhsCrossSize, inFeatures,
+			targets[:],
 		)
 	}
 
@@ -411,37 +420,58 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	biasK := toFloat32Bias(biasKBuf)
 	biasV := toFloat32Bias(biasVBuf)
 
-	maxOutDim := max(qDim, kvDim)
-	tmpBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, lhsCrossSize*maxOutDim))
+	totalOutDim := qDim + 2*kvDim
+	tmpBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, lhsCrossSize*totalOutDim))
 	if err != nil {
 		return err
 	}
 	defer backend.PutBuffer(tmpBuf)
 	tmpF32 := tmpBuf.Flat.([]float32)
+	tmpQ := tmpF32[:lhsCrossSize*qDim]
+	tmpK := tmpF32[lhsCrossSize*qDim : lhsCrossSize*(qDim+kvDim)]
+	tmpV := tmpF32[lhsCrossSize*(qDim+kvDim) : lhsCrossSize*totalOutDim]
 
-	runOne := func(w []T, outDim int, bias []float32, dst []T, dotData *dot.NodeData) error {
-		subTmp := tmpF32[:lhsCrossSize*outDim]
-		if err := matmul.ExecuteWithEpilogue(
-			backend, dot.LayoutNonTransposed, xFlat, w,
-			1, lhsCrossSize, outDim, inFeatures,
-			subTmp, matmul.Epilogue[float32]{Bias: bias}, dotData,
+	runThree := func(wQ, wK, wV []T, qDot, kDot, vDot *dot.NodeData) error {
+		targets := [3]matmul.MultiRHSTarget[T, float32]{
+			{
+				RHS:          wQ,
+				RHSCrossSize: qDim,
+				Output:       tmpQ,
+				Epilogue:     matmul.Epilogue[float32]{Bias: biasQ},
+				NodeData:     qDot,
+			},
+			{
+				RHS:          wK,
+				RHSCrossSize: kvDim,
+				Output:       tmpK,
+				Epilogue:     matmul.Epilogue[float32]{Bias: biasK},
+				NodeData:     kDot,
+			},
+			{
+				RHS:          wV,
+				RHSCrossSize: kvDim,
+				Output:       tmpV,
+				Epilogue:     matmul.Epilogue[float32]{Bias: biasV},
+				NodeData:     vDot,
+			},
+		}
+		if err := matmul.ExecuteMultiRHSWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat,
+			1, lhsCrossSize, inFeatures,
+			targets[:],
 		); err != nil {
 			return err
 		}
-		for i, v := range subTmp {
-			P(&dst[i]).SetFloat32(v)
+		for i, v := range tmpQ {
+			P(&qFlat[i]).SetFloat32(v)
+		}
+		for i, v := range tmpK {
+			P(&kFlat[i]).SetFloat32(v)
+		}
+		for i, v := range tmpV {
+			P(&vFlat[i]).SetFloat32(v)
 		}
 		return nil
-	}
-
-	runThree := func(wQ, wK, wV []T, qDot, kDot, vDot *dot.NodeData) error {
-		if err := runOne(wQ, qDim, biasQ, qFlat, qDot); err != nil {
-			return err
-		}
-		if err := runOne(wK, kvDim, biasK, kFlat, kDot); err != nil {
-			return err
-		}
-		return runOne(wV, kvDim, biasV, vFlat, vDot)
 	}
 
 	if wConstantData != nil {

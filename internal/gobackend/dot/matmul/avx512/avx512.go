@@ -109,15 +109,23 @@ func RegisterAVX512ForTests() {
 func registerAVX512(forTests bool) {
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512LargeMultiFloat32)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx512LargeMultiFloat32)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeMultiBFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeMultiBFloat16)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx512LargeMultiFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx512LargeMultiFloat16)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512LargeMultiFloat64)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512LargeMultiFloat64)
 }
 
 // avx512ReduceSumFloat32x16 performs a horizontal reduction of a Float32x16 vector.

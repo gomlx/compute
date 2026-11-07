@@ -88,6 +88,34 @@ func ApplyEpilogue[T any](
 	}
 }
 
+// ApplyEpilogueRows applies the epilogue inline on a contiguous slice of output rows
+// (numRows * rowSize elements) that are already resident in the current worker's L1/L2 cache.
+func ApplyEpilogueRows[T any](
+	outRows []T,
+	numRows, rowSize int,
+	epilogue Epilogue[T],
+) {
+	if !epilogue.HasWork() || len(outRows) == 0 || numRows <= 0 {
+		return
+	}
+	bias := epilogue.Bias
+	hasBias := len(bias) > 0
+	act := epilogue.Activation
+	if !hasBias {
+		if act != nil {
+			act(outRows[:numRows*rowSize])
+		}
+		return
+	}
+	for r := range numRows {
+		row := outRows[r*rowSize : (r+1)*rowSize]
+		addBias(row, bias)
+		if act != nil {
+			act(row)
+		}
+	}
+}
+
 func addBias[T any](row, bias []T) {
 	switch r := any(row).(type) {
 	case []float32:
