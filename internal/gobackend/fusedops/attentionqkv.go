@@ -1,3 +1,5 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
 package fusedops
 
 import (
@@ -9,6 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -23,11 +26,12 @@ func init() {
 // It does not implement gobackend.NodeDataComparable because multi-output nodes are not
 // de-duplicated (see newMultiOutputsNode).
 type nodeFusedAttentionQKVProjection struct {
-	qDim     int
-	kvDim    int
-	hasBiasQ bool
-	hasBiasK bool
-	hasBiasV bool
+	inFeatures int
+	qDim       int
+	kvDim      int
+	hasBiasQ   bool
+	hasBiasK   bool
+	hasBiasV   bool
 }
 
 // EqualNodeData compares two node data structures for equality.
@@ -38,10 +42,14 @@ func (d *nodeFusedAttentionQKVProjection) EqualNodeData(other gobackend.NodeData
 
 // FusedAttentionQKVProjection performs fused Query-Key-Value projection.
 //
-// The matmul (x @ wQKV) is delegated to DotGeneral, which selects the optimal
-// execution path by a combination of build and runtime. The fused
-// executor then splits the result into Q/K/V and adds biases.
+// It splits wQKV [inFeatures, qDim+2*kvDim] into per-projection weights and executes
+// matmul.ExecuteWithEpilogue directly into the Q, K, and V output buffers with fused
+// cache-resident bias addition, avoiding a large intermediate combined activation buffer
+// and a separate post-matmul split+bias pass over DRAM.
 func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, biasV compute.Value, queryDim, keyValueDim int) (queryOut, keyOut, valueOut compute.Value, err error) {
+	if queryDim <= 0 || keyValueDim <= 0 {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: queryDim (%d) and keyValueDim (%d) must be > 0", queryDim, keyValueDim)
+	}
 	values := []compute.Value{x, wQKV}
 	if biasQ != nil {
 		values = append(values, biasQ)
@@ -61,6 +69,21 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 
 	if xNode.Shape.Rank() < 1 {
 		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: x must have rank >= 1, got %d", xNode.Shape.Rank())
+	}
+	if wNode.Shape.Rank() != 2 {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: wQKV must have rank 2, got %s", wNode.Shape)
+	}
+	if xNode.Shape.DType != wNode.Shape.DType {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: x (%s) and wQKV (%s) must have the same dtype", xNode.Shape.DType, wNode.Shape.DType)
+	}
+	inFeatures := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
+	if inFeatures == shapes.DynamicDim {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: x's last dimension (inFeatures) cannot be dynamic")
+	}
+	totalOut := queryDim + 2*keyValueDim
+	if wNode.Shape.Dimensions[0] != inFeatures || wNode.Shape.Dimensions[1] != totalOut {
+		return nil, nil, nil, errors.Errorf("AttentionQKVProjection: wQKV shape %s does not match [inFeatures=%d, queryDim+2*keyValueDim=%d]",
+			wNode.Shape, inFeatures, totalOut)
 	}
 
 	batchDims := xNode.Shape.Dimensions[:xNode.Shape.Rank()-1]
@@ -91,21 +114,15 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 		vShape = shapes.Make(xNode.Shape.DType, kvDims...)
 	}
 
-	// Build DotGeneral sub-node for the matmul: x @ wQKV.
-	// This delegates to the optimized matmul infrastructure.
-	dotResult, dotErr := f.DotGeneral(xNode, []int{xNode.Shape.Rank() - 1}, nil, wNode, []int{0}, nil, compute.DotGeneralConfig{})
-	if dotErr != nil {
-		return nil, nil, nil, errors.WithMessagef(dotErr, "FusedAttentionQKVProjection: DotGeneral")
+	data := &nodeFusedAttentionQKVProjection{
+		inFeatures: inFeatures,
+		qDim:       queryDim,
+		kvDim:      keyValueDim,
+		hasBiasQ:   biasQ != nil,
+		hasBiasK:   biasK != nil,
+		hasBiasV:   biasV != nil,
 	}
-	dotNode := dotResult.(*gobackend.Node)
-
-	// FusedAttentionQKVProjection inputs: [dotResult, biasQ?, biasK?, biasV?].
-	// The matmul is already computed by the DotGeneral sub-node (inputs[0]).
-	// Bias nodes are at inputs[2:] in the same order they were appended.
-	fusedInputs := append([]*gobackend.Node{dotNode}, inputs[2:]...)
-
-	data := &nodeFusedAttentionQKVProjection{qDim: queryDim, kvDim: keyValueDim, hasBiasQ: biasQ != nil, hasBiasK: biasK != nil, hasBiasV: biasV != nil}
-	node := f.NewMultiOutputsNode(compute.OpTypeFusedAttentionQKVProjection, []shapes.Shape{qShape, kShape, vShape}, fusedInputs...)
+	node := f.NewMultiOutputsNode(compute.OpTypeFusedAttentionQKVProjection, []shapes.Shape{qShape, kShape, vShape}, inputs...)
 	node.Data = data
 	queryOut = node.MultiOutputsNodes[0]
 	keyOut = node.MultiOutputsNodes[1]
@@ -114,19 +131,18 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 }
 
 // execFusedAttentionQKVProjection implements fused QKV projection.
-// inputs[0]: pre-computed DotGeneral result [batch, qDim+2*kvDim]
-// inputs[1..]: biasQ, biasK, biasV (optional, determined by node data flags)
-// outputs: q [batch, qDim], k [batch, kvDim], v [batch, kvDim]
-//
-// The matmul (x @ wQKV) is already computed by the DotGeneral sub-node.
-// This executor just splits the combined result into Q/K/V and adds biases.
+// inputs[0]: x [batch..., inFeatures]
+// inputs[1]: wQKV [inFeatures, qDim+2*kvDim]
+// inputs[2..]: biasQ, biasK, biasV (optional, determined by node data flags)
+// outputs: q [batch..., qDim], k [batch..., kvDim], v [batch..., kvDim]
 func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) ([]*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedAttentionQKVProjection)
-	combined := inputs[0] // DotGeneral result: [batch, qDim+2*kvDim]
+	x := inputs[0]
+	wQKV := inputs[1]
 
 	// Determine bias buffers using flags from node data, not positional indexing.
 	var biasQ, biasK, biasV *gobackend.Buffer
-	biasIdx := 1
+	biasIdx := 2
 	if data.hasBiasQ {
 		biasQ = inputs[biasIdx]
 		biasIdx++
@@ -154,118 +170,67 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", vShape)
 	}
+	if backend.NoOps {
+		return []*gobackend.Buffer{qBuf, kBuf, vBuf}, nil
+	}
+
+	inFeatures := data.inFeatures
 	qDim := data.qDim
 	kvDim := data.kvDim
 
-	switch combined.RawShape.DType {
+	switch x.RawShape.DType {
 	case dtypes.Float32:
-		qkvSplitBiasFloat32(backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		if err := qkvExecMatmul[float32](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+			return nil, err
+		}
 	case dtypes.Float64:
-		qkvSplitBiasFloat64(backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		if err := qkvExecMatmul[float64](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+			return nil, err
+		}
 	case dtypes.Float16:
-		qkvSplitBiasHalf[float16.Float16](backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		if err := qkvExecMatmulHalf[float16.Float16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+			return nil, err
+		}
 	case dtypes.BFloat16:
-		qkvSplitBiasHalf[bfloat16.BFloat16](backend, combined, biasQ, biasK, biasV, qBuf, kBuf, vBuf, qDim, kvDim)
+		if err := qkvExecMatmulHalf[bfloat16.BFloat16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+			return nil, err
+		}
 	default:
-		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", combined.RawShape.DType)
+		return nil, errors.Errorf("FusedAttentionQKVProjection: unsupported dtype %s", x.RawShape.DType)
 	}
 
 	return []*gobackend.Buffer{qBuf, kBuf, vBuf}, nil
 }
 
-func qkvSplitBiasFloat32(backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
-	src := combined.Flat.([]float32)
-	q := qBuf.Flat.([]float32)
-	k := kBuf.Flat.([]float32)
-	v := vBuf.Flat.([]float32)
-	var biasQ, biasK, biasV []float32
-	if biasQBuf != nil {
-		biasQ = biasQBuf.Flat.([]float32)
-	}
-	if biasKBuf != nil {
-		biasK = biasKBuf.Flat.([]float32)
-	}
-	if biasVBuf != nil {
-		biasV = biasVBuf.Flat.([]float32)
-	}
-
+func qkvSplitWeights[T any](wFlat, splitFlat []T, inFeatures, qDim, kvDim int) (wQ, wK, wV []T) {
+	wQ = splitFlat[:inFeatures*qDim]
+	wK = splitFlat[inFeatures*qDim : inFeatures*(qDim+kvDim)]
+	wV = splitFlat[inFeatures*(qDim+kvDim) : inFeatures*(qDim+2*kvDim)]
 	totalOut := qDim + 2*kvDim
-	batchSize := len(src) / totalOut
-	processRange := func(start, end int) {
-		for batchIdx := start; batchIdx < end; batchIdx++ {
-			srcBase := batchIdx * totalOut
-			qBase := batchIdx * qDim
-			kBase := batchIdx * kvDim
-			vBase := batchIdx * kvDim
-
-			// Q projection
-			projectSliceFloat32(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
-			// K projection
-			projectSliceFloat32(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
-			// V projection
-			projectSliceFloat32(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
-		}
+	for r := range inFeatures {
+		srcRow := wFlat[r*totalOut : (r+1)*totalOut]
+		copy(wQ[r*qDim:(r+1)*qDim], srcRow[:qDim])
+		copy(wK[r*kvDim:(r+1)*kvDim], srcRow[qDim:qDim+kvDim])
+		copy(wV[r*kvDim:(r+1)*kvDim], srcRow[qDim+kvDim:])
 	}
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(src) >= 32768 {
-		backend.Scheduler.ParallelizeChunks(batchSize, max(1, 16384/max(1, totalOut)), processRange)
-	} else {
-		processRange(0, batchSize)
-	}
+	return wQ, wK, wV
 }
 
-func projectSliceFloat32(dst, src, bias []float32) {
-	matmul.CopyAndAddBiasFloat32(dst, src, bias)
-}
-
-func qkvSplitBiasFloat64(backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
-	src := combined.Flat.([]float64)
-	q := qBuf.Flat.([]float64)
-	k := kBuf.Flat.([]float64)
-	v := vBuf.Flat.([]float64)
-	var biasQ, biasK, biasV []float64
-	if biasQBuf != nil {
-		biasQ = biasQBuf.Flat.([]float64)
-	}
-	if biasKBuf != nil {
-		biasK = biasKBuf.Flat.([]float64)
-	}
-	if biasVBuf != nil {
-		biasV = biasVBuf.Flat.([]float64)
+func qkvExecMatmul[T float32 | float64](
+	backend *gobackend.Backend,
+	xBuf, wQKVBuf, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer,
+	inFeatures, qDim, kvDim int,
+) error {
+	xFlat := xBuf.Flat.([]T)
+	wFlat := wQKVBuf.Flat.([]T)
+	qFlat := qBuf.Flat.([]T)
+	kFlat := kBuf.Flat.([]T)
+	vFlat := vBuf.Flat.([]T)
+	lhsCrossSize := len(xFlat) / inFeatures
+	if lhsCrossSize == 0 {
+		return nil
 	}
 
-	totalOut := qDim + 2*kvDim
-	batchSize := len(src) / totalOut
-	processRange := func(start, end int) {
-		for batchIdx := start; batchIdx < end; batchIdx++ {
-			srcBase := batchIdx * totalOut
-			qBase := batchIdx * qDim
-			kBase := batchIdx * kvDim
-			vBase := batchIdx * kvDim
-
-			// Q projection
-			projectSliceFloat64(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
-			// K projection
-			projectSliceFloat64(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
-			// V projection
-			projectSliceFloat64(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
-		}
-	}
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(src) >= 32768 {
-		backend.Scheduler.ParallelizeChunks(batchSize, max(1, 16384/max(1, totalOut)), processRange)
-	} else {
-		processRange(0, batchSize)
-	}
-}
-
-func projectSliceFloat64(dst, src, bias []float64) {
-	matmul.CopyAndAddBiasFloat64(dst, src, bias)
-}
-
-func qkvSplitBiasHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](backend *gobackend.Backend, combined, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer, qDim, kvDim int) {
-	src := combined.Flat.([]T)
-	q := qBuf.Flat.([]T)
-	k := kBuf.Flat.([]T)
-	v := vBuf.Flat.([]T)
 	var biasQ, biasK, biasV []T
 	if biasQBuf != nil {
 		biasQ = biasQBuf.Flat.([]T)
@@ -277,26 +242,99 @@ func qkvSplitBiasHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](b
 		biasV = biasVBuf.Flat.([]T)
 	}
 
-	projectSliceHalf := func(dst, src, bias []T) {
-		if bias == nil {
-			copy(dst, src)
-			return
-		}
-		for i := range dst {
-			P(&dst[i]).SetFloat32(src[i].Float32() + bias[i].Float32())
-		}
+	splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(splitBuf)
+	wQ, wK, wV := qkvSplitWeights(wFlat, splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+
+	if err := matmul.ExecuteWithEpilogue(
+		backend, dot.LayoutNonTransposed, xFlat, wQ,
+		1, lhsCrossSize, qDim, inFeatures,
+		qFlat, matmul.Epilogue[T]{Bias: biasQ},
+	); err != nil {
+		return err
+	}
+	if err := matmul.ExecuteWithEpilogue(
+		backend, dot.LayoutNonTransposed, xFlat, wK,
+		1, lhsCrossSize, kvDim, inFeatures,
+		kFlat, matmul.Epilogue[T]{Bias: biasK},
+	); err != nil {
+		return err
+	}
+	return matmul.ExecuteWithEpilogue(
+		backend, dot.LayoutNonTransposed, xFlat, wV,
+		1, lhsCrossSize, kvDim, inFeatures,
+		vFlat, matmul.Epilogue[T]{Bias: biasV},
+	)
+}
+
+func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
+	backend *gobackend.Backend,
+	xBuf, wQKVBuf, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer,
+	inFeatures, qDim, kvDim int,
+) error {
+	xFlat := xBuf.Flat.([]T)
+	wFlat := wQKVBuf.Flat.([]T)
+	qFlat := qBuf.Flat.([]T)
+	kFlat := kBuf.Flat.([]T)
+	vFlat := vBuf.Flat.([]T)
+	lhsCrossSize := len(xFlat) / inFeatures
+	if lhsCrossSize == 0 {
+		return nil
 	}
 
-	totalOut := qDim + 2*kvDim
-	batchSize := len(src) / totalOut
-	for batchIdx := range batchSize {
-		srcBase := batchIdx * totalOut
-		qBase := batchIdx * qDim
-		kBase := batchIdx * kvDim
-		vBase := batchIdx * kvDim
-
-		projectSliceHalf(q[qBase:qBase+qDim], src[srcBase:srcBase+qDim], biasQ)
-		projectSliceHalf(k[kBase:kBase+kvDim], src[srcBase+qDim:srcBase+qDim+kvDim], biasK)
-		projectSliceHalf(v[vBase:vBase+kvDim], src[srcBase+qDim+kvDim:srcBase+totalOut], biasV)
+	toFloat32Bias := func(bBuf *gobackend.Buffer) []float32 {
+		if bBuf == nil {
+			return nil
+		}
+		bSlice := bBuf.Flat.([]T)
+		out := make([]float32, len(bSlice))
+		for i, v := range bSlice {
+			out[i] = v.Float32()
+		}
+		return out
 	}
+	biasQ := toFloat32Bias(biasQBuf)
+	biasK := toFloat32Bias(biasKBuf)
+	biasV := toFloat32Bias(biasVBuf)
+
+	splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(splitBuf)
+	wQ, wK, wV := qkvSplitWeights(wFlat, splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+
+	maxOutDim := max(qDim, kvDim)
+	tmpBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, lhsCrossSize*maxOutDim))
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tmpBuf)
+	tmpF32 := tmpBuf.Flat.([]float32)
+
+	runOne := func(w []T, outDim int, bias []float32, dst []T) error {
+		subTmp := tmpF32[:lhsCrossSize*outDim]
+		if err := matmul.ExecuteWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat, w,
+			1, lhsCrossSize, outDim, inFeatures,
+			subTmp, matmul.Epilogue[float32]{Bias: bias},
+		); err != nil {
+			return err
+		}
+		for i, v := range subTmp {
+			P(&dst[i]).SetFloat32(v)
+		}
+		return nil
+	}
+
+	if err := runOne(wQ, qDim, biasQ, qFlat); err != nil {
+		return err
+	}
+	if err := runOne(wK, kvDim, biasK, kFlat); err != nil {
+		return err
+	}
+	return runOne(wV, kvDim, biasV, vFlat)
 }

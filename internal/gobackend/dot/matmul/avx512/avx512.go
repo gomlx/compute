@@ -529,7 +529,20 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 		return
 	}
 	if kernelRows != 4 {
-		panic("avx512PackLHSKernelRows4: kernelRows must be set to 4 or 8")
+		if kernelRows > 0 && kernelRows%8 == 0 && bytesPerElement == 4 && copyRows > 0 && contractingCols > 0 {
+			fullRows := (copyRows / kernelRows) * kernelRows
+			if fullRows > 0 {
+				avx512PackLHSStrided8x16Uint32(lhsBasePtr, panelBasePtr, lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols, kernelRows)
+			}
+			if fullRows == copyRows {
+				return
+			}
+			panelOffset := fullRows * contractingCols
+			unsafePackLHS(lhs, panel[panelOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
+			return
+		}
+		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
+		return
 	}
 
 	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement

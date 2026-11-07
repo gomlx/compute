@@ -185,6 +185,15 @@ func sdpaFloat32SIMDGeneral(
 	vZero := simd.BroadcastFloat32s(0)
 	vLen := vZero.Len()
 
+	maskSeqStride := kvLen
+	if maskLen := max(len(additiveMask), len(booleanMask)); maskLen == 0 || maskGroupStride == kvLen || (maskGroupStride == 0 && maskLen == kvLen) {
+		maskSeqStride = 0
+	}
+	biasSeqStride := kvLen
+	if len(additiveBias) == 0 || biasGroupStride == kvLen || (biasGroupStride == 0 && len(additiveBias) == kvLen) {
+		biasSeqStride = 0
+	}
+
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -207,8 +216,8 @@ func sdpaFloat32SIMDGeneral(
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
 			rowMax := float32(math.Inf(-1))
 			activeKVLen := kvLenUnmasked

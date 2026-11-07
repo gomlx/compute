@@ -344,7 +344,7 @@ func neonLargeWithParamsFloat64( //alt:f64
 		sharedLHSReady                   []atomic.Uint32
 		sharedRHSReady                   []atomic.Uint32
 	)
-	if isSMEKernel && SMEUseHybridNEON && batchSize < maxWorkers {
+	if batchSize < maxWorkers {
 		if len(cachedRHSPanels) == 0 && batchSize*rhsPanelsPerBatch <= len(sharedRHSReadyBuf) {
 			rhsPanelBufSize := params.PanelContractingSize * params.RHSPanelCrossSize
 			totalPanels := batchSize * rhsPanelsPerBatch
@@ -369,7 +369,7 @@ func neonLargeWithParamsFloat64( //alt:f64
 				sharedRHSReady = sharedRHSReadyBuf[:totalPanels]
 			}
 		}
-		if len(cachedLHSPanels) == 0 && batchSize*lhsPanelsPerBatch <= len(sharedLHSReadyBuf) {
+		if isSMEKernel && SMEUseHybridNEON && len(cachedLHSPanels) == 0 && batchSize*lhsPanelsPerBatch <= len(sharedLHSReadyBuf) {
 			totalPanels := batchSize * lhsPanelsPerBatch
 			//alt:f32 var flat []float32
 			//alt:bf16  var flat []bfloat16.BFloat16
