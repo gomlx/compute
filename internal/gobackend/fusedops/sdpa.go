@@ -58,15 +58,17 @@ func init() {
 }
 
 type nodeScaledDotProductAttention struct {
-	numHeads   int
-	numKVHeads int
-	axesLayout compute.AttentionAxesLayout
-	scale      float64
-	causal     bool
-	hasMask    bool
-	hasSeqLens bool
-	hasBias    bool
-	options    *compute.ScaledDotProductAttentionConfig
+	numHeads      int
+	numKVHeads    int
+	axesLayout    compute.AttentionAxesLayout
+	scale         float64
+	causal        bool
+	hasMask       bool
+	hasSeqLens    bool
+	hasBias       bool
+	options       *compute.ScaledDotProductAttentionConfig
+	maskConstData *gobackend.ConstantData
+	biasConstData *gobackend.ConstantData
 }
 
 func (d *nodeScaledDotProductAttention) EqualNodeData(other gobackend.NodeDataComparable) bool {
@@ -241,7 +243,7 @@ func buildSDPANode(
 
 		if !isSDPABatchOrHeadCompatible(mBatchDim, mBatchName, batchDim, batchName) ||
 			!isSDPABatchOrHeadCompatible(mHeadsDim, mHeadsName, numHeadsDim, numHeadsName) ||
-			!isSDPASeqDimCompatible(mSeqDim, mSeqName, seqDim, seqName) ||
+			!isSDPABatchOrHeadCompatible(mSeqDim, mSeqName, seqDim, seqName) ||
 			!isSDPASeqDimCompatible(mKVDim, mKVName, kvDim, kvName) {
 			return nil, errors.Wrapf(compute.ErrNotImplemented,
 				"%s: mask shape %s is not supported by go backend fused SDPA (requires [batch, heads, %d, %d])",
@@ -311,7 +313,7 @@ func buildSDPANode(
 
 		if !isSDPABatchOrHeadCompatible(bBatchDim, bBatchName, batchDim, batchName) ||
 			!isSDPABatchOrHeadCompatible(bHeadsDim, bHeadsName, numHeadsDim, numHeadsName) ||
-			!isSDPASeqDimCompatible(bSeqDim, bSeqName, seqDim, seqName) ||
+			!isSDPABatchOrHeadCompatible(bSeqDim, bSeqName, seqDim, seqName) ||
 			!isSDPASeqDimCompatible(bKVDim, bKVName, kvDim, kvName) {
 			return nil, errors.Wrapf(compute.ErrNotImplemented,
 				"%s: bias shape %s is not supported by go backend fused SDPA (requires [batch, heads, %d, %d])",
@@ -324,6 +326,12 @@ func buildSDPANode(
 		scale: scale, causal: causal,
 		hasMask: mask != nil, hasSeqLens: hasSeqLens, hasBias: hasBias,
 		options: options,
+	}
+	if mask != nil && inputs[3].IsConstant() {
+		data.maskConstData = gobackend.NewAnonymousConstantData()
+	}
+	if hasBias && inputs[len(inputs)-1].IsConstant() {
+		data.biasConstData = gobackend.NewAnonymousConstantData()
 	}
 	node, _ := f.GetOrCreateNode(opType, qNode.Shape.Clone(), inputs, data)
 	return node, nil
@@ -415,23 +423,74 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 	}
 	_ = next
 
-	// For rank-4 BSHD masks/bias [batch, seq, heads, kvLen], transpose to BHSD so that
-	// per-head data is contiguous [seqLen, kvLen]. Rank ≤ 3 have no head axis and work as-is.
-	if data.axesLayout == compute.AttentionAxesLayoutBSHD {
-		if mask != nil && mask.RawShape.Rank() == 4 {
-			var err error
-			mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
-			if err != nil {
-				return nil, err
+	// Compute mask/bias strides for broadcasting (in BHSD convention: [batch, heads, seqLen, kvLen]).
+	// For rank-4 BSHD masks/bias [batch, seq, heads, kvLen], only transpose when both seq > 1 and
+	// heads > 1; if either is 1, swapping axes 1 and 2 does not alter the flat memory layout.
+	var maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen int
+	if mask != nil {
+		mDims := mask.RawShape.Dimensions
+		if data.axesLayout == compute.AttentionAxesLayoutBSHD && len(mDims) == 4 {
+			if mDims[1] > 1 && mDims[2] > 1 {
+				if data.maskConstData != nil {
+					var transposeErr error
+					mask = gobackend.GetOrSetCachedForm(data.maskConstData, func() *gobackend.Buffer {
+						tb, err := transposeBuffer(backend, mask, []int{0, 2, 1, 3})
+						if err != nil {
+							transposeErr = err
+							return nil
+						}
+						return tb
+					})
+					if transposeErr != nil {
+						return nil, transposeErr
+					}
+				} else {
+					var err error
+					mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
+					if err != nil {
+						return nil, err
+					}
+					defer backend.PutBuffer(mask)
+				}
+				mDims = mask.RawShape.Dimensions
+			} else {
+				mDims = []int{mDims[0], mDims[2], mDims[1], mDims[3]}
 			}
 		}
-		if bias != nil && bias.RawShape.Rank() == 4 {
-			var err error
-			bias, err = transposeBuffer(backend, bias, []int{0, 2, 1, 3})
-			if err != nil {
-				return nil, err
+		maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen = sdpaComputeMaskStrides(mDims)
+	}
+	var biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen int
+	if bias != nil {
+		bDims := bias.RawShape.Dimensions
+		if data.axesLayout == compute.AttentionAxesLayoutBSHD && len(bDims) == 4 {
+			if bDims[1] > 1 && bDims[2] > 1 {
+				if data.biasConstData != nil {
+					var transposeErr error
+					bias = gobackend.GetOrSetCachedForm(data.biasConstData, func() *gobackend.Buffer {
+						tb, err := transposeBuffer(backend, bias, []int{0, 2, 1, 3})
+						if err != nil {
+							transposeErr = err
+							return nil
+						}
+						return tb
+					})
+					if transposeErr != nil {
+						return nil, transposeErr
+					}
+				} else {
+					var err error
+					bias, err = transposeBuffer(backend, bias, []int{0, 2, 1, 3})
+					if err != nil {
+						return nil, err
+					}
+					defer backend.PutBuffer(bias)
+				}
+				bDims = bias.RawShape.Dimensions
+			} else {
+				bDims = []int{bDims[0], bDims[2], bDims[1], bDims[3]}
 			}
 		}
+		biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen = sdpaComputeMaskStrides(bDims)
 	}
 
 	output, err := backend.GetBuffer(query.RawShape.Clone())
@@ -439,21 +498,11 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 		return nil, err
 	}
 
-	// Compute mask strides for broadcasting (BHSD convention for the mask).
-	var maskBatchStride, maskHeadStride int
-	if mask != nil {
-		maskBatchStride, maskHeadStride = sdpaComputeMaskStrides(mask.RawShape.Dimensions)
-	}
-	var biasBatchStride, biasHeadStride int
-	if bias != nil {
-		biasBatchStride, biasHeadStride = sdpaComputeMaskStrides(bias.RawShape.Dimensions)
-	}
-
 	switch query.RawShape.DType {
 	case dtypes.Float32:
-		sdpaMultiHeadGeneric[float32](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
+		sdpaMultiHeadGeneric[float32](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen)
 	case dtypes.Float64:
-		sdpaMultiHeadGeneric[float64](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride, querySeqLen, keyValueSeqLen)
+		sdpaMultiHeadGeneric[float64](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
 	}
@@ -461,21 +510,27 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 	return output, nil
 }
 
-// sdpaComputeMaskStrides returns (batchStride, headStride) for indexing into a mask
-// tensor based on its rank. Dimensions of size 1 are broadcast (stride 0).
+// sdpaComputeMaskStrides returns (batchStride, headStride, seqStride, sliceLen) for indexing into
+// a mask or bias tensor based on its rank. Dimensions of size 1 are broadcast (stride 0).
 //
-//	rank 2: [seqLen, kvLen]                     → (0, 0)
-//	rank 3: [batch, seqLen, kvLen]              → (seqLen*kvLen, 0) or (0, 0) if dim[0]==1
-//	rank 4: [batch, heads, seqLen, kvLen]       → strides computed per dim
-func sdpaComputeMaskStrides(dims []int) (batchStride, headStride int) {
+//	rank 2: [seqLen, kvLen]                     → (0, 0, seqStride, seqLen*kvLen)
+//	rank 3: [batch, seqLen, kvLen]              → (batchStride, 0, seqStride, seqLen*kvLen)
+//	rank 4: [batch, heads, seqLen, kvLen]       → (batchStride, headStride, seqStride, seqLen*kvLen)
+func sdpaComputeMaskStrides(dims []int) (batchStride, headStride, seqStride, sliceLen int) {
 	switch len(dims) {
 	case 2:
-		return 0, 0
-	case 3:
-		if dims[0] <= 1 {
-			return 0, 0
+		if dims[0] > 1 {
+			seqStride = dims[1]
 		}
-		return dims[1] * dims[2], 0
+		return 0, 0, seqStride, dims[0] * dims[1]
+	case 3:
+		if dims[0] > 1 {
+			batchStride = dims[1] * dims[2]
+		}
+		if dims[1] > 1 {
+			seqStride = dims[2]
+		}
+		return batchStride, 0, seqStride, dims[1] * dims[2]
 	case 4:
 		if dims[0] > 1 {
 			batchStride = dims[1] * dims[2] * dims[3]
@@ -483,7 +538,10 @@ func sdpaComputeMaskStrides(dims []int) (batchStride, headStride int) {
 		if dims[1] > 1 {
 			headStride = dims[2] * dims[3]
 		}
-		return batchStride, headStride
+		if dims[2] > 1 {
+			seqStride = dims[3]
+		}
+		return batchStride, headStride, seqStride, dims[2] * dims[3]
 	default:
 		panic(errors.Errorf("sdpaComputeMaskStrides: unsupported mask rank %d (dims=%v), expected rank 2, 3, or 4", len(dims), dims))
 	}
@@ -535,9 +593,9 @@ func sdpaGeneric[T float32 | float64](
 	q, k, v []T, qOff, kvOff, qSeqStride, kvSeqStride, qGroupStride int,
 	additiveMask []T,
 	booleanMask []bool,
-	maskGroupStride int,
+	maskGroupStride, maskSeqStride int,
 	additiveBias []T,
-	biasGroupStride int,
+	biasGroupStride, biasSeqStride int,
 	scores []T,
 	output []T,
 	groupSize, qStart, qEnd, kvLen, headDim int, scale T, causal bool,
@@ -573,8 +631,8 @@ func sdpaGeneric[T float32 | float64](
 			rowMax := T(math.Inf(-1))
 			qBase := gQOff + qIdx*qSeqStride
 			qRow := q[qBase : qBase+headDim]
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
 			activeKVLen := kvLenUnmasked
 			if len(booleanMask) > 0 {
@@ -713,7 +771,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	backend *gobackend.Backend,
 	query, key, value, mask, bias, output *gobackend.Buffer,
 	data *nodeScaledDotProductAttention,
-	maskBatchStride, maskHeadStride, biasBatchStride, biasHeadStride int,
+	maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen int,
 	querySeqLen, keyValueSeqLen []int32,
 ) {
 	q := query.Flat.([]T)
@@ -774,7 +832,6 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		kvBatchStride = numKVHeads * kvLen * headDim
 	}
 
-	maskSliceLen := seqLen * kvLen
 	archFn := gobackend.GetSDPAArchDispatcher()
 
 	processHead := func(batchIdx, kvHeadIdx, qStart, qEnd int, scores []T) {
@@ -805,6 +862,55 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 			} else {
 				booleanMaskSlice = booleanMask[maskOffset:maskEnd]
 			}
+			// Fast path for 1D key-padding masks (broadcast across query sequence and head group):
+			// When valid prefix positions have 0 additive mask (or true boolean mask) and trailing
+			// padded key positions have mask <= -1e4 (or false), trim kvLimit to the active prefix
+			// and elide the zero/true mask slice.
+			if maskSeqStride == 0 && maskGroupStride == 0 && kvLimit > 0 {
+				if len(additiveMaskSlice) >= kvLimit {
+					lastValid := kvLimit - 1
+					for lastValid >= 0 && additiveMaskSlice[lastValid] <= -1e4 {
+						lastValid--
+					}
+					if lastValid < 0 {
+						if math.IsInf(float64(additiveMaskSlice[0]), -1) {
+							kvLimit = 0
+						}
+					} else {
+						allZero := true
+						for i := 0; i <= lastValid; i++ {
+							if additiveMaskSlice[i] != 0 {
+								allZero = false
+								break
+							}
+						}
+						if allZero {
+							kvLimit = lastValid + 1
+							additiveMaskSlice = nil
+						}
+					}
+				} else if len(booleanMaskSlice) >= kvLimit {
+					lastValid := kvLimit - 1
+					for lastValid >= 0 && !booleanMaskSlice[lastValid] {
+						lastValid--
+					}
+					if lastValid < 0 {
+						kvLimit = 0
+					} else {
+						kvLimit = lastValid + 1
+						allTrue := true
+						for i := 0; i < kvLimit; i++ {
+							if !booleanMaskSlice[i] {
+								allTrue = false
+								break
+							}
+						}
+						if allTrue {
+							booleanMaskSlice = nil
+						}
+					}
+				}
+			}
 		}
 		// Compute bias slice and group stride for this KV head group.
 		var additiveBiasSlice []T
@@ -812,9 +918,9 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		if len(additiveBias) > 0 {
 			// *groupSize: bias is per-Q-head under GQA; first Q-head of this KV group starts at kvHeadIdx*groupSize.
 			biasOffset := batchIdx*biasBatchStride + kvHeadIdx*groupSize*biasHeadStride
-			biasEnd := biasOffset + maskSliceLen
+			biasEnd := biasOffset + biasSliceLen
 			if biasHeadStride > 0 && groupSize > 1 {
-				biasEnd = biasOffset + (groupSize-1)*biasHeadStride + maskSliceLen
+				biasEnd = biasOffset + (groupSize-1)*biasHeadStride + biasSliceLen
 				biasGroupStride = biasHeadStride
 			}
 			additiveBiasSlice = additiveBias[biasOffset:biasEnd]
@@ -852,8 +958,8 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 
 		sdpaGeneric(
 			q, k, v, qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
-			additiveMaskSlice, booleanMaskSlice, maskGroupStride,
-			additiveBiasSlice, biasGroupStride,
+			additiveMaskSlice, booleanMaskSlice, maskGroupStride, maskSeqStride,
+			additiveBiasSlice, biasGroupStride, biasSeqStride,
 			scores,
 			out,
 			groupSize, qStart, qEnd, kvLen, headDim, scale, causal,
@@ -878,7 +984,8 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
 	}
 	totalTasks := headTasks * numQBlocks
-	scratchSize := max(32*kvLen, 1)
+	scratchSize := max(32*kvLen+16, 64)
+	scratchShape := shapes.Make(query.RawShape.DType, scratchSize)
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
@@ -886,7 +993,14 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		var taskCounter atomic.Int64
 
 		backend.Scheduler.SaturateUpTo(workersToStart, func() {
-			workerScores := make([]T, scratchSize)
+			scoreBuf, err := backend.GetBuffer(scratchShape)
+			var workerScores []T
+			if err == nil && scoreBuf != nil {
+				defer backend.PutBuffer(scoreBuf)
+				workerScores = scoreBuf.Flat.([]T)
+			} else {
+				workerScores = make([]T, scratchSize)
+			}
 			for {
 				taskIdx := int(taskCounter.Add(1) - 1)
 				if taskIdx >= totalTasks {
@@ -902,7 +1016,16 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 			}
 		})
 	} else {
-		scores := make([]T, scratchSize)
+		var scores []T
+		if backend != nil {
+			if scoreBuf, err := backend.GetBuffer(scratchShape); err == nil && scoreBuf != nil {
+				defer backend.PutBuffer(scoreBuf)
+				scores = scoreBuf.Flat.([]T)
+			}
+		}
+		if scores == nil {
+			scores = make([]T, scratchSize)
+		}
 		for batchIdx := range batchSize {
 			for kvHeadIdx := range numKVHeads {
 				processHead(batchIdx, kvHeadIdx, 0, seqLen, scores)

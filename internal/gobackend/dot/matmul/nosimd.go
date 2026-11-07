@@ -482,6 +482,111 @@ func AppendWorkItems(
 	return dst
 }
 
+// AppendRowWorkItems partitions work across batch and LHS rows (M) only (RHSColStart=0, RHSColEnd=rhsCrossSize),
+// aligning row chunks to LHSPanelCrossSize when M is large so each worker can pack its LHS rows once
+// and reuse them across multiple RHS targets and inline row epilogues.
+func AppendRowWorkItems(
+	dst []WorkItem,
+	batchSize, lhsCrossSize, rhsCrossSize int,
+	params *CacheParams,
+	maxWorkers int,
+) []WorkItem {
+	if maxWorkers <= 1 {
+		return append(dst, WorkItem{
+			0, batchSize,
+			0, lhsCrossSize,
+			0, rhsCrossSize,
+		})
+	}
+
+	mr := max(1, params.LHSL1KernelRows)
+	mc := max(mr, params.LHSPanelCrossSize)
+	totalMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
+	maxCap := max(64, cap(dst))
+
+	if batchSize >= maxWorkers {
+		divisor := 2 * maxWorkers
+		for b := 0; b < batchSize; {
+			rem := batchSize - b
+			slotsLeft := max(1, maxCap-len(dst))
+			chunk := max(1, (rem+divisor-1)/divisor)
+			minChunkForCap := (rem + slotsLeft - 1) / slotsLeft
+			chunk = min(rem, max(chunk, minChunkForCap))
+			dst = append(dst, WorkItem{
+				b, b + chunk,
+				0, lhsCrossSize,
+				0, rhsCrossSize,
+			})
+			b += chunk
+		}
+		return dst
+	}
+
+	rowQuantum := mr
+	if lhsCrossSize >= 2*maxWorkers*mc {
+		rowQuantum = mc
+	}
+	totalBlocks := max(1, (lhsCrossSize+rowQuantum-1)/rowQuantum)
+	targetPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
+
+	if totalBlocks >= 8 {
+		headBlocks := (totalBlocks * 3) / 4
+		headRows := min(lhsCrossSize, headBlocks*rowQuantum)
+		tailMBlocks := max(1, (lhsCrossSize-headRows+mr-1)/mr)
+
+		actualHeadM := min(max(1, targetPerBatch), headBlocks)
+		actualTailM := min(max(1, targetPerBatch), tailMBlocks)
+		if (actualHeadM+actualTailM)*batchSize <= maxCap {
+			for m := range actualHeadM {
+				lhsRowStart := ((m*headBlocks + actualHeadM - 1) / actualHeadM) * rowQuantum
+				lhsRowEnd := min(headRows, (((m+1)*headBlocks+actualHeadM-1)/actualHeadM)*rowQuantum)
+				if lhsRowStart >= lhsRowEnd {
+					continue
+				}
+				for batchIdx := range batchSize {
+					dst = append(dst, WorkItem{
+						batchIdx, batchIdx + 1,
+						lhsRowStart, lhsRowEnd,
+						0, rhsCrossSize,
+					})
+				}
+			}
+			for m := range actualTailM {
+				lhsRowStart := headRows + ((m*tailMBlocks+actualTailM-1)/actualTailM)*mr
+				lhsRowEnd := min(lhsCrossSize, headRows+(((m+1)*tailMBlocks+actualTailM-1)/actualTailM)*mr)
+				if lhsRowStart >= lhsRowEnd {
+					continue
+				}
+				for batchIdx := range batchSize {
+					dst = append(dst, WorkItem{
+						batchIdx, batchIdx + 1,
+						lhsRowStart, lhsRowEnd,
+						0, rhsCrossSize,
+					})
+				}
+			}
+			return dst
+		}
+	}
+
+	actualM := min(max(1, targetPerBatch), totalMBlocks)
+	for m := range actualM {
+		lhsRowStart := ((m*totalMBlocks + actualM - 1) / actualM) * mr
+		lhsRowEnd := min(lhsCrossSize, (((m+1)*totalMBlocks+actualM-1)/actualM)*mr)
+		if lhsRowStart >= lhsRowEnd {
+			continue
+		}
+		for batchIdx := range batchSize {
+			dst = append(dst, WorkItem{
+				batchIdx, batchIdx + 1,
+				lhsRowStart, lhsRowEnd,
+				0, rhsCrossSize,
+			})
+		}
+	}
+	return dst
+}
+
 // FeedWorkItems splits the matrix-multiplication tasks into "WorkItem"s optimized
 // for maxWorkers (>=1) and sends them to workChan, closing workChan on exit.
 func FeedWorkItems(

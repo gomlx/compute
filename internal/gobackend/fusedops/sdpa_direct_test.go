@@ -257,3 +257,115 @@ func TestSDPADirect_FP8NotImplemented(t *testing.T) {
 		t.Errorf("SDPA with F8 input must return ErrNotImplemented, got: %+v", err)
 	}
 }
+
+func TestSDPADirect_MaskQuerySeqBroadcast(t *testing.T) {
+	b := newGoBackend(t)
+
+	// Verify that masks with mSeqDim == 1 (e.g. [batch, 1, 1, kv_len], [batch, 1, kv_len], [1, kv_len])
+	// produce the exact same result as a full [batch, 1, seq_len, kv_len] mask in both BHSD and BSHD,
+	// and also compile with dynamic sequence dimensions.
+	const (
+		batchSize = 2
+		numHeads  = 2
+		seqLen    = 39 // exercises 32-row SME, 4-row NEON, 2-row NEON, and 1-row tail
+		kvLen     = 45
+		headDim   = 32
+	)
+
+	qBHSD := make([]float32, batchSize*numHeads*seqLen*headDim)
+	kBHSD := make([]float32, batchSize*numHeads*kvLen*headDim)
+	vBHSD := make([]float32, batchSize*numHeads*kvLen*headDim)
+	for i := range qBHSD {
+		qBHSD[i] = float32((i%17)-8) * 0.1
+	}
+	for i := range kBHSD {
+		kBHSD[i] = float32((i%13)-6) * 0.1
+	}
+	for i := range vBHSD {
+		vBHSD[i] = float32((i%19)-9) * 0.2
+	}
+
+	// Build [batch, 1, 1, kvLen] mask and expanded [batch, 1, seqLen, kvLen] mask.
+	mask1D := make([]float32, batchSize*kvLen)
+	maskFull := make([]float32, batchSize*seqLen*kvLen)
+	for bIdx := range batchSize {
+		for kvIdx := range kvLen {
+			var val float32
+			if kvIdx >= kvLen-5-bIdx*3 {
+				val = -1e9
+			}
+			mask1D[bIdx*kvLen+kvIdx] = val
+			for sIdx := range seqLen {
+				maskFull[(bIdx*seqLen+sIdx)*kvLen+kvIdx] = val
+			}
+		}
+	}
+
+	qShape := shapes.Make(dtypes.Float32, batchSize, numHeads, seqLen, headDim)
+	kvShape := shapes.Make(dtypes.Float32, batchSize, numHeads, kvLen, headDim)
+	mask1DShape := shapes.Make(dtypes.Float32, batchSize, 1, 1, kvLen)
+	maskFullShape := shapes.Make(dtypes.Float32, batchSize, 1, seqLen, kvLen)
+
+	runBHSD := func(maskData []float32, mShape shapes.Shape) []float32 {
+		builder := b.Builder("sdpa_mask_bcast")
+		fn := builder.Main()
+		qP, _ := fn.Parameter("q", qShape, nil)
+		kP, _ := fn.Parameter("k", kvShape, nil)
+		vP, _ := fn.Parameter("v", kvShape, nil)
+		mP, _ := fn.Parameter("m", mShape, nil)
+		out, _, err := fn.FusedScaledDotProductAttention(qP, kP, vP, compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{
+			Mask:  mP,
+			Scale: 0.176776695,
+		})
+		if err != nil {
+			t.Fatalf("FusedScaledDotProductAttention build failed for mask %s: %+v", mShape, err)
+		}
+		if err := fn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return: %+v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile: %+v", err)
+		}
+		qBuf, _ := b.BufferFromFlatData(0, qBHSD, qShape)
+		kBuf, _ := b.BufferFromFlatData(0, kBHSD, kvShape)
+		vBuf, _ := b.BufferFromFlatData(0, vBHSD, kvShape)
+		mBuf, _ := b.BufferFromFlatData(0, maskData, mShape)
+		outs, err := exec.Execute([]compute.Buffer{qBuf, kBuf, vBuf, mBuf}, nil, 0)
+		if err != nil {
+			t.Fatalf("Execute: %+v", err)
+		}
+		return outs[0].(*gobackend.Buffer).Flat.([]float32)
+	}
+
+	want := runBHSD(maskFull, maskFullShape)
+	got := runBHSD(mask1D, mask1DShape)
+	if ok, diff := testutil.IsInDelta(want, got, 1e-4); !ok {
+		t.Fatalf("BHSD [batch, 1, 1, kvLen] mask broadcast mismatch:\n%s", diff)
+	}
+
+	// Also verify dynamic shape compilation with [batch=?, seq=?, heads, dim] in BSHD and [batch=?, 1, 1, seq=?] mask.
+	{
+		builder := b.Builder("sdpa_dynamic_bshd_mask")
+		fn := builder.Main()
+		qDynShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, shapes.DynamicDim, numHeads, headDim}, []string{"B", "S", "", ""})
+		mDynShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 1, 1, shapes.DynamicDim}, []string{"B", "", "", "S"})
+		qP, _ := fn.Parameter("q", qDynShape, nil)
+		kP, _ := fn.Parameter("k", qDynShape, nil)
+		vP, _ := fn.Parameter("v", qDynShape, nil)
+		mP, _ := fn.Parameter("m", mDynShape, nil)
+		out, _, err := fn.FusedScaledDotProductAttention(qP, kP, vP, compute.AttentionAxesLayoutBSHD, &compute.ScaledDotProductAttentionConfig{
+			Mask:  mP,
+			Scale: 0.176776695,
+		})
+		if err != nil {
+			t.Fatalf("Dynamic BSHD FusedScaledDotProductAttention with [B, 1, 1, S] mask failed: %+v", err)
+		}
+		if err := fn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return: %+v", err)
+		}
+		if _, err := builder.Compile(); err != nil {
+			t.Fatalf("Compile dynamic BSHD SDPA: %+v", err)
+		}
+	}
+}

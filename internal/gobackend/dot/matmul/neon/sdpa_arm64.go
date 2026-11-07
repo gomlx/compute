@@ -65,6 +65,15 @@ func DispatchSDPAARM64(
 		}
 	}
 
+	maskSeqStride := kvLen
+	if maskLen := max(len(additiveMask), len(booleanMask)); maskLen == 0 || maskGroupStride == kvLen || (maskGroupStride == 0 && maskLen == kvLen) {
+		maskSeqStride = 0
+	}
+	biasSeqStride := kvLen
+	if len(additiveBias) == 0 || biasGroupStride == kvLen || (biasGroupStride == 0 && len(additiveBias) == kvLen) {
+		biasSeqStride = 0
+	}
+
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -78,8 +87,8 @@ func DispatchSDPAARM64(
 				sdpaSME32RowsFloat32(
 					q, k, v, output,
 					gQOff+qIdx*qSeqStride, kvOff, qSeqStride, kvSeqStride,
-					additiveMask, gMaskOff+qIdx*kvLen,
-					additiveBias, gBiasOff+qIdx*kvLen,
+					additiveMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
+					additiveBias, gBiasOff+qIdx*biasSeqStride, biasSeqStride,
 					scoresScratch,
 					kvLen, kvLenUnmaskedBase, headDim, scale,
 				)
@@ -92,8 +101,8 @@ func DispatchSDPAARM64(
 				sdpaNEON4RowsFloat32(
 					q, k, v, output,
 					gQOff+qIdx*qSeqStride, kvOff, qSeqStride, kvSeqStride,
-					additiveMask, gMaskOff+qIdx*kvLen,
-					additiveBias, gBiasOff+qIdx*kvLen,
+					additiveMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
+					additiveBias, gBiasOff+qIdx*biasSeqStride, biasSeqStride,
 					scoresScratch,
 					kvLen, kvLenUnmaskedBase, headDim, scale,
 				)
@@ -105,10 +114,10 @@ func DispatchSDPAARM64(
 			for ; qIdx+2 <= qValidEnd; qIdx += 2 {
 				qBase0 := gQOff + qIdx*qSeqStride
 				qBase1 := qBase0 + qSeqStride
-				maskIdxBase0 := gMaskOff + qIdx*kvLen
-				maskIdxBase1 := maskIdxBase0 + kvLen
-				biasIdxBase0 := gBiasOff + qIdx*kvLen
-				biasIdxBase1 := biasIdxBase0 + kvLen
+				maskIdxBase0 := gMaskOff + qIdx*maskSeqStride
+				maskIdxBase1 := maskIdxBase0 + maskSeqStride
+				biasIdxBase0 := gBiasOff + qIdx*biasSeqStride
+				biasIdxBase1 := biasIdxBase0 + biasSeqStride
 				scores0 := scoresScratch[:kvLen]
 				scores1 := scoresScratch[kvLen : 2*kvLen]
 
@@ -160,8 +169,8 @@ func DispatchSDPAARM64(
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
 			if headDim == 32 {
 				rowMax, activeKVLen := sdpaDotNEONDim32Single(
@@ -196,8 +205,8 @@ func DispatchSDPAARM64(
 func sdpaSME32RowsFloat32(
 	q, k, v, output []float32,
 	qBase, kvOff, qSeqStride, kvSeqStride int,
-	additiveMask []float32, maskIdxBase int,
-	additiveBias []float32, biasIdxBase int,
+	additiveMask []float32, maskIdxBase, maskSeqStride int,
+	additiveBias []float32, biasIdxBase, biasSeqStride int,
 	scoresScratch []float32,
 	kvLen, kvLenUnmasked, headDim int,
 	scale float32,
@@ -272,11 +281,11 @@ func sdpaSME32RowsFloat32(
 		rowScores := scoresScratch[r*kvLen : r*kvLen+kvLenUnmasked]
 		var maskRow, biasRow []float32
 		if len(additiveMask) > 0 {
-			mStart := maskIdxBase + r*kvLen
+			mStart := maskIdxBase + r*maskSeqStride
 			maskRow = additiveMask[mStart : mStart+kvLenUnmasked]
 		}
 		if len(additiveBias) > 0 {
-			bStart := biasIdxBase + r*kvLen
+			bStart := biasIdxBase + r*biasSeqStride
 			biasRow = additiveBias[bStart : bStart+kvLenUnmasked]
 		}
 		sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, biasRow, kvLenUnmasked, scale)
@@ -317,8 +326,8 @@ func sdpaSME32RowsFloat32(
 func sdpaNEON4RowsFloat32(
 	q, k, v, output []float32,
 	qBase, kvOff, qSeqStride, kvSeqStride int,
-	additiveMask []float32, maskIdxBase int,
-	additiveBias []float32, biasIdxBase int,
+	additiveMask []float32, maskIdxBase, maskSeqStride int,
+	additiveBias []float32, biasIdxBase, biasSeqStride int,
 	scoresScratch []float32,
 	kvLen, kvLenUnmasked, headDim int,
 	scale float32,
@@ -362,11 +371,11 @@ func sdpaNEON4RowsFloat32(
 		rowScores := scoresScratch[r*kvLen : r*kvLen+kvLenUnmasked]
 		var maskRow, biasRow []float32
 		if len(additiveMask) > 0 {
-			mStart := maskIdxBase + r*kvLen
+			mStart := maskIdxBase + r*maskSeqStride
 			maskRow = additiveMask[mStart : mStart+kvLenUnmasked]
 		}
 		if len(additiveBias) > 0 {
-			bStart := biasIdxBase + r*kvLen
+			bStart := biasIdxBase + r*biasSeqStride
 			biasRow = additiveBias[bStart : bStart+kvLenUnmasked]
 		}
 		sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, biasRow, kvLenUnmasked, scale)

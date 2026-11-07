@@ -95,6 +95,30 @@ func ExecuteWithEpilogue[I, O interface {
 			layout, inDType, outDType)
 	}
 
+	if epilogue.HasWork() {
+		key := multiRHSKey{
+			name:        reg.Name(),
+			layout:      layout,
+			inputDType:  inDType,
+			outputDType: outDType,
+		}
+		if multiAny, ok := registeredMultiRHSImplementations[key]; ok {
+			if multiFn, ok := multiAny.(MultiRHSExecFn[I, O]); ok {
+				var target [1]MultiRHSTarget[I, O]
+				target[0] = MultiRHSTarget[I, O]{
+					RHS:          rhs,
+					RHSCrossSize: rhsCrossSize,
+					Output:       output,
+					Epilogue:     epilogue,
+					NodeData:     nodeData,
+				}
+				if multiFn(backend, layout, lhs, batchSize, lhsCrossSize, contractingSize, target[:]) {
+					return nil
+				}
+			}
+		}
+	}
+
 	implFn, ok := reg.ImplFn().(dot.DotGeneralExecFn[I, O])
 	if !ok {
 		return errors.Errorf("invalid implementation function type for layout=%s, input=%s, output=%s",
@@ -104,6 +128,109 @@ func ExecuteWithEpilogue[I, O interface {
 
 	if epilogue.HasWork() {
 		ApplyEpilogue(backend, output, batchSize, lhsCrossSize, rhsCrossSize, epilogue)
+	}
+	return nil
+}
+
+// MultiRHSTarget describes one RHS matrix, output buffer, epilogue, and optional NodeData
+// for ExecuteMultiRHSWithEpilogue.
+type MultiRHSTarget[I, O interface {
+	gotype.Numeric | gotype.AnyHalfPrecision
+}] struct {
+	RHS          []I
+	RHSCrossSize int
+	Output       []O
+	Epilogue     Epilogue[O]
+	NodeData     *dot.NodeData
+}
+
+// MultiRHSExecFn is the signature of a multi-RHS matrix multiplication implementation
+// that shares packed LHS panels across all targets and applies each target's Epilogue inline.
+// It returns false if the caller should fall back to sequential ExecuteWithEpilogue calls.
+type MultiRHSExecFn[I, O interface {
+	gotype.Numeric | gotype.AnyHalfPrecision
+}] func(
+	backend *gobackend.Backend,
+	layout dot.Layout,
+	lhs []I,
+	batchSize, lhsCrossSize, contractingSize int,
+	targets []MultiRHSTarget[I, O],
+) bool
+
+type multiRHSKey struct {
+	name                    string
+	layout                  dot.Layout
+	inputDType, outputDType dtypes.DType
+}
+
+var registeredMultiRHSImplementations = make(map[multiRHSKey]any)
+
+// RegisterMultiRHSImplementation registers a multi-RHS matmul implementation associated with a dot registration name.
+func RegisterMultiRHSImplementation[I, O interface {
+	gotype.Numeric | gotype.AnyHalfPrecision
+}](
+	name string,
+	layout dot.Layout,
+	inputDType, outputDType dtypes.DType,
+	implFn MultiRHSExecFn[I, O],
+) {
+	key := multiRHSKey{
+		name:        name,
+		layout:      layout,
+		inputDType:  inputDType,
+		outputDType: outputDType,
+	}
+	registeredMultiRHSImplementations[key] = implFn
+}
+
+// ExecuteMultiRHSWithEpilogue multiplies the same LHS matrix against multiple RHS targets (e.g., Q, K, V
+// in FusedAttentionQKVProjection), packing LHS panels only once per row-chunk in L2 cache and applying
+// each target's epilogue inline while the output rows are hot in L1/L2 cache.
+func ExecuteMultiRHSWithEpilogue[I, O interface {
+	gotype.Numeric | gotype.AnyHalfPrecision
+}](
+	backend *gobackend.Backend,
+	layout dot.Layout,
+	lhs []I,
+	batchSize, lhsCrossSize, contractingSize int,
+	targets []MultiRHSTarget[I, O],
+) error {
+	if backend.NoOps || len(targets) == 0 {
+		return nil
+	}
+	inDType := dtypes.FromGenericsType[I]()
+	outDType := dtypes.FromGenericsType[O]()
+	reg := dot.FindRegisteredImplementation(layout, inDType, outDType)
+	if reg == nil {
+		return errors.Errorf("no registered matmul implementation for layout=%s, input=%s, output=%s",
+			layout, inDType, outDType)
+	}
+
+	if len(targets) > 1 {
+		key := multiRHSKey{
+			name:        reg.Name(),
+			layout:      layout,
+			inputDType:  inDType,
+			outputDType: outDType,
+		}
+		if multiAny, ok := registeredMultiRHSImplementations[key]; ok {
+			if multiFn, ok := multiAny.(MultiRHSExecFn[I, O]); ok {
+				if multiFn(backend, layout, lhs, batchSize, lhsCrossSize, contractingSize, targets) {
+					return nil
+				}
+			}
+		}
+	}
+
+	for i := range targets {
+		t := &targets[i]
+		if err := ExecuteWithEpilogue(
+			backend, layout, lhs, t.RHS,
+			batchSize, lhsCrossSize, t.RHSCrossSize, contractingSize,
+			t.Output, t.Epilogue, t.NodeData,
+		); err != nil {
+			return err
+		}
 	}
 	return nil
 }

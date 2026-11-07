@@ -109,15 +109,23 @@ func RegisterAVX512ForTests() {
 func registerAVX512(forTests bool) {
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx512RouterFloat32, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, avx512LargeMultiFloat32)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, avx512LargeMultiFloat32)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512RouterBFloat16, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeMultiBFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, avx512LargeMultiBFloat16)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx512RouterFloat16, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, avx512LargeMultiFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, avx512LargeMultiFloat16)
 
 	dot.RegisterImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, matmul.PriorityAVX512, forTests)
 	dot.RegisterImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512RouterFloat64, matmul.PriorityAVX512, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, avx512LargeMultiFloat64)
+	matmul.RegisterMultiRHSImplementation("simd:avx512", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, avx512LargeMultiFloat64)
 }
 
 // avx512ReduceSumFloat32x16 performs a horizontal reduction of a Float32x16 vector.
@@ -529,7 +537,20 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 		return
 	}
 	if kernelRows != 4 {
-		panic("avx512PackLHSKernelRows4: kernelRows must be set to 4 or 8")
+		if kernelRows > 0 && kernelRows%8 == 0 && bytesPerElement == 4 && copyRows > 0 && contractingCols > 0 {
+			fullRows := (copyRows / kernelRows) * kernelRows
+			if fullRows > 0 {
+				avx512PackLHSStrided8x16Uint32(lhsBasePtr, panelBasePtr, lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols, kernelRows)
+			}
+			if fullRows == copyRows {
+				return
+			}
+			panelOffset := fullRows * contractingCols
+			unsafePackLHS(lhs, panel[panelOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
+			return
+		}
+		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
+		return
 	}
 
 	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement

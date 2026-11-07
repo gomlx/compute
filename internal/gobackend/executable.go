@@ -93,6 +93,22 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		fe.countNodeUsesAndDependents(output)
 	}
 
+	// Fuse single-consumer FusedDense(ActivationNone) + FusedActivation(cfg) pairs
+	// into a single FusedDense(cfg) with a zero-cost pass-through FusedActivation(None).
+	fe.fuseSingleConsumerDenseActivations()
+
+	// Fuse single-consumer Add(x, residual) + FusedLayerNorm pairs into FusedLayerNorm
+	// with an extra residual input, eliminating the intermediate Add node and buffer.
+	if fe.fuseSingleConsumerResidualAddIntoLayerNorm() {
+		clear(fe.NumUses)
+		for i := range fe.Dependents {
+			fe.Dependents[i] = fe.Dependents[i][:0]
+		}
+		for _, output := range f.Outputs {
+			fe.countNodeUsesAndDependents(output)
+		}
+	}
+
 	if err := fe.setupConstantSubgraphCaching(); err != nil {
 		return nil, err
 	}
@@ -147,6 +163,109 @@ func (fe *FunctionExecutable) countNodeUsesAndDependents(node *Node) {
 			}
 		}
 	}
+}
+
+// FusedDenseActivationTarget is implemented by nodeFusedDense so compile-time graph
+// optimization can fuse a single-consumer FusedDense(ActivationNone) + FusedActivation(cfg)
+// pair when no VJP or other node references the intermediate pre-activation output.
+type FusedDenseActivationTarget interface {
+	TryFuseActivation(cfg compute.ActivationConfig) bool
+}
+
+// FusedActivationSource is implemented by nodeFusedActivation so compile-time graph
+// optimization can inspect its ActivationConfig and mark it as fused (no-op pass-through)
+// once absorbed into its input FusedDense node.
+type FusedActivationSource interface {
+	ActivationConfig() compute.ActivationConfig
+	MarkFusedIntoInput()
+}
+
+// fuseSingleConsumerDenseActivations fuses FusedDense(ActivationNone) -> FusedActivation(cfg)
+// when the FusedDense node has only a single consumer (the FusedActivation node) and is not
+// a function output (so no FusedActivationVJP or other node ever reads the pre-activation tensor).
+func (fe *FunctionExecutable) fuseSingleConsumerDenseActivations() {
+	for nodeIdx := range fe.NumNodesToProcess {
+		if fe.NumUses[nodeIdx] == 0 {
+			continue
+		}
+		actNode := fe.Function.Nodes[nodeIdx]
+		if actNode.OpType != compute.OpTypeFusedActivation || len(actNode.Inputs) != 1 {
+			continue
+		}
+		denseNode := actNode.Inputs[0]
+		if denseNode.OpType != compute.OpTypeFusedDense {
+			continue
+		}
+		// Ensure actNode is the sole consumer of denseNode (and denseNode is not in fe.OutputNodes).
+		if fe.NumUses[denseNode.Index] != 1 || len(fe.Dependents[denseNode.Index]) != 1 || fe.Dependents[denseNode.Index][0] != nodeIdx {
+			continue
+		}
+		actSource, ok1 := actNode.Data.(FusedActivationSource)
+		denseTarget, ok2 := denseNode.Data.(FusedDenseActivationTarget)
+		if !ok1 || !ok2 {
+			continue
+		}
+		if denseTarget.TryFuseActivation(actSource.ActivationConfig()) {
+			actSource.MarkFusedIntoInput()
+		}
+	}
+}
+
+// FusedLayerNormResidualTarget is implemented by nodeFusedLayerNorm so compile-time graph
+// optimization can fuse a single-consumer Add(x, residual) + FusedLayerNorm pair when both
+// Add operands have identical shapes and no other node references the intermediate sum.
+type FusedLayerNormResidualTarget interface {
+	TryFuseResidualInput() bool
+}
+
+// fuseSingleConsumerResidualAddIntoLayerNorm fuses Add(a, b) -> FusedLayerNorm(sum, ...)
+// when Add(a, b) has equal-shaped operands (no broadcasting) and FusedLayerNorm is its
+// sole consumer. It rewires FusedLayerNorm's inputs to [a, gamma?, beta?, b] and returns
+// true if any node was rewired (so NumUses and Dependents can be recomputed, eliminating Add).
+func (fe *FunctionExecutable) fuseSingleConsumerResidualAddIntoLayerNorm() bool {
+	rewired := false
+	for nodeIdx := range fe.NumNodesToProcess {
+		if fe.NumUses[nodeIdx] == 0 {
+			continue
+		}
+		lnNode := fe.Function.Nodes[nodeIdx]
+		if lnNode.OpType != compute.OpTypeFusedLayerNorm || len(lnNode.Inputs) < 1 {
+			continue
+		}
+		addNode := lnNode.Inputs[0]
+		if addNode.OpType != compute.OpTypeAdd || len(addNode.Inputs) != 2 {
+			continue
+		}
+		// Ensure lnNode is the sole consumer of addNode (and addNode is not in fe.OutputNodes).
+		if fe.NumUses[addNode.Index] != 1 || len(fe.Dependents[addNode.Index]) != 1 || fe.Dependents[addNode.Index][0] != nodeIdx {
+			continue
+		}
+		in0, in1 := addNode.Inputs[0], addNode.Inputs[1]
+		if in0 == in1 {
+			continue
+		}
+		// Require identical dtype and dimensions (no broadcasting).
+		if in0.Shape.DType != in1.Shape.DType || !in0.Shape.EqualDimensions(in1.Shape) {
+			continue
+		}
+		lnTarget, ok := lnNode.Data.(FusedLayerNormResidualTarget)
+		if !ok || !lnTarget.TryFuseResidualInput() {
+			continue
+		}
+		newInputs := make([]*Node, len(lnNode.Inputs)+1)
+		newInputs[0] = in0
+		copy(newInputs[1:len(lnNode.Inputs)], lnNode.Inputs[1:])
+		newInputs[len(lnNode.Inputs)] = in1
+		lnNode.Inputs = newInputs
+
+		totalCaptured := 0
+		for _, closureCaptures := range lnNode.CapturedInputs {
+			totalCaptured += len(closureCaptures)
+		}
+		fe.MaxInputs = max(fe.MaxInputs, len(lnNode.Inputs)+totalCaptured)
+		rewired = true
+	}
+	return rewired
 }
 
 // funcExecBuffers holds intermediate results during function execution.

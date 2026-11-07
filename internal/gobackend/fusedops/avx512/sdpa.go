@@ -7,8 +7,8 @@ package avx512
 import (
 	"math"
 	"simd/archsimd"
+	"unsafe"
 
-	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -17,6 +17,20 @@ func init() {
 		gobackend.SetSDPAArchDispatcher(gobackend.PriorityArch+1, DispatchSDPAAVX512)
 	}
 }
+
+//go:noescape
+func sdpaQueriesDim32NoMaskAVX512Asm(
+	qPtr, kPtr, vPtr, outPtr, scoresPtr unsafe.Pointer,
+	qByteStride, kvByteStride, numQueries, kvLen, qStart, causalInt int,
+	scale float32,
+)
+
+//go:noescape
+func sdpaSoftmaxAndValueAccumDim32AVX512Asm(
+	vPtr, outPtr, scoresPtr unsafe.Pointer,
+	kvByteStride, kvLenUnmasked int,
+	rowMax float32,
+)
 
 // reduceSum8 reduces a Float32x8 vector to a single float32 sum.
 func reduceSum8(v archsimd.Float32x8) float32 {
@@ -44,12 +58,15 @@ func reduceMax16(v archsimd.Float32x16) float32 {
 	return reduceMax8(v.GetLo().Max(v.GetHi()))
 }
 
-// exp512 approximates e^x for 16 float32s using Cephes degree-7 Horner polynomial.
+// exp512 approximates e^x for 16 float32s using Cephes degree-7 Estrin polynomial
+// and magic-number range reduction. Lanes with x <= minLogF (-88.0296936) evaluate
+// to exact 0.0f.
 func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	const (
-		maxLogF = 88.02969187150841
-		minLogF = -88.02969187150841
+		maxLogF = 88.0296936
+		minLogF = -88.0296936
 		log2E   = 1.44269504088896341
+		magicF  = 12582912.0
 		ln2Hi   = 0.693359375
 		ln2Lo   = -2.12194440e-4
 
@@ -63,6 +80,7 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	vMaxLog := archsimd.BroadcastFloat32x16(maxLogF)
 	vMinLog := archsimd.BroadcastFloat32x16(minLogF)
 	vLog2E := archsimd.BroadcastFloat32x16(log2E)
+	vMagic := archsimd.BroadcastFloat32x16(magicF)
 	vLn2Hi := archsimd.BroadcastFloat32x16(ln2Hi)
 	vLn2Lo := archsimd.BroadcastFloat32x16(ln2Lo)
 
@@ -73,22 +91,33 @@ func exp512(x archsimd.Float32x16) archsimd.Float32x16 {
 	vP3 := archsimd.BroadcastFloat32x16(p3)
 	vP2 := archsimd.BroadcastFloat32x16(p2)
 	vOne := archsimd.BroadcastFloat32x16(1.0)
-	v127 := archsimd.BroadcastUint32x16(127)
+	vBias127 := archsimd.BroadcastUint32x16(127 << 23)
 
 	xClamped := x.Max(vMinLog).Min(vMaxLog)
-	z := xClamped.Mul(vLog2E).RoundScaled(0)
-	g := xClamped.Sub(z.Mul(vLn2Hi)).Sub(z.Mul(vLn2Lo))
+	zRound := xClamped.MulAdd(vLog2E, vMagic)
+	zFloor := zRound.Sub(vMagic)
+	g := xClamped.Sub(zFloor.Mul(vLn2Hi)).Sub(zFloor.Mul(vLn2Lo))
 
-	n := z.ConvertToInt32().AsUint32x16().Add(v127).ShiftAllLeft(23).BitsToFloat32()
+	scale := zRound.AsUint32x16().ShiftAllLeft(23).Add(vBias127).AsFloat32x16()
 
-	poly := vP7.MulAdd(g, vP6)
-	poly = poly.MulAdd(g, vP5)
-	poly = poly.MulAdd(g, vP4)
-	poly = poly.MulAdd(g, vP3)
-	poly = poly.MulAdd(g, vP2)
-	poly = poly.Mul(g).Mul(g).Add(g).Add(vOne)
+	g2 := g.Mul(g)
+	q67 := vP7.MulAdd(g, vP6)
+	q45 := vP5.MulAdd(g, vP4)
+	q23 := vP3.MulAdd(g, vP2)
+	q01 := g.Add(vOne)
+	g4 := g2.Mul(g2)
+	q47 := q67.MulAdd(g2, q45)
+	q03 := q23.MulAdd(g2, q01)
+	poly := q47.MulAdd(g4, q03)
 
-	return n.Mul(poly)
+	return poly.Mul(scale)
+}
+
+// padScoresTail16 writes -Inf into scoresScratch[kvLenUnmasked : kvLenUnmasked+16]
+// so 16-wide SIMD softmax loops can process the tail without a scalar remainder loop.
+func padScoresTail16(scoresScratch []float32, kvLenUnmasked int) {
+	vNegInf := archsimd.BroadcastFloat32x16(float32(math.Inf(-1)))
+	vNegInf.Store(scoresScratch[kvLenUnmasked : kvLenUnmasked+16])
 }
 
 // DispatchSDPAAVX512 executes scaled dot-product attention using AVX-512.
@@ -105,6 +134,9 @@ func DispatchSDPAAVX512(
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) bool {
+	if len(scoresScratch) < kvLen+16 {
+		scoresScratch = make([]float32, kvLen+16)
+	}
 	switch headDim {
 	case 32:
 		sdpaFloat32AVX512Dim32(
@@ -160,66 +192,26 @@ func softmaxAndValueAccumDim32(
 	kvLenUnmasked int,
 	rowMax float32,
 ) {
-	// Softmax: exp(scores - rowMax) and sum
-	var sum float32
-	k := 0
-	vRowMax := archsimd.BroadcastFloat32x16(rowMax)
-	vSum := archsimd.BroadcastFloat32x16(0)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
-		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
-		expV := exp512(vScores.Sub(vRowMax))
-		expV.Store(scoresScratch[k : k+16])
-		vSum = vSum.Add(expV)
-	}
-	if k > 0 {
-		sum += reduceSum16(vSum)
-	}
-	for ; k < kvLenUnmasked; k++ {
-		s := scoresScratch[k]
-		if s == float32(math.Inf(-1)) {
-			scoresScratch[k] = 0
-		} else {
-			e := fastmath.Exp32(s - rowMax)
-			scoresScratch[k] = e
-			sum += e
-		}
-	}
+	sdpaSoftmaxAndValueAccumDim32AVX512Asm(
+		unsafe.Pointer(&v[kvOff]),
+		unsafe.Pointer(&output[outBase]),
+		unsafe.Pointer(&scoresScratch[0]),
+		kvSeqStride*4,
+		kvLenUnmasked,
+		rowMax,
+	)
+}
 
-	var invSum float32
-	if sum > 0 {
-		invSum = 1.0 / sum
+func sdpaMaskBiasSeqStrides(additiveMask []float32, booleanMask []bool, maskGroupStride int, additiveBias []float32, biasGroupStride, kvLen int) (maskSeqStride, biasSeqStride int) {
+	maskSeqStride = kvLen
+	if maskLen := max(len(additiveMask), len(booleanMask)); maskLen == 0 || maskGroupStride == kvLen || (maskGroupStride == 0 && maskLen == kvLen) {
+		maskSeqStride = 0
 	}
-
-	// Normalize scores
-	k = 0
-	vInvSum := archsimd.BroadcastFloat32x16(invSum)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
-		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
-		vScores.Mul(vInvSum).Store(scoresScratch[k : k+16])
+	biasSeqStride = kvLen
+	if len(additiveBias) == 0 || biasGroupStride == kvLen || (biasGroupStride == 0 && len(additiveBias) == kvLen) {
+		biasSeqStride = 0
 	}
-	for ; k < kvLenUnmasked; k++ {
-		scoresScratch[k] *= invSum
-	}
-
-	// Value accumulation into vector registers
-	out0 := archsimd.BroadcastFloat32x16(0)
-	out1 := archsimd.BroadcastFloat32x16(0)
-
-	for ki := 0; ki < kvLenUnmasked; ki++ {
-		w := scoresScratch[ki]
-		if w == 0 {
-			continue
-		}
-		vW := archsimd.BroadcastFloat32x16(w)
-		vBase := kvOff + ki*kvSeqStride
-		v0 := archsimd.LoadFloat32x16(v[vBase : vBase+16])
-		v1 := archsimd.LoadFloat32x16(v[vBase+16 : vBase+32])
-		out0 = vW.MulAdd(v0, out0)
-		out1 = vW.MulAdd(v1, out1)
-	}
-
-	out0.Store(output[outBase : outBase+16])
-	out1.Store(output[outBase+16 : outBase+32])
+	return maskSeqStride, biasSeqStride
 }
 
 func sdpaFloat32AVX512Dim32(
@@ -235,6 +227,47 @@ func sdpaFloat32AVX512Dim32(
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
+	// Fast path when no boolean/additive mask or bias slice is active:
+	// run the entire query loop in handwritten AVX-512 assembly.
+	if len(booleanMask) == 0 && len(additiveMask) == 0 && len(additiveBias) == 0 {
+		kvLimitClamped := min(kvLen, kvLimit)
+		causalInt := 0
+		if causal {
+			causalInt = 1
+		}
+		for gIdx := range groupSize {
+			gQOff := qOff + gIdx*qGroupStride
+			activeQEnd := min(qEnd, qLimit)
+			if activeQEnd > qStart && kvLimitClamped > 0 {
+				numQ := activeQEnd - qStart
+				qBase := gQOff + qStart*qSeqStride
+				sdpaQueriesDim32NoMaskAVX512Asm(
+					unsafe.Pointer(&q[qBase]),
+					unsafe.Pointer(&k[kvOff]),
+					unsafe.Pointer(&v[kvOff]),
+					unsafe.Pointer(&output[qBase]),
+					unsafe.Pointer(&scoresScratch[0]),
+					qSeqStride*4,
+					kvSeqStride*4,
+					numQ,
+					kvLimitClamped,
+					qStart,
+					causalInt,
+					scale,
+				)
+			} else {
+				activeQEnd = qStart
+			}
+			for qIdx := max(qStart, activeQEnd); qIdx < qEnd; qIdx++ {
+				outBase := gQOff + qIdx*qSeqStride
+				clear(output[outBase : outBase+32])
+			}
+		}
+		return
+	}
+
+	maskSeqStride, biasSeqStride := sdpaMaskBiasSeqStrides(additiveMask, booleanMask, maskGroupStride, additiveBias, biasGroupStride, kvLen)
+	vScale := archsimd.BroadcastFloat32x16(scale)
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -243,9 +276,7 @@ func sdpaFloat32AVX512Dim32(
 		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
-				for d := range 32 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+32])
 				continue
 			}
 
@@ -258,18 +289,16 @@ func sdpaFloat32AVX512Dim32(
 			}
 
 			if kvLenUnmasked <= 0 {
-				for d := range 32 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+32])
 				continue
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
-			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16])
-			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32])
+			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16]).Mul(vScale)
+			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32]).Mul(vScale)
 
 			rowMax := float32(math.Inf(-1))
 			activeKVLen := kvLenUnmasked
@@ -292,8 +321,7 @@ func sdpaFloat32AVX512Dim32(
 				k1 := archsimd.LoadFloat32x16(k[kBase+16 : kBase+32])
 
 				sumVec := q0.Mul(k0).Add(q1.Mul(k1))
-				dot := reduceSum16(sumVec)
-				s := dot * scale
+				s := reduceSum16(sumVec)
 				if len(additiveBias) > 0 {
 					s += additiveBias[biasIdxBase+ki]
 				}
@@ -307,9 +335,7 @@ func sdpaFloat32AVX512Dim32(
 			}
 
 			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
-				for d := range 32 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+32])
 				continue
 			}
 
@@ -325,71 +351,62 @@ func softmaxAndValueAccumDim64(
 	kvLenUnmasked int,
 	rowMax float32,
 ) {
-	var sum float32
-	k := 0
+	padScoresTail16(scoresScratch, kvLenUnmasked)
+
 	vRowMax := archsimd.BroadcastFloat32x16(rowMax)
 	vSum := archsimd.BroadcastFloat32x16(0)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
+	for k := 0; k < kvLenUnmasked; k += 16 {
 		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
 		expV := exp512(vScores.Sub(vRowMax))
 		expV.Store(scoresScratch[k : k+16])
 		vSum = vSum.Add(expV)
 	}
-	if k > 0 {
-		sum += reduceSum16(vSum)
-	}
-	for ; k < kvLenUnmasked; k++ {
-		s := scoresScratch[k]
-		if s == float32(math.Inf(-1)) {
-			scoresScratch[k] = 0
-		} else {
-			e := fastmath.Exp32(s - rowMax)
-			scoresScratch[k] = e
-			sum += e
-		}
-	}
+	sum := reduceSum16(vSum)
 
 	var invSum float32
 	if sum > 0 {
 		invSum = 1.0 / sum
 	}
 
-	k = 0
-	vInvSum := archsimd.BroadcastFloat32x16(invSum)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
-		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
-		vScores.Mul(vInvSum).Store(scoresScratch[k : k+16])
-	}
-	for ; k < kvLenUnmasked; k++ {
-		scoresScratch[k] *= invSum
-	}
+	out0_0 := archsimd.BroadcastFloat32x16(0)
+	out1_0 := archsimd.BroadcastFloat32x16(0)
+	out2_0 := archsimd.BroadcastFloat32x16(0)
+	out3_0 := archsimd.BroadcastFloat32x16(0)
+	out0_1 := archsimd.BroadcastFloat32x16(0)
+	out1_1 := archsimd.BroadcastFloat32x16(0)
+	out2_1 := archsimd.BroadcastFloat32x16(0)
+	out3_1 := archsimd.BroadcastFloat32x16(0)
 
-	out0 := archsimd.BroadcastFloat32x16(0)
-	out1 := archsimd.BroadcastFloat32x16(0)
-	out2 := archsimd.BroadcastFloat32x16(0)
-	out3 := archsimd.BroadcastFloat32x16(0)
+	ki := 0
+	for ; ki+2 <= kvLenUnmasked; ki += 2 {
+		vW0 := archsimd.BroadcastFloat32x16(scoresScratch[ki])
+		vBase0 := kvOff + ki*kvSeqStride
+		out0_0 = archsimd.LoadFloat32x16(v[vBase0 : vBase0+16]).MulAdd(vW0, out0_0)
+		out1_0 = archsimd.LoadFloat32x16(v[vBase0+16 : vBase0+32]).MulAdd(vW0, out1_0)
+		out2_0 = archsimd.LoadFloat32x16(v[vBase0+32 : vBase0+48]).MulAdd(vW0, out2_0)
+		out3_0 = archsimd.LoadFloat32x16(v[vBase0+48 : vBase0+64]).MulAdd(vW0, out3_0)
 
-	for ki := 0; ki < kvLenUnmasked; ki++ {
-		w := scoresScratch[ki]
-		if w == 0 {
-			continue
-		}
-		vW := archsimd.BroadcastFloat32x16(w)
+		vW1 := archsimd.BroadcastFloat32x16(scoresScratch[ki+1])
+		vBase1 := vBase0 + kvSeqStride
+		out0_1 = archsimd.LoadFloat32x16(v[vBase1 : vBase1+16]).MulAdd(vW1, out0_1)
+		out1_1 = archsimd.LoadFloat32x16(v[vBase1+16 : vBase1+32]).MulAdd(vW1, out1_1)
+		out2_1 = archsimd.LoadFloat32x16(v[vBase1+32 : vBase1+48]).MulAdd(vW1, out2_1)
+		out3_1 = archsimd.LoadFloat32x16(v[vBase1+48 : vBase1+64]).MulAdd(vW1, out3_1)
+	}
+	for ; ki < kvLenUnmasked; ki++ {
+		vW := archsimd.BroadcastFloat32x16(scoresScratch[ki])
 		vBase := kvOff + ki*kvSeqStride
-		v0 := archsimd.LoadFloat32x16(v[vBase : vBase+16])
-		v1 := archsimd.LoadFloat32x16(v[vBase+16 : vBase+32])
-		v2 := archsimd.LoadFloat32x16(v[vBase+32 : vBase+48])
-		v3 := archsimd.LoadFloat32x16(v[vBase+48 : vBase+64])
-		out0 = vW.MulAdd(v0, out0)
-		out1 = vW.MulAdd(v1, out1)
-		out2 = vW.MulAdd(v2, out2)
-		out3 = vW.MulAdd(v3, out3)
+		out0_0 = archsimd.LoadFloat32x16(v[vBase : vBase+16]).MulAdd(vW, out0_0)
+		out1_0 = archsimd.LoadFloat32x16(v[vBase+16 : vBase+32]).MulAdd(vW, out1_0)
+		out2_0 = archsimd.LoadFloat32x16(v[vBase+32 : vBase+48]).MulAdd(vW, out2_0)
+		out3_0 = archsimd.LoadFloat32x16(v[vBase+48 : vBase+64]).MulAdd(vW, out3_0)
 	}
 
-	out0.Store(output[outBase : outBase+16])
-	out1.Store(output[outBase+16 : outBase+32])
-	out2.Store(output[outBase+32 : outBase+48])
-	out3.Store(output[outBase+48 : outBase+64])
+	vInvSum := archsimd.BroadcastFloat32x16(invSum)
+	out0_0.Add(out0_1).Mul(vInvSum).Store(output[outBase : outBase+16])
+	out1_0.Add(out1_1).Mul(vInvSum).Store(output[outBase+16 : outBase+32])
+	out2_0.Add(out2_1).Mul(vInvSum).Store(output[outBase+32 : outBase+48])
+	out3_0.Add(out3_1).Mul(vInvSum).Store(output[outBase+48 : outBase+64])
 }
 
 func sdpaFloat32AVX512Dim64(
@@ -405,6 +422,8 @@ func sdpaFloat32AVX512Dim64(
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
+	maskSeqStride, biasSeqStride := sdpaMaskBiasSeqStrides(additiveMask, booleanMask, maskGroupStride, additiveBias, biasGroupStride, kvLen)
+	vScale := archsimd.BroadcastFloat32x16(scale)
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -413,9 +432,7 @@ func sdpaFloat32AVX512Dim64(
 		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
-				for d := range 64 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+64])
 				continue
 			}
 
@@ -428,20 +445,18 @@ func sdpaFloat32AVX512Dim64(
 			}
 
 			if kvLenUnmasked <= 0 {
-				for d := range 64 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+64])
 				continue
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
-			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16])
-			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32])
-			q2 := archsimd.LoadFloat32x16(q[qBase+32 : qBase+48])
-			q3 := archsimd.LoadFloat32x16(q[qBase+48 : qBase+64])
+			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16]).Mul(vScale)
+			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32]).Mul(vScale)
+			q2 := archsimd.LoadFloat32x16(q[qBase+32 : qBase+48]).Mul(vScale)
+			q3 := archsimd.LoadFloat32x16(q[qBase+48 : qBase+64]).Mul(vScale)
 
 			rowMax := float32(math.Inf(-1))
 			activeKVLen := kvLenUnmasked
@@ -466,8 +481,7 @@ func sdpaFloat32AVX512Dim64(
 				k3 := archsimd.LoadFloat32x16(k[kBase+48 : kBase+64])
 
 				sumVec := q0.Mul(k0).Add(q1.Mul(k1)).Add(q2.Mul(k2)).Add(q3.Mul(k3))
-				dot := reduceSum16(sumVec)
-				s := dot * scale
+				s := reduceSum16(sumVec)
 				if len(additiveBias) > 0 {
 					s += additiveBias[biasIdxBase+ki]
 				}
@@ -481,9 +495,7 @@ func sdpaFloat32AVX512Dim64(
 			}
 
 			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
-				for d := range 64 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+64])
 				continue
 			}
 
@@ -499,43 +511,21 @@ func softmaxAndValueAccumDim128(
 	kvLenUnmasked int,
 	rowMax float32,
 ) {
-	var sum float32
-	k := 0
+	padScoresTail16(scoresScratch, kvLenUnmasked)
+
 	vRowMax := archsimd.BroadcastFloat32x16(rowMax)
 	vSum := archsimd.BroadcastFloat32x16(0)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
+	for k := 0; k < kvLenUnmasked; k += 16 {
 		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
 		expV := exp512(vScores.Sub(vRowMax))
 		expV.Store(scoresScratch[k : k+16])
 		vSum = vSum.Add(expV)
 	}
-	if k > 0 {
-		sum += reduceSum16(vSum)
-	}
-	for ; k < kvLenUnmasked; k++ {
-		s := scoresScratch[k]
-		if s == float32(math.Inf(-1)) {
-			scoresScratch[k] = 0
-		} else {
-			e := fastmath.Exp32(s - rowMax)
-			scoresScratch[k] = e
-			sum += e
-		}
-	}
+	sum := reduceSum16(vSum)
 
 	var invSum float32
 	if sum > 0 {
 		invSum = 1.0 / sum
-	}
-
-	k = 0
-	vInvSum := archsimd.BroadcastFloat32x16(invSum)
-	for ; k+16 <= kvLenUnmasked; k += 16 {
-		vScores := archsimd.LoadFloat32x16(scoresScratch[k : k+16])
-		vScores.Mul(vInvSum).Store(scoresScratch[k : k+16])
-	}
-	for ; k < kvLenUnmasked; k++ {
-		scoresScratch[k] *= invSum
 	}
 
 	out0 := archsimd.BroadcastFloat32x16(0)
@@ -548,38 +538,27 @@ func softmaxAndValueAccumDim128(
 	out7 := archsimd.BroadcastFloat32x16(0)
 
 	for ki := 0; ki < kvLenUnmasked; ki++ {
-		w := scoresScratch[ki]
-		if w == 0 {
-			continue
-		}
-		vW := archsimd.BroadcastFloat32x16(w)
+		vW := archsimd.BroadcastFloat32x16(scoresScratch[ki])
 		vBase := kvOff + ki*kvSeqStride
-		v0 := archsimd.LoadFloat32x16(v[vBase : vBase+16])
-		v1 := archsimd.LoadFloat32x16(v[vBase+16 : vBase+32])
-		v2 := archsimd.LoadFloat32x16(v[vBase+32 : vBase+48])
-		v3 := archsimd.LoadFloat32x16(v[vBase+48 : vBase+64])
-		v4 := archsimd.LoadFloat32x16(v[vBase+64 : vBase+80])
-		v5 := archsimd.LoadFloat32x16(v[vBase+80 : vBase+96])
-		v6 := archsimd.LoadFloat32x16(v[vBase+96 : vBase+112])
-		v7 := archsimd.LoadFloat32x16(v[vBase+112 : vBase+128])
-		out0 = vW.MulAdd(v0, out0)
-		out1 = vW.MulAdd(v1, out1)
-		out2 = vW.MulAdd(v2, out2)
-		out3 = vW.MulAdd(v3, out3)
-		out4 = vW.MulAdd(v4, out4)
-		out5 = vW.MulAdd(v5, out5)
-		out6 = vW.MulAdd(v6, out6)
-		out7 = vW.MulAdd(v7, out7)
+		out0 = archsimd.LoadFloat32x16(v[vBase : vBase+16]).MulAdd(vW, out0)
+		out1 = archsimd.LoadFloat32x16(v[vBase+16 : vBase+32]).MulAdd(vW, out1)
+		out2 = archsimd.LoadFloat32x16(v[vBase+32 : vBase+48]).MulAdd(vW, out2)
+		out3 = archsimd.LoadFloat32x16(v[vBase+48 : vBase+64]).MulAdd(vW, out3)
+		out4 = archsimd.LoadFloat32x16(v[vBase+64 : vBase+80]).MulAdd(vW, out4)
+		out5 = archsimd.LoadFloat32x16(v[vBase+80 : vBase+96]).MulAdd(vW, out5)
+		out6 = archsimd.LoadFloat32x16(v[vBase+96 : vBase+112]).MulAdd(vW, out6)
+		out7 = archsimd.LoadFloat32x16(v[vBase+112 : vBase+128]).MulAdd(vW, out7)
 	}
 
-	out0.Store(output[outBase : outBase+16])
-	out1.Store(output[outBase+16 : outBase+32])
-	out2.Store(output[outBase+32 : outBase+48])
-	out3.Store(output[outBase+48 : outBase+64])
-	out4.Store(output[outBase+64 : outBase+80])
-	out5.Store(output[outBase+80 : outBase+96])
-	out6.Store(output[outBase+96 : outBase+112])
-	out7.Store(output[outBase+112 : outBase+128])
+	vInvSum := archsimd.BroadcastFloat32x16(invSum)
+	out0.Mul(vInvSum).Store(output[outBase : outBase+16])
+	out1.Mul(vInvSum).Store(output[outBase+16 : outBase+32])
+	out2.Mul(vInvSum).Store(output[outBase+32 : outBase+48])
+	out3.Mul(vInvSum).Store(output[outBase+48 : outBase+64])
+	out4.Mul(vInvSum).Store(output[outBase+64 : outBase+80])
+	out5.Mul(vInvSum).Store(output[outBase+80 : outBase+96])
+	out6.Mul(vInvSum).Store(output[outBase+96 : outBase+112])
+	out7.Mul(vInvSum).Store(output[outBase+112 : outBase+128])
 }
 
 func sdpaFloat32AVX512Dim128(
@@ -595,6 +574,8 @@ func sdpaFloat32AVX512Dim128(
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
+	maskSeqStride, biasSeqStride := sdpaMaskBiasSeqStrides(additiveMask, booleanMask, maskGroupStride, additiveBias, biasGroupStride, kvLen)
+	vScale := archsimd.BroadcastFloat32x16(scale)
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -603,9 +584,7 @@ func sdpaFloat32AVX512Dim128(
 		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
-				for d := range 128 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+128])
 				continue
 			}
 
@@ -618,24 +597,22 @@ func sdpaFloat32AVX512Dim128(
 			}
 
 			if kvLenUnmasked <= 0 {
-				for d := range 128 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+128])
 				continue
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
-			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16])
-			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32])
-			q2 := archsimd.LoadFloat32x16(q[qBase+32 : qBase+48])
-			q3 := archsimd.LoadFloat32x16(q[qBase+48 : qBase+64])
-			q4 := archsimd.LoadFloat32x16(q[qBase+64 : qBase+80])
-			q5 := archsimd.LoadFloat32x16(q[qBase+80 : qBase+96])
-			q6 := archsimd.LoadFloat32x16(q[qBase+96 : qBase+112])
-			q7 := archsimd.LoadFloat32x16(q[qBase+112 : qBase+128])
+			q0 := archsimd.LoadFloat32x16(q[qBase : qBase+16]).Mul(vScale)
+			q1 := archsimd.LoadFloat32x16(q[qBase+16 : qBase+32]).Mul(vScale)
+			q2 := archsimd.LoadFloat32x16(q[qBase+32 : qBase+48]).Mul(vScale)
+			q3 := archsimd.LoadFloat32x16(q[qBase+48 : qBase+64]).Mul(vScale)
+			q4 := archsimd.LoadFloat32x16(q[qBase+64 : qBase+80]).Mul(vScale)
+			q5 := archsimd.LoadFloat32x16(q[qBase+80 : qBase+96]).Mul(vScale)
+			q6 := archsimd.LoadFloat32x16(q[qBase+96 : qBase+112]).Mul(vScale)
+			q7 := archsimd.LoadFloat32x16(q[qBase+112 : qBase+128]).Mul(vScale)
 
 			rowMax := float32(math.Inf(-1))
 			activeKVLen := kvLenUnmasked
@@ -665,8 +642,7 @@ func sdpaFloat32AVX512Dim128(
 
 				sumVec0 := q0.Mul(k0).Add(q1.Mul(k1)).Add(q2.Mul(k2)).Add(q3.Mul(k3))
 				sumVec1 := q4.Mul(k4).Add(q5.Mul(k5)).Add(q6.Mul(k6)).Add(q7.Mul(k7))
-				dot := reduceSum16(sumVec0.Add(sumVec1))
-				s := dot * scale
+				s := reduceSum16(sumVec0.Add(sumVec1))
 				if len(additiveBias) > 0 {
 					s += additiveBias[biasIdxBase+ki]
 				}
@@ -680,9 +656,7 @@ func sdpaFloat32AVX512Dim128(
 			}
 
 			if activeKVLen <= 0 || rowMax == float32(math.Inf(-1)) {
-				for d := range 128 {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+128])
 				continue
 			}
 
@@ -704,6 +678,7 @@ func sdpaFloat32AVX512General(
 	scale float32, causal bool,
 	qLimit, kvLimit int,
 ) {
+	maskSeqStride, biasSeqStride := sdpaMaskBiasSeqStrides(additiveMask, booleanMask, maskGroupStride, additiveBias, biasGroupStride, kvLen)
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -712,9 +687,7 @@ func sdpaFloat32AVX512General(
 		for qIdx := qStart; qIdx < qEnd; qIdx++ {
 			outBase := gQOff + qIdx*qSeqStride
 			if qIdx >= qLimit {
-				for d := range headDim {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+headDim])
 				continue
 			}
 
@@ -727,15 +700,13 @@ func sdpaFloat32AVX512General(
 			}
 
 			if kvLenUnmasked <= 0 {
-				for d := range headDim {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+headDim])
 				continue
 			}
 
 			qBase := gQOff + qIdx*qSeqStride
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
 			rowMax := float32(math.Inf(-1))
 			activeKVLen := kvLenUnmasked
@@ -784,77 +755,56 @@ func sdpaFloat32AVX512General(
 
 			kvLenUnmasked = activeKVLen
 			if kvLenUnmasked <= 0 || rowMax == float32(math.Inf(-1)) {
-				for d := range headDim {
-					output[outBase+d] = 0
-				}
+				clear(output[outBase : outBase+headDim])
 				continue
 			}
 
-			// Softmax
-			var sum float32
-			ki := 0
+			// Softmax with padded tail
+			padScoresTail16(scoresScratch, kvLenUnmasked)
 			vRowMax := archsimd.BroadcastFloat32x16(rowMax)
 			vSum := archsimd.BroadcastFloat32x16(0)
-			for ; ki+16 <= kvLenUnmasked; ki += 16 {
+			for ki := 0; ki < kvLenUnmasked; ki += 16 {
 				vScores := archsimd.LoadFloat32x16(scoresScratch[ki : ki+16])
 				expV := exp512(vScores.Sub(vRowMax))
 				expV.Store(scoresScratch[ki : ki+16])
 				vSum = vSum.Add(expV)
 			}
-			if ki > 0 {
-				sum += reduceSum16(vSum)
-			}
-			for ; ki < kvLenUnmasked; ki++ {
-				s := scoresScratch[ki]
-				if s == float32(math.Inf(-1)) {
-					scoresScratch[ki] = 0
-				} else {
-					e := fastmath.Exp32(s - rowMax)
-					scoresScratch[ki] = e
-					sum += e
-				}
-			}
+			sum := reduceSum16(vSum)
 
 			var invSum float32
 			if sum > 0 {
 				invSum = 1.0 / sum
 			}
-
-			ki = 0
 			vInvSum := archsimd.BroadcastFloat32x16(invSum)
-			for ; ki+16 <= kvLenUnmasked; ki += 16 {
-				vScores := archsimd.LoadFloat32x16(scoresScratch[ki : ki+16])
-				vScores.Mul(vInvSum).Store(scoresScratch[ki : ki+16])
-			}
-			for ; ki < kvLenUnmasked; ki++ {
-				scoresScratch[ki] *= invSum
-			}
 
 			// Value accumulation along d
 			d := 0
 			for ; d+16 <= headDim; d += 16 {
-				outV := archsimd.BroadcastFloat32x16(0)
-				for kIdx := range kvLenUnmasked {
-					w := scoresScratch[kIdx]
-					if w == 0 {
-						continue
-					}
-					vW := archsimd.BroadcastFloat32x16(w)
-					vBase := kvOff + kIdx*kvSeqStride + d
-					vVal := archsimd.LoadFloat32x16(v[vBase : vBase+16])
-					outV = vW.MulAdd(vVal, outV)
+				outV0 := archsimd.BroadcastFloat32x16(0)
+				outV1 := archsimd.BroadcastFloat32x16(0)
+				kIdx := 0
+				for ; kIdx+2 <= kvLenUnmasked; kIdx += 2 {
+					vW0 := archsimd.BroadcastFloat32x16(scoresScratch[kIdx])
+					vBase0 := kvOff + kIdx*kvSeqStride + d
+					outV0 = archsimd.LoadFloat32x16(v[vBase0 : vBase0+16]).MulAdd(vW0, outV0)
+
+					vW1 := archsimd.BroadcastFloat32x16(scoresScratch[kIdx+1])
+					vBase1 := vBase0 + kvSeqStride
+					outV1 = archsimd.LoadFloat32x16(v[vBase1 : vBase1+16]).MulAdd(vW1, outV1)
 				}
-				outV.Store(output[outBase+d : outBase+d+16])
+				for ; kIdx < kvLenUnmasked; kIdx++ {
+					vW := archsimd.BroadcastFloat32x16(scoresScratch[kIdx])
+					vBase := kvOff + kIdx*kvSeqStride + d
+					outV0 = archsimd.LoadFloat32x16(v[vBase : vBase+16]).MulAdd(vW, outV0)
+				}
+				outV0.Add(outV1).Mul(vInvSum).Store(output[outBase+d : outBase+d+16])
 			}
 			for ; d < headDim; d++ {
 				var acc float32
 				for kIdx := range kvLenUnmasked {
-					w := scoresScratch[kIdx]
-					if w != 0 {
-						acc += w * v[kvOff+kIdx*kvSeqStride+d]
-					}
+					acc += scoresScratch[kIdx] * v[kvOff+kIdx*kvSeqStride+d]
 				}
-				output[outBase+d] = acc
+				output[outBase+d] = acc * invSum
 			}
 		}
 	}

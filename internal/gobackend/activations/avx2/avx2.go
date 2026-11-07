@@ -213,6 +213,8 @@ func registerAVX2() {
 	activations.RegisterKernel[float32]("avx2:silu", compute.ActivationSilu, SiluKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterBiasTile[float32]("avx2:gelu", compute.ActivationGelu, GeluExactBiasTileAVX2, PriorityAVX2)
+	activations.RegisterBiasTile[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileAVX2, PriorityAVX2)
 	activations.RegisterKernel[float32]("avx2:tanh", compute.ActivationTanh, TanhKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// Float64
@@ -343,42 +345,96 @@ func TanhKernelAVX2(in, out []float32) {
 	}
 }
 
+//go:noescape
+func geluExactFloat32AVX2Asm(in, out unsafe.Pointer, n int)
+
+//go:noescape
+func geluApproxFloat32AVX2Asm(in, out unsafe.Pointer, n int)
+
+//go:noescape
+func geluExactBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+
+//go:noescape
+func geluApproxBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+
+func GeluExactBiasTileAVX2(out []float32, rowStride, numRows, width int, bias []float32) {
+	if numRows <= 0 || width <= 0 || len(out) == 0 {
+		return
+	}
+	_ = bias[width-1]
+	_ = out[(numRows-1)*rowStride+width-1]
+	vecWidth := width &^ 7
+	if vecWidth > 0 {
+		geluExactBiasTileFloat32AVX2Asm(
+			unsafe.Pointer(&out[0]),
+			unsafe.Pointer(&bias[0]),
+			rowStride*4, numRows, vecWidth,
+		)
+	}
+	if vecWidth < width {
+		rem := width - vecWidth
+		var bufIn, bufBias [8]float32
+		copy(bufBias[:rem], bias[vecWidth:width])
+		for r := range numRows {
+			rowOff := r*rowStride + vecWidth
+			copy(bufIn[:rem], out[rowOff:rowOff+rem])
+			geluExactBiasTileFloat32AVX2Asm(
+				unsafe.Pointer(&bufIn[0]),
+				unsafe.Pointer(&bufBias[0]),
+				32, 1, 8,
+			)
+			copy(out[rowOff:rowOff+rem], bufIn[:rem])
+		}
+	}
+}
+
+func GeluApproxBiasTileAVX2(out []float32, rowStride, numRows, width int, bias []float32) {
+	if numRows <= 0 || width <= 0 || len(out) == 0 {
+		return
+	}
+	_ = bias[width-1]
+	_ = out[(numRows-1)*rowStride+width-1]
+	vecWidth := width &^ 7
+	if vecWidth > 0 {
+		geluApproxBiasTileFloat32AVX2Asm(
+			unsafe.Pointer(&out[0]),
+			unsafe.Pointer(&bias[0]),
+			rowStride*4, numRows, vecWidth,
+		)
+	}
+	if vecWidth < width {
+		rem := width - vecWidth
+		var bufIn, bufBias [8]float32
+		copy(bufBias[:rem], bias[vecWidth:width])
+		for r := range numRows {
+			rowOff := r*rowStride + vecWidth
+			copy(bufIn[:rem], out[rowOff:rowOff+rem])
+			geluApproxBiasTileFloat32AVX2Asm(
+				unsafe.Pointer(&bufIn[0]),
+				unsafe.Pointer(&bufBias[0]),
+				32, 1, 8,
+			)
+			copy(out[rowOff:rowOff+rem], bufIn[:rem])
+		}
+	}
+}
+
 func GeluAVX2(in, out []float32) {
-	// 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
-	i := 0
-	for ; i+16 <= len(in); i += 16 {
-		x0 := archsimd.LoadFloat32x8(in[i : i+8])
-		x1 := archsimd.LoadFloat32x8(in[i+8 : i+16])
-		x3_0 := x0.Mul(x0).Mul(x0)
-		x3_1 := x1.Mul(x1).Mul(x1)
-		inner0 := geluSqrt2ByPi.Mul(x3_0.MulAdd(geluC, x0))
-		inner1 := geluSqrt2ByPi.Mul(x3_1.MulAdd(geluC, x1))
-		t0 := tanh256(inner0)
-		t1 := tanh256(inner1)
-		res0 := geluHalf.Mul(x0).Mul(geluOne.Add(t0))
-		res1 := geluHalf.Mul(x1).Mul(geluOne.Add(t1))
-		res0.Store(out[i : i+8])
-		res1.Store(out[i+8 : i+16])
+	n := len(in)
+	if n == 0 {
+		return
 	}
-	for ; i+8 <= len(in); i += 8 {
-		x := archsimd.LoadFloat32x8(in[i : i+8])
-		x3 := x.Mul(x).Mul(x)
-		inner := geluSqrt2ByPi.Mul(x3.MulAdd(geluC, x))
-		t := tanh256(inner)
-		res := geluHalf.Mul(x).Mul(geluOne.Add(t))
-		res.Store(out[i : i+8])
+	_ = out[n-1]
+	vecN := n &^ 7
+	if vecN > 0 {
+		geluApproxFloat32AVX2Asm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
 	}
-	if i < len(in) {
-		rem := len(in) - i
+	if vecN < n {
+		rem := n - vecN
 		var bufIn, bufOut [8]float32
-		copy(bufIn[:rem], in[i:])
-		x := archsimd.LoadFloat32x8(bufIn[:])
-		x3 := x.Mul(x).Mul(x)
-		inner := geluSqrt2ByPi.Mul(x3.MulAdd(geluC, x))
-		t := tanh256(inner)
-		res := geluHalf.Mul(x).Mul(geluOne.Add(t))
-		res.Store(bufOut[:])
-		copy(out[i:], bufOut[:rem])
+		copy(bufIn[:rem], in[vecN:])
+		geluApproxFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 8)
+		copy(out[vecN:], bufOut[:rem])
 	}
 }
 
@@ -399,24 +455,21 @@ func erf256(x archsimd.Float32x8) archsimd.Float32x8 {
 }
 
 func GeluExactAVX2(in, out []float32) {
-	i := 0
-	for ; i+8 <= len(in); i += 8 {
-		x := archsimd.LoadFloat32x8(in[i : i+8])
-		scaledX := x.Mul(erfRsqrt2)
-		erfVal := erf256(scaledX)
-		res := erfHalf.Mul(x).Mul(erfOne.Add(erfVal))
-		res.Store(out[i : i+8])
+	n := len(in)
+	if n == 0 {
+		return
 	}
-	if i < len(in) {
-		rem := len(in) - i
+	_ = out[n-1]
+	vecN := n &^ 7
+	if vecN > 0 {
+		geluExactFloat32AVX2Asm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
+	}
+	if vecN < n {
+		rem := n - vecN
 		var bufIn, bufOut [8]float32
-		copy(bufIn[:rem], in[i:])
-		x := archsimd.LoadFloat32x8(bufIn[:])
-		scaledX := x.Mul(erfRsqrt2)
-		erfVal := erf256(scaledX)
-		res := erfHalf.Mul(x).Mul(erfOne.Add(erfVal))
-		res.Store(bufOut[:])
-		copy(out[i:], bufOut[:rem])
+		copy(bufIn[:rem], in[vecN:])
+		geluExactFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 8)
+		copy(out[vecN:], bufOut[:rem])
 	}
 }
 

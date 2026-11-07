@@ -71,9 +71,11 @@ func NewConstantData(backend *Backend, shape shapes.Shape, flat any) (*ConstantD
 // NewAnonymousConstantData creates a ConstantData container without a single backing rawBuffer
 // (isRawBufferPinned = true), used by ops like DotGeneral when an input is a composite constant expression.
 func NewAnonymousConstantData() *ConstantData {
-	return &ConstantData{
+	cd := &ConstantData{
 		isRawBufferPinned: true,
 	}
+	cd.forceCache.Store(true)
+	return cd
 }
 
 // Backend returns the Backend that owns this ConstantData.

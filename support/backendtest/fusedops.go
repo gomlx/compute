@@ -166,6 +166,119 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("LayerNorm with gamma/beta mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("ResidualAddFusion", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
+			const outerSize, normSize = 4, 71
+			epsilon := 1e-5
+			in0 := make([][]float32, outerSize)
+			in1 := make([][]float32, outerSize)
+			sumIn := make([][]float32, outerSize)
+			for r := range outerSize {
+				in0[r] = make([]float32, normSize)
+				in1[r] = make([]float32, normSize)
+				sumIn[r] = make([]float32, normSize)
+				for c := range normSize {
+					in0[r][c] = float32((r*13+c*7)%19 - 9)
+					in1[r][c] = float32((r*5+c*11)%23-11) * 0.5
+					sumIn[r][c] = in0[r][c] + in1[r][c]
+				}
+			}
+			gamma := make([]float32, normSize)
+			beta := make([]float32, normSize)
+			for c := range normSize {
+				gamma[c] = 1.0 + float32(c%5)*0.25
+				beta[c] = float32(c%7-3) * 0.1
+			}
+
+			want, err := testutil.Exec1(b, []any{sumIn, gamma, beta}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{1}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm reference failed: %+v", err)
+			}
+
+			got, err := testutil.Exec1(b, []any{in0, in1, gamma, beta}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{1}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+				t.Errorf("FusedLayerNorm(Add) Float32 mismatch:\n%s", diff)
+			}
+
+			testutil.SkipIfMissingDType(t, b, dtypes.Float64)
+			in0F64 := make([][]float64, outerSize)
+			in1F64 := make([][]float64, outerSize)
+			sumInF64 := make([][]float64, outerSize)
+			for r := range outerSize {
+				in0F64[r] = make([]float64, normSize)
+				in1F64[r] = make([]float64, normSize)
+				sumInF64[r] = make([]float64, normSize)
+				for c := range normSize {
+					in0F64[r][c] = float64(in0[r][c])
+					in1F64[r][c] = float64(in1[r][c])
+					sumInF64[r][c] = in0F64[r][c] + in1F64[r][c]
+				}
+			}
+			gammaF64 := make([]float64, normSize)
+			betaF64 := make([]float64, normSize)
+			for c := range normSize {
+				gammaF64[c] = float64(gamma[c])
+				betaF64[c] = float64(beta[c])
+			}
+			wantF64, err := testutil.Exec1(b, []any{sumInF64, gammaF64, betaF64}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{1}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm Float64 reference failed: %+v", err)
+			}
+			gotF64, err := testutil.Exec1(b, []any{in0F64, in1F64, gammaF64, betaF64}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{1}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) Float64 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantF64, gotF64, 1e-12); !ok {
+				t.Errorf("FusedLayerNorm(Add) Float64 mismatch:\n%s", diff)
+			}
+
+			// Also test non-trailing axis (axes=[0]) to exercise generic fallback path.
+			gamma0 := make([]float32, outerSize)
+			beta0 := make([]float32, outerSize)
+			for r := range outerSize {
+				gamma0[r] = 1.0 + float32(r)*0.25
+				beta0[r] = float32(r-1) * 0.1
+			}
+			wantAxis0, err := testutil.Exec1(b, []any{sumIn, gamma0, beta0}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{0}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm axis 0 reference failed: %+v", err)
+			}
+			gotAxis0, err := testutil.Exec1(b, []any{in0, in1, gamma0, beta0}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{0}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) axis 0 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantAxis0, gotAxis0, 1e-5); !ok {
+				t.Errorf("FusedLayerNorm(Add) axis 0 mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("FusedDense", func(t *testing.T) {
@@ -329,6 +442,101 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 					want2D := [][]float32{tc.want}
 					if ok, diff := testutil.IsInDelta(want2D, got, tc.tolerance); !ok {
 						t.Errorf("FusedDense(%s) result mismatch:\n%s", tc.name, diff)
+					}
+				})
+			}
+		})
+
+		t.Run("LargeMultiPanel", func(t *testing.T) {
+			// M*K*N = 64*128*600 = 4,915,200 >= SmallMatMulSizeThreshold (512,000),
+			// and N=600 spans multiple Nc=512 panels with a non-aligned remainder width.
+			const M, K, N = 64, 128, 600
+			xLarge := make([][]float32, M)
+			for m := range M {
+				xLarge[m] = make([]float32, K)
+				for k := range K {
+					xLarge[m][k] = float32(((m*17+k*31)%29)-14) * 0.05
+				}
+			}
+			wLarge := make([][]float32, K)
+			for k := range K {
+				wLarge[k] = make([]float32, N)
+				for n := range N {
+					wLarge[k][n] = float32(((k*13+n*7)%23)-11) * 0.05
+				}
+			}
+			biasLarge := make([]float32, N)
+			for n := range N {
+				biasLarge[n] = float32((n%19)-9) * 0.1
+			}
+
+			// Compute reference linear output: xLarge * wLarge + biasLarge
+			linearWant := make([][]float64, M)
+			for m := range M {
+				linearWant[m] = make([]float64, N)
+				for n := range N {
+					sum := float64(biasLarge[n])
+					for k := range K {
+						sum += float64(xLarge[m][k]) * float64(wLarge[k][n])
+					}
+					linearWant[m][n] = sum
+				}
+			}
+
+			sqrt2ByPi := math.Sqrt(2.0 / math.Pi)
+			for _, tc := range []struct {
+				name      string
+				actType   compute.ActivationType
+				tolerance float64
+				actFn     func(float64) float32
+			}{
+				{
+					name:      "GeluExact",
+					actType:   compute.ActivationGelu,
+					tolerance: 1e-4,
+					actFn: func(v float64) float32 {
+						return float32(v * 0.5 * (1.0 + math.Erf(v/math.Sqrt2)))
+					},
+				},
+				{
+					name:      "GeluApproximate",
+					actType:   compute.ActivationGeluApproximate,
+					tolerance: 1e-3,
+					actFn: func(v float64) float32 {
+						inner := sqrt2ByPi * (v + 0.044715*v*v*v)
+						return float32(v * 0.5 * (1.0 + math.Tanh(inner)))
+					},
+				},
+				{
+					name:      "Relu",
+					actType:   compute.ActivationRelu,
+					tolerance: 1e-4,
+					actFn: func(v float64) float32 {
+						if v < 0 {
+							return 0
+						}
+						return float32(v)
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					got, err := testutil.Exec1(b, []any{xLarge, wLarge, biasLarge}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
+							Activation: compute.ActivationConfig{Type: tc.actType},
+						})
+					})
+					if err != nil {
+						t.Fatalf("FusedDense LargeMultiPanel(%s) failed: %+v", tc.name, err)
+					}
+					want := make([][]float32, M)
+					for m := range M {
+						want[m] = make([]float32, N)
+						for n := range N {
+							want[m][n] = tc.actFn(linearWant[m][n])
+						}
+					}
+					if ok, diff := testutil.IsInDelta(want, got, tc.tolerance); !ok {
+						t.Errorf("FusedDense LargeMultiPanel(%s) mismatch:\n%s", tc.name, diff)
 					}
 				})
 			}
@@ -830,6 +1038,121 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			if ok, diff := testutil.IsEqual([][][]float32{{{1006}, {1015}}}, gotV); !ok {
 				t.Errorf("Dynamic V mismatch:\n%s", diff)
 			}
+		})
+
+		t.Run("Large", func(t *testing.T) {
+			// Exercise the large-matrix Multi-RHS path (flops >= matmul.SmallMatMulSizeThreshold = 2,097,152)
+			// with non-multiple-of-32 rows, multiple sub-chunks, and both parameter and constant wQKV.
+			const (
+				mRows      = 131
+				inFeatures = 256
+				qDim       = 192
+				kvDim      = 96
+				totalOut   = qDim + 2*kvDim
+			)
+			x := make([][]float32, mRows)
+			for i := range mRows {
+				x[i] = make([]float32, inFeatures)
+				for k := range inFeatures {
+					x[i][k] = float32((i*17+k*31)%29-14) * 0.125
+				}
+			}
+			wQKV := make([][]float32, inFeatures)
+			wQKVFlat := make([]float32, inFeatures*totalOut)
+			for k := range inFeatures {
+				wQKV[k] = make([]float32, totalOut)
+				for j := range totalOut {
+					val := float32((k*13+j*23)%19-9) * 0.0625
+					wQKV[k][j] = val
+					wQKVFlat[k*totalOut+j] = val
+				}
+			}
+			bq := make([]float32, qDim)
+			for j := range qDim {
+				bq[j] = float32(j%11-5) * 0.25
+			}
+			bk := make([]float32, kvDim)
+			bv := make([]float32, kvDim)
+			for j := range kvDim {
+				bk[j] = float32(j%7-3) * 0.5
+				bv[j] = float32(j%13-6) * 0.125
+			}
+
+			wantQ := make([][]float32, mRows)
+			wantK := make([][]float32, mRows)
+			wantV := make([][]float32, mRows)
+			for i := range mRows {
+				wantQ[i] = make([]float32, qDim)
+				for j := range qDim {
+					sum := bq[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][j]
+					}
+					wantQ[i][j] = sum
+				}
+				wantK[i] = make([]float32, kvDim)
+				for j := range kvDim {
+					sum := bk[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][qDim+j]
+					}
+					wantK[i][j] = sum
+				}
+				wantV[i] = make([]float32, kvDim)
+				for j := range kvDim {
+					sum := bv[j]
+					for k := range inFeatures {
+						sum += x[i][k] * wQKV[k][qDim+kvDim+j]
+					}
+					wantV[i][j] = sum
+				}
+			}
+
+			t.Run("ParamWeights", func(t *testing.T) {
+				gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, wQKV, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+					return f.FusedAttentionQKVProjection(params[0], params[1], params[2], params[3], params[4], qDim, kvDim)
+				})
+				if err != nil && compute.IsNotImplemented(err) {
+					t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+				}
+				if err != nil {
+					t.Fatalf("Large QKV Projection (param weights) failed: %+v", err)
+				}
+				if ok, diff := testutil.IsInDelta(wantQ, gotQ, 1e-4); !ok {
+					t.Errorf("Large Q mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantK, gotK, 1e-4); !ok {
+					t.Errorf("Large K mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantV, gotV, 1e-4); !ok {
+					t.Errorf("Large V mismatch:\n%s", diff)
+				}
+			})
+
+			t.Run("ConstWeights", func(t *testing.T) {
+				gotQ, gotK, gotV, err := testutil.Exec3(b, []any{x, bq, bk, bv}, func(f compute.Function, params []compute.Value) (compute.Value, compute.Value, compute.Value, error) {
+					wConst, err := f.Constant(wQKVFlat, inFeatures, totalOut)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					return f.FusedAttentionQKVProjection(params[0], wConst, params[1], params[2], params[3], qDim, kvDim)
+				})
+				if err != nil && compute.IsNotImplemented(err) {
+					t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+				}
+				if err != nil {
+					t.Fatalf("Large QKV Projection (const weights) failed: %+v", err)
+				}
+				if ok, diff := testutil.IsInDelta(wantQ, gotQ, 1e-4); !ok {
+					t.Errorf("Large ConstWeights Q mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantK, gotK, 1e-4); !ok {
+					t.Errorf("Large ConstWeights K mismatch:\n%s", diff)
+				}
+				if ok, diff := testutil.IsInDelta(wantV, gotV, 1e-4); !ok {
+					t.Errorf("Large ConstWeights V mismatch:\n%s", diff)
+				}
+			})
 		})
 	})
 }

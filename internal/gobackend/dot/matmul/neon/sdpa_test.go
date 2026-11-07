@@ -24,6 +24,14 @@ func sdpaScalarReference(
 	qLimit, kvLimit int,
 ) {
 	scores := make([]float32, max(kvLen, 1))
+	maskSeqStride := kvLen
+	if maskLen := max(len(additiveMask), len(booleanMask)); maskLen == 0 || maskGroupStride == kvLen || (maskGroupStride == 0 && maskLen == kvLen) {
+		maskSeqStride = 0
+	}
+	biasSeqStride := kvLen
+	if len(additiveBias) == 0 || biasGroupStride == kvLen || (biasGroupStride == 0 && len(additiveBias) == kvLen) {
+		biasSeqStride = 0
+	}
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -46,8 +54,8 @@ func sdpaScalarReference(
 			rowMax := float32(math.Inf(-1))
 			qBase := gQOff + qIdx*qSeqStride
 			qRow := q[qBase : qBase+headDim]
-			maskIdxBase := gMaskOff + qIdx*kvLen
-			biasIdxBase := gBiasOff + qIdx*kvLen
+			maskIdxBase := gMaskOff + qIdx*maskSeqStride
+			biasIdxBase := gBiasOff + qIdx*biasSeqStride
 
 			activeKVLen := kvLenUnmasked
 			if len(booleanMask) > 0 {
@@ -209,6 +217,48 @@ func TestDispatchSDPAARM64_AllPaths(t *testing.T) {
 					if diff > 1e-4 {
 						t.Fatalf("headDim=%d causal=%v bshd=%v mismatch at index %d: got %f, want %f (diff=%g)",
 							headDim, causal, bshd, i, got[i], want[i], diff)
+					}
+				}
+
+				// Also test query-seq broadcasted mask/bias (mSeqDim == 1, length == kvLen per head or shared).
+				for _, perHeadMask := range []bool{false, true} {
+					bcastMaskLen := kvLen
+					bcastMaskGroupStride := 0
+					if perHeadMask {
+						bcastMaskLen = groupSize * kvLen
+						bcastMaskGroupStride = kvLen
+					}
+					bcastMask := additiveMask[:bcastMaskLen]
+					bcastBias := additiveBias[:bcastMaskLen]
+					clear(got)
+					clear(want)
+					if !DispatchSDPAARM64(
+						q, k, v, got,
+						0, 0, qSeqStride, kvSeqStride, qGroupStride,
+						bcastMask, nil, bcastMaskGroupStride,
+						bcastBias, bcastMaskGroupStride,
+						scratch,
+						groupSize, 0, seqLen, kvLen, headDim,
+						scale, causal,
+						qLimit, kvLimit,
+					) {
+						t.Fatalf("DispatchSDPAARM64 returned false for broadcast mask")
+					}
+					sdpaScalarReference(
+						q, k, v, want,
+						0, 0, qSeqStride, kvSeqStride, qGroupStride,
+						bcastMask, nil, bcastMaskGroupStride,
+						bcastBias, bcastMaskGroupStride,
+						groupSize, 0, seqLen, kvLen, headDim,
+						scale, causal,
+						qLimit, kvLimit,
+					)
+					for i := range want {
+						diff := float32(math.Abs(float64(got[i] - want[i])))
+						if diff > 1e-4 {
+							t.Fatalf("bcastMask perHead=%v headDim=%d causal=%v bshd=%v mismatch at index %d: got %f, want %f (diff=%g)",
+								perHeadMask, headDim, causal, bshd, i, got[i], want[i], diff)
+						}
 					}
 				}
 			}

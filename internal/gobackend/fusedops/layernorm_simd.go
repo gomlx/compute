@@ -21,7 +21,7 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeFusedLayerNorm, PrioritySIMD, execFusedLayerNormSIMD)
 }
 
-func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
 	dtype := input.RawShape.DType
@@ -61,25 +61,48 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		}
 	}
 
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
+	paramInputs := inputs
+	var residual *gobackend.Buffer
+	resInputIdx := -1
+	if data.hasResidual && len(inputs) > 1 {
+		resInputIdx = len(inputs) - 1
+		residual = inputs[resInputIdx]
+		paramInputs = inputs[:resInputIdx]
+	}
+
+	var output *gobackend.Buffer
+	var err error
+	if len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+		output = input
+		inputs[0] = nil
+	} else if resInputIdx >= 0 && len(inputsOwned) > resInputIdx && inputsOwned[resInputIdx] && residual.RawShape.Equal(node.Shape) {
+		output = residual
+		inputs[resInputIdx] = nil
+	} else {
+		output, err = backend.GetBuffer(node.Shape)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if backend.NoOps {
 		return output, nil
 	}
 
 	var gamma, beta *gobackend.Buffer
-	if len(inputs) > 1 {
-		gamma = inputs[1]
+	if len(paramInputs) > 1 {
+		gamma = paramInputs[1]
 	}
-	if len(inputs) > 2 {
-		beta = inputs[2]
+	if len(paramInputs) > 2 {
+		beta = paramInputs[2]
 	}
 
 	if isMiddleContiguous {
 		inData := input.Flat.([]float32)
 		outData := output.Flat.([]float32)
+		var resData []float32
+		if residual != nil {
+			resData = residual.Flat.([]float32)
+		}
 		var gData, bData []float32
 		if gamma != nil {
 			gData = gamma.Flat.([]float32)
@@ -94,16 +117,31 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 			backend.Scheduler.ParallelizeChunks(aDim, minA, func(aStart, aEnd int) {
 				inSlice := inData[aStart*sliceSize : aEnd*sliceSize]
 				outSlice := outData[aStart*sliceSize : aEnd*sliceSize]
+				if resData != nil {
+					resSlice := resData[aStart*sliceSize : aEnd*sliceSize]
+					for i := range outSlice {
+						outSlice[i] = inSlice[i] + resSlice[i]
+					}
+					inSlice = outSlice
+				}
 				simdLayerNormMiddleAxesFloat32(inSlice, outSlice, gData, bData, aEnd-aStart, bDim, cDim, data.epsilon)
 			})
 		} else {
-			simdLayerNormMiddleAxesFloat32(inData, outData, gData, bData, aDim, bDim, cDim, data.epsilon)
+			srcSlice := inData
+			if resData != nil {
+				for i := range outData {
+					outData[i] = inData[i] + resData[i]
+				}
+				srcSlice = outData
+			}
+			simdLayerNormMiddleAxesFloat32(srcSlice, outData, gData, bData, aDim, bDim, cDim, data.epsilon)
 		}
 		return output, nil
 	}
 
 	outerSize := input.RawShape.Size() / normSize
 	archFn := gobackend.GetLayerNormTrailingArchDispatcher()
+	resArchFn := gobackend.GetLayerNormResidualTrailingArchDispatcher()
 	var gPtr, bPtr unsafe.Pointer
 	if gamma != nil {
 		gPtr = gamma.UnsafePointer()
@@ -116,15 +154,24 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
 		inPtr := input.UnsafePointer()
 		outPtr := output.UnsafePointer()
+		var resPtr unsafe.Pointer
+		if residual != nil {
+			resPtr = residual.UnsafePointer()
+		}
 		elemSize := dtype.Size()
 
 		minOuter := max(1, 16384/max(1, normSize))
 		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, func(rStart, rEnd int) {
 			chunkOuter := rEnd - rStart
 			rowOffset := rStart * normSize
-			if archFn != nil {
-				chunkIn := unsafe.Pointer(uintptr(inPtr) + uintptr(rowOffset*elemSize))
-				chunkOut := unsafe.Pointer(uintptr(outPtr) + uintptr(rowOffset*elemSize))
+			chunkIn := unsafe.Pointer(uintptr(inPtr) + uintptr(rowOffset*elemSize))
+			chunkOut := unsafe.Pointer(uintptr(outPtr) + uintptr(rowOffset*elemSize))
+			if resPtr != nil {
+				chunkRes := unsafe.Pointer(uintptr(resPtr) + uintptr(rowOffset*elemSize))
+				if resArchFn != nil && resArchFn(chunkIn, chunkRes, chunkOut, gPtr, bPtr, chunkOuter, normSize, data.epsilon, dtype) {
+					return
+				}
+			} else if archFn != nil {
 				if archFn(chunkIn, chunkOut, gPtr, bPtr, chunkOuter, normSize, data.epsilon, dtype) {
 					return
 				}
@@ -141,6 +188,13 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 				}
 				inSlice := input.Flat.([]float32)[rowOffset : rowOffset+chunkOuter*normSize]
 				outSlice := output.Flat.([]float32)[rowOffset : rowOffset+chunkOuter*normSize]
+				if residual != nil {
+					resSlice := residual.Flat.([]float32)[rowOffset : rowOffset+chunkOuter*normSize]
+					for i := range outSlice {
+						outSlice[i] = inSlice[i] + resSlice[i]
+					}
+					inSlice = outSlice
+				}
 				simdLayerNormTrailingAxesFloat32(inSlice, outSlice, gData, bData, normSize, data.epsilon)
 			case dtypes.Float64:
 				var gData, bData []float64
@@ -152,13 +206,24 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 				}
 				inSlice := input.Flat.([]float64)[rowOffset : rowOffset+chunkOuter*normSize]
 				outSlice := output.Flat.([]float64)[rowOffset : rowOffset+chunkOuter*normSize]
+				if residual != nil {
+					resSlice := residual.Flat.([]float64)[rowOffset : rowOffset+chunkOuter*normSize]
+					for i := range outSlice {
+						outSlice[i] = inSlice[i] + resSlice[i]
+					}
+					inSlice = outSlice
+				}
 				simdLayerNormTrailingAxesFloat64(inSlice, outSlice, gData, bData, normSize, data.epsilon)
 			}
 		})
 		return output, nil
 	}
 
-	if archFn != nil {
+	if residual != nil {
+		if resArchFn != nil && resArchFn(input.UnsafePointer(), residual.UnsafePointer(), output.UnsafePointer(), gPtr, bPtr, outerSize, normSize, data.epsilon, dtype) {
+			return output, nil
+		}
+	} else if archFn != nil {
 		if archFn(input.UnsafePointer(), output.UnsafePointer(), gPtr, bPtr, outerSize, normSize, data.epsilon, dtype) {
 			return output, nil
 		}
@@ -173,7 +238,16 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		if beta != nil {
 			betaData = beta.Flat.([]float32)
 		}
-		simdLayerNormTrailingAxesFloat32(input.Flat.([]float32), output.Flat.([]float32), gammaData, betaData, normSize, data.epsilon)
+		inSlice := input.Flat.([]float32)
+		outSlice := output.Flat.([]float32)
+		if residual != nil {
+			resSlice := residual.Flat.([]float32)
+			for i := range outSlice {
+				outSlice[i] = inSlice[i] + resSlice[i]
+			}
+			inSlice = outSlice
+		}
+		simdLayerNormTrailingAxesFloat32(inSlice, outSlice, gammaData, betaData, normSize, data.epsilon)
 	case dtypes.Float64:
 		var gammaData, betaData []float64
 		if gamma != nil {
@@ -182,7 +256,16 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		if beta != nil {
 			betaData = beta.Flat.([]float64)
 		}
-		simdLayerNormTrailingAxesFloat64(input.Flat.([]float64), output.Flat.([]float64), gammaData, betaData, normSize, data.epsilon)
+		inSlice := input.Flat.([]float64)
+		outSlice := output.Flat.([]float64)
+		if residual != nil {
+			resSlice := residual.Flat.([]float64)
+			for i := range outSlice {
+				outSlice[i] = inSlice[i] + resSlice[i]
+			}
+			inSlice = outSlice
+		}
+		simdLayerNormTrailingAxesFloat64(inSlice, outSlice, gammaData, betaData, normSize, data.epsilon)
 	default:
 		return nil, gobackend.ErrFallback
 	}
