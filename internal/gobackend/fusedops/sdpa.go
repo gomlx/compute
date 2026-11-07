@@ -984,7 +984,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
 	}
 	totalTasks := headTasks * numQBlocks
-	scratchSize := max(32*kvLen, 1)
+	scratchSize := max(32*kvLen+16, 64)
 	scratchShape := shapes.Make(query.RawShape.DType, scratchSize)
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {

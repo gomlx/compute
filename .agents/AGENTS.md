@@ -549,17 +549,17 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
 
 ### 4. In-Cache Reductions & Register Accumulation
 - **Never Materialize Intermediate Full Matrices**: Materializing $S_q \times S_{kv}$ attention logit matrices in DRAM creates severe memory-bandwidth bottlenecks for sequence lengths $S \ge 512$.
-- **Per-Worker Scratch Buffers**: Allocate a small scratch slice ($S_{kv}$ floats) per worker (or reuse a buffer across rows).
+- **Per-Worker Scratch Buffers**: Allocate a small scratch slice ($S_{kv} + 16$ floats) per worker (or reuse a buffer across rows).
 - **Fused Math in Vector Registers**:
-  - Immediately fold scale factors, additive masks, and attention bias into vector registers during the dot product ($Q_q \cdot K_k$).
-  - For causal masking, immediately short-circuit keys where $k > q$.
-  - Evaluate softmax normalizations using vectorized polynomial approximations (e.g. degree-7 Cephes `exp512` / `exp256`).
-  - Accumulate the weighted value vectors ($P \cdot V$) directly into vector accumulators and store directly into the destination buffer.
+  - Pre-scale the query vectors ($Q_q \leftarrow Q_q \times \text{scale}$) once outside the inner key loop ($K_k$), or fold scale factors, additive masks, and attention bias into vector registers during the dot product ($Q_q \cdot K_k$).
+  - **4-Key Unrolled Dot Product & 4-Way Horizontal Reduction**: Instead of reducing each key's dot product to a scalar individually (`reduceSum16` / `reduceSum8`), process 4 keys per iteration and reduce 4 vectors simultaneously into a single 4-lane `XMM` vector (`[s0, s1, s2, s3]`) via `VUNPCKLPS`/`VUNPCKHPS` + `VSHUFPS`, storing 4 scores with one `VMOVUPS` and updating a 4-lane running max with `VMAXPS`.
+  - **Zero Scalar `exp` Tail via `-Inf` Tail Padding**: When `kvLenUnmasked` is not a multiple of the SIMD width (e.g. dynamic non-padded sentence lengths `kvLimit` or causal masks), pad the remaining `1..15` (AVX-512) or `1..7` (AVX2) elements of `scoresScratch` at `scoresScratch[kvLenUnmasked]` with `-Inf`, then evaluate the vectorized Estrin degree-7 polynomial + magic-number `exp512` / `exp256` over `ceil(kvLenUnmasked, VL)`. Because `-Inf - rowMax` clamps to `minLog = -88.0296936` ($n = -127 \implies (n+127) \ll 23 = 0.0\text{f}$), padded lanes evaluate to exact `0.0f` with zero scalar `fastmath.Exp32` calls.
+  - **Deferred `invSum` Output Scaling & Multi-Accumulator `P @ V`**: Skip the second memory pass over `scoresScratch` (`scoresScratch[k] *= invSum`); instead, issue `1.0 / sum` (`VDIVSS`) before Stage 3 to hide division latency, accumulate unnormalized weights $P \cdot V$ across 4–8 independent vector accumulators (`Z0`–`Z7` or `Y0`–`Y7`) using non-destructive `VFMADD231PS` to hide 4-cycle FMA pipeline latency, and multiply the final output accumulators by `invSum` once before storing.
 
 ### 5. Head Dimension Specialization ($D \in \{32, 64, 128\}$)
 - When the inner reduction loop over dimension $D$ has a dynamic or variable upper bound, compilers and SIMD abstractions cannot unroll completely and must maintain loop counters and boundary checks.
 - Generating specialized fast paths for standard power-of-two head dimensions ($D=32, 64, 128$):
-  - On AVX-512 (`Float32x16`): $D=32$ unrolls into exactly 2 vector registers, $D=64$ into 4 vectors, $D=128$ into 8 vectors.
-  - On AVX2 (`Float32x8`): $D=32$ unrolls into 4 vector registers, $D=64$ into 8 vectors, $D=128$ into 16 vectors.
+  - On AVX-512 (`Float32x16`): $D=32$ unrolls into exactly 2 vector registers (implemented in handwritten assembly `sdpaQueriesDim32NoMaskAVX512Asm` and `sdpaSoftmaxAndValueAccumDim32AVX512Asm` in `internal/gobackend/fusedops/avx512/sdpa_amd64.s`), $D=64$ into 4 vectors, $D=128$ into 8 vectors.
+  - On AVX2 (`Float32x8`): $D=32$ unrolls into 4 vector registers (implemented in handwritten assembly `sdpaQueriesDim32NoMaskAVX2Asm` and `sdpaSoftmaxAndValueAccumDim32AVX2Asm` in `internal/gobackend/fusedops/avx2/sdpa_amd64.s`), $D=64$ into 8 vectors, $D=128$ into 16 vectors.
   - Completely unrolling the inner dimension eliminates loop overhead and allows optimal compiler/assembler instruction scheduling across FMA execution ports.
 
