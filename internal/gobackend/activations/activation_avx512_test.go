@@ -92,3 +92,65 @@ func TestGeluAVX512Float32(t *testing.T) {
 		}
 	}
 }
+
+func TestGeluBiasTileAVX512Float32(t *testing.T) {
+	if !gobackend.IsAVX512Allowed {
+		t.Skip("AVX-512 is not supported or allowed on this host")
+	}
+
+	widths := []int{1, 3, 7, 15, 16, 17, 31, 32, 47, 64, 515}
+	const numRows = 5
+	sqrt2ByPi := math.Sqrt(2.0 / math.Pi)
+
+	for _, width := range widths {
+		rowStride := width + 13 // non-contiguous stride to verify rowStride handling and guard zones
+		totalLen := numRows * rowStride
+		base := make([]float32, totalLen)
+		for i := range base {
+			base[i] = float32((i%41)-20) * 0.3
+		}
+		bias := make([]float32, width)
+		for c := range width {
+			bias[c] = float32(c-width/2) * 0.15
+		}
+
+		// Test Exact
+		outExact := make([]float32, totalLen)
+		copy(outExact, base)
+		avx512.GeluExactBiasTileAVX512(outExact, rowStride, numRows, width, bias)
+		for r := range numRows {
+			for c := range rowStride {
+				idx := r*rowStride + c
+				if c < width {
+					xf := float64(base[idx] + bias[c])
+					want := float32(xf * 0.5 * (1.0 + math.Erf(xf/math.Sqrt2)))
+					if ok, diff := testutil.IsInDelta(want, outExact[idx], 1e-4); !ok {
+						t.Fatalf("width=%d row=%d col=%d GeluExactBiasTileAVX512 mismatch: %s", width, r, c, diff)
+					}
+				} else if outExact[idx] != base[idx] {
+					t.Fatalf("width=%d row=%d col=%d guard zone overwritten: got %v, want %v", width, r, c, outExact[idx], base[idx])
+				}
+			}
+		}
+
+		// Test Approx
+		outApprox := make([]float32, totalLen)
+		copy(outApprox, base)
+		avx512.GeluApproxBiasTileAVX512(outApprox, rowStride, numRows, width, bias)
+		for r := range numRows {
+			for c := range rowStride {
+				idx := r*rowStride + c
+				if c < width {
+					xf := float64(base[idx] + bias[c])
+					inner := sqrt2ByPi * (xf + 0.044715*xf*xf*xf)
+					want := float32(xf * 0.5 * (1.0 + math.Tanh(inner)))
+					if ok, diff := testutil.IsInDelta(want, outApprox[idx], 1e-4); !ok {
+						t.Fatalf("width=%d row=%d col=%d GeluApproxBiasTileAVX512 mismatch: %s", width, r, c, diff)
+					}
+				} else if outApprox[idx] != base[idx] {
+					t.Fatalf("width=%d row=%d col=%d guard zone overwritten: got %v, want %v", width, r, c, outApprox[idx], base[idx])
+				}
+			}
+		}
+	}
+}

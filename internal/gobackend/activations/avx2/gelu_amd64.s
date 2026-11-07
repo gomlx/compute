@@ -624,3 +624,392 @@ gelu_approx_avx2_vec8_check:
 gelu_approx_avx2_done:
 	VZEROUPPER
 	RET
+
+// ===========================================================================
+// geluExactBiasTileFloat32AVX2Asm: Fused Bias + Exact GELU 2D tile for float32
+//   Applies out[r*rowStrideBytes + c] = GeluExact(out[r*rowStrideBytes + c] + bias[c])
+//   for r in [0, numRows) and c in [0, width).
+//   width must be a positive multiple of 8.
+// ===========================================================================
+// func geluExactBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+TEXT ·geluExactBiasTileFloat32AVX2Asm(SB), NOSPLIT, $0-40
+	MOVQ out+0(FP), R8
+	MOVQ bias+8(FP), R9
+	MOVQ rowStrideBytes+16(FP), R10
+	MOVQ numRows+24(FP), R11
+	MOVQ width+32(FP), R12
+
+	CMPQ R11, $0
+	JLE gelu_exact_bias_avx2_done
+	CMPQ R12, $8
+	JL gelu_exact_bias_avx2_done
+
+	LEAQ ·geluAVX2Consts(SB), CX
+	VMOVUPS 160(CX), Y14 // Y14: vHalf / vP2 = 0.5
+	VMOVUPS 192(CX), Y15 // Y15: vOne / vBias127 = 1.0
+
+gelu_exact_bias_avx2_row_loop:
+	MOVQ R8, DI
+	MOVQ R9, SI
+	MOVQ R12, DX
+
+	CMPQ DX, $16
+	JL gelu_exact_bias_avx2_vec8_check
+
+gelu_exact_bias_avx2_loop16:
+	VMOVUPS 0(DI), Y0
+	VMOVUPS 32(DI), Y1
+	VADDPS 0(SI), Y0, Y0
+	VADDPS 32(SI), Y1, Y1
+
+	// x = v * rsqrt2, absX = |x|
+	VMULPS 224(CX), Y0, Y2
+	VMULPS 224(CX), Y1, Y3
+	VPAND 800(CX), Y2, Y2
+	VPAND 800(CX), Y3, Y3
+
+	// Issue t = 1.0 / (1.0 + p * absX) early so VDIVPS overlaps with exp(-x^2):
+	VMOVAPS Y15, Y4
+	VMOVAPS Y15, Y5
+	VFMADD231PS 288(CX), Y2, Y4
+	VFMADD231PS 288(CX), Y3, Y5
+	VDIVPS Y4, Y15, Y4
+	VDIVPS Y5, Y15, Y5
+
+	// negX2 = max(-(absX * absX), vMinLog)
+	VMULPS Y2, Y2, Y6
+	VMULPS Y3, Y3, Y7
+	VXORPS 256(CX), Y6, Y6
+	VXORPS 256(CX), Y7, Y7
+	VMAXPS 480(CX), Y6, Y6
+	VMAXPS 480(CX), Y7, Y7
+
+	// zRound = xClamped * log2e + magic, zFloor = zRound - magic
+	VMOVUPS 544(CX), Y12
+	VMOVAPS Y12, Y8
+	VMOVAPS Y12, Y9
+	VFMADD231PS 512(CX), Y6, Y8
+	VFMADD231PS 512(CX), Y7, Y9
+	VSUBPS Y12, Y8, Y10
+	VSUBPS Y12, Y9, Y11
+
+	// g = xClamped - zFloor * ln2Hi - zFloor * ln2Lo
+	VFNMADD231PS 576(CX), Y10, Y6
+	VFNMADD231PS 576(CX), Y11, Y7
+	VFNMADD231PS 608(CX), Y10, Y6
+	VFNMADD231PS 608(CX), Y11, Y7
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Y8, Y8
+	VPSLLD $23, Y9, Y9
+	VPADDD Y15, Y8, Y8
+	VPADDD Y15, Y9, Y9
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMULPS Y6, Y6, Y2
+	VMULPS Y7, Y7, Y3
+	VMOVUPS 32(CX), Y10
+	VMOVAPS Y10, Y11
+	VFMADD231PS 0(CX), Y6, Y10
+	VFMADD231PS 0(CX), Y7, Y11
+	VMOVUPS 96(CX), Y12
+	VMOVAPS Y12, Y13
+	VFMADD231PS 64(CX), Y6, Y12
+	VFMADD231PS 64(CX), Y7, Y13
+	VFMADD231PS Y2, Y10, Y12
+	VFMADD231PS Y3, Y11, Y13
+
+	VMOVAPS Y14, Y10
+	VMOVAPS Y14, Y11
+	VFMADD231PS 128(CX), Y6, Y10
+	VFMADD231PS 128(CX), Y7, Y11
+	VADDPS Y15, Y6, Y6
+	VADDPS Y15, Y7, Y7
+	VFMADD231PS Y2, Y10, Y6
+	VFMADD231PS Y3, Y11, Y7
+
+	VMULPS Y2, Y2, Y2
+	VMULPS Y3, Y3, Y3
+	VFMADD231PS Y2, Y12, Y6
+	VFMADD231PS Y3, Y13, Y7
+	VMULPS Y8, Y6, Y8
+	VMULPS Y9, Y7, Y9
+
+	// Estrin's scheme for erfPoly(t) using Y4 (tA) and Y5 (tB):
+	VMULPS Y4, Y4, Y2
+	VMULPS Y5, Y5, Y3
+	VMOVUPS 416(CX), Y10
+	VMOVAPS Y10, Y11
+	VFMADD231PS 448(CX), Y4, Y10
+	VFMADD231PS 448(CX), Y5, Y11
+	VMOVUPS 352(CX), Y12
+	VMOVAPS Y12, Y13
+	VFMADD231PS 384(CX), Y4, Y12
+	VFMADD231PS 384(CX), Y5, Y13
+	VFMADD231PS Y2, Y10, Y12
+	VFMADD231PS Y3, Y11, Y13
+	VFMADD213PS 320(CX), Y4, Y12
+	VFMADD213PS 320(CX), Y5, Y13
+	VMULPS Y4, Y12, Y12
+	VMULPS Y5, Y13, Y13
+
+	// res = 1.0 - erfPoly * expNegX2
+	VMOVAPS Y15, Y6
+	VMOVAPS Y15, Y7
+	VFNMADD231PS Y12, Y8, Y6
+	VFNMADD231PS Y13, Y9, Y7
+
+	// Restore sign of v and compute 0.5 * v * (1.0 + erfVal)
+	VPAND 256(CX), Y0, Y2
+	VPAND 256(CX), Y1, Y3
+	VXORPS Y2, Y6, Y6
+	VXORPS Y3, Y7, Y7
+	VADDPS Y15, Y6, Y6
+	VADDPS Y15, Y7, Y7
+	VMULPS Y14, Y0, Y0
+	VMULPS Y14, Y1, Y1
+	VMULPS Y6, Y0, Y0
+	VMULPS Y7, Y1, Y1
+
+	VMOVUPS Y0, 0(DI)
+	VMOVUPS Y1, 32(DI)
+
+	ADDQ $64, SI
+	ADDQ $64, DI
+	SUBQ $16, DX
+	CMPQ DX, $16
+	JGE gelu_exact_bias_avx2_loop16
+
+gelu_exact_bias_avx2_vec8_check:
+	CMPQ DX, $8
+	JL gelu_exact_bias_avx2_next_row
+
+	VMOVUPS 0(DI), Y0
+	VADDPS 0(SI), Y0, Y0
+	VMULPS 224(CX), Y0, Y2
+	VPAND 800(CX), Y2, Y2
+	VMOVAPS Y15, Y4
+	VFMADD231PS 288(CX), Y2, Y4
+	VDIVPS Y4, Y15, Y4
+	VMULPS Y2, Y2, Y6
+	VXORPS 256(CX), Y6, Y6
+	VMAXPS 480(CX), Y6, Y6
+	VMOVUPS 544(CX), Y8
+	VFMADD231PS 512(CX), Y6, Y8
+	VSUBPS 544(CX), Y8, Y10
+	VFNMADD231PS 576(CX), Y10, Y6
+	VFNMADD231PS 608(CX), Y10, Y6
+	VPSLLD $23, Y8, Y8
+	VPADDD Y15, Y8, Y8
+	VMULPS Y6, Y6, Y2
+	VMOVUPS 32(CX), Y10
+	VFMADD231PS 0(CX), Y6, Y10
+	VMOVUPS 96(CX), Y12
+	VFMADD231PS 64(CX), Y6, Y12
+	VFMADD231PS Y2, Y10, Y12
+	VMOVAPS Y14, Y10
+	VFMADD231PS 128(CX), Y6, Y10
+	VADDPS Y15, Y6, Y6
+	VFMADD231PS Y2, Y10, Y6
+	VMULPS Y2, Y2, Y2
+	VFMADD231PS Y2, Y12, Y6
+	VMULPS Y8, Y6, Y8
+	VMULPS Y4, Y4, Y2
+	VMOVUPS 416(CX), Y10
+	VFMADD231PS 448(CX), Y4, Y10
+	VMOVUPS 352(CX), Y12
+	VFMADD231PS 384(CX), Y4, Y12
+	VFMADD231PS Y2, Y10, Y12
+	VFMADD213PS 320(CX), Y4, Y12
+	VMULPS Y4, Y12, Y12
+	VMOVAPS Y15, Y6
+	VFNMADD231PS Y12, Y8, Y6
+	VPAND 256(CX), Y0, Y2
+	VXORPS Y2, Y6, Y6
+	VADDPS Y15, Y6, Y6
+	VMULPS Y14, Y0, Y0
+	VMULPS Y6, Y0, Y0
+	VMOVUPS Y0, 0(DI)
+
+gelu_exact_bias_avx2_next_row:
+	ADDQ R10, R8
+	DECQ R11
+	JNZ gelu_exact_bias_avx2_row_loop
+
+gelu_exact_bias_avx2_done:
+	VZEROUPPER
+	RET
+
+// ===========================================================================
+// geluApproxBiasTileFloat32AVX2Asm: Fused Bias + Approx GELU 2D tile for float32
+//   Applies out[r*rowStrideBytes + c] = GeluApprox(out[r*rowStrideBytes + c] + bias[c])
+//   for r in [0, numRows) and c in [0, width).
+//   width must be a positive multiple of 8.
+// ===========================================================================
+// func geluApproxBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+TEXT ·geluApproxBiasTileFloat32AVX2Asm(SB), NOSPLIT, $0-40
+	MOVQ out+0(FP), R8
+	MOVQ bias+8(FP), R9
+	MOVQ rowStrideBytes+16(FP), R10
+	MOVQ numRows+24(FP), R11
+	MOVQ width+32(FP), R12
+
+	CMPQ R11, $0
+	JLE gelu_approx_bias_avx2_done
+	CMPQ R12, $8
+	JL gelu_approx_bias_avx2_done
+
+	LEAQ ·geluAVX2Consts(SB), CX
+	VMOVUPS 160(CX), Y14 // Y14: vHalf / vP2 = 0.5
+	VMOVUPS 192(CX), Y15 // Y15: vOne / vBias127 = 1.0
+
+gelu_approx_bias_avx2_row_loop:
+	MOVQ R8, DI
+	MOVQ R9, SI
+	MOVQ R12, DX
+
+	CMPQ DX, $16
+	JL gelu_approx_bias_avx2_vec8_check
+
+gelu_approx_bias_avx2_loop16:
+	VMOVUPS 0(DI), Y0
+	VMOVUPS 32(DI), Y1
+	VADDPS 0(SI), Y0, Y0
+	VADDPS 32(SI), Y1, Y1
+
+	// x3 = v * v * v
+	VMULPS Y0, Y0, Y2
+	VMULPS Y1, Y1, Y3
+	VMULPS Y0, Y2, Y2
+	VMULPS Y1, Y3, Y3
+
+	// inner = vSqrt2OverPi * (v + vCoeff * x3)
+	VMOVAPS Y0, Y4
+	VMOVAPS Y1, Y5
+	VFMADD231PS 768(CX), Y2, Y4
+	VFMADD231PS 768(CX), Y3, Y5
+	VMULPS 736(CX), Y4, Y4
+	VMULPS 736(CX), Y5, Y5
+
+	// Clamp inner to [-9.0, 9.0] and multiply by 2.0
+	VMINPS 672(CX), Y4, Y4
+	VMINPS 672(CX), Y5, Y5
+	VMAXPS 704(CX), Y4, Y4
+	VMAXPS 704(CX), Y5, Y5
+	VMULPS 640(CX), Y4, Y4
+	VMULPS 640(CX), Y5, Y5
+
+	// Range reduction: zRound = twoX * log2e + magic, zFloor = zRound - magic
+	VMOVUPS 544(CX), Y12
+	VMOVAPS Y12, Y6
+	VMOVAPS Y12, Y7
+	VFMADD231PS 512(CX), Y4, Y6
+	VFMADD231PS 512(CX), Y5, Y7
+	VSUBPS Y12, Y6, Y8
+	VSUBPS Y12, Y7, Y9
+
+	// g = twoX - zFloor * ln2Hi - zFloor * ln2Lo
+	VFNMADD231PS 576(CX), Y8, Y4
+	VFNMADD231PS 576(CX), Y9, Y5
+	VFNMADD231PS 608(CX), Y8, Y4
+	VFNMADD231PS 608(CX), Y9, Y5
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Y6, Y6
+	VPSLLD $23, Y7, Y7
+	VPADDD Y15, Y6, Y6
+	VPADDD Y15, Y7, Y7
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMULPS Y4, Y4, Y2
+	VMULPS Y5, Y5, Y3
+	VMOVUPS 32(CX), Y8
+	VMOVAPS Y8, Y9
+	VFMADD231PS 0(CX), Y4, Y8
+	VFMADD231PS 0(CX), Y5, Y9
+	VMOVUPS 96(CX), Y10
+	VMOVAPS Y10, Y11
+	VFMADD231PS 64(CX), Y4, Y10
+	VFMADD231PS 64(CX), Y5, Y11
+	VMOVAPS Y14, Y12
+	VMOVAPS Y14, Y13
+	VFMADD231PS 128(CX), Y4, Y12
+	VFMADD231PS 128(CX), Y5, Y13
+	VADDPS Y15, Y4, Y4
+	VADDPS Y15, Y5, Y5
+	VFMADD231PS Y2, Y8, Y10
+	VFMADD231PS Y3, Y9, Y11
+	VFMADD231PS Y2, Y12, Y4
+	VFMADD231PS Y3, Y13, Y5
+	VMULPS Y2, Y2, Y2
+	VMULPS Y3, Y3, Y3
+	VFMADD231PS Y2, Y10, Y4
+	VFMADD231PS Y3, Y11, Y5
+	VMULPS Y6, Y4, Y6
+	VMULPS Y7, Y5, Y7
+
+	// out = (v * exp2x) / (exp2x + 1.0)
+	VADDPS Y15, Y6, Y8
+	VADDPS Y15, Y7, Y9
+	VMULPS Y6, Y0, Y0
+	VMULPS Y7, Y1, Y1
+	VDIVPS Y8, Y0, Y0
+	VDIVPS Y9, Y1, Y1
+
+	VMOVUPS Y0, 0(DI)
+	VMOVUPS Y1, 32(DI)
+
+	ADDQ $64, SI
+	ADDQ $64, DI
+	SUBQ $16, DX
+	CMPQ DX, $16
+	JGE gelu_approx_bias_avx2_loop16
+
+gelu_approx_bias_avx2_vec8_check:
+	CMPQ DX, $8
+	JL gelu_approx_bias_avx2_next_row
+
+	VMOVUPS 0(DI), Y0
+	VADDPS 0(SI), Y0, Y0
+	VMULPS Y0, Y0, Y2
+	VMULPS Y0, Y2, Y2
+	VMOVAPS Y0, Y4
+	VFMADD231PS 768(CX), Y2, Y4
+	VMULPS 736(CX), Y4, Y4
+	VMINPS 672(CX), Y4, Y4
+	VMAXPS 704(CX), Y4, Y4
+	VMULPS 640(CX), Y4, Y4
+	VMOVUPS 544(CX), Y6
+	VFMADD231PS 512(CX), Y4, Y6
+	VSUBPS 544(CX), Y6, Y8
+	VFNMADD231PS 576(CX), Y8, Y4
+	VFNMADD231PS 608(CX), Y8, Y4
+	VPSLLD $23, Y6, Y6
+	VPADDD Y15, Y6, Y6
+	VMULPS Y4, Y4, Y2
+	VMOVUPS 32(CX), Y8
+	VFMADD231PS 0(CX), Y4, Y8
+	VMOVUPS 96(CX), Y10
+	VFMADD231PS 64(CX), Y4, Y10
+	VMOVAPS Y14, Y12
+	VFMADD231PS 128(CX), Y4, Y12
+	VADDPS Y15, Y4, Y4
+	VFMADD231PS Y2, Y8, Y10
+	VFMADD231PS Y2, Y12, Y4
+	VMULPS Y2, Y2, Y2
+	VFMADD231PS Y2, Y10, Y4
+	VMULPS Y6, Y4, Y6
+	VADDPS Y15, Y6, Y8
+	VMULPS Y6, Y0, Y0
+	VDIVPS Y8, Y0, Y0
+	VMOVUPS Y0, 0(DI)
+
+gelu_approx_bias_avx2_next_row:
+	ADDQ R10, R8
+	DECQ R11
+	JNZ gelu_approx_bias_avx2_row_loop
+
+gelu_approx_bias_avx2_done:
+	VZEROUPPER
+	RET
+

@@ -213,6 +213,8 @@ func registerAVX2() {
 	activations.RegisterKernel[float32]("avx2:silu", compute.ActivationSilu, SiluKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterBiasTile[float32]("avx2:gelu", compute.ActivationGelu, GeluExactBiasTileAVX2, PriorityAVX2)
+	activations.RegisterBiasTile[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileAVX2, PriorityAVX2)
 	activations.RegisterKernel[float32]("avx2:tanh", compute.ActivationTanh, TanhKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// Float64
@@ -348,6 +350,74 @@ func geluExactFloat32AVX2Asm(in, out unsafe.Pointer, n int)
 
 //go:noescape
 func geluApproxFloat32AVX2Asm(in, out unsafe.Pointer, n int)
+
+//go:noescape
+func geluExactBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+
+//go:noescape
+func geluApproxBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+
+func GeluExactBiasTileAVX2(out []float32, rowStride, numRows, width int, bias []float32) {
+	if numRows <= 0 || width <= 0 || len(out) == 0 {
+		return
+	}
+	_ = bias[width-1]
+	_ = out[(numRows-1)*rowStride+width-1]
+	vecWidth := width &^ 7
+	if vecWidth > 0 {
+		geluExactBiasTileFloat32AVX2Asm(
+			unsafe.Pointer(&out[0]),
+			unsafe.Pointer(&bias[0]),
+			rowStride*4, numRows, vecWidth,
+		)
+	}
+	if vecWidth < width {
+		rem := width - vecWidth
+		var bufIn, bufBias [8]float32
+		copy(bufBias[:rem], bias[vecWidth:width])
+		for r := range numRows {
+			rowOff := r*rowStride + vecWidth
+			copy(bufIn[:rem], out[rowOff:rowOff+rem])
+			geluExactBiasTileFloat32AVX2Asm(
+				unsafe.Pointer(&bufIn[0]),
+				unsafe.Pointer(&bufBias[0]),
+				32, 1, 8,
+			)
+			copy(out[rowOff:rowOff+rem], bufIn[:rem])
+		}
+	}
+}
+
+func GeluApproxBiasTileAVX2(out []float32, rowStride, numRows, width int, bias []float32) {
+	if numRows <= 0 || width <= 0 || len(out) == 0 {
+		return
+	}
+	_ = bias[width-1]
+	_ = out[(numRows-1)*rowStride+width-1]
+	vecWidth := width &^ 7
+	if vecWidth > 0 {
+		geluApproxBiasTileFloat32AVX2Asm(
+			unsafe.Pointer(&out[0]),
+			unsafe.Pointer(&bias[0]),
+			rowStride*4, numRows, vecWidth,
+		)
+	}
+	if vecWidth < width {
+		rem := width - vecWidth
+		var bufIn, bufBias [8]float32
+		copy(bufBias[:rem], bias[vecWidth:width])
+		for r := range numRows {
+			rowOff := r*rowStride + vecWidth
+			copy(bufIn[:rem], out[rowOff:rowOff+rem])
+			geluApproxBiasTileFloat32AVX2Asm(
+				unsafe.Pointer(&bufIn[0]),
+				unsafe.Pointer(&bufBias[0]),
+				32, 1, 8,
+			)
+			copy(out[rowOff:rowOff+rem], bufIn[:rem])
+		}
+	}
+}
 
 func GeluAVX2(in, out []float32) {
 	n := len(in)

@@ -93,6 +93,10 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		fe.countNodeUsesAndDependents(output)
 	}
 
+	// Fuse single-consumer FusedDense(ActivationNone) + FusedActivation(cfg) pairs
+	// into a single FusedDense(cfg) with a zero-cost pass-through FusedActivation(None).
+	fe.fuseSingleConsumerDenseActivations()
+
 	if err := fe.setupConstantSubgraphCaching(); err != nil {
 		return nil, err
 	}
@@ -145,6 +149,52 @@ func (fe *FunctionExecutable) countNodeUsesAndDependents(node *Node) {
 				fe.Dependents[capturedInput.Index] = append(fe.Dependents[capturedInput.Index], nodeIdx)
 				fe.countNodeUsesAndDependents(capturedInput)
 			}
+		}
+	}
+}
+
+// FusedDenseActivationTarget is implemented by nodeFusedDense so compile-time graph
+// optimization can fuse a single-consumer FusedDense(ActivationNone) + FusedActivation(cfg)
+// pair when no VJP or other node references the intermediate pre-activation output.
+type FusedDenseActivationTarget interface {
+	TryFuseActivation(cfg compute.ActivationConfig) bool
+}
+
+// FusedActivationSource is implemented by nodeFusedActivation so compile-time graph
+// optimization can inspect its ActivationConfig and mark it as fused (no-op pass-through)
+// once absorbed into its input FusedDense node.
+type FusedActivationSource interface {
+	ActivationConfig() compute.ActivationConfig
+	MarkFusedIntoInput()
+}
+
+// fuseSingleConsumerDenseActivations fuses FusedDense(ActivationNone) -> FusedActivation(cfg)
+// when the FusedDense node has only a single consumer (the FusedActivation node) and is not
+// a function output (so no FusedActivationVJP or other node ever reads the pre-activation tensor).
+func (fe *FunctionExecutable) fuseSingleConsumerDenseActivations() {
+	for nodeIdx := range fe.NumNodesToProcess {
+		if fe.NumUses[nodeIdx] == 0 {
+			continue
+		}
+		actNode := fe.Function.Nodes[nodeIdx]
+		if actNode.OpType != compute.OpTypeFusedActivation || len(actNode.Inputs) != 1 {
+			continue
+		}
+		denseNode := actNode.Inputs[0]
+		if denseNode.OpType != compute.OpTypeFusedDense {
+			continue
+		}
+		// Ensure actNode is the sole consumer of denseNode (and denseNode is not in fe.OutputNodes).
+		if fe.NumUses[denseNode.Index] != 1 || len(fe.Dependents[denseNode.Index]) != 1 || fe.Dependents[denseNode.Index][0] != nodeIdx {
+			continue
+		}
+		actSource, ok1 := actNode.Data.(FusedActivationSource)
+		denseTarget, ok2 := denseNode.Data.(FusedDenseActivationTarget)
+		if !ok1 || !ok2 {
+			continue
+		}
+		if denseTarget.TryFuseActivation(actSource.ActivationConfig()) {
+			actSource.MarkFusedIntoInput()
 		}
 	}
 }

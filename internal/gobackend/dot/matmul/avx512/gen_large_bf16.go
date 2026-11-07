@@ -217,6 +217,8 @@ func avx512LargeBFloat16( //alt:bf16
 				batchCachedLHSPanels, batchCachedRHSPanels,
 				nil, nil,
 				false,
+				matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
+				//alt:f64  matmul.Epilogue[float64]{},
 			)
 			lhsFlatIdx += lhsBatchStride
 			rhsFlatIdx += rhsBatchStride
@@ -379,6 +381,8 @@ func avx512LargeBFloat16( //alt:bf16
 					batchCachedLHSPanels, batchCachedRHSPanels,
 					batchSharedRHSPanels, batchSharedRHSReady,
 					false,
+					matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
+					//alt:f64  matmul.Epilogue[float64]{},
 				)
 			}
 			itemIdx = int(nextItem.Add(1) - 1)
@@ -630,13 +634,9 @@ func avx512LargeMultiBFloat16( //alt:bf16
 							nil, batchCachedRHSPanels,
 							batchSharedRHSPanels, batchSharedRHSReady,
 							lhsPacked,
+							t.Epilogue,
 						)
 						lhsPacked = true
-
-						if t.Epilogue.HasWork() {
-							outRows := batchOutput[subRowStart*rhsCross : subRowEnd*rhsCross]
-							matmul.ApplyEpilogueRows(outRows, subRowEnd-subRowStart, rhsCross, t.Epilogue)
-						}
 					}
 					subRowStart = subRowEnd
 				}
@@ -711,8 +711,11 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 	//alt:f64  sharedRHSPanels [][]float64,
 	sharedRHSReady []atomic.Uint32,
 	lhsAlreadyPacked bool,
+	epilogue matmul.Epilogue[float32], //alt:f32|bf16|f16
+	//alt:f64  epilogue matmul.Epilogue[float64],
 ) {
 	_ = lhsCrossSize // Not used, rowStart and rowEnd < lhsCrossSize are enough.
+	hasEpilogue := epilogue.HasWork()
 
 	if (params.LHSL1KernelRows != 4 && params.LHSL1KernelRows != 8) || (params.RHSL1KernelCols != 32 && params.RHSL1KernelCols != 64) { //alt:f32|bf16|f16
 		//alt:f64  if (params.LHSL1KernelRows != 4 && params.LHSL1KernelRows != 8) || (params.RHSL1KernelCols != 16 && params.RHSL1KernelCols != 32) {
@@ -802,6 +805,7 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 				}
 
 				isFirstContractingPanel := contractingPanelIdx == 0
+				isLastContractingPanel := contractingPanelIdx+contractingPanelWidth >= contractingSize
 				accumulate := !isFirstContractingPanel
 				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 
@@ -831,6 +835,14 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 							accumulate,
 						) //alt:bf16|f16|f64
 					} //alt:f32|bf16|f16|f64
+					if isLastContractingPanel && hasEpilogue {
+						matmul.ApplyEpilogueTile(
+							outputMatrix, rhsCrossSize,
+							lhsPanelRowIdx, lhsPanelRowIdx+lhsPanelHeight,
+							rhsPanelColIdx, rhsPanelColIdx+rhsPanelWidth,
+							epilogue,
+						)
+					}
 				} else if useAccum {
 					accumOffset := mIdx * panelSize
 					accumSlice := accumBuffer[accumOffset : accumOffset+panelSize]
@@ -891,6 +903,14 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 						lhsPanelRowIdx, rhsPanelColIdx,
 						rhsCrossSize,
 						lhsPanelHeight, rhsPanelWidth)
+					if isLastContractingPanel && hasEpilogue {
+						matmul.ApplyEpilogueTile(
+							outputMatrix, rhsCrossSize,
+							lhsPanelRowIdx, lhsPanelRowIdx+lhsPanelHeight,
+							rhsPanelColIdx, rhsPanelColIdx+rhsPanelWidth,
+							epilogue,
+						)
+					}
 				}
 				lhsPanelRowIdx += lhsPanelHeight
 			}
@@ -915,6 +935,14 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 						lhsPanelRowIdx, rhsPanelColIdx,
 						rhsCrossSize,
 						lhsPanelHeight, rhsPanelWidth)
+					if hasEpilogue {
+						matmul.ApplyEpilogueTile(
+							outputMatrix, rhsCrossSize,
+							lhsPanelRowIdx, lhsPanelRowIdx+lhsPanelHeight,
+							rhsPanelColIdx, rhsPanelColIdx+rhsPanelWidth,
+							epilogue,
+						)
+					}
 				}
 				lhsPanelRowIdx += lhsPanelHeight
 			}

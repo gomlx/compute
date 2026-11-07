@@ -18,6 +18,15 @@ import (
 // InPlaceFn applies an activation function in-place to a contiguous slice of elements.
 type InPlaceFn[T any] func(data []T)
 
+// BiasTileFn applies bias addition and activation in-place to a 2D sub-tile of output rows:
+//   for r := 0; r < numRows; r++ {
+//       for c := 0; c < width; c++ {
+//           out[r*rowStride + c] = act(out[r*rowStride + c] + bias[c])
+//       }
+//   }
+// out must have length at least (numRows-1)*rowStride + width, and bias must have length at least width.
+type BiasTileFn[T any] func(out []T, rowStride, numRows, width int, bias []T)
+
 // KernelFn applies an activation function from in to out (in and out can be the same slice).
 type KernelFn[T any] func(in, out []T)
 
@@ -89,10 +98,50 @@ type registeredSwiGLUImpl struct {
 var (
 	registryMu        sync.RWMutex
 	registry          = make(map[registrationKey]*registeredImpl)
+	biasTileRegistry  = make(map[registrationKey]*registeredSwiGLUImpl)
 	swigluRegistry    = make(map[dtypes.DType]*registeredSwiGLUImpl)
 	vjpRegistry       = make(map[registrationKey]*registeredVJPImpl)
 	swigluVJPRegistry = make(map[dtypes.DType]*registeredSwiGLUImpl)
 )
+
+// RegisterBiasTile registers a fused bias + activation 2D tile kernel for a specific activation type and data type.
+func RegisterBiasTile[T gotype.Supported](name string, act compute.ActivationType, fn BiasTileFn[T], priority gobackend.RegisterPriority) {
+	dtype := dtypes.FromGenericsType[T]()
+	key := registrationKey{act: act, dtype: dtype}
+
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	current, exists := biasTileRegistry[key]
+	if exists && priority < current.priority {
+		return
+	}
+	biasTileRegistry[key] = &registeredSwiGLUImpl{
+		name:     name,
+		kernel:   fn,
+		priority: priority,
+	}
+	klog.V(2).Infof("Registered bias-tile activation %s/%s: %q (priority %d)", act, dtype, name, priority)
+}
+
+// GetBiasTile returns the registered fused bias + activation 2D tile kernel for the given activation type and data type T.
+// Returns nil if none is registered.
+func GetBiasTile[T gotype.Supported](act compute.ActivationType) BiasTileFn[T] {
+	if act == compute.ActivationNone {
+		return nil
+	}
+	dtype := dtypes.FromGenericsType[T]()
+	key := registrationKey{act: act, dtype: dtype}
+
+	registryMu.RLock()
+	impl, exists := biasTileRegistry[key]
+	registryMu.RUnlock()
+
+	if !exists || impl == nil {
+		return nil
+	}
+	return impl.kernel.(BiasTileFn[T])
+}
 
 // Register registers an in-place activation function for a specific activation type and data type.
 // If an implementation is already registered with a higher priority, this call is ignored.

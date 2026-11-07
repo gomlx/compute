@@ -19,6 +19,12 @@ type Epilogue[T any] struct {
 	// Matmul remains completely agnostic to the specific activation implementation.
 	Activation func(data []T)
 
+	// BiasTileActivation is an optional fused bias + activation 2D tile kernel:
+	//   out[r*rowStride + c] = act(out[r*rowStride + c] + bias[c])
+	// When non-nil and Bias is non-empty, ApplyEpilogue* uses this to fuse bias addition
+	// and activation in a single register pass over a 2D tile (amortizing constant loads).
+	BiasTileActivation func(out []T, rowStride, numRows, width int, bias []T)
+
 	// ActivationMinParallelChunk is the minimum element chunk size from the activation's KernelMetadata.
 	// When <= 0, defaults to 16384.
 	ActivationMinParallelChunk int
@@ -26,7 +32,7 @@ type Epilogue[T any] struct {
 
 // HasWork returns true if the epilogue contains either a bias or an activation.
 func (e Epilogue[T]) HasWork() bool {
-	return len(e.Bias) > 0 || e.Activation != nil
+	return len(e.Bias) > 0 || e.Activation != nil || e.BiasTileActivation != nil
 }
 
 // ApplyEpilogue applies the epilogue across output.
@@ -47,9 +53,10 @@ func ApplyEpilogue[T any](
 	bias := epilogue.Bias
 	hasBias := len(bias) > 0
 	act := epilogue.Activation
+	biasTileAct := epilogue.BiasTileActivation
 
 	minChunkElements := 16384
-	if act != nil && epilogue.ActivationMinParallelChunk > 0 {
+	if (act != nil || biasTileAct != nil) && epilogue.ActivationMinParallelChunk > 0 {
 		minChunkElements = epilogue.ActivationMinParallelChunk
 	}
 	minElementsThreshold := minChunkElements * 2
@@ -66,9 +73,16 @@ func ApplyEpilogue[T any](
 		return
 	}
 
-	// Path with bias (and optional activation): Process row-by-row so each row
-	// is modified and activated while resident in L1 cache.
+	// Path with bias (and optional activation): Process row chunks so each chunk
+	// is modified and activated while resident in L1/L2 cache.
 	applyRows := func(rStart, rEnd int) {
+		if rEnd <= rStart {
+			return
+		}
+		if hasBias && biasTileAct != nil {
+			biasTileAct(output[rStart*rowSize:rEnd*rowSize], rowSize, rEnd-rStart, rowSize, bias[:rowSize])
+			return
+		}
 		for r := rStart; r < rEnd; r++ {
 			rowOffset := r * rowSize
 			row := output[rowOffset : rowOffset+rowSize]
@@ -95,21 +109,52 @@ func ApplyEpilogueRows[T any](
 	numRows, rowSize int,
 	epilogue Epilogue[T],
 ) {
-	if !epilogue.HasWork() || len(outRows) == 0 || numRows <= 0 {
+	ApplyEpilogueTile(outRows, rowSize, 0, numRows, 0, rowSize, epilogue)
+}
+
+// ApplyEpilogueTile applies the epilogue inline on a 2D sub-tile [rowStart:rowEnd, colStart:colEnd]
+// of outputMatrix (with row stride rhsCrossSize) while the tile is hot in L1/L2 cache.
+func ApplyEpilogueTile[T any](
+	outputMatrix []T,
+	rhsCrossSize int,
+	rowStart, rowEnd, colStart, colEnd int,
+	epilogue Epilogue[T],
+) {
+	numRows := rowEnd - rowStart
+	width := colEnd - colStart
+	if !epilogue.HasWork() || len(outputMatrix) == 0 || numRows <= 0 || width <= 0 {
 		return
 	}
 	bias := epilogue.Bias
 	hasBias := len(bias) > 0
 	act := epilogue.Activation
+	biasTileAct := epilogue.BiasTileActivation
+
 	if !hasBias {
 		if act != nil {
-			act(outRows[:numRows*rowSize])
+			if colStart == 0 && width == rhsCrossSize {
+				act(outputMatrix[rowStart*rhsCrossSize : rowEnd*rhsCrossSize])
+			} else {
+				for r := rowStart; r < rowEnd; r++ {
+					rowOff := r*rhsCrossSize + colStart
+					act(outputMatrix[rowOff : rowOff+width])
+				}
+			}
 		}
 		return
 	}
-	for r := range numRows {
-		row := outRows[r*rowSize : (r+1)*rowSize]
-		addBias(row, bias)
+
+	biasSlice := bias[colStart:colEnd]
+	if biasTileAct != nil {
+		outOff := rowStart*rhsCrossSize + colStart
+		biasTileAct(outputMatrix[outOff:outOff+(numRows-1)*rhsCrossSize+width], rhsCrossSize, numRows, width, biasSlice)
+		return
+	}
+
+	for r := rowStart; r < rowEnd; r++ {
+		rowOff := r*rhsCrossSize + colStart
+		row := outputMatrix[rowOff : rowOff+width]
+		addBias(row, biasSlice)
 		if act != nil {
 			act(row)
 		}

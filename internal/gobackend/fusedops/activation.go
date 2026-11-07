@@ -26,6 +26,16 @@ type nodeFusedActivation struct {
 	cfg compute.ActivationConfig
 }
 
+var _ gobackend.FusedActivationSource = (*nodeFusedActivation)(nil)
+
+func (d *nodeFusedActivation) ActivationConfig() compute.ActivationConfig {
+	return d.cfg
+}
+
+func (d *nodeFusedActivation) MarkFusedIntoInput() {
+	d.cfg = compute.ActivationConfig{Type: compute.ActivationNone}
+}
+
 func (d *nodeFusedActivation) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	return d.cfg == other.(*nodeFusedActivation).cfg
 }
@@ -57,6 +67,9 @@ func execFusedActivation(backend *gobackend.Backend, node *gobackend.Node, input
 	if act != compute.ActivationSwiGLU && len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
 		output = input
 		inputs[0] = nil
+		if act == compute.ActivationNone {
+			return output, nil
+		}
 	} else {
 		output, err = backend.GetBuffer(node.Shape)
 		if err != nil {

@@ -334,6 +334,101 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
+		t.Run("LargeMultiPanel", func(t *testing.T) {
+			// M*K*N = 64*128*600 = 4,915,200 >= SmallMatMulSizeThreshold (512,000),
+			// and N=600 spans multiple Nc=512 panels with a non-aligned remainder width.
+			const M, K, N = 64, 128, 600
+			xLarge := make([][]float32, M)
+			for m := range M {
+				xLarge[m] = make([]float32, K)
+				for k := range K {
+					xLarge[m][k] = float32(((m*17+k*31)%29)-14) * 0.05
+				}
+			}
+			wLarge := make([][]float32, K)
+			for k := range K {
+				wLarge[k] = make([]float32, N)
+				for n := range N {
+					wLarge[k][n] = float32(((k*13+n*7)%23)-11) * 0.05
+				}
+			}
+			biasLarge := make([]float32, N)
+			for n := range N {
+				biasLarge[n] = float32((n%19)-9) * 0.1
+			}
+
+			// Compute reference linear output: xLarge * wLarge + biasLarge
+			linearWant := make([][]float64, M)
+			for m := range M {
+				linearWant[m] = make([]float64, N)
+				for n := range N {
+					sum := float64(biasLarge[n])
+					for k := range K {
+						sum += float64(xLarge[m][k]) * float64(wLarge[k][n])
+					}
+					linearWant[m][n] = sum
+				}
+			}
+
+			sqrt2ByPi := math.Sqrt(2.0 / math.Pi)
+			for _, tc := range []struct {
+				name      string
+				actType   compute.ActivationType
+				tolerance float64
+				actFn     func(float64) float32
+			}{
+				{
+					name:      "GeluExact",
+					actType:   compute.ActivationGelu,
+					tolerance: 1e-4,
+					actFn: func(v float64) float32 {
+						return float32(v * 0.5 * (1.0 + math.Erf(v/math.Sqrt2)))
+					},
+				},
+				{
+					name:      "GeluApproximate",
+					actType:   compute.ActivationGeluApproximate,
+					tolerance: 1e-3,
+					actFn: func(v float64) float32 {
+						inner := sqrt2ByPi * (v + 0.044715*v*v*v)
+						return float32(v * 0.5 * (1.0 + math.Tanh(inner)))
+					},
+				},
+				{
+					name:      "Relu",
+					actType:   compute.ActivationRelu,
+					tolerance: 1e-4,
+					actFn: func(v float64) float32 {
+						if v < 0 {
+							return 0
+						}
+						return float32(v)
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					got, err := testutil.Exec1(b, []any{xLarge, wLarge, biasLarge}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{
+							Activation: compute.ActivationConfig{Type: tc.actType},
+						})
+					})
+					if err != nil {
+						t.Fatalf("FusedDense LargeMultiPanel(%s) failed: %+v", tc.name, err)
+					}
+					want := make([][]float32, M)
+					for m := range M {
+						want[m] = make([]float32, N)
+						for n := range N {
+							want[m][n] = tc.actFn(linearWant[m][n])
+						}
+					}
+					if ok, diff := testutil.IsInDelta(want, got, tc.tolerance); !ok {
+						t.Errorf("FusedDense LargeMultiPanel(%s) mismatch:\n%s", tc.name, diff)
+					}
+				})
+			}
+		})
+
 		t.Run("SwiGLU_Rejected", func(t *testing.T) {
 			builder := b.Builder("fused_dense_swiglu_reject")
 			mainFn := builder.Main()

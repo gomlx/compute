@@ -95,6 +95,30 @@ func ExecuteWithEpilogue[I, O interface {
 			layout, inDType, outDType)
 	}
 
+	if epilogue.HasWork() {
+		key := multiRHSKey{
+			name:        reg.Name(),
+			layout:      layout,
+			inputDType:  inDType,
+			outputDType: outDType,
+		}
+		if multiAny, ok := registeredMultiRHSImplementations[key]; ok {
+			if multiFn, ok := multiAny.(MultiRHSExecFn[I, O]); ok {
+				var target [1]MultiRHSTarget[I, O]
+				target[0] = MultiRHSTarget[I, O]{
+					RHS:          rhs,
+					RHSCrossSize: rhsCrossSize,
+					Output:       output,
+					Epilogue:     epilogue,
+					NodeData:     nodeData,
+				}
+				if multiFn(backend, layout, lhs, batchSize, lhsCrossSize, contractingSize, target[:]) {
+					return nil
+				}
+			}
+		}
+	}
+
 	implFn, ok := reg.ImplFn().(dot.DotGeneralExecFn[I, O])
 	if !ok {
 		return errors.Errorf("invalid implementation function type for layout=%s, input=%s, output=%s",

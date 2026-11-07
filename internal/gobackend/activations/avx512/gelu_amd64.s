@@ -455,3 +455,441 @@ gelu_approx_512_vec16_check:
 gelu_approx_512_done:
 	VZEROUPPER
 	RET
+
+// ===========================================================================
+// geluExactBiasTileFloat32AVX512Asm: Fused Bias + Exact GELU 2D tile for float32
+//   Applies out[r*rowStrideBytes + c] = GeluExact(out[r*rowStrideBytes + c] + bias[c])
+//   for r in [0, numRows) and c in [0, width).
+//   width must be a positive multiple of 16.
+// ===========================================================================
+// func geluExactBiasTileFloat32AVX512Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+TEXT ·geluExactBiasTileFloat32AVX512Asm(SB), NOSPLIT, $0-40
+	MOVQ out+0(FP), R8
+	MOVQ bias+8(FP), R9
+	MOVQ rowStrideBytes+16(FP), R10
+	MOVQ numRows+24(FP), R11
+	MOVQ width+32(FP), R12
+
+	CMPQ R11, $0
+	JLE gelu_exact_bias_512_done
+	CMPQ R12, $16
+	JL gelu_exact_bias_512_done
+
+	// Pin all 21 constants in Z11..Z31 once across the entire 2D tile:
+	VBROADCASTSS ·geluAVX512Consts+0(SB), Z11   // Z11: vP7
+	VBROADCASTSS ·geluAVX512Consts+4(SB), Z12   // Z12: vP6
+	VBROADCASTSS ·geluAVX512Consts+8(SB), Z13   // Z13: vP5
+	VBROADCASTSS ·geluAVX512Consts+12(SB), Z14  // Z14: vP4
+	VBROADCASTSS ·geluAVX512Consts+16(SB), Z15  // Z15: vP3
+	VBROADCASTSS ·geluAVX512Consts+20(SB), Z16  // Z16: vHalf / vP2 = 0.5
+	VBROADCASTSS ·geluAVX512Consts+24(SB), Z17  // Z17: vOne / vBias127 = 1.0
+	VBROADCASTSS ·geluAVX512Consts+28(SB), Z18  // Z18: vRsqrt2 = 0.70710678
+	VBROADCASTSS ·geluAVX512Consts+32(SB), Z19  // Z19: vSignMask = 0x80000000
+	VBROADCASTSS ·geluAVX512Consts+36(SB), Z20  // Z20: vP = 0.3275911
+	VBROADCASTSS ·geluAVX512Consts+40(SB), Z21  // Z21: vA1 = 0.254829592
+	VBROADCASTSS ·geluAVX512Consts+44(SB), Z22  // Z22: vA2 = -0.284496736
+	VBROADCASTSS ·geluAVX512Consts+48(SB), Z23  // Z23: vA3 = 1.421413741
+	VBROADCASTSS ·geluAVX512Consts+52(SB), Z24  // Z24: vA4 = -1.453152027
+	VBROADCASTSS ·geluAVX512Consts+56(SB), Z25  // Z25: vA5 = 1.061405429
+	VBROADCASTSS ·geluAVX512Consts+60(SB), Z26  // Z26: vMinLog = -87.336544
+	VBROADCASTSS ·geluAVX512Consts+64(SB), Z27  // Z27: vLog2E = 1.44269504
+	VBROADCASTSS ·geluAVX512Consts+68(SB), Z28  // Z28: vMagic = 12582912.0
+	VBROADCASTSS ·geluAVX512Consts+72(SB), Z29  // Z29: vLn2Hi = 0.693359375
+	VBROADCASTSS ·geluAVX512Consts+76(SB), Z30  // Z30: vLn2Lo = -2.12194440e-4
+	VBROADCASTSS ·geluAVX512Consts+100(SB), Z31 // Z31: vAbsMask = 0x7fffffff
+
+gelu_exact_bias_512_row_loop:
+	MOVQ R8, DI
+	MOVQ R9, SI
+	MOVQ R12, DX
+
+	CMPQ DX, $32
+	JL gelu_exact_bias_512_vec16_check
+
+gelu_exact_bias_512_loop32:
+	VMOVUPS 0(DI), Z0
+	VMOVUPS 64(DI), Z1
+	VADDPS 0(SI), Z0, Z0
+	VADDPS 64(SI), Z1, Z1
+
+	// x = v * rsqrt2, absX = |x|
+	VMULPS Z18, Z0, Z2
+	VMULPS Z18, Z1, Z3
+	VPANDD Z31, Z2, Z4
+	VPANDD Z31, Z3, Z5
+
+	// Issue t = 1.0 / (1.0 + p * absX) early so VDIVPS overlaps with exp(-x^2):
+	VMOVAPS Z17, Z6
+	VMOVAPS Z17, Z7
+	VFMADD231PS Z4, Z20, Z6
+	VFMADD231PS Z5, Z20, Z7
+	VDIVPS Z6, Z17, Z6
+	VDIVPS Z7, Z17, Z7
+
+	// negX2 = max(-(absX * absX), vMinLog)
+	VMULPS Z4, Z4, Z4
+	VMULPS Z5, Z5, Z5
+	VPXORD Z19, Z4, Z4
+	VPXORD Z19, Z5, Z5
+	VMAXPS Z26, Z4, Z4
+	VMAXPS Z26, Z5, Z5
+
+	// zRound = xClamped * log2e + magic, zFloor = zRound - magic
+	VMOVAPS Z28, Z8
+	VMOVAPS Z28, Z9
+	VFMADD231PS Z4, Z27, Z8
+	VFMADD231PS Z5, Z27, Z9
+	VSUBPS Z28, Z8, Z10
+	VSUBPS Z28, Z9, Z0
+
+	// g = xClamped - zFloor * ln2Hi - zFloor * ln2Lo
+	VFNMADD231PS Z10, Z29, Z4
+	VFNMADD231PS Z0, Z29, Z5
+	VFNMADD231PS Z10, Z30, Z4
+	VFNMADD231PS Z0, Z30, Z5
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Z8, Z8
+	VPSLLD $23, Z9, Z9
+	VPADDD Z17, Z8, Z8
+	VPADDD Z17, Z9, Z9
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMOVAPS Z12, Z10
+	VMOVAPS Z12, Z0
+	VFMADD231PS Z4, Z11, Z10
+	VFMADD231PS Z5, Z11, Z0
+	VMOVAPS Z14, Z1
+	VFMADD231PS Z4, Z13, Z1
+	VMULPS Z4, Z4, Z2
+	VFMADD231PS Z2, Z10, Z1
+	VMOVAPS Z14, Z10
+	VFMADD231PS Z5, Z13, Z10
+	VMULPS Z5, Z5, Z3
+	VFMADD231PS Z3, Z0, Z10
+
+	VMOVAPS Z16, Z0
+	VFMADD231PS Z4, Z15, Z0
+	VADDPS Z17, Z4, Z4
+	VFMADD231PS Z2, Z0, Z4
+	VMOVAPS Z16, Z0
+	VFMADD231PS Z5, Z15, Z0
+	VADDPS Z17, Z5, Z5
+	VFMADD231PS Z3, Z0, Z5
+
+	VMULPS Z2, Z2, Z2
+	VMULPS Z3, Z3, Z3
+	VFMADD231PS Z2, Z1, Z4
+	VFMADD231PS Z3, Z10, Z5
+	VMULPS Z8, Z4, Z8
+	VMULPS Z9, Z5, Z9
+
+	// Estrin's scheme for erfPoly(t) using Z6 (tA) and Z7 (tB):
+	VMULPS Z6, Z6, Z2
+	VMULPS Z7, Z7, Z3
+	VMOVAPS Z24, Z4
+	VMOVAPS Z24, Z5
+	VFMADD231PS Z6, Z25, Z4
+	VFMADD231PS Z7, Z25, Z5
+	VMOVAPS Z22, Z1
+	VMOVAPS Z22, Z10
+	VFMADD231PS Z6, Z23, Z1
+	VFMADD231PS Z7, Z23, Z10
+	VFMADD231PS Z2, Z4, Z1
+	VFMADD231PS Z3, Z5, Z10
+	VMOVAPS Z21, Z4
+	VMOVAPS Z21, Z5
+	VFMADD231PS Z6, Z1, Z4
+	VFMADD231PS Z7, Z10, Z5
+	VMULPS Z6, Z4, Z4
+	VMULPS Z7, Z5, Z5
+
+	// res = 1.0 - erfPoly * expNegX2
+	VMOVAPS Z17, Z6
+	VMOVAPS Z17, Z7
+	VFNMADD231PS Z4, Z8, Z6
+	VFNMADD231PS Z5, Z9, Z7
+
+	// Recompute vA = out + bias from L1 cache, restore sign of v, and compute 0.5 * v * (1.0 + erfVal)
+	VMOVUPS 0(DI), Z0
+	VMOVUPS 64(DI), Z1
+	VADDPS 0(SI), Z0, Z0
+	VADDPS 64(SI), Z1, Z1
+	VPANDD Z19, Z0, Z2
+	VPANDD Z19, Z1, Z3
+	VPXORD Z2, Z6, Z6
+	VPXORD Z3, Z7, Z7
+	VADDPS Z17, Z6, Z6
+	VADDPS Z17, Z7, Z7
+	VMULPS Z16, Z0, Z0
+	VMULPS Z16, Z1, Z1
+	VMULPS Z6, Z0, Z0
+	VMULPS Z7, Z1, Z1
+
+	VMOVUPS Z0, 0(DI)
+	VMOVUPS Z1, 64(DI)
+
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $32, DX
+	CMPQ DX, $32
+	JGE gelu_exact_bias_512_loop32
+
+gelu_exact_bias_512_vec16_check:
+	CMPQ DX, $16
+	JL gelu_exact_bias_512_next_row
+
+	VMOVUPS (DI), Z0
+	VADDPS (SI), Z0, Z0
+
+	VMULPS Z18, Z0, Z1
+	VPANDD Z31, Z1, Z2
+
+	VMOVAPS Z17, Z3
+	VFMADD231PS Z2, Z20, Z3
+	VDIVPS Z3, Z17, Z3
+
+	VMULPS Z2, Z2, Z4
+	VPXORD Z19, Z4, Z4
+	VMAXPS Z26, Z4, Z4
+
+	VMOVAPS Z28, Z5
+	VFMADD231PS Z4, Z27, Z5
+	VSUBPS Z28, Z5, Z6
+
+	VFNMADD231PS Z6, Z29, Z4
+	VFNMADD231PS Z6, Z30, Z4
+
+	VPSLLD $23, Z5, Z5
+	VPADDD Z17, Z5, Z5
+
+	VMULPS Z4, Z4, Z6
+	VMOVAPS Z12, Z7
+	VFMADD231PS Z4, Z11, Z7
+	VMOVAPS Z14, Z8
+	VFMADD231PS Z4, Z13, Z8
+	VMOVAPS Z16, Z9
+	VFMADD231PS Z4, Z15, Z9
+	VADDPS Z17, Z4, Z10
+	VFMADD231PS Z6, Z7, Z8
+	VFMADD231PS Z6, Z9, Z10
+	VMULPS Z6, Z6, Z6
+	VFMADD231PS Z6, Z8, Z10
+	VMULPS Z5, Z10, Z5
+
+	VMULPS Z3, Z3, Z6
+	VMOVAPS Z24, Z7
+	VFMADD231PS Z3, Z25, Z7
+	VMOVAPS Z22, Z8
+	VFMADD231PS Z3, Z23, Z8
+	VFMADD231PS Z6, Z7, Z8
+	VMOVAPS Z21, Z9
+	VFMADD231PS Z3, Z8, Z9
+	VMULPS Z3, Z9, Z9
+
+	VMOVAPS Z17, Z4
+	VFNMADD231PS Z9, Z5, Z4
+
+	VPANDD Z19, Z1, Z1
+	VPXORD Z1, Z4, Z4
+	VADDPS Z17, Z4, Z4
+	VMULPS Z16, Z0, Z0
+	VMULPS Z4, Z0, Z0
+
+	VMOVUPS Z0, (DI)
+
+gelu_exact_bias_512_next_row:
+	ADDQ R10, R8
+	DECQ R11
+	JNZ gelu_exact_bias_512_row_loop
+
+gelu_exact_bias_512_done:
+	VZEROUPPER
+	RET
+
+// ===========================================================================
+// geluApproxBiasTileFloat32AVX512Asm: Fused Bias + Approx GELU 2D tile for float32
+//   Applies out[r*rowStrideBytes + c] = GeluApprox(out[r*rowStrideBytes + c] + bias[c])
+//   for r in [0, numRows) and c in [0, width).
+//   width must be a positive multiple of 16.
+// ===========================================================================
+// func geluApproxBiasTileFloat32AVX512Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+TEXT ·geluApproxBiasTileFloat32AVX512Asm(SB), NOSPLIT, $0-40
+	MOVQ out+0(FP), R8
+	MOVQ bias+8(FP), R9
+	MOVQ rowStrideBytes+16(FP), R10
+	MOVQ numRows+24(FP), R11
+	MOVQ width+32(FP), R12
+
+	CMPQ R11, $0
+	JLE gelu_approx_bias_512_done
+	CMPQ R12, $16
+	JL gelu_approx_bias_512_done
+
+	// Pin all 16 constants in Z16..Z31 once across the entire 2D tile:
+	VBROADCASTSS ·geluAVX512Consts+20(SB), Z16 // Z16: vHalf / vP2 = 0.5
+	VBROADCASTSS ·geluAVX512Consts+24(SB), Z17 // Z17: vOne / vBias127 = 1.0
+	VBROADCASTSS ·geluAVX512Consts+80(SB), Z18 // Z18: vTwo = 2.0
+	VBROADCASTSS ·geluAVX512Consts+84(SB), Z19 // Z19: vNine = 9.0
+	VBROADCASTSS ·geluAVX512Consts+88(SB), Z20 // Z20: vNegNine = -9.0
+	VBROADCASTSS ·geluAVX512Consts+92(SB), Z21 // Z21: vSqrt2OverPi = 0.7978845608
+	VBROADCASTSS ·geluAVX512Consts+96(SB), Z22 // Z22: vCoeff = 0.044715
+	VBROADCASTSS ·geluAVX512Consts+64(SB), Z23 // Z23: vLog2E = 1.44269504
+	VBROADCASTSS ·geluAVX512Consts+68(SB), Z24 // Z24: vMagic = 12582912.0
+	VBROADCASTSS ·geluAVX512Consts+72(SB), Z25 // Z25: vLn2Hi = 0.693359375
+	VBROADCASTSS ·geluAVX512Consts+76(SB), Z26 // Z26: vLn2Lo = -2.12194440e-4
+	VBROADCASTSS ·geluAVX512Consts+0(SB), Z27  // Z27: vP7 = 1.9875691500e-4
+	VBROADCASTSS ·geluAVX512Consts+4(SB), Z28  // Z28: vP6 = 1.3981999507e-3
+	VBROADCASTSS ·geluAVX512Consts+8(SB), Z29  // Z29: vP5 = 8.3334519073e-3
+	VBROADCASTSS ·geluAVX512Consts+12(SB), Z30 // Z30: vP4 = 4.1665795894e-2
+	VBROADCASTSS ·geluAVX512Consts+16(SB), Z31 // Z31: vP3 = 1.6666665459e-1
+
+gelu_approx_bias_512_row_loop:
+	MOVQ R8, DI
+	MOVQ R9, SI
+	MOVQ R12, DX
+
+	CMPQ DX, $32
+	JL gelu_approx_bias_512_vec16_check
+
+gelu_approx_bias_512_loop32:
+	VMOVUPS 0(DI), Z0
+	VMOVUPS 64(DI), Z1
+	VADDPS 0(SI), Z0, Z0
+	VADDPS 64(SI), Z1, Z1
+
+	// x3 = v * v * v
+	VMULPS Z0, Z0, Z2
+	VMULPS Z1, Z1, Z3
+	VMULPS Z0, Z2, Z2
+	VMULPS Z1, Z3, Z3
+
+	// inner = vSqrt2OverPi * (v + vCoeff * x3)
+	VMOVAPS Z0, Z4
+	VMOVAPS Z1, Z5
+	VFMADD231PS Z2, Z22, Z4
+	VFMADD231PS Z3, Z22, Z5
+	VMULPS Z21, Z4, Z4
+	VMULPS Z21, Z5, Z5
+
+	// Clamp inner to [-9.0, 9.0] and multiply by 2.0
+	VMINPS Z19, Z4, Z4
+	VMINPS Z19, Z5, Z5
+	VMAXPS Z20, Z4, Z4
+	VMAXPS Z20, Z5, Z5
+	VMULPS Z18, Z4, Z4
+	VMULPS Z18, Z5, Z5
+
+	// Range reduction: zRound = twoX * log2e + magic, zFloor = zRound - magic
+	VMOVAPS Z24, Z6
+	VMOVAPS Z24, Z7
+	VFMADD231PS Z4, Z23, Z6
+	VFMADD231PS Z5, Z23, Z7
+	VSUBPS Z24, Z6, Z8
+	VSUBPS Z24, Z7, Z9
+
+	// g = twoX - zFloor * ln2Hi - zFloor * ln2Lo
+	VFNMADD231PS Z8, Z25, Z4
+	VFNMADD231PS Z9, Z25, Z5
+	VFNMADD231PS Z8, Z26, Z4
+	VFNMADD231PS Z9, Z26, Z5
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Z6, Z6
+	VPSLLD $23, Z7, Z7
+	VPADDD Z17, Z6, Z6
+	VPADDD Z17, Z7, Z7
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMULPS Z4, Z4, Z2
+	VMULPS Z5, Z5, Z3
+	VMOVAPS Z28, Z8
+	VMOVAPS Z28, Z9
+	VFMADD231PS Z4, Z27, Z8
+	VFMADD231PS Z5, Z27, Z9
+	VMOVAPS Z30, Z10
+	VMOVAPS Z30, Z11
+	VFMADD231PS Z4, Z29, Z10
+	VFMADD231PS Z5, Z29, Z11
+	VMOVAPS Z16, Z12
+	VMOVAPS Z16, Z13
+	VFMADD231PS Z4, Z31, Z12
+	VFMADD231PS Z5, Z31, Z13
+	VADDPS Z17, Z4, Z14
+	VADDPS Z17, Z5, Z15
+	VFMADD231PS Z2, Z8, Z10
+	VFMADD231PS Z3, Z9, Z11
+	VFMADD231PS Z2, Z12, Z14
+	VFMADD231PS Z3, Z13, Z15
+	VMULPS Z2, Z2, Z2
+	VMULPS Z3, Z3, Z3
+	VFMADD231PS Z2, Z10, Z14
+	VFMADD231PS Z3, Z11, Z15
+	VMULPS Z6, Z14, Z6
+	VMULPS Z7, Z15, Z7
+
+	// out = (v * exp2x) / (exp2x + 1.0)
+	VADDPS Z17, Z6, Z8
+	VADDPS Z17, Z7, Z9
+	VMULPS Z6, Z0, Z0
+	VMULPS Z7, Z1, Z1
+	VDIVPS Z8, Z0, Z0
+	VDIVPS Z9, Z1, Z1
+
+	VMOVUPS Z0, 0(DI)
+	VMOVUPS Z1, 64(DI)
+
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $32, DX
+	CMPQ DX, $32
+	JGE gelu_approx_bias_512_loop32
+
+gelu_approx_bias_512_vec16_check:
+	CMPQ DX, $16
+	JL gelu_approx_bias_512_next_row
+
+	VMOVUPS (DI), Z0
+	VADDPS (SI), Z0, Z0
+	VMULPS Z0, Z0, Z2
+	VMULPS Z0, Z2, Z2
+	VMOVAPS Z0, Z4
+	VFMADD231PS Z2, Z22, Z4
+	VMULPS Z21, Z4, Z4
+	VMINPS Z19, Z4, Z4
+	VMAXPS Z20, Z4, Z4
+	VMULPS Z18, Z4, Z4
+	VMOVAPS Z24, Z6
+	VFMADD231PS Z4, Z23, Z6
+	VSUBPS Z24, Z6, Z8
+	VFNMADD231PS Z8, Z25, Z4
+	VFNMADD231PS Z8, Z26, Z4
+	VPSLLD $23, Z6, Z6
+	VPADDD Z17, Z6, Z6
+	VMULPS Z4, Z4, Z2
+	VMOVAPS Z28, Z8
+	VFMADD231PS Z4, Z27, Z8
+	VMOVAPS Z30, Z10
+	VFMADD231PS Z4, Z29, Z10
+	VMOVAPS Z16, Z12
+	VFMADD231PS Z4, Z31, Z12
+	VADDPS Z17, Z4, Z14
+	VFMADD231PS Z2, Z8, Z10
+	VFMADD231PS Z2, Z12, Z14
+	VMULPS Z2, Z2, Z2
+	VFMADD231PS Z2, Z10, Z14
+	VMULPS Z6, Z14, Z6
+	VADDPS Z17, Z6, Z8
+	VMULPS Z6, Z0, Z0
+	VDIVPS Z8, Z0, Z0
+	VMOVUPS Z0, (DI)
+
+gelu_approx_bias_512_next_row:
+	ADDQ R10, R8
+	DECQ R11
+	JNZ gelu_approx_bias_512_row_loop
+
+gelu_approx_bias_512_done:
+	VZEROUPPER
+	RET
+
