@@ -17,14 +17,26 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeFusedLayerNorm, gobackend.PriorityTyped, execFusedLayerNorm)
 }
 
+// nodeFusedLayerNorm is node data for FusedLayerNorm.
 type nodeFusedLayerNorm struct {
-	axes    []int
-	epsilon float64
+	axes        []int
+	epsilon     float64
+	hasResidual bool
+}
+
+var _ gobackend.FusedLayerNormResidualTarget = (*nodeFusedLayerNorm)(nil)
+
+func (d *nodeFusedLayerNorm) TryFuseResidualInput() bool {
+	if d == nil || d.hasResidual {
+		return false
+	}
+	d.hasResidual = true
+	return true
 }
 
 func (d *nodeFusedLayerNorm) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedLayerNorm)
-	if d.epsilon != o.epsilon || len(d.axes) != len(o.axes) {
+	if d.epsilon != o.epsilon || d.hasResidual != o.hasResidual || len(d.axes) != len(o.axes) {
 		return false
 	}
 	for i, a := range d.axes {
@@ -70,31 +82,51 @@ func FusedLayerNorm(f *gobackend.Function, x compute.Value, axes []int, epsilon 
 
 // execFusedLayerNorm implements layer normalization.
 // For each sample: y = (x - mean) / sqrt(var + epsilon) * gamma + beta
-func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
+
+	paramInputs := inputs
+	var residual *gobackend.Buffer
+	resInputIdx := -1
+	if data.hasResidual && len(inputs) > 1 {
+		resInputIdx = len(inputs) - 1
+		residual = inputs[resInputIdx]
+		paramInputs = inputs[:resInputIdx]
+	}
+
+	var output *gobackend.Buffer
+	var err error
+	if len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+		output = input
+		inputs[0] = nil
+	} else if resInputIdx >= 0 && len(inputsOwned) > resInputIdx && inputsOwned[resInputIdx] && residual.RawShape.Equal(node.Shape) {
+		output = residual
+		inputs[resInputIdx] = nil
+	} else {
+		output, err = backend.GetBuffer(node.Shape)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if backend.NoOps {
 		return output, nil
 	}
 
-	// Determine gamma/beta. inputs[0]=x, inputs[1]=gamma (optional), inputs[2]=beta (optional).
+	// Determine gamma/beta. paramInputs[0]=x, paramInputs[1]=gamma (optional), paramInputs[2]=beta (optional).
 	var gamma, beta *gobackend.Buffer
-	if len(inputs) > 1 {
-		gamma = inputs[1]
+	if len(paramInputs) > 1 {
+		gamma = paramInputs[1]
 	}
-	if len(inputs) > 2 {
-		beta = inputs[2]
+	if len(paramInputs) > 2 {
+		beta = paramInputs[2]
 	}
 
 	switch input.RawShape.DType {
 	case dtypes.Float32:
-		layerNorm[float32](backend, input, output, gamma, beta, data.axes, data.epsilon)
+		layerNorm[float32](backend, input, residual, output, gamma, beta, data.axes, data.epsilon)
 	case dtypes.Float64:
-		layerNorm[float64](backend, input, output, gamma, beta, data.axes, data.epsilon)
+		layerNorm[float64](backend, input, residual, output, gamma, beta, data.axes, data.epsilon)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedLayerNorm: dtype %s", input.RawShape.DType)
 	}
@@ -104,9 +136,13 @@ func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs
 const minLayerNormParallelElements = 4096
 
 // layerNorm dispatches to the trailing-axes fast path or the general case.
-func layerNorm[T float32 | float64](backend *gobackend.Backend, input, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {
+func layerNorm[T float32 | float64](backend *gobackend.Backend, input, residual, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {
 	inData := input.Flat.([]T)
 	outData := output.Flat.([]T)
+	var resData []T
+	if residual != nil {
+		resData = residual.Flat.([]T)
+	}
 	dims := input.RawShape.Dimensions
 	rank := len(dims)
 
@@ -140,10 +176,26 @@ func layerNorm[T float32 | float64](backend *gobackend.Backend, input, output, g
 			backend.Scheduler.ParallelizeChunks(outerSize, minOuter, func(rStart, rEnd int) {
 				rowOffset := rStart * normSize
 				endOffset := rEnd * normSize
-				layerNormTrailingAxes(inData[rowOffset:endOffset], outData[rowOffset:endOffset], gammaData, betaData, normSize, epsilon)
+				srcSlice := inData[rowOffset:endOffset]
+				outSlice := outData[rowOffset:endOffset]
+				if resData != nil {
+					resSlice := resData[rowOffset:endOffset]
+					for i := range outSlice {
+						outSlice[i] = srcSlice[i] + resSlice[i]
+					}
+					srcSlice = outSlice
+				}
+				layerNormTrailingAxes(srcSlice, outSlice, gammaData, betaData, normSize, epsilon)
 			})
 		} else {
-			layerNormTrailingAxes(inData, outData, gammaData, betaData, normSize, epsilon)
+			srcSlice := inData
+			if resData != nil {
+				for i := range outData {
+					outData[i] = inData[i] + resData[i]
+				}
+				srcSlice = outData
+			}
+			layerNormTrailingAxes(srcSlice, outData, gammaData, betaData, normSize, epsilon)
 		}
 	} else if aDim, bDim, cDim, dDim, ok := classifyStridedLayerNormAxes(dims, axes); ok {
 		totalElements := len(inData)
@@ -153,13 +205,34 @@ func layerNorm[T float32 | float64](backend *gobackend.Backend, input, output, g
 			backend.Scheduler.ParallelizeChunks(aDim, minA, func(aStart, aEnd int) {
 				inSlice := inData[aStart*sliceSize : aEnd*sliceSize]
 				outSlice := outData[aStart*sliceSize : aEnd*sliceSize]
+				if resData != nil {
+					resSlice := resData[aStart*sliceSize : aEnd*sliceSize]
+					for i := range outSlice {
+						outSlice[i] = inSlice[i] + resSlice[i]
+					}
+					inSlice = outSlice
+				}
 				layerNormStridedAxes(inSlice, outSlice, gammaData, betaData, aEnd-aStart, bDim, cDim, dDim, epsilon)
 			})
 		} else {
-			layerNormStridedAxes(inData, outData, gammaData, betaData, aDim, bDim, cDim, dDim, epsilon)
+			srcSlice := inData
+			if resData != nil {
+				for i := range outData {
+					outData[i] = inData[i] + resData[i]
+				}
+				srcSlice = outData
+			}
+			layerNormStridedAxes(srcSlice, outData, gammaData, betaData, aDim, bDim, cDim, dDim, epsilon)
 		}
 	} else {
-		layerNormArbitraryAxes(inData, outData, gammaData, betaData, dims, axes, normSize, epsilon)
+		srcSlice := inData
+		if resData != nil {
+			for i := range outData {
+				outData[i] = inData[i] + resData[i]
+			}
+			srcSlice = outData
+		}
+		layerNormArbitraryAxes(srcSlice, outData, gammaData, betaData, dims, axes, normSize, epsilon)
 	}
 }
 

@@ -167,6 +167,38 @@ pass2_done:
 
 	// Both gamma & beta
 	XORQ AX, AX
+pass3_both_loop64:
+	LEAQ 64(AX), DX
+	CMPQ DX, R11
+	JG pass3_both_loop16
+
+	VMOVUPS (SI)(AX*4), Z0
+	VMOVUPS 64(SI)(AX*4), Z1
+	VMOVUPS 128(SI)(AX*4), Z2
+	VMOVUPS 192(SI)(AX*4), Z3
+	VSUBPS Z12, Z0, Z0
+	VSUBPS Z12, Z1, Z1
+	VSUBPS Z12, Z2, Z2
+	VSUBPS Z12, Z3, Z3
+	VMULPS Z13, Z0, Z0
+	VMULPS Z13, Z1, Z1
+	VMULPS Z13, Z2, Z2
+	VMULPS Z13, Z3, Z3
+	VMOVUPS (R8)(AX*4), Z4
+	VMOVUPS 64(R8)(AX*4), Z5
+	VMOVUPS 128(R8)(AX*4), Z6
+	VMOVUPS 192(R8)(AX*4), Z7
+	VFMADD213PS (R9)(AX*4), Z4, Z0
+	VFMADD213PS 64(R9)(AX*4), Z5, Z1
+	VFMADD213PS 128(R9)(AX*4), Z6, Z2
+	VFMADD213PS 192(R9)(AX*4), Z7, Z3
+	VMOVUPS Z0, (DI)(AX*4)
+	VMOVUPS Z1, 64(DI)(AX*4)
+	VMOVUPS Z2, 128(DI)(AX*4)
+	VMOVUPS Z3, 192(DI)(AX*4)
+	ADDQ $64, AX
+	JMP pass3_both_loop64
+
 pass3_both_loop16:
 	LEAQ 16(AX), DX
 	CMPQ DX, R11
@@ -566,6 +598,612 @@ next_row64:
 	JNZ outer_loop64
 
 done64:
+	VZEROUPPER
+	RET
+
+// func layerNormResidualFloat32AVX512(in, residual, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float32)
+//
+// Fuses out = LayerNorm(in + residual) on trailing contiguous axes.
+// Pass 1 computes out[i] = in[i] + residual[i] (writing to L1-resident out) while accumulating the mean.
+// Pass 2 and Pass 3 read/write out[i] in-place from L1 cache.
+TEXT ·layerNormResidualFloat32AVX512(SB), NOSPLIT, $0-60
+	MOVQ in+0(FP), SI
+	MOVQ residual+8(FP), CX
+	MOVQ out+16(FP), DI
+	MOVQ gamma+24(FP), R8
+	MOVQ beta+32(FP), R9
+	MOVQ outerSize+40(FP), R10
+	MOVQ normSize+48(FP), R11
+	VMOVSS epsilon+56(FP), X15 // X15 = epsilon
+
+	// Precompute 1.0 / float32(normSize) in X14
+	VCVTSI2SSL R11, X14, X14
+	VMOVSS ·float32One(SB), X13
+	VDIVSS X14, X13, X14 // X14 = 1.0 / float32(normSize)
+
+	TESTQ R10, R10
+	JLE res_done
+	TESTQ R11, R11
+	JLE res_done
+
+res_outer_loop:
+	// --- PASS 1: ADD RESIDUAL -> OUT + ACCUMULATE MEAN ---
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+
+	XORQ AX, AX
+res_pass1_loop64:
+	LEAQ 64(AX), DX
+	CMPQ DX, R11
+	JG res_pass1_loop16
+
+	VMOVUPS (SI)(AX*4), Z4
+	VMOVUPS 64(SI)(AX*4), Z5
+	VMOVUPS 128(SI)(AX*4), Z6
+	VMOVUPS 192(SI)(AX*4), Z7
+	VADDPS (CX)(AX*4), Z4, Z4
+	VADDPS 64(CX)(AX*4), Z5, Z5
+	VADDPS 128(CX)(AX*4), Z6, Z6
+	VADDPS 192(CX)(AX*4), Z7, Z7
+	VMOVUPS Z4, (DI)(AX*4)
+	VMOVUPS Z5, 64(DI)(AX*4)
+	VMOVUPS Z6, 128(DI)(AX*4)
+	VMOVUPS Z7, 192(DI)(AX*4)
+	VADDPS Z4, Z0, Z0
+	VADDPS Z5, Z1, Z1
+	VADDPS Z6, Z2, Z2
+	VADDPS Z7, Z3, Z3
+	ADDQ $64, AX
+	JMP res_pass1_loop64
+
+res_pass1_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass1_reduce
+
+	VMOVUPS (SI)(AX*4), Z4
+	VADDPS (CX)(AX*4), Z4, Z4
+	VMOVUPS Z4, (DI)(AX*4)
+	VADDPS Z4, Z0, Z0
+	ADDQ $16, AX
+	JMP res_pass1_loop16
+
+res_pass1_reduce:
+	VADDPS Z1, Z0, Z0
+	VADDPS Z3, Z2, Z2
+	VADDPS Z2, Z0, Z0
+
+	VEXTRACTF64X4 $1, Z0, Y1
+	VADDPS Y1, Y0, Y0
+	VEXTRACTF128 $1, Y0, X1
+	VADDPS X1, X0, X0
+	VHADDPS X0, X0, X0
+	VHADDPS X0, X0, X0
+
+res_pass1_scalar:
+	CMPQ AX, R11
+	JGE res_pass1_done
+	VMOVSS (SI)(AX*4), X1
+	VADDSS (CX)(AX*4), X1, X1
+	VMOVSS X1, (DI)(AX*4)
+	VADDSS X1, X0, X0
+	INCQ AX
+	JMP res_pass1_scalar
+
+res_pass1_done:
+	VMULSS X14, X0, X0
+	VBROADCASTSS X0, Z12 // Z12 = mean
+
+	// --- PASS 2: VARIANCE (from L1-resident DI) ---
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+
+	XORQ AX, AX
+res_pass2_loop64:
+	LEAQ 64(AX), DX
+	CMPQ DX, R11
+	JG res_pass2_loop16
+
+	VMOVUPS (DI)(AX*4), Z4
+	VMOVUPS 64(DI)(AX*4), Z5
+	VMOVUPS 128(DI)(AX*4), Z6
+	VMOVUPS 192(DI)(AX*4), Z7
+	VSUBPS Z12, Z4, Z4
+	VSUBPS Z12, Z5, Z5
+	VSUBPS Z12, Z6, Z6
+	VSUBPS Z12, Z7, Z7
+	VFMADD231PS Z4, Z4, Z0
+	VFMADD231PS Z5, Z5, Z1
+	VFMADD231PS Z6, Z6, Z2
+	VFMADD231PS Z7, Z7, Z3
+	ADDQ $64, AX
+	JMP res_pass2_loop64
+
+res_pass2_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass2_reduce
+
+	VMOVUPS (DI)(AX*4), Z4
+	VSUBPS Z12, Z4, Z4
+	VFMADD231PS Z4, Z4, Z0
+	ADDQ $16, AX
+	JMP res_pass2_loop16
+
+res_pass2_reduce:
+	VADDPS Z1, Z0, Z0
+	VADDPS Z3, Z2, Z2
+	VADDPS Z2, Z0, Z0
+
+	VEXTRACTF64X4 $1, Z0, Y1
+	VADDPS Y1, Y0, Y0
+	VEXTRACTF128 $1, Y0, X1
+	VADDPS X1, X0, X0
+	VHADDPS X0, X0, X0
+	VHADDPS X0, X0, X0
+
+res_pass2_scalar:
+	CMPQ AX, R11
+	JGE res_pass2_done
+	VMOVSS (DI)(AX*4), X1
+	VSUBSS X12, X1, X1
+	VMULSS X1, X1, X1
+	VADDSS X1, X0, X0
+	INCQ AX
+	JMP res_pass2_scalar
+
+res_pass2_done:
+	VMULSS X14, X0, X0
+	VADDSS X15, X0, X0
+	VSQRTSS X0, X0, X0
+	VMOVSS ·float32One(SB), X1
+	VDIVSS X0, X1, X1
+	VBROADCASTSS X1, Z13 // Z13 = invStd
+
+	// --- PASS 3: NORMALIZE + SCALE/BIAS (in-place on DI) ---
+	TESTQ R8, R8
+	JZ res_no_gamma
+	TESTQ R9, R9
+	JZ res_gamma_only
+
+	XORQ AX, AX
+res_pass3_both_loop64:
+	LEAQ 64(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_both_loop16
+
+	VMOVUPS (DI)(AX*4), Z0
+	VMOVUPS 64(DI)(AX*4), Z1
+	VMOVUPS 128(DI)(AX*4), Z2
+	VMOVUPS 192(DI)(AX*4), Z3
+	VSUBPS Z12, Z0, Z0
+	VSUBPS Z12, Z1, Z1
+	VSUBPS Z12, Z2, Z2
+	VSUBPS Z12, Z3, Z3
+	VMULPS Z13, Z0, Z0
+	VMULPS Z13, Z1, Z1
+	VMULPS Z13, Z2, Z2
+	VMULPS Z13, Z3, Z3
+	VMOVUPS (R8)(AX*4), Z4
+	VMOVUPS 64(R8)(AX*4), Z5
+	VMOVUPS 128(R8)(AX*4), Z6
+	VMOVUPS 192(R8)(AX*4), Z7
+	VFMADD213PS (R9)(AX*4), Z4, Z0
+	VFMADD213PS 64(R9)(AX*4), Z5, Z1
+	VFMADD213PS 128(R9)(AX*4), Z6, Z2
+	VFMADD213PS 192(R9)(AX*4), Z7, Z3
+	VMOVUPS Z0, (DI)(AX*4)
+	VMOVUPS Z1, 64(DI)(AX*4)
+	VMOVUPS Z2, 128(DI)(AX*4)
+	VMOVUPS Z3, 192(DI)(AX*4)
+	ADDQ $64, AX
+	JMP res_pass3_both_loop64
+
+res_pass3_both_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_both_scalar
+
+	VMOVUPS (DI)(AX*4), Z0
+	VSUBPS Z12, Z0, Z0
+	VMULPS Z13, Z0, Z0
+	VMOVUPS (R8)(AX*4), Z4
+	VMOVUPS (R9)(AX*4), Z5
+	VFMADD213PS Z5, Z4, Z0
+	VMOVUPS Z0, (DI)(AX*4)
+	ADDQ $16, AX
+	JMP res_pass3_both_loop16
+
+res_pass3_both_scalar:
+	CMPQ AX, R11
+	JGE res_next_row
+	VMOVSS (DI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMULSS (R8)(AX*4), X0, X0
+	VADDSS (R9)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
+	INCQ AX
+	JMP res_pass3_both_scalar
+
+res_gamma_only:
+	XORQ AX, AX
+res_pass3_gamma_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_gamma_scalar
+
+	VMOVUPS (DI)(AX*4), Z0
+	VSUBPS Z12, Z0, Z0
+	VMULPS Z13, Z0, Z0
+	VMOVUPS (R8)(AX*4), Z4
+	VMULPS Z4, Z0, Z0
+	VMOVUPS Z0, (DI)(AX*4)
+	ADDQ $16, AX
+	JMP res_pass3_gamma_loop16
+
+res_pass3_gamma_scalar:
+	CMPQ AX, R11
+	JGE res_next_row
+	VMOVSS (DI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMULSS (R8)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
+	INCQ AX
+	JMP res_pass3_gamma_scalar
+
+res_no_gamma:
+	TESTQ R9, R9
+	JZ res_no_affine
+
+	XORQ AX, AX
+res_pass3_beta_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_beta_scalar
+
+	VMOVUPS (DI)(AX*4), Z0
+	VSUBPS Z12, Z0, Z0
+	VMULPS Z13, Z0, Z0
+	VMOVUPS (R9)(AX*4), Z5
+	VADDPS Z5, Z0, Z0
+	VMOVUPS Z0, (DI)(AX*4)
+	ADDQ $16, AX
+	JMP res_pass3_beta_loop16
+
+res_pass3_beta_scalar:
+	CMPQ AX, R11
+	JGE res_next_row
+	VMOVSS (DI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VADDSS (R9)(AX*4), X0, X0
+	VMOVSS X0, (DI)(AX*4)
+	INCQ AX
+	JMP res_pass3_beta_scalar
+
+res_no_affine:
+	XORQ AX, AX
+res_pass3_none_loop16:
+	LEAQ 16(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_none_scalar
+
+	VMOVUPS (DI)(AX*4), Z0
+	VSUBPS Z12, Z0, Z0
+	VMULPS Z13, Z0, Z0
+	VMOVUPS Z0, (DI)(AX*4)
+	ADDQ $16, AX
+	JMP res_pass3_none_loop16
+
+res_pass3_none_scalar:
+	CMPQ AX, R11
+	JGE res_next_row
+	VMOVSS (DI)(AX*4), X0
+	VSUBSS X12, X0, X0
+	VMULSS X13, X0, X0
+	VMOVSS X0, (DI)(AX*4)
+	INCQ AX
+	JMP res_pass3_none_scalar
+
+res_next_row:
+	MOVQ R11, AX
+	SHLQ $2, AX
+	ADDQ AX, SI
+	ADDQ AX, CX
+	ADDQ AX, DI
+	DECQ R10
+	JNZ res_outer_loop
+
+res_done:
+	VZEROUPPER
+	RET
+
+// func layerNormResidualFloat64AVX512(in, residual, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float64)
+TEXT ·layerNormResidualFloat64AVX512(SB), NOSPLIT, $0-64
+	MOVQ in+0(FP), SI
+	MOVQ residual+8(FP), CX
+	MOVQ out+16(FP), DI
+	MOVQ gamma+24(FP), R8
+	MOVQ beta+32(FP), R9
+	MOVQ outerSize+40(FP), R10
+	MOVQ normSize+48(FP), R11
+	VMOVSD epsilon+56(FP), X15 // X15 = epsilon
+
+	VCVTSI2SDQ R11, X14, X14
+	VMOVSD ·float64One(SB), X13
+	VDIVSD X14, X13, X14 // X14 = 1.0 / float64(normSize)
+
+	TESTQ R10, R10
+	JLE res_done64
+	TESTQ R11, R11
+	JLE res_done64
+
+res_outer_loop64:
+	VXORPD Z0, Z0, Z0
+	VXORPD Z1, Z1, Z1
+	VXORPD Z2, Z2, Z2
+	VXORPD Z3, Z3, Z3
+
+	XORQ AX, AX
+res_pass1_64_loop32:
+	LEAQ 32(AX), DX
+	CMPQ DX, R11
+	JG res_pass1_64_loop8
+
+	VMOVUPD (SI)(AX*8), Z4
+	VMOVUPD 64(SI)(AX*8), Z5
+	VMOVUPD 128(SI)(AX*8), Z6
+	VMOVUPD 192(SI)(AX*8), Z7
+	VADDPD (CX)(AX*8), Z4, Z4
+	VADDPD 64(CX)(AX*8), Z5, Z5
+	VADDPD 128(CX)(AX*8), Z6, Z6
+	VADDPD 192(CX)(AX*8), Z7, Z7
+	VMOVUPD Z4, (DI)(AX*8)
+	VMOVUPD Z5, 64(DI)(AX*8)
+	VMOVUPD Z6, 128(DI)(AX*8)
+	VMOVUPD Z7, 192(DI)(AX*8)
+	VADDPD Z4, Z0, Z0
+	VADDPD Z5, Z1, Z1
+	VADDPD Z6, Z2, Z2
+	VADDPD Z7, Z3, Z3
+	ADDQ $32, AX
+	JMP res_pass1_64_loop32
+
+res_pass1_64_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass1_64_reduce
+
+	VMOVUPD (SI)(AX*8), Z4
+	VADDPD (CX)(AX*8), Z4, Z4
+	VMOVUPD Z4, (DI)(AX*8)
+	VADDPD Z4, Z0, Z0
+	ADDQ $8, AX
+	JMP res_pass1_64_loop8
+
+res_pass1_64_reduce:
+	VADDPD Z1, Z0, Z0
+	VADDPD Z3, Z2, Z2
+	VADDPD Z2, Z0, Z0
+
+	VEXTRACTF64X4 $1, Z0, Y1
+	VADDPD Y1, Y0, Y0
+	VEXTRACTF128 $1, Y0, X1
+	VADDPD X1, X0, X0
+	VHADDPD X0, X0, X0
+
+res_pass1_64_scalar:
+	CMPQ AX, R11
+	JGE res_pass1_64_done
+	VMOVSD (SI)(AX*8), X1
+	VADDSD (CX)(AX*8), X1, X1
+	VMOVSD X1, (DI)(AX*8)
+	VADDSD X1, X0, X0
+	INCQ AX
+	JMP res_pass1_64_scalar
+
+res_pass1_64_done:
+	VMULSD X14, X0, X0
+	VBROADCASTSD X0, Z12 // Z12 = mean
+
+	// --- PASS 2: VARIANCE (from DI) ---
+	VXORPD Z0, Z0, Z0
+	VXORPD Z1, Z1, Z1
+	VXORPD Z2, Z2, Z2
+	VXORPD Z3, Z3, Z3
+
+	XORQ AX, AX
+res_pass2_64_loop32:
+	LEAQ 32(AX), DX
+	CMPQ DX, R11
+	JG res_pass2_64_loop8
+
+	VMOVUPD (DI)(AX*8), Z4
+	VMOVUPD 64(DI)(AX*8), Z5
+	VMOVUPD 128(DI)(AX*8), Z6
+	VMOVUPD 192(DI)(AX*8), Z7
+	VSUBPD Z12, Z4, Z4
+	VSUBPD Z12, Z5, Z5
+	VSUBPD Z12, Z6, Z6
+	VSUBPD Z12, Z7, Z7
+	VFMADD231PD Z4, Z4, Z0
+	VFMADD231PD Z5, Z5, Z1
+	VFMADD231PD Z6, Z6, Z2
+	VFMADD231PD Z7, Z7, Z3
+	ADDQ $32, AX
+	JMP res_pass2_64_loop32
+
+res_pass2_64_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass2_64_reduce
+
+	VMOVUPD (DI)(AX*8), Z4
+	VSUBPD Z12, Z4, Z4
+	VFMADD231PD Z4, Z4, Z0
+	ADDQ $8, AX
+	JMP res_pass2_64_loop8
+
+res_pass2_64_reduce:
+	VADDPD Z1, Z0, Z0
+	VADDPD Z3, Z2, Z2
+	VADDPD Z2, Z0, Z0
+
+	VEXTRACTF64X4 $1, Z0, Y1
+	VADDPD Y1, Y0, Y0
+	VEXTRACTF128 $1, Y0, X1
+	VADDPD X1, X0, X0
+	VHADDPD X0, X0, X0
+
+res_pass2_64_scalar:
+	CMPQ AX, R11
+	JGE res_pass2_64_done
+	VMOVSD (DI)(AX*8), X1
+	VSUBSD X12, X1, X1
+	VMULSD X1, X1, X1
+	VADDSD X1, X0, X0
+	INCQ AX
+	JMP res_pass2_64_scalar
+
+res_pass2_64_done:
+	VMULSD X14, X0, X0
+	VADDSD X15, X0, X0
+	VSQRTSD X0, X0, X0
+	VMOVSD ·float64One(SB), X1
+	VDIVSD X0, X1, X1
+	VBROADCASTSD X1, Z13 // Z13 = invStd
+
+	// --- PASS 3: NORMALIZE + SCALE/BIAS (in-place on DI) ---
+	TESTQ R8, R8
+	JZ res_no_gamma64
+	TESTQ R9, R9
+	JZ res_gamma_only64
+
+	XORQ AX, AX
+res_pass3_64_both_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_64_both_scalar
+
+	VMOVUPD (DI)(AX*8), Z0
+	VSUBPD Z12, Z0, Z0
+	VMULPD Z13, Z0, Z0
+	VMOVUPD (R8)(AX*8), Z4
+	VMOVUPD (R9)(AX*8), Z5
+	VFMADD213PD Z5, Z4, Z0
+	VMOVUPD Z0, (DI)(AX*8)
+	ADDQ $8, AX
+	JMP res_pass3_64_both_loop8
+
+res_pass3_64_both_scalar:
+	CMPQ AX, R11
+	JGE res_next_row64
+	VMOVSD (DI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMULSD (R8)(AX*8), X0, X0
+	VADDSD (R9)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
+	INCQ AX
+	JMP res_pass3_64_both_scalar
+
+res_gamma_only64:
+	XORQ AX, AX
+res_pass3_64_gamma_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_64_gamma_scalar
+
+	VMOVUPD (DI)(AX*8), Z0
+	VSUBPD Z12, Z0, Z0
+	VMULPD Z13, Z0, Z0
+	VMOVUPD (R8)(AX*8), Z4
+	VMULPD Z4, Z0, Z0
+	VMOVUPD Z0, (DI)(AX*8)
+	ADDQ $8, AX
+	JMP res_pass3_64_gamma_loop8
+
+res_pass3_64_gamma_scalar:
+	CMPQ AX, R11
+	JGE res_next_row64
+	VMOVSD (DI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMULSD (R8)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
+	INCQ AX
+	JMP res_pass3_64_gamma_scalar
+
+res_no_gamma64:
+	TESTQ R9, R9
+	JZ res_no_affine64
+
+	XORQ AX, AX
+res_pass3_64_beta_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_64_beta_scalar
+
+	VMOVUPD (DI)(AX*8), Z0
+	VSUBPD Z12, Z0, Z0
+	VMULPD Z13, Z0, Z0
+	VMOVUPD (R9)(AX*8), Z5
+	VADDPD Z5, Z0, Z0
+	VMOVUPD Z0, (DI)(AX*8)
+	ADDQ $8, AX
+	JMP res_pass3_64_beta_loop8
+
+res_pass3_64_beta_scalar:
+	CMPQ AX, R11
+	JGE res_next_row64
+	VMOVSD (DI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VADDSD (R9)(AX*8), X0, X0
+	VMOVSD X0, (DI)(AX*8)
+	INCQ AX
+	JMP res_pass3_64_beta_scalar
+
+res_no_affine64:
+	XORQ AX, AX
+res_pass3_64_none_loop8:
+	LEAQ 8(AX), DX
+	CMPQ DX, R11
+	JG res_pass3_64_none_scalar
+
+	VMOVUPD (DI)(AX*8), Z0
+	VSUBPD Z12, Z0, Z0
+	VMULPD Z13, Z0, Z0
+	VMOVUPD Z0, (DI)(AX*8)
+	ADDQ $8, AX
+	JMP res_pass3_64_none_loop8
+
+res_pass3_64_none_scalar:
+	CMPQ AX, R11
+	JGE res_next_row64
+	VMOVSD (DI)(AX*8), X0
+	VSUBSD X12, X0, X0
+	VMULSD X13, X0, X0
+	VMOVSD X0, (DI)(AX*8)
+	INCQ AX
+	JMP res_pass3_64_none_scalar
+
+res_next_row64:
+	MOVQ R11, AX
+	SHLQ $3, AX
+	ADDQ AX, SI
+	ADDQ AX, CX
+	ADDQ AX, DI
+	DECQ R10
+	JNZ res_outer_loop64
+
+res_done64:
 	VZEROUPPER
 	RET
 

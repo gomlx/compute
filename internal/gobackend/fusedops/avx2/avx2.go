@@ -19,6 +19,7 @@ func init() {
 
 func registerAVX2() {
 	gobackend.SetLayerNormTrailingArchDispatcher(gobackend.PriorityArch, DispatchLayerNormAVX2)
+	gobackend.SetLayerNormResidualTrailingArchDispatcher(gobackend.PriorityArch, DispatchLayerNormResidualAVX2)
 }
 
 //go:noescape
@@ -26,6 +27,12 @@ func layerNormFloat32AVX2(in, out, gamma, beta unsafe.Pointer, outerSize, normSi
 
 //go:noescape
 func layerNormFloat64AVX2(in, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float64)
+
+//go:noescape
+func layerNormResidualFloat32AVX2(in, residual, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float32)
+
+//go:noescape
+func layerNormResidualFloat64AVX2(in, residual, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float64)
 
 // DispatchLayerNormAVX2 executes LayerNorm on trailing contiguous axes using AVX2.
 func DispatchLayerNormAVX2(in, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float64, dtype dtypes.DType) bool {
@@ -35,6 +42,19 @@ func DispatchLayerNormAVX2(in, out, gamma, beta unsafe.Pointer, outerSize, normS
 		return true
 	case dtypes.Float64:
 		layerNormFloat64AVX2(in, out, gamma, beta, outerSize, normSize, epsilon)
+		return true
+	}
+	return false
+}
+
+// DispatchLayerNormResidualAVX2 executes fused (in + residual) + LayerNorm on trailing contiguous axes using AVX2.
+func DispatchLayerNormResidualAVX2(in, residual, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float64, dtype dtypes.DType) bool {
+	switch dtype {
+	case dtypes.Float32:
+		layerNormResidualFloat32AVX2(in, residual, out, gamma, beta, outerSize, normSize, float32(epsilon))
+		return true
+	case dtypes.Float64:
+		layerNormResidualFloat64AVX2(in, residual, out, gamma, beta, outerSize, normSize, epsilon)
 		return true
 	}
 	return false

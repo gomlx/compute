@@ -166,6 +166,119 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("LayerNorm with gamma/beta mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("ResidualAddFusion", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
+			const outerSize, normSize = 4, 71
+			epsilon := 1e-5
+			in0 := make([][]float32, outerSize)
+			in1 := make([][]float32, outerSize)
+			sumIn := make([][]float32, outerSize)
+			for r := range outerSize {
+				in0[r] = make([]float32, normSize)
+				in1[r] = make([]float32, normSize)
+				sumIn[r] = make([]float32, normSize)
+				for c := range normSize {
+					in0[r][c] = float32((r*13+c*7)%19 - 9)
+					in1[r][c] = float32((r*5+c*11)%23-11) * 0.5
+					sumIn[r][c] = in0[r][c] + in1[r][c]
+				}
+			}
+			gamma := make([]float32, normSize)
+			beta := make([]float32, normSize)
+			for c := range normSize {
+				gamma[c] = 1.0 + float32(c%5)*0.25
+				beta[c] = float32(c%7-3) * 0.1
+			}
+
+			want, err := testutil.Exec1(b, []any{sumIn, gamma, beta}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{1}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm reference failed: %+v", err)
+			}
+
+			got, err := testutil.Exec1(b, []any{in0, in1, gamma, beta}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{1}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+				t.Errorf("FusedLayerNorm(Add) Float32 mismatch:\n%s", diff)
+			}
+
+			testutil.SkipIfMissingDType(t, b, dtypes.Float64)
+			in0F64 := make([][]float64, outerSize)
+			in1F64 := make([][]float64, outerSize)
+			sumInF64 := make([][]float64, outerSize)
+			for r := range outerSize {
+				in0F64[r] = make([]float64, normSize)
+				in1F64[r] = make([]float64, normSize)
+				sumInF64[r] = make([]float64, normSize)
+				for c := range normSize {
+					in0F64[r][c] = float64(in0[r][c])
+					in1F64[r][c] = float64(in1[r][c])
+					sumInF64[r][c] = in0F64[r][c] + in1F64[r][c]
+				}
+			}
+			gammaF64 := make([]float64, normSize)
+			betaF64 := make([]float64, normSize)
+			for c := range normSize {
+				gammaF64[c] = float64(gamma[c])
+				betaF64[c] = float64(beta[c])
+			}
+			wantF64, err := testutil.Exec1(b, []any{sumInF64, gammaF64, betaF64}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{1}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm Float64 reference failed: %+v", err)
+			}
+			gotF64, err := testutil.Exec1(b, []any{in0F64, in1F64, gammaF64, betaF64}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{1}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) Float64 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantF64, gotF64, 1e-12); !ok {
+				t.Errorf("FusedLayerNorm(Add) Float64 mismatch:\n%s", diff)
+			}
+
+			// Also test non-trailing axis (axes=[0]) to exercise generic fallback path.
+			gamma0 := make([]float32, outerSize)
+			beta0 := make([]float32, outerSize)
+			for r := range outerSize {
+				gamma0[r] = 1.0 + float32(r)*0.25
+				beta0[r] = float32(r-1) * 0.1
+			}
+			wantAxis0, err := testutil.Exec1(b, []any{sumIn, gamma0, beta0}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedLayerNorm(params[0], []int{0}, epsilon, params[1], params[2])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm axis 0 reference failed: %+v", err)
+			}
+			gotAxis0, err := testutil.Exec1(b, []any{in0, in1, gamma0, beta0}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				added, err := f.Add(params[0], params[1])
+				if err != nil {
+					return nil, err
+				}
+				return f.FusedLayerNorm(added, []int{0}, epsilon, params[2], params[3])
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNorm(Add) axis 0 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantAxis0, gotAxis0, 1e-5); !ok {
+				t.Errorf("FusedLayerNorm(Add) axis 0 mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("FusedDense", func(t *testing.T) {
