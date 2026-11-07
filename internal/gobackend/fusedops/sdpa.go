@@ -58,15 +58,17 @@ func init() {
 }
 
 type nodeScaledDotProductAttention struct {
-	numHeads   int
-	numKVHeads int
-	axesLayout compute.AttentionAxesLayout
-	scale      float64
-	causal     bool
-	hasMask    bool
-	hasSeqLens bool
-	hasBias    bool
-	options    *compute.ScaledDotProductAttentionConfig
+	numHeads      int
+	numKVHeads    int
+	axesLayout    compute.AttentionAxesLayout
+	scale         float64
+	causal        bool
+	hasMask       bool
+	hasSeqLens    bool
+	hasBias       bool
+	options       *compute.ScaledDotProductAttentionConfig
+	maskConstData *gobackend.ConstantData
+	biasConstData *gobackend.ConstantData
 }
 
 func (d *nodeScaledDotProductAttention) EqualNodeData(other gobackend.NodeDataComparable) bool {
@@ -325,6 +327,12 @@ func buildSDPANode(
 		hasMask: mask != nil, hasSeqLens: hasSeqLens, hasBias: hasBias,
 		options: options,
 	}
+	if mask != nil && inputs[3].IsConstant() {
+		data.maskConstData = gobackend.NewAnonymousConstantData()
+	}
+	if hasBias && inputs[len(inputs)-1].IsConstant() {
+		data.biasConstData = gobackend.NewAnonymousConstantData()
+	}
 	node, _ := f.GetOrCreateNode(opType, qNode.Shape.Clone(), inputs, data)
 	return node, nil
 }
@@ -423,12 +431,27 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 		mDims := mask.RawShape.Dimensions
 		if data.axesLayout == compute.AttentionAxesLayoutBSHD && len(mDims) == 4 {
 			if mDims[1] > 1 && mDims[2] > 1 {
-				var err error
-				mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
-				if err != nil {
-					return nil, err
+				if data.maskConstData != nil {
+					var transposeErr error
+					mask = gobackend.GetOrSetCachedForm(data.maskConstData, func() *gobackend.Buffer {
+						tb, err := transposeBuffer(backend, mask, []int{0, 2, 1, 3})
+						if err != nil {
+							transposeErr = err
+							return nil
+						}
+						return tb
+					})
+					if transposeErr != nil {
+						return nil, transposeErr
+					}
+				} else {
+					var err error
+					mask, err = transposeBuffer(backend, mask, []int{0, 2, 1, 3})
+					if err != nil {
+						return nil, err
+					}
+					defer backend.PutBuffer(mask)
 				}
-				defer backend.PutBuffer(mask)
 				mDims = mask.RawShape.Dimensions
 			} else {
 				mDims = []int{mDims[0], mDims[2], mDims[1], mDims[3]}
@@ -441,12 +464,27 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 		bDims := bias.RawShape.Dimensions
 		if data.axesLayout == compute.AttentionAxesLayoutBSHD && len(bDims) == 4 {
 			if bDims[1] > 1 && bDims[2] > 1 {
-				var err error
-				bias, err = transposeBuffer(backend, bias, []int{0, 2, 1, 3})
-				if err != nil {
-					return nil, err
+				if data.biasConstData != nil {
+					var transposeErr error
+					bias = gobackend.GetOrSetCachedForm(data.biasConstData, func() *gobackend.Buffer {
+						tb, err := transposeBuffer(backend, bias, []int{0, 2, 1, 3})
+						if err != nil {
+							transposeErr = err
+							return nil
+						}
+						return tb
+					})
+					if transposeErr != nil {
+						return nil, transposeErr
+					}
+				} else {
+					var err error
+					bias, err = transposeBuffer(backend, bias, []int{0, 2, 1, 3})
+					if err != nil {
+						return nil, err
+					}
+					defer backend.PutBuffer(bias)
 				}
-				defer backend.PutBuffer(bias)
 				bDims = bias.RawShape.Dimensions
 			} else {
 				bDims = []int{bDims[0], bDims[2], bDims[1], bDims[3]}
@@ -947,6 +985,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	}
 	totalTasks := headTasks * numQBlocks
 	scratchSize := max(32*kvLen, 1)
+	scratchShape := shapes.Make(query.RawShape.DType, scratchSize)
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
@@ -954,7 +993,14 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		var taskCounter atomic.Int64
 
 		backend.Scheduler.SaturateUpTo(workersToStart, func() {
-			workerScores := make([]T, scratchSize)
+			scoreBuf, err := backend.GetBuffer(scratchShape)
+			var workerScores []T
+			if err == nil && scoreBuf != nil {
+				defer backend.PutBuffer(scoreBuf)
+				workerScores = scoreBuf.Flat.([]T)
+			} else {
+				workerScores = make([]T, scratchSize)
+			}
 			for {
 				taskIdx := int(taskCounter.Add(1) - 1)
 				if taskIdx >= totalTasks {
@@ -970,7 +1016,16 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 			}
 		})
 	} else {
-		scores := make([]T, scratchSize)
+		var scores []T
+		if backend != nil {
+			if scoreBuf, err := backend.GetBuffer(scratchShape); err == nil && scoreBuf != nil {
+				defer backend.PutBuffer(scoreBuf)
+				scores = scoreBuf.Flat.([]T)
+			}
+		}
+		if scores == nil {
+			scores = make([]T, scratchSize)
+		}
 		for batchIdx := range batchSize {
 			for kvHeadIdx := range numKVHeads {
 				processHead(batchIdx, kvHeadIdx, 0, seqLen, scores)

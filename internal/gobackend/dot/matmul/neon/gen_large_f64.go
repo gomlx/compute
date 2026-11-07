@@ -121,6 +121,15 @@ func neonLargeWithParamsFloat64( //alt:f64
 	outputBatchStride := lhsCrossSize * rhsCrossSize
 
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
+	//alt:f32|bf16|f16 isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16
+	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8 //alt:f64
+	if isSMEKernel && SMEUseHybridNEON && backend.Scheduler.AdjustedMaxParallelism() > 1 && batchSize < backend.Scheduler.AdjustedMaxParallelism() {
+		fineNc := max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
+		fineColPanels := (rhsCrossSize + fineNc - 1) / fineNc
+		if batchSize*numKPanels*fineColPanels <= 2048 {
+			params.RHSPanelCrossSize = fineNc
+		}
+	}
 	numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
 	rhsPanelsPerBatch := numKPanels * numColPanels
 	numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
@@ -158,8 +167,6 @@ func neonLargeWithParamsFloat64( //alt:f64
 		}
 	}
 
-	//alt:f32|bf16|f16 isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16
-	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8 //alt:f64
 	if isSMEKernel && SMEUseHybridNEON && maxWorkers > 1 && batchSize > 1 &&
 		lhsCrossSize*rhsCrossSize*contractingSize >= 16*1024*1024 &&
 		len(cachedLHSPanels) == 0 && len(cachedRHSPanels) == 0 {
@@ -179,16 +186,6 @@ func neonLargeWithParamsFloat64( //alt:f64
 		return
 	}
 	needTempOutput := !isSMEKernel && ((lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0))
-
-	if isSMEKernel && SMEUseHybridNEON && maxWorkers > 1 && batchSize < maxWorkers && len(cachedRHSPanels) == 0 {
-		fineNc := max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
-		fineColPanels := (rhsCrossSize + fineNc - 1) / fineNc
-		if batchSize*numKPanels*fineColPanels <= 2048 {
-			params.RHSPanelCrossSize = fineNc
-			numColPanels = fineColPanels
-			rhsPanelsPerBatch = numKPanels * numColPanels
-		}
-	}
 
 	var workBuf [256]matmul.WorkItem
 	var workItems []matmul.WorkItem

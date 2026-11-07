@@ -3,6 +3,7 @@
 package fusedops
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/gomlx/compute"
@@ -22,22 +23,69 @@ func init() {
 	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedAttentionQKVProjection] = execFusedAttentionQKVProjection
 }
 
+// qkvCachedConstant holds the pre-packed ConstantData containers (or split slices if small/generic)
+// for a constant wQKV weight matrix in FusedAttentionQKVProjection.
+type qkvCachedConstant struct {
+	qConstData *gobackend.ConstantData
+	kConstData *gobackend.ConstantData
+	vConstData *gobackend.ConstantData
+	wQ, wK, wV any
+}
+
 // nodeFusedAttentionQKVProjection stores parameters for the fused QKV projection.
 // It does not implement gobackend.NodeDataComparable because multi-output nodes are not
 // de-duplicated (see newMultiOutputsNode).
 type nodeFusedAttentionQKVProjection struct {
-	inFeatures int
-	qDim       int
-	kvDim      int
-	hasBiasQ   bool
-	hasBiasK   bool
-	hasBiasV   bool
+	dtype         dtypes.DType
+	inFeatures    int
+	qDim          int
+	kvDim         int
+	hasBiasQ      bool
+	hasBiasK      bool
+	hasBiasV      bool
+	wConstantData *gobackend.ConstantData
 }
 
 // EqualNodeData compares two node data structures for equality.
 // The other value is guaranteed to be of type *nodeFusedAttentionQKVProjection.
 func (d *nodeFusedAttentionQKVProjection) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	return *d == *(other.(*nodeFusedAttentionQKVProjection))
+	o := other.(*nodeFusedAttentionQKVProjection)
+	return d.dtype == o.dtype &&
+		d.inFeatures == o.inFeatures &&
+		d.qDim == o.qDim &&
+		d.kvDim == o.kvDim &&
+		d.hasBiasQ == o.hasBiasQ &&
+		d.hasBiasK == o.hasBiasK &&
+		d.hasBiasV == o.hasBiasV
+}
+
+// Compile-time check that *nodeFusedAttentionQKVProjection implements gobackend.ConstantCacheNodeData.
+var _ gobackend.ConstantCacheNodeData = (*nodeFusedAttentionQKVProjection)(nil)
+
+func (d *nodeFusedAttentionQKVProjection) CacheSignature(inputIdx int) string {
+	if d == nil || inputIdx != 1 {
+		return ""
+	}
+	return fmt.Sprintf("QKVProj(dtype=%s,in=%d,q=%d,kv=%d)", d.dtype, d.inFeatures, d.qDim, d.kvDim)
+}
+
+func (d *nodeFusedAttentionQKVProjection) BindConstantData(inputIdx int, cd *gobackend.ConstantData) {
+	if d == nil || inputIdx != 1 {
+		return
+	}
+	d.wConstantData = cd
+}
+
+func (d *nodeFusedAttentionQKVProjection) IsInputCached(inputIdx int) bool {
+	if d == nil || inputIdx != 1 {
+		return false
+	}
+	return d.wConstantData != nil && d.wConstantData.CachedForm() != nil
+}
+
+// Recompute implements gobackend.RecomputableNodeData for nodeFusedAttentionQKVProjection.
+func (d *nodeFusedAttentionQKVProjection) Recompute(_ *gobackend.Backend, _ []*gobackend.Node, _ *gobackend.Node) (any, error) {
+	return d, nil
 }
 
 // FusedAttentionQKVProjection performs fused Query-Key-Value projection.
@@ -115,12 +163,16 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 	}
 
 	data := &nodeFusedAttentionQKVProjection{
+		dtype:      wNode.Shape.DType,
 		inFeatures: inFeatures,
 		qDim:       queryDim,
 		kvDim:      keyValueDim,
 		hasBiasQ:   biasQ != nil,
 		hasBiasK:   biasK != nil,
 		hasBiasV:   biasV != nil,
+	}
+	if wNode.IsConstant() {
+		data.wConstantData = gobackend.NewAnonymousConstantData()
 	}
 	node := f.NewMultiOutputsNode(compute.OpTypeFusedAttentionQKVProjection, []shapes.Shape{qShape, kShape, vShape}, inputs...)
 	node.Data = data
@@ -180,19 +232,19 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 
 	switch x.RawShape.DType {
 	case dtypes.Float32:
-		if err := qkvExecMatmul[float32](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+		if err := qkvExecMatmul[float32](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim, data.wConstantData); err != nil {
 			return nil, err
 		}
 	case dtypes.Float64:
-		if err := qkvExecMatmul[float64](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+		if err := qkvExecMatmul[float64](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim, data.wConstantData); err != nil {
 			return nil, err
 		}
 	case dtypes.Float16:
-		if err := qkvExecMatmulHalf[float16.Float16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+		if err := qkvExecMatmulHalf[float16.Float16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim, data.wConstantData); err != nil {
 			return nil, err
 		}
 	case dtypes.BFloat16:
-		if err := qkvExecMatmulHalf[bfloat16.BFloat16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim); err != nil {
+		if err := qkvExecMatmulHalf[bfloat16.BFloat16](backend, x, wQKV, biasQ, biasK, biasV, qBuf, kBuf, vBuf, inFeatures, qDim, kvDim, data.wConstantData); err != nil {
 			return nil, err
 		}
 	default:
@@ -220,9 +272,9 @@ func qkvExecMatmul[T float32 | float64](
 	backend *gobackend.Backend,
 	xBuf, wQKVBuf, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer,
 	inFeatures, qDim, kvDim int,
+	wConstantData *gobackend.ConstantData,
 ) error {
 	xFlat := xBuf.Flat.([]T)
-	wFlat := wQKVBuf.Flat.([]T)
 	qFlat := qBuf.Flat.([]T)
 	kFlat := kBuf.Flat.([]T)
 	vFlat := vBuf.Flat.([]T)
@@ -242,41 +294,100 @@ func qkvExecMatmul[T float32 | float64](
 		biasV = biasVBuf.Flat.([]T)
 	}
 
+	runThree := func(wQ, wK, wV []T, qDot, kDot, vDot *dot.NodeData) error {
+		if err := matmul.ExecuteWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat, wQ,
+			1, lhsCrossSize, qDim, inFeatures,
+			qFlat, matmul.Epilogue[T]{Bias: biasQ}, qDot,
+		); err != nil {
+			return err
+		}
+		if err := matmul.ExecuteWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat, wK,
+			1, lhsCrossSize, kvDim, inFeatures,
+			kFlat, matmul.Epilogue[T]{Bias: biasK}, kDot,
+		); err != nil {
+			return err
+		}
+		return matmul.ExecuteWithEpilogue(
+			backend, dot.LayoutNonTransposed, xFlat, wV,
+			1, lhsCrossSize, kvDim, inFeatures,
+			vFlat, matmul.Epilogue[T]{Bias: biasV}, vDot,
+		)
+	}
+
+	if wConstantData != nil {
+		executed := false
+		var execErr error
+		cc := gobackend.GetOrSetCachedForm(wConstantData, func() *qkvCachedConstant {
+			executed = true
+			splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
+			if err != nil {
+				execErr = err
+				return nil
+			}
+			defer backend.PutBuffer(splitBuf)
+			wQ, wK, wV := qkvSplitWeights(wQKVBuf.Flat.([]T), splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+			qConst := gobackend.NewAnonymousConstantData()
+			kConst := gobackend.NewAnonymousConstantData()
+			vConst := gobackend.NewAnonymousConstantData()
+			if err := runThree(
+				wQ, wK, wV,
+				&dot.NodeData{RHSConstantData: qConst},
+				&dot.NodeData{RHSConstantData: kConst},
+				&dot.NodeData{RHSConstantData: vConst},
+			); err != nil {
+				execErr = err
+				return nil
+			}
+			res := &qkvCachedConstant{
+				qConstData: qConst,
+				kConstData: kConst,
+				vConstData: vConst,
+			}
+			if qConst.CachedForm() == nil || kConst.CachedForm() == nil || vConst.CachedForm() == nil {
+				res.wQ = slices.Clone(wQ)
+				res.wK = slices.Clone(wK)
+				res.wV = slices.Clone(wV)
+			}
+			return res
+		})
+		if execErr != nil {
+			return execErr
+		}
+		if executed {
+			return nil
+		}
+		var wQ, wK, wV []T
+		if cc.wQ != nil {
+			wQ = cc.wQ.([]T)
+			wK = cc.wK.([]T)
+			wV = cc.wV.([]T)
+		}
+		return runThree(
+			wQ, wK, wV,
+			&dot.NodeData{RHSConstantData: cc.qConstData},
+			&dot.NodeData{RHSConstantData: cc.kConstData},
+			&dot.NodeData{RHSConstantData: cc.vConstData},
+		)
+	}
+
 	splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
 	if err != nil {
 		return err
 	}
 	defer backend.PutBuffer(splitBuf)
-	wQ, wK, wV := qkvSplitWeights(wFlat, splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
-
-	if err := matmul.ExecuteWithEpilogue(
-		backend, dot.LayoutNonTransposed, xFlat, wQ,
-		1, lhsCrossSize, qDim, inFeatures,
-		qFlat, matmul.Epilogue[T]{Bias: biasQ},
-	); err != nil {
-		return err
-	}
-	if err := matmul.ExecuteWithEpilogue(
-		backend, dot.LayoutNonTransposed, xFlat, wK,
-		1, lhsCrossSize, kvDim, inFeatures,
-		kFlat, matmul.Epilogue[T]{Bias: biasK},
-	); err != nil {
-		return err
-	}
-	return matmul.ExecuteWithEpilogue(
-		backend, dot.LayoutNonTransposed, xFlat, wV,
-		1, lhsCrossSize, kvDim, inFeatures,
-		vFlat, matmul.Epilogue[T]{Bias: biasV},
-	)
+	wQ, wK, wV := qkvSplitWeights(wQKVBuf.Flat.([]T), splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+	return runThree(wQ, wK, wV, nil, nil, nil)
 }
 
 func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	backend *gobackend.Backend,
 	xBuf, wQKVBuf, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer,
 	inFeatures, qDim, kvDim int,
+	wConstantData *gobackend.ConstantData,
 ) error {
 	xFlat := xBuf.Flat.([]T)
-	wFlat := wQKVBuf.Flat.([]T)
 	qFlat := qBuf.Flat.([]T)
 	kFlat := kBuf.Flat.([]T)
 	vFlat := vBuf.Flat.([]T)
@@ -300,13 +411,6 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	biasK := toFloat32Bias(biasKBuf)
 	biasV := toFloat32Bias(biasVBuf)
 
-	splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
-	if err != nil {
-		return err
-	}
-	defer backend.PutBuffer(splitBuf)
-	wQ, wK, wV := qkvSplitWeights(wFlat, splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
-
 	maxOutDim := max(qDim, kvDim)
 	tmpBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, lhsCrossSize*maxOutDim))
 	if err != nil {
@@ -315,12 +419,12 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	defer backend.PutBuffer(tmpBuf)
 	tmpF32 := tmpBuf.Flat.([]float32)
 
-	runOne := func(w []T, outDim int, bias []float32, dst []T) error {
+	runOne := func(w []T, outDim int, bias []float32, dst []T, dotData *dot.NodeData) error {
 		subTmp := tmpF32[:lhsCrossSize*outDim]
 		if err := matmul.ExecuteWithEpilogue(
 			backend, dot.LayoutNonTransposed, xFlat, w,
 			1, lhsCrossSize, outDim, inFeatures,
-			subTmp, matmul.Epilogue[float32]{Bias: bias},
+			subTmp, matmul.Epilogue[float32]{Bias: bias}, dotData,
 		); err != nil {
 			return err
 		}
@@ -330,11 +434,77 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 		return nil
 	}
 
-	if err := runOne(wQ, qDim, biasQ, qFlat); err != nil {
+	runThree := func(wQ, wK, wV []T, qDot, kDot, vDot *dot.NodeData) error {
+		if err := runOne(wQ, qDim, biasQ, qFlat, qDot); err != nil {
+			return err
+		}
+		if err := runOne(wK, kvDim, biasK, kFlat, kDot); err != nil {
+			return err
+		}
+		return runOne(wV, kvDim, biasV, vFlat, vDot)
+	}
+
+	if wConstantData != nil {
+		executed := false
+		var execErr error
+		cc := gobackend.GetOrSetCachedForm(wConstantData, func() *qkvCachedConstant {
+			executed = true
+			splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
+			if err != nil {
+				execErr = err
+				return nil
+			}
+			defer backend.PutBuffer(splitBuf)
+			wQ, wK, wV := qkvSplitWeights(wQKVBuf.Flat.([]T), splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+			qConst := gobackend.NewAnonymousConstantData()
+			kConst := gobackend.NewAnonymousConstantData()
+			vConst := gobackend.NewAnonymousConstantData()
+			if err := runThree(
+				wQ, wK, wV,
+				&dot.NodeData{RHSConstantData: qConst},
+				&dot.NodeData{RHSConstantData: kConst},
+				&dot.NodeData{RHSConstantData: vConst},
+			); err != nil {
+				execErr = err
+				return nil
+			}
+			res := &qkvCachedConstant{
+				qConstData: qConst,
+				kConstData: kConst,
+				vConstData: vConst,
+			}
+			if qConst.CachedForm() == nil || kConst.CachedForm() == nil || vConst.CachedForm() == nil {
+				res.wQ = slices.Clone(wQ)
+				res.wK = slices.Clone(wK)
+				res.wV = slices.Clone(wV)
+			}
+			return res
+		})
+		if execErr != nil {
+			return execErr
+		}
+		if executed {
+			return nil
+		}
+		var wQ, wK, wV []T
+		if cc.wQ != nil {
+			wQ = cc.wQ.([]T)
+			wK = cc.wK.([]T)
+			wV = cc.wV.([]T)
+		}
+		return runThree(
+			wQ, wK, wV,
+			&dot.NodeData{RHSConstantData: cc.qConstData},
+			&dot.NodeData{RHSConstantData: cc.kConstData},
+			&dot.NodeData{RHSConstantData: cc.vConstData},
+		)
+	}
+
+	splitBuf, err := backend.GetBuffer(wQKVBuf.RawShape)
+	if err != nil {
 		return err
 	}
-	if err := runOne(wK, kvDim, biasK, kFlat); err != nil {
-		return err
-	}
-	return runOne(wV, kvDim, biasV, vFlat)
+	defer backend.PutBuffer(splitBuf)
+	wQ, wK, wV := qkvSplitWeights(wQKVBuf.Flat.([]T), splitBuf.Flat.([]T), inFeatures, qDim, kvDim)
+	return runThree(wQ, wK, wV, nil, nil, nil)
 }
