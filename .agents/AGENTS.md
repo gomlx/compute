@@ -47,7 +47,7 @@ auto-differentiation, use GoMLX instead.
   execution. The implementation of each op is (or is being moved to) in its
   sub-packages `ops`, `activations`, `dot`, `conv`, `fusedops`, and `scheduler`
   (see `docs/GoBackendScheduler.md`).
-- `support`: generic support libraries.
+- `support`: generic support libraries (including `CPUTime()` for process CPU time measurement, FLOPs calculation, bucketing, etc.).
   - `support/testutil`: test utilities that can be used by any `compute.Backend`
     implementation to test. 
   - `support/backendtest`: Backend compliance tests and standard benchmarks, that can be run
