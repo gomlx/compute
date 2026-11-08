@@ -23,17 +23,17 @@ TEXT ·avx2LargeKernelFloat16Asm(SB), NOSPLIT, $0-120
 
 	SHLQ $2, R11                         // R11 = outputStride in bytes (float32 output)
 
-	XORQ AX, AX                          // AX = lhsRowIdx = 0
-
-loop_lhs:
-	CMPQ AX, R13
-	JGE done
-
 	XORQ BX, BX                          // BX = rhsColIdx = 0
 
 loop_rhs:
 	CMPQ BX, R14
-	JGE next_lhs
+	JGE done
+
+	XORQ AX, AX                          // AX = lhsRowIdx = 0
+
+loop_lhs:
+	CMPQ AX, R13
+	JGE next_rhs
 
 	// 1. Zero all 8 accumulators (Y0..Y7)
 	VXORPS Y0, Y0, Y0
@@ -216,55 +216,55 @@ store_output:
 	JNZ store_output_accum
 
 	// Row 0
-	VMOVDQU Y0, (DX)
-	VMOVDQU Y1, 32(DX)
+	VMOVUPS Y0, (DX)
+	VMOVUPS Y1, 32(DX)
 	// Row 1
 	ADDQ R11, DX
-	VMOVDQU Y2, (DX)
-	VMOVDQU Y3, 32(DX)
+	VMOVUPS Y2, (DX)
+	VMOVUPS Y3, 32(DX)
 	// Row 2
 	ADDQ R11, DX
-	VMOVDQU Y4, (DX)
-	VMOVDQU Y5, 32(DX)
+	VMOVUPS Y4, (DX)
+	VMOVUPS Y5, 32(DX)
 	// Row 3
 	ADDQ R11, DX
-	VMOVDQU Y6, (DX)
-	VMOVDQU Y7, 32(DX)
+	VMOVUPS Y6, (DX)
+	VMOVUPS Y7, 32(DX)
 
-	ADDQ $16, BX                         // rhsColIdx += 16
-	JMP loop_rhs
+	ADDQ $4, AX                          // lhsRowIdx += 4
+	JMP loop_lhs
 
 store_output_accum:
 	// Row 0
 	VADDPS (DX), Y0, Y0
-	VMOVDQU Y0, (DX)
+	VMOVUPS Y0, (DX)
 	VADDPS 32(DX), Y1, Y1
-	VMOVDQU Y1, 32(DX)
+	VMOVUPS Y1, 32(DX)
 	// Row 1
 	ADDQ R11, DX
 	VADDPS (DX), Y2, Y2
-	VMOVDQU Y2, (DX)
+	VMOVUPS Y2, (DX)
 	VADDPS 32(DX), Y3, Y3
-	VMOVDQU Y3, 32(DX)
+	VMOVUPS Y3, 32(DX)
 	// Row 2
 	ADDQ R11, DX
 	VADDPS (DX), Y4, Y4
-	VMOVDQU Y4, (DX)
+	VMOVUPS Y4, (DX)
 	VADDPS 32(DX), Y5, Y5
-	VMOVDQU Y5, 32(DX)
+	VMOVUPS Y5, 32(DX)
 	// Row 3
 	ADDQ R11, DX
 	VADDPS (DX), Y6, Y6
-	VMOVDQU Y6, (DX)
+	VMOVUPS Y6, (DX)
 	VADDPS 32(DX), Y7, Y7
-	VMOVDQU Y7, 32(DX)
+	VMOVUPS Y7, 32(DX)
 
-	ADDQ $16, BX                         // rhsColIdx += 16
-	JMP loop_rhs
-
-next_lhs:
 	ADDQ $4, AX                          // lhsRowIdx += 4
 	JMP loop_lhs
+
+next_rhs:
+	ADDQ $16, BX                         // rhsColIdx += 16
+	JMP loop_rhs
 
 done:
 	VZEROUPPER

@@ -356,18 +356,25 @@ done:
   - Modern x86 execution cores have a 4-cycle FMA pipeline latency.
   - Using 16 independent accumulator registers ensures each accumulator is addressed once every 16 instructions, completely hiding latency and sustaining near 100% compute port utilization.
 
-### 4. Fast Transposition & Data Packing
+### 4. Fast Transposition, Data Packing & L1D/L2 Cache Residency
 
 - Avoid multi-step shuffle sequences in pure Go. Use direct hardware interleaving unpack instructions:
-  - **Float32**: `VUNPCKLPS`, `VUNPCKHPS` followed by 128-bit lane permutes (`VSHUFF32X4` in AVX-512 or `VEXTRACTF128` in AVX2).
-  - **Float64**: `VUNPCKLPD`, `VUNPCKHPD`, and `VSHUFF64X2`.
+  - **Float32**: `VUNPCKLPS`, `VUNPCKHPS` followed by 128-bit lane permutes (`VSHUFF32X4` in AVX-512 or `VEXTRACTF128` / `VPERM2F128` in AVX2).
+  - **Float64**: `VUNPCKLPD`, `VUNPCKHPD`, and `VSHUFF64X2` / `VPERM2F128`.
   - **Float16 / BFloat16**: Word unpacks (`VPUNPCKLWD`, `VPUNPCKHWD`) and permutes (`VPERMT2W` / `F16C`).
-- For RHS panel copies, unroll by 4 rows with 16 vector registers (`Z0`–`Z15`) to saturate physical memory bandwidth (~70 GB/s on DDR5).
+- **Avoid Integer $\leftrightarrow$ FP SIMD Domain Crossings (`VMOVUPS`/`VMOVUPD` vs `VMOVDQU`)**:
+  - On Intel CPUs, loading or storing floating-point vectors with integer-domain `VMOVDQU` before/after FP-domain `VFMADD231PS`, `VADDPS`, `VUNPCKLPS`, or `VPERM2F128` incurs a 1–2 cycle bypass delay between the integer and floating-point execution domains. Use `VMOVUPS` (`Float32`) and `VMOVUPD` (`Float64`) consistently in FP microkernels and packing routines.
+- **L1D/L2 Cache-Resident Loop Ordering in AVX2 Large GEMM (`internal/gobackend/dot/matmul/avx2/large_amd64_*.s`)**:
+  - In `avx2LargeKernel*Asm`, iterate `loop_rhs` (columns `0..Nc` in steps of `Nr = 16`) as the **outer** loop and `loop_lhs` (rows `0..Mc` in steps of `Mr = 4`) as the **inner** loop.
+  - Because `packedLHS` is `Mc × Kc = 32 × 128 × 4B = 16 KB` and one `packedRHS` strip is `Nr × Kc = 16 × 128 × 4B = 8 KB`, their combined `24 KB` footprint fits 100% inside a 32 KB L1D cache (including Intel Alder Lake / Raptor Lake E-cores), whereas putting `loop_rhs` inside `loop_lhs` streams the entire `128–256 KB` `packedRHS` panel on every 4-row strip and overflows L1D cache.
+  - Sizing `AVX2ParamsFloat32.RHSPanelCrossSize` (`Nc`) to `256` (`128 KB` per `packedRHS` panel) keeps both `packedRHS` and the active `outputMatrix` sub-chunk (`128 KB`) inside per-core L2 caches across contracting panels (`K`) and inline `ApplyEpilogueTile` activations.
+- For RHS panel copies, unroll by 4 rows with vector registers to saturate physical memory bandwidth (~70 GB/s on DDR5).
 - Strive for 64-byte cache-line alignment to avoid split-cache-line penalties.
 
 ### 5. Horizontal Reductions
 
 When reducing vector lanes to a scalar (e.g. in row sums, LayerNorm mean/variance):
+- **Avoid `VHADDPS` / `VHADDPD`**: Horizontal add instructions are microcoded on both Intel and AMD CPUs (3 uops, 5–7 cycles latency, port contention). Always use `VPERMILPS` / `VSHUFPS` + `VADDPS` / `VADDSS` instead.
 - **AVX2 8-lane reduction**:
   ```assembly
   VEXTRACTF128 $1, Y0, X1  // extract upper 128 bits

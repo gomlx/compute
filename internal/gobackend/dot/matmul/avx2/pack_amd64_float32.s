@@ -59,10 +59,10 @@ loop_cols:
 	JGE check_tail_cols
 
 	// Load 8 float32s (32 bytes) from rows 0, 1, 2, 3
-	VMOVDQU (SI), Y0
-	VMOVDQU (DX), Y1
-	VMOVDQU (DI), Y2
-	VMOVDQU (CX), Y3
+	VMOVUPS (SI), Y0
+	VMOVUPS (DX), Y1
+	VMOVUPS (DI), Y2
+	VMOVUPS (CX), Y3
 
 	// Stage 1: 32-bit unpack (intra-128-bit lane)
 	VUNPCKLPS Y1, Y0, Y4
@@ -83,10 +83,10 @@ loop_cols:
 	VPERM2F128 $0x31, Y11, Y10, Y15      // [Col 6 | Col 7]
 
 	// Store 4 pairs of output columns (cols 0..7)
-	VMOVDQU Y12, (R9)
-	VMOVDQU Y13, 32(R9)
-	VMOVDQU Y14, 64(R9)
-	VMOVDQU Y15, 96(R9)
+	VMOVUPS Y12, (R9)
+	VMOVUPS Y13, 32(R9)
+	VMOVUPS Y14, 64(R9)
+	VMOVUPS Y15, 96(R9)
 
 	ADDQ $32, SI
 	ADDQ $32, DX

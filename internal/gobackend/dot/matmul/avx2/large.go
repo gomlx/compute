@@ -100,9 +100,10 @@ func avx2LargeFloat32( //alt:f32
 	}
 
 	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
+	maxMPanelsPerSubChunk := max(1, min(4, 16/max(1, numKPanels)))
 	lhsAllocPanels := 1
 	if numColPanels > 1 {
-		lhsAllocPanels = max(1, min(16, numRowPanels*numKPanels))
+		lhsAllocPanels = maxMPanelsPerSubChunk * numKPanels
 	}
 	needTempOutput := (lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)
 
@@ -360,23 +361,48 @@ func avx2LargeFloat32( //alt:f32
 					}
 				}
 				batchOutput := output[batchIdx*outputBatchStride : (batchIdx+1)*outputBatchStride]
-				avx2LargeMatrixSliceFloat32( //alt:f32
-					//alt:bf16 avx2LargeMatrixSliceBFloat16(
-					//alt:f16 avx2LargeMatrixSliceFloat16(
-					//alt:f64 avx2LargeMatrixSliceFloat64(
-					layout,
-					batchLhs, batchRhs, batchOutput,
-					lhsCrossSize, rhsCrossSize, contractingSize,
-					item.LHSRowStart, item.LHSRowEnd, item.RHSColStart, item.RHSColEnd,
-					params,
-					packedLHS, packedRHS, packedOutput,
-					accumOutput,
-					batchCachedLHSPanels, batchCachedRHSPanels,
-					batchSharedRHSPanels, batchSharedRHSReady,
-					false,
-					matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
-					//alt:f64 matmul.Epilogue[float64]{},
-				)
+				if len(cachedLHSPanels) == 0 && (len(cachedRHSPanels) > 0 || len(sharedRHSPanels) > 0) {
+					subChunkRows := maxMPanelsPerSubChunk * params.LHSPanelCrossSize
+					for subRowStart := item.LHSRowStart; subRowStart < item.LHSRowEnd; {
+						subRowEnd := min(item.LHSRowEnd, subRowStart+subChunkRows)
+						avx2LargeMatrixSliceFloat32( //alt:f32
+							//alt:bf16 avx2LargeMatrixSliceBFloat16(
+							//alt:f16 avx2LargeMatrixSliceFloat16(
+							//alt:f64 avx2LargeMatrixSliceFloat64(
+							layout,
+							batchLhs, batchRhs, batchOutput,
+							lhsCrossSize, rhsCrossSize, contractingSize,
+							subRowStart, subRowEnd, item.RHSColStart, item.RHSColEnd,
+							params,
+							packedLHS, packedRHS, packedOutput,
+							accumOutput,
+							batchCachedLHSPanels, batchCachedRHSPanels,
+							batchSharedRHSPanels, batchSharedRHSReady,
+							false,
+							matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
+							//alt:f64 matmul.Epilogue[float64]{},
+						)
+						subRowStart = subRowEnd
+					}
+				} else {
+					avx2LargeMatrixSliceFloat32( //alt:f32
+						//alt:bf16 avx2LargeMatrixSliceBFloat16(
+						//alt:f16 avx2LargeMatrixSliceFloat16(
+						//alt:f64 avx2LargeMatrixSliceFloat64(
+						layout,
+						batchLhs, batchRhs, batchOutput,
+						lhsCrossSize, rhsCrossSize, contractingSize,
+						item.LHSRowStart, item.LHSRowEnd, item.RHSColStart, item.RHSColEnd,
+						params,
+						packedLHS, packedRHS, packedOutput,
+						accumOutput,
+						batchCachedLHSPanels, batchCachedRHSPanels,
+						batchSharedRHSPanels, batchSharedRHSReady,
+						false,
+						matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
+						//alt:f64 matmul.Epilogue[float64]{},
+					)
+				}
 			}
 			itemIdx = int(nextItem.Add(1) - 1)
 			if itemIdx >= len(workItems) {
@@ -492,6 +518,7 @@ func avx2LargeMultiFloat32( //alt:f32
 	//alt:f64 sharedRHSPanels := make([][][]float64, numTargets)
 	sharedRHSReady := make([][]atomic.Uint32, numTargets)
 	if maxWorkers > 1 && batchSize < maxWorkers && needPackedRHS {
+		needPackedRHS = false
 		rhsPanelBufSize := params.PanelContractingSize * params.RHSPanelCrossSize
 		for tIdx := range numTargets {
 			if len(cachedRHSPanels[tIdx]) > 0 {
@@ -514,8 +541,10 @@ func avx2LargeMultiFloat32( //alt:f32
 					}
 					sharedRHSPanels[tIdx] = panels
 					sharedRHSReady[tIdx] = make([]atomic.Uint32, totalPanels)
+					continue
 				}
 			}
+			needPackedRHS = true
 		}
 	}
 
@@ -574,8 +603,7 @@ func avx2LargeMultiFloat32( //alt:f32
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				for subRowStart := item.LHSRowStart; subRowStart < item.LHSRowEnd; {
-					startPanel := subRowStart / params.LHSPanelCrossSize
-					subRowEnd := min(item.LHSRowEnd, (startPanel+maxMPanelsPerSubChunk)*params.LHSPanelCrossSize)
+					subRowEnd := min(item.LHSRowEnd, subRowStart+maxMPanelsPerSubChunk*params.LHSPanelCrossSize)
 					lhsPacked := false
 					for tIdx := range numTargets {
 						t := &targets[tIdx]
@@ -724,7 +752,11 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 
 		numMPanels := 0
 		if rowEnd > rowStart {
-			numMPanels = ((rowEnd - 1) / params.LHSPanelCrossSize) - (rowStart / params.LHSPanelCrossSize) + 1
+			if len(cachedLHSPanels) > 0 {
+				numMPanels = ((rowEnd - 1) / params.LHSPanelCrossSize) - (rowStart / params.LHSPanelCrossSize) + 1
+			} else {
+				numMPanels = (rowEnd - rowStart + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+			}
 		}
 		canCacheAllLHS := len(packedLHS) >= numMPanels*numKPanels*lhsPanelBufSize
 		accumPanelStride := params.RHSPanelCrossSize
@@ -757,6 +789,30 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 						sharedRHSReady[panelIdx].Store(2)
 					} else {
 						for sharedRHSReady[panelIdx].Load() != 2 {
+							helped := false
+							for otherK := range numKPanels {
+								for otherCol := range numColPanels {
+									otherIdx := otherK*numColPanels + otherCol
+									if sharedRHSReady[otherIdx].Load() == 0 && sharedRHSReady[otherIdx].CompareAndSwap(0, 1) {
+										otherKStart := otherK * params.PanelContractingSize
+										otherKWidth := min(params.PanelContractingSize, contractingSize-otherKStart)
+										otherColStart := otherCol * params.RHSPanelCrossSize
+										otherColWidth := min(params.RHSPanelCrossSize, rhsCrossSize-otherColStart)
+										otherPanel := sharedRHSPanels[otherIdx]
+										if layout == dot.LayoutNonTransposed {
+											avx2PackRHSNonTransposed(rhsMatrix, otherPanel, otherKStart, otherColStart, rhsCrossSize, otherKWidth, otherColWidth, params.RHSL1KernelCols)
+										} else {
+											avx2PackLHSKernelRows4(rhsMatrix, otherPanel, otherColStart, otherKStart, contractingSize, otherColWidth, otherKWidth, params.RHSL1KernelCols)
+										}
+										sharedRHSReady[otherIdx].Store(2)
+										helped = true
+										break
+									}
+								}
+								if helped || sharedRHSReady[panelIdx].Load() == 2 {
+									break
+								}
+							}
 						}
 					}
 				}
@@ -773,12 +829,16 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
-				rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
-				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				lhsPanelEnd := lhsPanelRowIdx + params.LHSPanelCrossSize
+				if len(cachedLHSPanels) > 0 {
+					rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
+					lhsPanelEnd = (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				}
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
 				curPackedLHS := packedLHS
 				if len(cachedLHSPanels) > 0 {
+					rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
 					numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
 					panel := cachedLHSPanels[kPanelIdx*numRowPanels+rowPanelIdx]
 					stripOffset := (lhsPanelRowIdx % params.LHSPanelCrossSize) / params.LHSL1KernelRows
@@ -909,8 +969,11 @@ func avx2LargeMatrixSliceFloat32( //alt:f32
 		if useAccum {
 			// Copy accumulated results from L2 cache to outputMatrix in a single pass.
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
-				rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
-				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				lhsPanelEnd := lhsPanelRowIdx + params.LHSPanelCrossSize
+				if len(cachedLHSPanels) > 0 {
+					rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
+					lhsPanelEnd = (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				}
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
 				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
