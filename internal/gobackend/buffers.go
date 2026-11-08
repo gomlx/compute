@@ -287,6 +287,10 @@ func CopyFlat(flatDst, flatSrc any) {
 		copy(dst, flatSrc.([]uint64)) //nolint:errcheck
 	case []bool:
 		copy(dst, flatSrc.([]bool)) //nolint:errcheck
+	case []complex64:
+		copy(dst, flatSrc.([]complex64)) //nolint:errcheck
+	case []complex128:
+		copy(dst, flatSrc.([]complex128)) //nolint:errcheck
 	default:
 		// Fallback to reflection for less common types.
 		reflect.Copy(reflect.ValueOf(flatDst), reflect.ValueOf(flatSrc))
@@ -295,6 +299,26 @@ func CopyFlat(flatDst, flatSrc any) {
 
 // MutableBytes returns the slice of the bytes used by the flat given -- it works with any of the supported data types for buffers.
 func (b *Buffer) MutableBytes() ([]byte, error) {
+	if b == nil || !b.RawShape.Ok() {
+		return nil, nil
+	}
+	byteSize := int(b.RawShape.ByteSize())
+	if byteSize == 0 {
+		return nil, nil
+	}
+	if len(b.RawBytes) >= byteSize {
+		return b.RawBytes[:byteSize], nil
+	}
+	switch b.RawShape.DType {
+	case dtypes.Complex64:
+		if flat, ok := b.Flat.([]complex64); ok && len(flat) > 0 {
+			return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(flat))), len(flat)*8), nil
+		}
+	case dtypes.Complex128:
+		if flat, ok := b.Flat.([]complex128); ok && len(flat) > 0 {
+			return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(flat))), len(flat)*16), nil
+		}
+	}
 	tmpAny, tmpErr := mutableBytesDTypeMap.Get(b.RawShape.DType)
 	if tmpErr != nil {
 		return nil, tmpErr

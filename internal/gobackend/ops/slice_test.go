@@ -46,6 +46,115 @@ func TestSliceFastPathsAndParallel(t *testing.T) {
 		strides := []int{1, 2, 2} // [2, 64, 512] = 65,536 elements
 		verifySlice(t, inDims, starts, limits, strides)
 	})
+
+	// 5. Various block byte sizes (1..512B) across multiple dtypes
+	t.Run("BlockSizesAndDTypes", func(t *testing.T) {
+		for _, ch := range []int{1, 2, 3, 4, 5, 7, 8, 12, 16, 20, 24, 32, 48, 64, 80, 96, 128} {
+			inDims := []int{512, ch + 7}
+			starts := []int{0, 3}
+			limits := []int{512, 3 + ch}
+			strides := []int{1, 1}
+			verifySlice(t, inDims, starts, limits, strides)
+		}
+	})
+}
+
+func TestConcatenateFastPathsAndParallel(t *testing.T) {
+	// 1. 2-input trailing axis concatenation with various channel widths (including non-multiple-of-16)
+	t.Run("TwoInputTrailingAxis", func(t *testing.T) {
+		for _, pair := range [][2]int{{1, 2}, {3, 5}, {8, 8}, {16, 16}, {20, 12}, {32, 16}, {64, 32}, {96, 64}} {
+			c0, c1 := pair[0], pair[1]
+			outer := 1024
+			a := make([]float32, outer*c0)
+			b := make([]float32, outer*c1)
+			for i := range a {
+				a[i] = float32(i + 1)
+			}
+			for i := range b {
+				b[i] = float32(-(i + 1))
+			}
+
+			shapeA := shapes.Make(dtypes.Float32, outer, c0)
+			shapeB := shapes.Make(dtypes.Float32, outer, c1)
+			builder := backend.Builder("test_concat2")
+			mainFn := builder.Main()
+			pA, _ := mainFn.Parameter("a", shapeA, nil)
+			pB, _ := mainFn.Parameter("b", shapeB, nil)
+			cat, err := mainFn.Concatenate(1, pA, pB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = mainFn.Return([]compute.Value{cat}, nil)
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			bufA := makeBuffer(t, shapeA, a)
+			bufB := makeBuffer(t, shapeB, b)
+			outBufs, err := exec.Execute([]compute.Buffer{bufA, bufB}, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]float32, outer*(c0+c1))
+			if err := outBufs[0].ToFlatData(got); err != nil {
+				t.Fatal(err)
+			}
+			for r := range outer {
+				outRow := got[r*(c0+c1) : (r+1)*(c0+c1)]
+				for j := range c0 {
+					if outRow[j] != a[r*c0+j] {
+						t.Fatalf("c0=%d,c1=%d row %d col %d: got %v, want %v", c0, c1, r, j, outRow[j], a[r*c0+j])
+					}
+				}
+				for j := range c1 {
+					if outRow[c0+j] != b[r*c1+j] {
+						t.Fatalf("c0=%d,c1=%d row %d col %d: got %v, want %v", c0, c1, r, c0+j, outRow[c0+j], b[r*c1+j])
+					}
+				}
+			}
+		}
+	})
+
+	// 2. Duplicate-input Concatenate([x, x], axis) (UpSampleImages pattern)
+	t.Run("DuplicateInputUpSample", func(t *testing.T) {
+		for _, c := range []int{3, 8, 16, 24, 32, 48, 64, 96} {
+			outer := 1024
+			a := make([]float32, outer*c)
+			for i := range a {
+				a[i] = float32(i + 1)
+			}
+			shapeA := shapes.Make(dtypes.Float32, outer, c)
+			builder := backend.Builder("test_concat_dup")
+			mainFn := builder.Main()
+			pA, _ := mainFn.Parameter("a", shapeA, nil)
+			cat, err := mainFn.Concatenate(1, pA, pA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = mainFn.Return([]compute.Value{cat}, nil)
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			bufA := makeBuffer(t, shapeA, a)
+			outBufs, err := exec.Execute([]compute.Buffer{bufA}, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make([]float32, outer*2*c)
+			if err := outBufs[0].ToFlatData(got); err != nil {
+				t.Fatal(err)
+			}
+			for r := range outer {
+				for j := range c {
+					want := a[r*c+j]
+					if got[r*2*c+j] != want || got[r*2*c+c+j] != want {
+						t.Fatalf("c=%d row %d col %d mismatch", c, r, j)
+					}
+				}
+			}
+		}
+	})
 }
 
 func verifySlice(t *testing.T, inDims, starts, limits, strides []int) {

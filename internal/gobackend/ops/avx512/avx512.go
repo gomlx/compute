@@ -44,6 +44,12 @@ func registerAVX512() {
 		}
 		return DispatchBinaryTrailingAVX512(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetStridedCopyArchDispatcher(
+		gobackend.PriorityAVX512,
+		DispatchCopyStridedBytesAVX512,
+		DispatchDupStridedBytesAVX512,
+		DispatchConcat2StridedBytesAVX512,
+	)
 }
 
 //go:noescape
