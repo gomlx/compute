@@ -149,6 +149,7 @@ var Capabilities = compute.Capabilities{
 		// Fused operations:
 		compute.OpTypeFusedSoftmax:                   true,
 		compute.OpTypeFusedLayerNorm:                 true,
+		compute.OpTypeFusedLayerNormVJP:              true,
 		compute.OpTypeFusedActivation:                true,
 		compute.OpTypeFusedActivationVJP:             true,
 		compute.OpTypeFusedDense:                     true,

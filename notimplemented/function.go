@@ -134,3 +134,7 @@ func (f Function) FusedScaledDotProductAttentionVJP(query, key, value compute.Va
 func (f Function) FusedDenseVJP(x, weight, bias, y, dOutput compute.Value, options compute.DenseConfig) (dx, dWeight, dBias compute.Value, err error) {
 	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedDenseVJP)
 }
+
+func (f Function) FusedLayerNormVJP(x, dOutput compute.Value, axes []int, epsilon float64, gamma, beta compute.Value) (dx, dGamma, dBeta compute.Value, err error) {
+	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedLayerNormVJP)
+}

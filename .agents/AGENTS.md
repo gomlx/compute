@@ -238,8 +238,8 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 
 | Category | Operations |
 | :--- | :--- |
-| **Activations & Normalization** | `FusedSoftmax`, `FusedGelu`, `FusedLayerNorm` |
-| **Dense & Projections** | `FusedDense`, `FusedAttentionQKVProjection` |
+| **Activations & Normalization** | `FusedSoftmax`, `FusedActivation`, `FusedActivationVJP`, `FusedLayerNorm`, `FusedLayerNormVJP` |
+| **Dense & Projections** | `FusedDense`, `FusedDenseVJP`, `FusedAttentionQKVProjection` |
 | **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
 | **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense` |
 
