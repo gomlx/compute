@@ -290,8 +290,12 @@ When implementing or modifying assembly routines in `./internal/gobackend/...`, 
 
 ### 1. Directory and File Organization
 
-Assembly implementations are organized in subdirectories per SIMD architecture:
-- Separate subdirectories: `avx2/` and `avx512/` under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512}`, `internal/gobackend/activations/{avx2,avx512}`, `internal/gobackend/dot/matmul/{avx2,avx512}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+All code specific to a SIMD architecture—including Go wrappers, assembly routines, and unit/benchmark tests (`*_test.go`)—must be placed in the corresponding architecture subdirectory, never in the parent generic package directory:
+- **Separate subdirectories**: `avx2/`, `avx512/`, `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512,neon}`, `internal/gobackend/activations/{avx2,avx512,neon}`, `internal/gobackend/dot/matmul/{avx2,avx512,neon}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+- **Registration & Default Imports**: Subpackages register their implementations in `init()` (using `gobackend.RegisterPriority`) and are blank-imported in `internal/gobackend/defaultpkgs/defaultpkgs_<arch>_simd.go`. Include an untagged `doc.go` in each subdirectory so the package remains valid across all build configurations.
+- **Tests in Architecture Subdirectories**:
+  - Place architecture-specific unit tests and microbenchmarks inside the subdirectory (e.g. `avx2/avx2_test.go`, `avx512/avx512_test.go`, `neon/neon_test.go`).
+  - Rather than reimplementing mathematical formulas in architecture tests, import the parent package and compare the SIMD kernel outputs directly against the baseline `NoSIMD` reference implementation (generic operation semantics belong in `support/backendtest`).
 - **Go Declaration (`*_amd64.go`)**: Forward-declare assembly functions with `//go:noescape`, e.g.:
   ```go
   //go:noescape
@@ -457,7 +461,7 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
 When implementing or modifying ARM64 assembly routines in `./internal/gobackend/...` or `./dtypes/...`, follow these guidelines:
 
 ### 1. Directory and File Organization
-- Separate subdirectories: `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`).
+- **Separate subdirectories**: Place all ARM64-specific SIMD code, assembly files, and unit/benchmark tests (`*_test.go`) in `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/activations/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`), and blank-import the package in `internal/gobackend/defaultpkgs/defaultpkgs_arm64_simd.go`.
 - **Go Declaration (`*_arm64.go`)**: Forward-declare assembly functions with `//go:noescape`.
 - **Assembly Implementation (`*_arm64.s`)**:
   - Build tag: `//go:build arm64 && goexperiment.simd` (or `//go:build arm64`).

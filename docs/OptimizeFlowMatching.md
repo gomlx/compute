@@ -430,3 +430,24 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 | **Median train step wall time** | **588.5 ms / step** | **335.7 ms / step** | **329.0 ms / step** (range: `326.3–331.8 ms`) | **-6.7 ms / step (-2.0%)** | **-259.5 ms / step (-44.1%, 1.79× speedup)** |
 | **Process CPU time / step** | **13.4 s / step** | **7.2 s / step** | **7.3 s / step** (range: `7.3–7.4 s`) | **+0.1 s / step** (more medium ops parallelized across 32 threads) | **-6.1 s / step (-45.5% CPU time, 61s saved over 10 steps)** |
 | **Mean core utilization** | **19.7 cores** | **20.2 cores** | **20.7 cores** (range: `20.6–21.1`) | **+0.5 cores** | Higher multi-core utilization |
+
+---
+
+### Step 4: Handwritten AVX-512 & AVX2 Assembly for `SiLU` (`Swish`) Forward, `SiluBiasTile`, and `SiluVJP` Across All Floating-Point DTypes
+
+#### Changes Implemented
+1. **Handwritten AVX-512 & AVX2 `Float32` Assembly (`internal/gobackend/activations/{avx512,avx2}/silu_amd64.s`)**:
+   - Implemented `siluFloat32AVX512Asm` (`32` floats/iter, 2× unrolled `ZMM` loop + `16`-float tail), `siluBiasTileFloat32AVX512Asm` (fused 2D tile `Bias + SiLU`), and `siluVJPFloat32AVX512Asm` ($dx = (dOut \cdot \sigma) \cdot ((1 + x) - x \cdot \sigma)$), plus AVX2 counterparts (`siluFloat32AVX2Asm`, `siluBiasTileFloat32AVX2Asm`, `siluVJPFloat32AVX2Asm`).
+   - Pinned all 14 constants in `Z18`–`Z31` (AVX-512), replaced `ConvertToInt32` with magic-number integer $2^n$ reconstruction (`12582912.0` + `VPSLLD $23` + `VPADDD`), evaluated the degree-7 polynomial via Estrin's tree, and fused `denom = 1.0 + scale * expPoly` into a single `VFMADD231PS`.
+2. **All-DType Vectorized `SiLU` Forward & VJP (`Float64`, `BFloat16`, `Float16`)**:
+   - Registered `SiluAVX512Float64`, `SiluVJPAVX512Float64`, `SiluAVX512BF16`, `SiluVJPAVX512BF16`, `SiluAVX512F16`, `SiluVJPAVX512F16` (and AVX2 counterparts in `activations/avx2/avx2.go`).
+3. **Architecture Subdirectory Reorganization**:
+   - Moved AVX2, AVX-512, and ARM64 NEON activation tests and kernels into `internal/gobackend/activations/{avx2,avx512,neon}/`.
+
+#### Measured Microbenchmark & End-to-End Results
+- **Activation Microbenchmarks (`Small_512` / `Large_65536`)**:
+  - `Float32` `Silu`: **`50.7 ns` / `6.43 µs`** on AVX-512 (**3.0× faster** than `PortableSIMD`, **34.3× faster** than `NoSIMD`).
+  - `BFloat16` `Silu`: **`96.4 ns` / `12.27 µs`** on AVX-512 (**2.5× faster** than `PortableSIMD`, **21.7× faster** than `NoSIMD`).
+  - `Float64` `Silu`: **`210.8 ns` / `27.35 µs`** on AVX-512 (**2.4× faster** than `PortableSIMD`, **17.4× faster** than `NoSIMD`).
+- **End-to-End FlowMatching (10 Training Steps, `eval=false`)**:
+  - Median `334.3 ms/step`, Mean `334.2 ms/step`, Best `330.7 ms/step`, CPU `7.3 s/step` (`20.6` cores) — within run-to-run variance of Step 3 (`329.0 ms` median / `334.0 ms` mean), as `SiLU` forward + VJP represents `<2%` of total model CPU time and is memory-bandwidth bound on 2 MB `[32, 64, 64, 128]` U-Net feature maps.
