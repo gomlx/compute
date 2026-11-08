@@ -381,8 +381,30 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 
 #### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
 
-| Metric | Baseline | After Step 1 (`FusedLayerNormVJP`) | Improvement |
-| :--- | ---: | ---: | ---: |
+| Metric | Baseline | After Step 1 (`FusedLayerNormVJP`) | Improvement (Step 1 vs Baseline) |
+| :--- | ---: | ---: | :--- |
 | **Median train step wall time** | **588.5 ms / step** | **480.6 ms / step** (range: `474.7–512.3 ms`) | **-107.9 ms / step (-18.3%, 1.22× speedup)** |
 | **Process CPU time / step** | **13.4 s / step** | **8.2 s / step** (range: `8.2–8.3 s`) | **-5.2 s / step (-38.8% CPU time, 52s saved over 10 steps)** |
 | **Mean core utilization** | **19.7 cores** | **15.5–16.8 cores** | Lower multi-core memory bandwidth contention |
+
+---
+
+### Step 2: Tall-Skinny `FusedDenseVJP` Outer-Product Kernel, Cache-Staged `transpose2D`, and Parallel SIMD `reduceBiasFloat`
+
+#### Changes Implemented
+1. **Direct Tall-Skinny $C = A^T B$ Outer-Product Kernel (`internal/gobackend/fusedops/dense/dense_vjp_amd64.go`)**:
+   - Implemented `execTallSkinnyAtBFloat32AMD64` and wired it into `execFusedDenseVJPGeneric` (`internal/gobackend/fusedops/dense/dense_vjp.go`) for both `DenseLayoutInputOutputs` ($dW = X^T dZ$, shape `[k, n]`) and `DenseLayoutOutputsInput` ($dW = dZ^T X$, shape `[n, k]`).
+   - When $M \ge 64$, $M \ge \max(P, Q)$, and $P \times Q \le 131{,}072$, it bypasses `transpose2D`, temporary transposed buffer allocation (`xTBuf` / `dZTBuf`), and `matmul.ExecuteWithEpilogue` (which previously incurred $512\text{ KB}$-strided cache-set conflict misses in `transpose2D`, redundant LHS re-transposition in `avx512PackLHSKernelRows8Float32Asm`, and `sharedRHSReady` spin-wait across 512 K-panels).
+   - Partitions both the output spatial tiles ($32\times 32$ for AVX-512, $16\times 16$ for AVX2) and the tall contracting dimension $M$ across workers, blocking $M$ in L2-resident chunks (`mBlock = 512`) and accumulating outer products directly from row-major $A$ (`[M, P]`) and $B$ (`[M, Q]`) using the non-destructive assembly microkernels (`avx512.ConvKernelGradAVX512_8x32Float32Asm`, `4x32`, `1x32`, and `avx2.ConvKernelGradAVX2_4x16Float32Asm`, `1x16`).
+2. **Cache-Friendly Staged `transpose2D` (`internal/gobackend/fusedops/dense/dense_vjp.go`)**:
+   - Updated `transpose2D` (`transposeTile`) to stage each up-to-$32\times 32$ block through a stack-allocated `var tile [32][32]T` buffer and write contiguous rows (`copy`) to `dst`, avoiding power-of-2 strided store conflicts for non-`float32` dtypes or shapes outside the tall-skinny threshold.
+3. **Parallel Row-Chunked & SIMD `reduceBiasFloat` (`dense_vjp.go`, `dense_vjp_amd64.go`)**:
+   - Parallelized `reduceBiasFloat` across row chunks of $M$ (`ParallelizeChunked`) with stack-allocated partial accumulators and 16-wide/8-wide SIMD reduction in `reduceBiasFloat32AMD64`.
+
+#### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
+
+| Metric | Baseline | After Step 1 (`FusedLayerNormVJP`) | After Step 2 (`FusedDenseVJP` Tall-Skinny) | Step 2 vs Step 1 | Cumulative Improvement vs Baseline |
+| :--- | ---: | ---: | ---: | :--- | :--- |
+| **Median train step wall time** | **588.5 ms / step** | **480.6 ms / step** | **335.7 ms / step** (range: `330.8–337.6 ms`) | **-144.9 ms / step (-30.1%, 1.43× speedup)** | **-252.8 ms / step (-43.0%, 1.75× speedup)** |
+| **Process CPU time / step** | **13.4 s / step** | **8.2 s / step** | **7.2 s / step** (range: `7.1–7.3 s`) | **-1.0 s / step (-12.2% CPU time)** | **-6.2 s / step (-46.3% CPU time, 62s saved over 10 steps)** |
+| **Mean core utilization** | **19.7 cores** | **16.3 cores** | **20.2 cores** (range: `19.9–20.6`) | **+3.9 cores** (eliminated single-panel spin/stall) | Higher multi-core efficiency at nearly half the CPU work |
