@@ -4,9 +4,19 @@ package ops
 
 import (
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 )
+
+// GetScratchFloat32 allocates a temporary float32 buffer of the given size from the backend pool.
+func GetScratchFloat32(backend *gobackend.Backend, size int) (*gobackend.Buffer, []float32, error) {
+	buf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, size))
+	if err != nil {
+		return nil, nil, err
+	}
+	return buf, buf.Flat.([]float32), nil
+}
 
 // Conv2DKind classifies a 1D or 2D convolution into a specialized SIMD execution family.
 type Conv2DKind int

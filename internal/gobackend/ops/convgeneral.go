@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityGeneric, execConvGeneral)
+	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityGeneric, ExecConvGeneral)
 	gobackend.RegisterConvGeneral.Register(ConvGeneral, gobackend.PriorityGeneric)
 }
 
@@ -227,8 +227,8 @@ func (c *convNode) EqualNodeData(other gobackend.NodeDataComparable) bool {
 		slices.Equal(c.dilatedInputSpatialDims, o.dilatedInputSpatialDims)
 }
 
-// execConvGeneral executes the DotGeneral by first normalizing and repackaging the tensors into blocks.
-func execConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+// ExecConvGeneral executes the generic ConvGeneral operation without architecture-specific SIMD.
+func ExecConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input, kernel := inputs[0], inputs[1]
 	params := node.Data.(*convNode)
 	outputShape := node.Shape

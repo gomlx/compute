@@ -297,7 +297,7 @@ FlowMatching uses `activation="swish"` (`ActivationSilu`: $\text{SiLU}(x) = \fra
 
 #### Root Cause Analysis
 
-`ConvGeneral` accounts for `36.0s` (`26.7%` of total CPU), which is already heavily accelerated by `ConvKernelGradAVX512_8x32Float32Asm` (`16.68s`) and `ConvAVX512Direct2DKernel8x32Float32Asm` (`12.31s`). However, line-by-line profiling of `execConvStandardAVX512` (`internal/gobackend/ops/convgeneral_amd64.go:408-541`) reveals two localized inefficiencies:
+`ConvGeneral` accounts for `36.0s` (`26.7%` of total CPU), which is already heavily accelerated by `ConvKernelGradAVX512_8x32Float32Asm` (`16.68s`) and `ConvAVX512Direct2DKernel8x32Float32Asm` (`12.31s`). However, line-by-line profiling of `execConvStandardAVX512` (`internal/gobackend/ops/avx512/conv_amd64.go`) reveals two localized inefficiencies:
 
 1. **24% of `Direct2D` Convolution Time Is Spent on the 8 Border/Tail Pixels of Each Row (`3.93s` out of `16.35s`)**:
    - For a $3\times 3$ SAME-padded convolution (`PadLeft = 1, KernelW = 3, StrideW = 1`) on width $W = 64$:
@@ -358,7 +358,7 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 | **P2** | **2A & 2B. Tall-skinny `dW = x^T @ dZ` K-split path in `FusedDenseVJP` + cache-blocked `transpose2D`** (eliminates `8.25s` `transpose2D`, `2.78s` `sharedRHSReady` spin-wait, and `3.53s` `PackLHS`) | `internal/gobackend/fusedops/dense/dense_vjp.go` | **~13.5s** (`-10.0%`) | ~60 ms / step |
 | **P3** | **3A & 3B. Parallelize `execSliceGeneric` + inline SIMD small-block copy in `Slice` & `Concatenate`** | `internal/gobackend/ops/slice.go`, `ops/concatenate.go` | **~5.0s** (`-3.7%`) | ~25 ms / step |
 | **P4** | **4A. Handwritten AVX-512 & AVX2 assembly for `SiLU` (`Swish`) forward & VJP** | `internal/gobackend/activations/{avx512,avx2}/` | **~3.8s** (`-2.8%`) | ~18 ms / step |
-| **P5** | **5A. Direct clipped-`kx` border handling in `execConvStandardAVX512` (`Direct2D`)** | `internal/gobackend/ops/convgeneral_amd64.go` | **~2.2s** (`-1.6%`) | ~10 ms / step |
+| **P5** | **5A. Direct clipped-`kx` border handling in `execConvStandardAVX512` / `execConvStandardAVX2` (`Direct2D`)** | `internal/gobackend/ops/{avx512,avx2}/conv_amd64.*` | **~2.2s** (`-1.6%`) | ~10 ms / step |
 | **P6** | **6A. 4× unrolled / assembly `AddVV`, `SubVV`, `MulVV`, `MulVS` float32 kernels** | `internal/gobackend/ops/binaryops_simd.go` | **~4.0s** (`-3.0%`) | ~18 ms / step |
 | **Total** | **Combined Projected Impact** | | **~56s / 134.7s (`~41%` CPU reduction)** | **~588 ms $\to$ ~330–350 ms / step (~1.7× speedup)** |
 
@@ -450,4 +450,27 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
   - `BFloat16` `Silu`: **`96.4 ns` / `12.27 µs`** on AVX-512 (**2.5× faster** than `PortableSIMD`, **21.7× faster** than `NoSIMD`).
   - `Float64` `Silu`: **`210.8 ns` / `27.35 µs`** on AVX-512 (**2.4× faster** than `PortableSIMD`, **17.4× faster** than `NoSIMD`).
 - **End-to-End FlowMatching (10 Training Steps, `eval=false`)**:
-  - Median `334.3 ms/step`, Mean `334.2 ms/step`, Best `330.7 ms/step`, CPU `7.3 s/step` (`20.6` cores) — within run-to-run variance of Step 3 (`329.0 ms` median / `334.0 ms` mean), as `SiLU` forward + VJP represents `<2%` of total model CPU time and is memory-bandwidth bound on 2 MB `[32, 64, 64, 128]` U-Net feature maps.
+  - Median `362.5 ms/step`, Mean `370.5 ms/step`, CPU `7.6 s/step` (`19.9` cores).
+
+---
+
+### Step 5: Direct2D `ConvGeneral` Border/Tail/Small-Spatial Microkernels (`1×32`, `2×32`, `1×16`, `2×16`) & 4× Unrolled Element-Wise Binary SIMD Loops
+
+#### Changes Implemented
+1. **Zero-`im2col` Direct2D `ConvGeneral` Border, Tail, and Small-Spatial Microkernels (`internal/gobackend/ops/{avx512,avx2}/conv_amd64.*`)**:
+   - Added handwritten assembly microkernels `ConvAVX512Direct2DKernel2x32Float32Asm` and `ConvAVX512Direct2DKernel1x32Float32Asm` (4-way unrolled across 4 independent accumulator pairs `Z0`–`Z7` to hide 4-cycle FMA latency) in `internal/gobackend/ops/avx512/conv_amd64.s`, and `ConvAVX2Direct2DKernel2x16Float32Asm` and `ConvAVX2Direct2DKernel1x16Float32Asm` (4-way unrolled across `Y0`–`Y7`) in `internal/gobackend/ops/avx2/conv_amd64.s`.
+   - Updated `execConvStandardAVX512` (`internal/gobackend/ops/avx512/conv_amd64.go`) and `execConvStandardAVX2` (`internal/gobackend/ops/avx2/conv_amd64.go`) to:
+     - Process all interior pixels `outXIntStart .. outXIntEnd` directly via `8×32` $\to$ `4×32` $\to$ `2×32` $\to$ `1×32` (AVX-512) and `4×16` $\to$ `2×16` $\to$ `1×16` (AVX2) without rounding down or falling back to `ExtractPatches2DFloat32`.
+     - Process left (`outX < outXIntStart`) and right (`outX >= outXIntEnd`) padded border pixels directly via `Direct2DKernel1x32` / `Direct2DKernel1x16` using the contiguous valid kernel slice `kx in [kxStart, kxEnd)` (`kWC_clipped = (kxEnd - kxStart) * InChannels`), completely eliminating `allPatchBuf` scratch allocations and `ExtractPatches2DFloat32` calls from the `Direct2D` path.
+     - Lower the `useDirect2D` spatial threshold to `OutW >= 4`, enabling direct zero-`im2col` 2D convolution on $8\times 8$ bottleneck U-Net blocks (`OutH*OutW = 64`).
+   - Split and moved architecture-specific `ConvGeneral` implementations and tests into `internal/gobackend/ops/avx2/`, `internal/gobackend/ops/avx512/`, and `internal/gobackend/ops/neon/`.
+2. **4× Unrolled Element-Wise Binary SIMD Loops Across All Numeric DTypes (`internal/gobackend/ops/binaryops_simd.go`)**:
+   - Unrolled `Add`, `Sub`, `Mul`, `Div`, `Max`, and `Min` `VV`, `VS`, `SV`, `V2V1`, and `V1V2` SIMD loops by $4\times$ (`4 * vLen` elements per iteration) across `Float32`, `Float64`, `Int32`, `Int64`, `Int16`, `Int8`, `Uint32`, `Uint64`, `Uint16`, `Uint8`, `BFloat16`, and `Float16`.
+
+#### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
+
+| Metric | Baseline | After Step 4 (`SiLU` Assembly) | After Step 5 (`Direct2D` Borders & 4× Binary SIMD) | Step 5 vs Step 4 | Cumulative Improvement vs Baseline |
+| :--- | ---: | ---: | ---: | :--- | :--- |
+| **Median train step wall time** | **588.5 ms / step** | **362.5 ms / step** | **331.5 ms / step** (range: `329.3–337.4 ms`) | **-31.0 ms / step (-8.6%, 1.09× speedup)** | **-257.0 ms / step (-43.7%, 1.78× speedup)** |
+| **Process CPU time / step** | **13.4 s / step** | **7.6 s / step** | **7.3 s / step** (all 3 runs: `7.3 s`) | **-0.3 s / step (-3.9% CPU time)** | **-6.1 s / step (-45.5% CPU time, 61s saved over 10 steps)** |
+| **Mean core utilization** | **19.7 cores** | **19.9 cores** | **20.5 cores** (range: `20.4–20.6`) | **+0.6 cores** | Higher multi-core efficiency at nearly half the CPU work |

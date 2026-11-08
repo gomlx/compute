@@ -50,6 +50,7 @@ func registerAVX2() {
 		DispatchDupStridedBytesAVX2,
 		DispatchConcat2StridedBytesAVX2,
 	)
+	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityAVX2, execConvGeneralAVX2)
 }
 
 //go:noescape
