@@ -3,6 +3,8 @@
 package dense
 
 import (
+	"sync"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -14,6 +16,11 @@ import (
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
+)
+
+var (
+	tallSkinnyAtBFloat32Hook func(backend *gobackend.Backend, a, b []float32, m, p, q int, out []float32) bool
+	reduceBiasFloat32Hook    func(backend *gobackend.Backend, dZ []float32, m, n int, dBias []float32) bool
 )
 
 func init() {
@@ -210,6 +217,24 @@ func execFusedDenseVJP(backend *gobackend.Backend, node *gobackend.Node, inputs 
 	return []*gobackend.Buffer{dxBuf, dwBuf}, nil
 }
 
+// transposeTile transposes a [rMax-r0, cMax-c0] block (up to 32x32) from src into dst
+// via a stack-allocated tile so all writes to dst are contiguous row copies, avoiding L1/L2
+// cache set-associativity conflict misses and TLB thrashing when rows is a large power of 2.
+func transposeTile[T any](src []T, rows, cols, r0, rMax, c0, cMax int, dst []T) {
+	var tile [32][32]T
+	rCount := rMax - r0
+	cCount := cMax - c0
+	for ir := range rCount {
+		srcRow := src[(r0+ir)*cols+c0 : (r0+ir)*cols+cMax]
+		for ic, v := range srcRow {
+			tile[ic][ir] = v
+		}
+	}
+	for ic := range cCount {
+		copy(dst[(c0+ic)*rows+r0:(c0+ic)*rows+rMax], tile[ic][:rCount])
+	}
+}
+
 // transpose2D transposes a matrix of shape [rows, cols] to [cols, rows] using cache-friendly blocking,
 // parallelized across workers when the matrix is large.
 func transpose2D[T any](backend *gobackend.Backend, src []T, rows, cols int, dst []T) {
@@ -228,12 +253,7 @@ func transpose2D[T any](backend *gobackend.Backend, src []T, rows, cols int, dst
 					rMax := min(r0+blockSize, rLimit)
 					for c0 := 0; c0 < cols; c0 += blockSize {
 						cMax := min(c0+blockSize, cols)
-						for r := r0; r < rMax; r++ {
-							rOffset := r * cols
-							for c := c0; c < cMax; c++ {
-								dst[c*rows+r] = src[rOffset+c]
-							}
-						}
+						transposeTile(src, rows, cols, r0, rMax, c0, cMax, dst)
 					}
 				}
 			})
@@ -248,12 +268,7 @@ func transpose2D[T any](backend *gobackend.Backend, src []T, rows, cols int, dst
 					rMax := min(r0+blockSize, rows)
 					for c0 := cStart; c0 < cLimit; c0 += blockSize {
 						cMax := min(c0+blockSize, cLimit)
-						for r := r0; r < rMax; r++ {
-							rOffset := r * cols
-							for c := c0; c < cMax; c++ {
-								dst[c*rows+r] = src[rOffset+c]
-							}
-						}
+						transposeTile(src, rows, cols, r0, rMax, c0, cMax, dst)
 					}
 				}
 			})
@@ -265,12 +280,7 @@ func transpose2D[T any](backend *gobackend.Backend, src []T, rows, cols int, dst
 		rMax := min(r0+blockSize, rows)
 		for c0 := 0; c0 < cols; c0 += blockSize {
 			cMax := min(c0+blockSize, cols)
-			for r := r0; r < rMax; r++ {
-				rOffset := r * cols
-				for c := c0; c < cMax; c++ {
-					dst[c*rows+r] = src[rOffset+c]
-				}
-			}
+			transposeTile(src, rows, cols, r0, rMax, c0, cMax, dst)
 		}
 	}
 }
@@ -286,8 +296,37 @@ func reduceBiasFloat[T float32 | float64](backend *gobackend.Backend, dZ []T, m,
 		return
 	}
 
+	if dZ32, ok := any(dZ).([]float32); ok && reduceBiasFloat32Hook != nil {
+		if reduceBiasFloat32Hook(backend, dZ32, m, n, any(dBias).([]float32)) {
+			return
+		}
+	}
+
 	const minParallelChunk = 16384
 	totalWork := m * n
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > minParallelChunk && m >= 64 && n <= 4096 {
+		clear(dBias)
+		rowsPerChunk := max(64, minParallelChunk/max(n, 1))
+		var mu sync.Mutex
+		backend.Scheduler.ParallelizeChunks(m, rowsPerChunk, func(r0, rEnd int) {
+			var stackAcc [4096]T
+			acc := stackAcc[:n]
+			copy(acc, dZ[r0*n:(r0+1)*n])
+			for r := r0 + 1; r < rEnd; r++ {
+				row := dZ[r*n : (r+1)*n]
+				for c, v := range row {
+					acc[c] += v
+				}
+			}
+			mu.Lock()
+			for c, v := range acc {
+				dBias[c] += v
+			}
+			mu.Unlock()
+		})
+		return
+	}
+
 	runCols := func(c0, cEnd int) {
 		cols := cEnd - c0
 		copy(dBias[c0:cEnd], dZ[c0:cEnd])
@@ -365,6 +404,10 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 	// DenseLayoutOutputsInput: dW = dZ^T @ x  ([N, M] x [M, K] -> [N, K])
 	switch data.options.WeightLayout {
 	case compute.DenseLayoutInputOutputs:
+		if dtype == dtypes.Float32 && tallSkinnyAtBFloat32Hook != nil &&
+			tallSkinnyAtBFloat32Hook(backend, any(xFlat).([]float32), any(dZ).([]float32), m, k, n, any(dwFlat).([]float32)) {
+			break
+		}
 		xTBuf, err := backend.GetBuffer(shapes.Make(dtype, k*m))
 		if err != nil {
 			return err
@@ -382,6 +425,10 @@ func execFusedDenseVJPGeneric[T float32 | float64](
 		}
 
 	case compute.DenseLayoutOutputsInput:
+		if dtype == dtypes.Float32 && tallSkinnyAtBFloat32Hook != nil &&
+			tallSkinnyAtBFloat32Hook(backend, any(dZ).([]float32), any(xFlat).([]float32), m, n, k, any(dwFlat).([]float32)) {
+			break
+		}
 		dZTBuf, err := backend.GetBuffer(shapes.Make(dtype, n*m))
 		if err != nil {
 			return err
