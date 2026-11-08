@@ -408,3 +408,25 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 | **Median train step wall time** | **588.5 ms / step** | **480.6 ms / step** | **335.7 ms / step** (range: `330.8–337.6 ms`) | **-144.9 ms / step (-30.1%, 1.43× speedup)** | **-252.8 ms / step (-43.0%, 1.75× speedup)** |
 | **Process CPU time / step** | **13.4 s / step** | **8.2 s / step** | **7.2 s / step** (range: `7.1–7.3 s`) | **-1.0 s / step (-12.2% CPU time)** | **-6.2 s / step (-46.3% CPU time, 62s saved over 10 steps)** |
 | **Mean core utilization** | **19.7 cores** | **16.3 cores** | **20.2 cores** (range: `19.9–20.6`) | **+3.9 cores** (eliminated single-panel spin/stall) | Higher multi-core efficiency at nearly half the CPU work |
+
+---
+
+### Step 3: DType-Agnostic Strided Byte-Block Copy Engine and Parallelization for `Slice` and `Concatenate`
+
+#### Changes Implemented
+1. **DType-Agnostic Strided Byte-Block Copy Engine (`internal/gobackend/stridedcopy_arch.go`, `internal/gobackend/ops/stridedcopy.go`, `internal/gobackend/ops/{avx2,avx512}/stridedcopy_amd64.go`)**:
+   - Added priority-sorted architecture registration (`gobackend.SetStridedCopyArchDispatcher`) and implemented `copyStridedBytes`, `dupStridedBytes`, and `concat2StridedBytes` operating on `blockBytes = blockElements * dtype.Size()`, accelerating **all data types** (`Bool`, `Int8`–`Int64`, `Uint8`–`Uint64`, `Float16`, `BFloat16`, `Float32`, `Float64`, `Complex64`, `Complex128`).
+   - Replaced per-row `copy(...)` (`CALL runtime.memmove` on every row) with branch-outside-the-loop SIMD (`DispatchCopyStridedBytesAVX512` / `DispatchCopyStridedBytesAVX2`) and 64-bit word (`uint64`) strided loops using overlapping tail loads/stores at `blockBytes - W` (`1 B` up to `4096 B`) with zero function calls inside the row loop.
+   - Added `DispatchDupStridedBytesAVX512` / `DispatchDupStridedBytesAVX2` for self-concatenations (`Concatenate([x, x], axis)`, as used in `UpSampleImages`), reading each input block once into registers and storing it twice consecutively.
+   - Added inlined single-pass 2-input concatenation (`DispatchConcat2StridedBytesAVX512` / `DispatchConcat2StridedBytesAVX2`) and L1D-tiled (`16 KB` strip) multi-input concatenation.
+2. **Unified Byte-Level `Slice` (`internal/gobackend/ops/slice.go`) and `Concatenate` (`internal/gobackend/ops/concatenate.go`)**:
+   - Replaced generic `execSliceGeneric[T]` loops with `execSliceBytes`, eliminating heap allocations in `operand.RawShape.Strides()`, switching parallelization thresholds from element counts to byte counts (`minParallelCopyBytes = 64 KB`, `minParallelCopyChunkBytes = 32 KB`), adding a dedicated `numOuter == 2` fast path, and peeling the innermost outer axis in `numOuter >= 3` to call `copyStridedBytes`.
+   - Added parallelization for leading-axis concatenations (`outerBlockSize == 1`), sub-chunk parallelization when `outerBlockSize < 16` with large inner blocks, and a direct `b.RawBytes[:byteSize]` fast path in `Buffer.MutableBytes` (`internal/gobackend/buffers.go`).
+
+#### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
+
+| Metric | Baseline | After Step 2 (`FusedDenseVJP`) | After Step 3 (`Slice` & `Concatenate`) | Step 3 vs Step 2 | Cumulative Improvement vs Baseline |
+| :--- | ---: | ---: | ---: | :--- | :--- |
+| **Median train step wall time** | **588.5 ms / step** | **335.7 ms / step** | **329.0 ms / step** (range: `326.3–331.8 ms`) | **-6.7 ms / step (-2.0%)** | **-259.5 ms / step (-44.1%, 1.79× speedup)** |
+| **Process CPU time / step** | **13.4 s / step** | **7.2 s / step** | **7.3 s / step** (range: `7.3–7.4 s`) | **+0.1 s / step** (more medium ops parallelized across 32 threads) | **-6.1 s / step (-45.5% CPU time, 61s saved over 10 steps)** |
+| **Mean core utilization** | **19.7 cores** | **20.2 cores** | **20.7 cores** (range: `20.6–21.1`) | **+0.5 cores** | Higher multi-core utilization |
