@@ -2,26 +2,27 @@
 
 //go:build arm64 && goexperiment.simd
 
-package activations
+package neon
 
 import (
 	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 )
 
 const PriorityNEON = gobackend.PriorityArch
 
 // NEONTranscendentalMetadata holds metadata for ARM64 NEON assembly activation kernels.
-var NEONTranscendentalMetadata = KernelMetadata{MinParallelChunk: 8192}
+var NEONTranscendentalMetadata = activations.KernelMetadata{MinParallelChunk: 8192}
 
 func init() {
 	if !gobackend.IsNEONAllowed {
 		return
 	}
-	RegisterKernel[float32]("neon:gelu", compute.ActivationGelu, GeluExactFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
-	RegisterKernel[float32]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterKernel[float32]("neon:gelu", compute.ActivationGelu, GeluExactFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterKernel[float32]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
 }
 
 //go:noescape
@@ -42,7 +43,7 @@ func GeluExactFloat32NEON(in, out []float32) {
 		geluExactFloat32NEONAsm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
 	}
 	if vecN < n {
-		GeluExactFloat32SIMD(in[vecN:], out[vecN:])
+		activations.GeluExactFloat32SIMD(in[vecN:], out[vecN:])
 	}
 }
 
@@ -59,6 +60,6 @@ func GeluApproxFloat32NEON(in, out []float32) {
 		geluApproxFloat32NEONAsm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
 	}
 	if vecN < n {
-		GeluApproxFloat32SIMD(in[vecN:], out[vecN:])
+		activations.GeluApproxFloat32SIMD(in[vecN:], out[vecN:])
 	}
 }

@@ -1,0 +1,503 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64 && goexperiment.simd
+
+#include "textflag.h"
+
+// RODATA constants for AVX-512 SiLU (Forward, BiasTile, and VJP)
+GLOBL ·siluAVX512Consts(SB), RODATA|NOPTR, $56
+DATA ·siluAVX512Consts+0(SB)/4, $0x39506967  // vP7 = 1.9875691500e-4
+DATA ·siluAVX512Consts+4(SB)/4, $0x3ab743ce  // vP6 = 1.3981999507e-3
+DATA ·siluAVX512Consts+8(SB)/4, $0x3c088895  // vP5 = 8.3334519073e-3
+DATA ·siluAVX512Consts+12(SB)/4, $0x3d2aa9a5 // vP4 = 4.1665795894e-2
+DATA ·siluAVX512Consts+16(SB)/4, $0x3e2aaaab // vP3 = 1.6666665459e-1
+DATA ·siluAVX512Consts+20(SB)/4, $0x3f000000 // vP2 / vHalf = 0.5
+DATA ·siluAVX512Consts+24(SB)/4, $0x3f800000 // vOne / vBias127 = 1.0 (127 << 23)
+DATA ·siluAVX512Consts+28(SB)/4, $0x80000000 // vSignMask
+DATA ·siluAVX512Consts+32(SB)/4, $0xc2aeac50 // vMinLog = -87.336544
+DATA ·siluAVX512Consts+36(SB)/4, $0x42b00f34 // vMaxLog = 88.02969187
+DATA ·siluAVX512Consts+40(SB)/4, $0x3fb8aa3b // vLog2E = 1.44269504
+DATA ·siluAVX512Consts+44(SB)/4, $0x4b400000 // vMagic = 12582912.0 (3 * 2^22)
+DATA ·siluAVX512Consts+48(SB)/4, $0x3f318000 // vLn2Hi = 0.693359375
+DATA ·siluAVX512Consts+52(SB)/4, $0xb95e8083 // vLn2Lo = -2.12194440e-4
+
+// ===========================================================================
+// siluFloat32AVX512Asm: SiLU (Swish) forward for float32 using AVX-512
+//   SiLU(x) = x / (1 + exp(-x))
+//   Uses 2-vector (32 float32) unrolling, magic-number 2^n scaling, and
+//   Estrin's degree-7 polynomial tree with fused denominator FMA.
+//   n must be a positive multiple of 16.
+// ===========================================================================
+// func siluFloat32AVX512Asm(in, out unsafe.Pointer, n int)
+TEXT ·siluFloat32AVX512Asm(SB), NOSPLIT, $0-24
+	MOVQ in+0(FP), SI
+	MOVQ out+8(FP), DI
+	MOVQ n+16(FP), DX
+
+	CMPQ DX, $16
+	JL silu_512_done
+
+	// Pin all 14 constants in Z18..Z31:
+	VBROADCASTSS ·siluAVX512Consts+0(SB), Z18  // Z18: vP7
+	VBROADCASTSS ·siluAVX512Consts+4(SB), Z19  // Z19: vP6
+	VBROADCASTSS ·siluAVX512Consts+8(SB), Z20  // Z20: vP5
+	VBROADCASTSS ·siluAVX512Consts+12(SB), Z21 // Z21: vP4
+	VBROADCASTSS ·siluAVX512Consts+16(SB), Z22 // Z22: vP3
+	VBROADCASTSS ·siluAVX512Consts+20(SB), Z23 // Z23: vP2 = 0.5
+	VBROADCASTSS ·siluAVX512Consts+24(SB), Z24 // Z24: vOne / vBias127 = 1.0
+	VBROADCASTSS ·siluAVX512Consts+28(SB), Z25 // Z25: vSignMask
+	VBROADCASTSS ·siluAVX512Consts+32(SB), Z26 // Z26: vMinLog
+	VBROADCASTSS ·siluAVX512Consts+36(SB), Z27 // Z27: vMaxLog
+	VBROADCASTSS ·siluAVX512Consts+40(SB), Z28 // Z28: vLog2E
+	VBROADCASTSS ·siluAVX512Consts+44(SB), Z29 // Z29: vMagic
+	VBROADCASTSS ·siluAVX512Consts+48(SB), Z30 // Z30: vLn2Hi
+	VBROADCASTSS ·siluAVX512Consts+52(SB), Z31 // Z31: vLn2Lo
+
+	CMPQ DX, $32
+	JL silu_512_vec16_check
+
+silu_512_loop32:
+	VMOVUPS 0(SI), Z0
+	VMOVUPS 64(SI), Z1
+
+	// u = clamp(-x, vMinLog, vMaxLog)
+	VPXORD Z25, Z0, Z2
+	VPXORD Z25, Z1, Z3
+	VMAXPS Z26, Z2, Z2
+	VMAXPS Z26, Z3, Z3
+	VMINPS Z27, Z2, Z2
+	VMINPS Z27, Z3, Z3
+
+	// Range reduction: zRound = u * vLog2E + vMagic, zFloor = zRound - vMagic
+	VMOVAPS Z29, Z4
+	VMOVAPS Z29, Z5
+	VFMADD231PS Z2, Z28, Z4
+	VFMADD231PS Z3, Z28, Z5
+	VSUBPS Z29, Z4, Z6
+	VSUBPS Z29, Z5, Z7
+
+	// g = u - zFloor * vLn2Hi - zFloor * vLn2Lo
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z7, Z30, Z3
+	VFNMADD231PS Z6, Z31, Z2
+	VFNMADD231PS Z7, Z31, Z3
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Z4, Z4
+	VPSLLD $23, Z5, Z5
+	VPADDD Z24, Z4, Z4
+	VPADDD Z24, Z5, Z5
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMULPS Z2, Z2, Z6
+	VMULPS Z3, Z3, Z7
+	VMOVAPS Z19, Z8
+	VMOVAPS Z19, Z9
+	VFMADD231PS Z2, Z18, Z8
+	VFMADD231PS Z3, Z18, Z9
+	VMOVAPS Z21, Z10
+	VMOVAPS Z21, Z11
+	VFMADD231PS Z2, Z20, Z10
+	VFMADD231PS Z3, Z20, Z11
+	VMOVAPS Z23, Z12
+	VMOVAPS Z23, Z13
+	VFMADD231PS Z2, Z22, Z12
+	VFMADD231PS Z3, Z22, Z13
+	VADDPS Z24, Z2, Z14
+	VADDPS Z24, Z3, Z15
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z7, Z9, Z11
+	VFMADD231PS Z6, Z12, Z14
+	VFMADD231PS Z7, Z13, Z15
+	VMULPS Z6, Z6, Z6
+	VMULPS Z7, Z7, Z7
+	VFMADD231PS Z6, Z10, Z14
+	VFMADD231PS Z7, Z11, Z15
+
+	// denom = 1.0 + scale * expPoly
+	VMOVAPS Z24, Z8
+	VMOVAPS Z24, Z9
+	VFMADD231PS Z4, Z14, Z8
+	VFMADD231PS Z5, Z15, Z9
+
+	// out = x / denom
+	VDIVPS Z8, Z0, Z0
+	VDIVPS Z9, Z1, Z1
+
+	VMOVUPS Z0, 0(DI)
+	VMOVUPS Z1, 64(DI)
+
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $32, DX
+	CMPQ DX, $32
+	JGE silu_512_loop32
+
+silu_512_vec16_check:
+	CMPQ DX, $16
+	JL silu_512_done
+
+	VMOVUPS 0(SI), Z0
+	VPXORD Z25, Z0, Z2
+	VMAXPS Z26, Z2, Z2
+	VMINPS Z27, Z2, Z2
+
+	VMOVAPS Z29, Z4
+	VFMADD231PS Z2, Z28, Z4
+	VSUBPS Z29, Z4, Z6
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z6, Z31, Z2
+
+	VPSLLD $23, Z4, Z4
+	VPADDD Z24, Z4, Z4
+
+	VMULPS Z2, Z2, Z6
+	VMOVAPS Z19, Z8
+	VFMADD231PS Z2, Z18, Z8
+	VMOVAPS Z21, Z10
+	VFMADD231PS Z2, Z20, Z10
+	VMOVAPS Z23, Z12
+	VFMADD231PS Z2, Z22, Z12
+	VADDPS Z24, Z2, Z14
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z6, Z12, Z14
+	VMULPS Z6, Z6, Z6
+	VFMADD231PS Z6, Z10, Z14
+
+	VMOVAPS Z24, Z8
+	VFMADD231PS Z4, Z14, Z8
+	VDIVPS Z8, Z0, Z0
+	VMOVUPS Z0, 0(DI)
+
+silu_512_done:
+	VZEROUPPER
+	RET
+
+// ===========================================================================
+// siluBiasTileFloat32AVX512Asm: Fused Bias + SiLU 2D tile for float32
+//   Applies out[r*rowStrideBytes + c] = SiLU(out[r*rowStrideBytes + c] + bias[c])
+//   for r in [0, numRows) and c in [0, width).
+//   width must be a positive multiple of 16.
+// ===========================================================================
+// func siluBiasTileFloat32AVX512Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+TEXT ·siluBiasTileFloat32AVX512Asm(SB), NOSPLIT, $0-40
+	MOVQ out+0(FP), R8
+	MOVQ bias+8(FP), R9
+	MOVQ rowStrideBytes+16(FP), R10
+	MOVQ numRows+24(FP), R11
+	MOVQ width+32(FP), R12
+
+	CMPQ R11, $0
+	JLE silu_bias_512_done
+	CMPQ R12, $16
+	JL silu_bias_512_done
+
+	VBROADCASTSS ·siluAVX512Consts+0(SB), Z18
+	VBROADCASTSS ·siluAVX512Consts+4(SB), Z19
+	VBROADCASTSS ·siluAVX512Consts+8(SB), Z20
+	VBROADCASTSS ·siluAVX512Consts+12(SB), Z21
+	VBROADCASTSS ·siluAVX512Consts+16(SB), Z22
+	VBROADCASTSS ·siluAVX512Consts+20(SB), Z23
+	VBROADCASTSS ·siluAVX512Consts+24(SB), Z24
+	VBROADCASTSS ·siluAVX512Consts+28(SB), Z25
+	VBROADCASTSS ·siluAVX512Consts+32(SB), Z26
+	VBROADCASTSS ·siluAVX512Consts+36(SB), Z27
+	VBROADCASTSS ·siluAVX512Consts+40(SB), Z28
+	VBROADCASTSS ·siluAVX512Consts+44(SB), Z29
+	VBROADCASTSS ·siluAVX512Consts+48(SB), Z30
+	VBROADCASTSS ·siluAVX512Consts+52(SB), Z31
+
+silu_bias_512_row_loop:
+	MOVQ R8, DI
+	MOVQ R9, SI
+	MOVQ R12, DX
+
+	CMPQ DX, $32
+	JL silu_bias_512_vec16_check
+
+silu_bias_512_loop32:
+	VMOVUPS 0(DI), Z0
+	VMOVUPS 64(DI), Z1
+	VADDPS 0(SI), Z0, Z0
+	VADDPS 64(SI), Z1, Z1
+
+	VPXORD Z25, Z0, Z2
+	VPXORD Z25, Z1, Z3
+	VMAXPS Z26, Z2, Z2
+	VMAXPS Z26, Z3, Z3
+	VMINPS Z27, Z2, Z2
+	VMINPS Z27, Z3, Z3
+
+	VMOVAPS Z29, Z4
+	VMOVAPS Z29, Z5
+	VFMADD231PS Z2, Z28, Z4
+	VFMADD231PS Z3, Z28, Z5
+	VSUBPS Z29, Z4, Z6
+	VSUBPS Z29, Z5, Z7
+
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z7, Z30, Z3
+	VFNMADD231PS Z6, Z31, Z2
+	VFNMADD231PS Z7, Z31, Z3
+
+	VPSLLD $23, Z4, Z4
+	VPSLLD $23, Z5, Z5
+	VPADDD Z24, Z4, Z4
+	VPADDD Z24, Z5, Z5
+
+	VMULPS Z2, Z2, Z6
+	VMULPS Z3, Z3, Z7
+	VMOVAPS Z19, Z8
+	VMOVAPS Z19, Z9
+	VFMADD231PS Z2, Z18, Z8
+	VFMADD231PS Z3, Z18, Z9
+	VMOVAPS Z21, Z10
+	VMOVAPS Z21, Z11
+	VFMADD231PS Z2, Z20, Z10
+	VFMADD231PS Z3, Z20, Z11
+	VMOVAPS Z23, Z12
+	VMOVAPS Z23, Z13
+	VFMADD231PS Z2, Z22, Z12
+	VFMADD231PS Z3, Z22, Z13
+	VADDPS Z24, Z2, Z14
+	VADDPS Z24, Z3, Z15
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z7, Z9, Z11
+	VFMADD231PS Z6, Z12, Z14
+	VFMADD231PS Z7, Z13, Z15
+	VMULPS Z6, Z6, Z6
+	VMULPS Z7, Z7, Z7
+	VFMADD231PS Z6, Z10, Z14
+	VFMADD231PS Z7, Z11, Z15
+
+	VMOVAPS Z24, Z8
+	VMOVAPS Z24, Z9
+	VFMADD231PS Z4, Z14, Z8
+	VFMADD231PS Z5, Z15, Z9
+
+	VDIVPS Z8, Z0, Z0
+	VDIVPS Z9, Z1, Z1
+
+	VMOVUPS Z0, 0(DI)
+	VMOVUPS Z1, 64(DI)
+
+	ADDQ $128, SI
+	ADDQ $128, DI
+	SUBQ $32, DX
+	CMPQ DX, $32
+	JGE silu_bias_512_loop32
+
+silu_bias_512_vec16_check:
+	CMPQ DX, $16
+	JL silu_bias_512_next_row
+
+	VMOVUPS 0(DI), Z0
+	VADDPS 0(SI), Z0, Z0
+	VPXORD Z25, Z0, Z2
+	VMAXPS Z26, Z2, Z2
+	VMINPS Z27, Z2, Z2
+
+	VMOVAPS Z29, Z4
+	VFMADD231PS Z2, Z28, Z4
+	VSUBPS Z29, Z4, Z6
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z6, Z31, Z2
+
+	VPSLLD $23, Z4, Z4
+	VPADDD Z24, Z4, Z4
+
+	VMULPS Z2, Z2, Z6
+	VMOVAPS Z19, Z8
+	VFMADD231PS Z2, Z18, Z8
+	VMOVAPS Z21, Z10
+	VFMADD231PS Z2, Z20, Z10
+	VMOVAPS Z23, Z12
+	VFMADD231PS Z2, Z22, Z12
+	VADDPS Z24, Z2, Z14
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z6, Z12, Z14
+	VMULPS Z6, Z6, Z6
+	VFMADD231PS Z6, Z10, Z14
+
+	VMOVAPS Z24, Z8
+	VFMADD231PS Z4, Z14, Z8
+	VDIVPS Z8, Z0, Z0
+	VMOVUPS Z0, 0(DI)
+
+silu_bias_512_next_row:
+	ADDQ R10, R8
+	DECQ R11
+	JNZ silu_bias_512_row_loop
+
+silu_bias_512_done:
+	VZEROUPPER
+	RET
+
+// ===========================================================================
+// siluVJPFloat32AVX512Asm: SiLU (Swish) backward (VJP) for float32 using AVX-512
+//   sig = 1 / (1 + exp(-x))
+//   dx = (dOut * sig) * ((1 + x) - x * sig)
+//   n must be a positive multiple of 16.
+// ===========================================================================
+// func siluVJPFloat32AVX512Asm(x, dOut, dx unsafe.Pointer, n int)
+TEXT ·siluVJPFloat32AVX512Asm(SB), NOSPLIT, $0-32
+	MOVQ x+0(FP), SI
+	MOVQ dOut+8(FP), CX
+	MOVQ dx+16(FP), DI
+	MOVQ n+24(FP), DX
+
+	CMPQ DX, $16
+	JL silu_vjp_512_done
+
+	VBROADCASTSS ·siluAVX512Consts+0(SB), Z18  // Z18: vP7
+	VBROADCASTSS ·siluAVX512Consts+4(SB), Z19  // Z19: vP6
+	VBROADCASTSS ·siluAVX512Consts+8(SB), Z20  // Z20: vP5
+	VBROADCASTSS ·siluAVX512Consts+12(SB), Z21 // Z21: vP4
+	VBROADCASTSS ·siluAVX512Consts+16(SB), Z22 // Z22: vP3
+	VBROADCASTSS ·siluAVX512Consts+20(SB), Z23 // Z23: vP2 = 0.5
+	VBROADCASTSS ·siluAVX512Consts+24(SB), Z24 // Z24: vOne / vBias127 = 1.0
+	VBROADCASTSS ·siluAVX512Consts+28(SB), Z25 // Z25: vSignMask
+	VBROADCASTSS ·siluAVX512Consts+32(SB), Z26 // Z26: vMinLog
+	VBROADCASTSS ·siluAVX512Consts+36(SB), Z27 // Z27: vMaxLog
+	VBROADCASTSS ·siluAVX512Consts+40(SB), Z28 // Z28: vLog2E
+	VBROADCASTSS ·siluAVX512Consts+44(SB), Z29 // Z29: vMagic
+	VBROADCASTSS ·siluAVX512Consts+48(SB), Z30 // Z30: vLn2Hi
+	VBROADCASTSS ·siluAVX512Consts+52(SB), Z31 // Z31: vLn2Lo
+
+	CMPQ DX, $32
+	JL silu_vjp_512_vec16_check
+
+silu_vjp_512_loop32:
+	VMOVUPS 0(SI), Z0
+	VMOVUPS 64(SI), Z1
+
+	// u = clamp(-x, vMinLog, vMaxLog)
+	VPXORD Z25, Z0, Z2
+	VPXORD Z25, Z1, Z3
+	VMAXPS Z26, Z2, Z2
+	VMAXPS Z26, Z3, Z3
+	VMINPS Z27, Z2, Z2
+	VMINPS Z27, Z3, Z3
+
+	// Range reduction: zRound = u * vLog2E + vMagic, zFloor = zRound - vMagic
+	VMOVAPS Z29, Z4
+	VMOVAPS Z29, Z5
+	VFMADD231PS Z2, Z28, Z4
+	VFMADD231PS Z3, Z28, Z5
+	VSUBPS Z29, Z4, Z6
+	VSUBPS Z29, Z5, Z7
+
+	// g = u - zFloor * vLn2Hi - zFloor * vLn2Lo
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z7, Z30, Z3
+	VFNMADD231PS Z6, Z31, Z2
+	VFNMADD231PS Z7, Z31, Z3
+
+	// scale = (zRound << 23) + vBias127
+	VPSLLD $23, Z4, Z4
+	VPSLLD $23, Z5, Z5
+	VPADDD Z24, Z4, Z4
+	VPADDD Z24, Z5, Z5
+
+	// Estrin's scheme for exp(g) across A and B:
+	VMULPS Z2, Z2, Z6
+	VMULPS Z3, Z3, Z7
+	VMOVAPS Z19, Z8
+	VMOVAPS Z19, Z9
+	VFMADD231PS Z2, Z18, Z8
+	VFMADD231PS Z3, Z18, Z9
+	VMOVAPS Z21, Z10
+	VMOVAPS Z21, Z11
+	VFMADD231PS Z2, Z20, Z10
+	VFMADD231PS Z3, Z20, Z11
+	VMOVAPS Z23, Z12
+	VMOVAPS Z23, Z13
+	VFMADD231PS Z2, Z22, Z12
+	VFMADD231PS Z3, Z22, Z13
+	VADDPS Z24, Z2, Z14
+	VADDPS Z24, Z3, Z15
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z7, Z9, Z11
+	VFMADD231PS Z6, Z12, Z14
+	VFMADD231PS Z7, Z13, Z15
+	VMULPS Z6, Z6, Z6
+	VMULPS Z7, Z7, Z7
+	VFMADD231PS Z6, Z10, Z14
+	VFMADD231PS Z7, Z11, Z15
+
+	// denom = 1.0 + scale * expPoly
+	VMOVAPS Z24, Z8
+	VMOVAPS Z24, Z9
+	VFMADD231PS Z4, Z14, Z8
+	VFMADD231PS Z5, Z15, Z9
+
+	// sig = 1.0 / denom; overlap (1.0 + x) and dOut loads with VDIVPS latency
+	VDIVPS Z8, Z24, Z8
+	VDIVPS Z9, Z24, Z9
+	VADDPS Z24, Z0, Z2
+	VADDPS Z24, Z1, Z3
+	VMOVUPS 0(CX), Z16
+	VMOVUPS 64(CX), Z17
+
+	// term = (1.0 + x) - x * sig; dOutSig = dOut * sig; dx = dOutSig * term
+	VFNMADD231PS Z0, Z8, Z2
+	VFNMADD231PS Z1, Z9, Z3
+	VMULPS Z8, Z16, Z8
+	VMULPS Z9, Z17, Z9
+	VMULPS Z8, Z2, Z2
+	VMULPS Z9, Z3, Z3
+
+	VMOVUPS Z2, 0(DI)
+	VMOVUPS Z3, 64(DI)
+
+	ADDQ $128, SI
+	ADDQ $128, CX
+	ADDQ $128, DI
+	SUBQ $32, DX
+	CMPQ DX, $32
+	JGE silu_vjp_512_loop32
+
+silu_vjp_512_vec16_check:
+	CMPQ DX, $16
+	JL silu_vjp_512_done
+
+	VMOVUPS 0(SI), Z0
+	VPXORD Z25, Z0, Z2
+	VMAXPS Z26, Z2, Z2
+	VMINPS Z27, Z2, Z2
+
+	VMOVAPS Z29, Z4
+	VFMADD231PS Z2, Z28, Z4
+	VSUBPS Z29, Z4, Z6
+	VFNMADD231PS Z6, Z30, Z2
+	VFNMADD231PS Z6, Z31, Z2
+
+	VPSLLD $23, Z4, Z4
+	VPADDD Z24, Z4, Z4
+
+	VMULPS Z2, Z2, Z6
+	VMOVAPS Z19, Z8
+	VFMADD231PS Z2, Z18, Z8
+	VMOVAPS Z21, Z10
+	VFMADD231PS Z2, Z20, Z10
+	VMOVAPS Z23, Z12
+	VFMADD231PS Z2, Z22, Z12
+	VADDPS Z24, Z2, Z14
+	VFMADD231PS Z6, Z8, Z10
+	VFMADD231PS Z6, Z12, Z14
+	VMULPS Z6, Z6, Z6
+	VFMADD231PS Z6, Z10, Z14
+
+	VMOVAPS Z24, Z8
+	VFMADD231PS Z4, Z14, Z8
+	VDIVPS Z8, Z24, Z8
+	VADDPS Z24, Z0, Z2
+	VMOVUPS 0(CX), Z16
+	VFNMADD231PS Z0, Z8, Z2
+	VMULPS Z8, Z16, Z8
+	VMULPS Z8, Z2, Z2
+	VMOVUPS Z2, 0(DI)
+
+silu_vjp_512_done:
+	VZEROUPPER
+	RET
