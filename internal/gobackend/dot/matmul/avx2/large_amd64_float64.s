@@ -22,17 +22,17 @@ TEXT ·avx2LargeKernelFloat64Asm(SB), NOSPLIT, $0-120
 
 	SHLQ $3, R11                         // R11 = outputStride in bytes
 
-	XORQ AX, AX                          // AX = lhsRowIdx = 0
-
-loop_lhs:
-	CMPQ AX, R13
-	JGE done
-
 	XORQ BX, BX                          // BX = rhsColIdx = 0
 
 loop_rhs:
 	CMPQ BX, R14
-	JGE next_lhs
+	JGE done
+
+	XORQ AX, AX                          // AX = lhsRowIdx = 0
+
+loop_lhs:
+	CMPQ AX, R13
+	JGE next_rhs
 
 	// 1. Zero all 8 accumulators (Y0..Y7)
 	VXORPD Y0, Y0, Y0
@@ -68,8 +68,8 @@ loop_rhs:
 	JZ k_odd
 
 	// Prime Buffer A for Step 0 outside the loop
-	VMOVDQU (DI), Y8                     // RHS col 0..3
-	VMOVDQU 32(DI), Y9                   // RHS col 4..7
+	VMOVUPD (DI), Y8                     // RHS col 0..3
+	VMOVUPD 32(DI), Y9                   // RHS col 4..7
 	VBROADCASTSD (SI), Y10               // LHS row 0
 	VBROADCASTSD 8(SI), Y11              // LHS row 1
 	VBROADCASTSD 16(SI), Y12             // LHS row 2
@@ -85,12 +85,12 @@ loop_rhs:
 k_pair_loop:
 	// Step A: FMAs using Buffer A (Y8, Y9) while loading Buffer B (Y14, Y15, Y10..Y13)
 	VFMADD231PD Y8, Y10, Y0
-	VMOVDQU (DI), Y14
+	VMOVUPD (DI), Y14
 	VFMADD231PD Y9, Y10, Y1
 	VBROADCASTSD (SI), Y10
 
 	VFMADD231PD Y8, Y11, Y2
-	VMOVDQU 32(DI), Y15
+	VMOVUPD 32(DI), Y15
 	VFMADD231PD Y9, Y11, Y3
 	VBROADCASTSD 8(SI), Y11
 
@@ -107,12 +107,12 @@ k_pair_loop:
 
 	// Step B: FMAs using Buffer B (Y14, Y15) while loading next Buffer A (Y8, Y9, Y10..Y13)
 	VFMADD231PD Y14, Y10, Y0
-	VMOVDQU (DI), Y8
+	VMOVUPD (DI), Y8
 	VFMADD231PD Y15, Y10, Y1
 	VBROADCASTSD (SI), Y10
 
 	VFMADD231PD Y14, Y11, Y2
-	VMOVDQU 32(DI), Y9
+	VMOVUPD 32(DI), Y9
 	VFMADD231PD Y15, Y11, Y3
 	VBROADCASTSD 8(SI), Y11
 
@@ -133,12 +133,12 @@ k_pair_loop:
 k_last_pair:
 	// Step A: FMAs using Buffer A (Y8, Y9) while loading Buffer B (Y14, Y15, Y10..Y13)
 	VFMADD231PD Y8, Y10, Y0
-	VMOVDQU (DI), Y14
+	VMOVUPD (DI), Y14
 	VFMADD231PD Y9, Y10, Y1
 	VBROADCASTSD (SI), Y10
 
 	VFMADD231PD Y8, Y11, Y2
-	VMOVDQU 32(DI), Y15
+	VMOVUPD 32(DI), Y15
 	VFMADD231PD Y9, Y11, Y3
 	VBROADCASTSD 8(SI), Y11
 
@@ -167,8 +167,8 @@ k_odd:
 	TESTQ $1, R12
 	JZ store_output
 
-	VMOVDQU (DI), Y8
-	VMOVDQU 32(DI), Y9
+	VMOVUPD (DI), Y8
+	VMOVUPD 32(DI), Y9
 	VBROADCASTSD (SI), Y10
 	VBROADCASTSD 8(SI), Y11
 	VBROADCASTSD 16(SI), Y12
@@ -195,55 +195,55 @@ store_output:
 	JNZ store_output_accum
 
 	// Row 0
-	VMOVDQU Y0, (DX)
-	VMOVDQU Y1, 32(DX)
+	VMOVUPD Y0, (DX)
+	VMOVUPD Y1, 32(DX)
 	// Row 1
 	ADDQ R11, DX
-	VMOVDQU Y2, (DX)
-	VMOVDQU Y3, 32(DX)
+	VMOVUPD Y2, (DX)
+	VMOVUPD Y3, 32(DX)
 	// Row 2
 	ADDQ R11, DX
-	VMOVDQU Y4, (DX)
-	VMOVDQU Y5, 32(DX)
+	VMOVUPD Y4, (DX)
+	VMOVUPD Y5, 32(DX)
 	// Row 3
 	ADDQ R11, DX
-	VMOVDQU Y6, (DX)
-	VMOVDQU Y7, 32(DX)
+	VMOVUPD Y6, (DX)
+	VMOVUPD Y7, 32(DX)
 
-	ADDQ $8, BX                          // rhsColIdx += 8
-	JMP loop_rhs
+	ADDQ $4, AX                          // lhsRowIdx += 4
+	JMP loop_lhs
 
 store_output_accum:
 	// Row 0
 	VADDPD (DX), Y0, Y0
-	VMOVDQU Y0, (DX)
+	VMOVUPD Y0, (DX)
 	VADDPD 32(DX), Y1, Y1
-	VMOVDQU Y1, 32(DX)
+	VMOVUPD Y1, 32(DX)
 	// Row 1
 	ADDQ R11, DX
 	VADDPD (DX), Y2, Y2
-	VMOVDQU Y2, (DX)
+	VMOVUPD Y2, (DX)
 	VADDPD 32(DX), Y3, Y3
-	VMOVDQU Y3, 32(DX)
+	VMOVUPD Y3, 32(DX)
 	// Row 2
 	ADDQ R11, DX
 	VADDPD (DX), Y4, Y4
-	VMOVDQU Y4, (DX)
+	VMOVUPD Y4, (DX)
 	VADDPD 32(DX), Y5, Y5
-	VMOVDQU Y5, 32(DX)
+	VMOVUPD Y5, 32(DX)
 	// Row 3
 	ADDQ R11, DX
 	VADDPD (DX), Y6, Y6
-	VMOVDQU Y6, (DX)
+	VMOVUPD Y6, (DX)
 	VADDPD 32(DX), Y7, Y7
-	VMOVDQU Y7, 32(DX)
+	VMOVUPD Y7, 32(DX)
 
-	ADDQ $8, BX                          // rhsColIdx += 8
-	JMP loop_rhs
-
-next_lhs:
 	ADDQ $4, AX                          // lhsRowIdx += 4
 	JMP loop_lhs
+
+next_rhs:
+	ADDQ $8, BX                          // rhsColIdx += 8
+	JMP loop_rhs
 
 done:
 	VZEROUPPER

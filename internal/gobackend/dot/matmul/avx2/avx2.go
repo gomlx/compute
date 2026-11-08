@@ -30,9 +30,9 @@ var (
 	AVX2ParamsFloat32 = matmul.CacheParams{
 		LHSL1KernelRows:      4,   // Mr: Uses 4 YMM registers for accumulation rows, this number must be a multiple of 4
 		RHSL1KernelCols:      16,  // Nr: Uses 2 YMM registers for accumulation cols, each holds 8 values
-		PanelContractingSize: 128, // Kc: A strip fits comfortably in L1D cache (10.2 KB)
+		PanelContractingSize: 128, // Kc: A strip fits comfortably in L1D cache
 		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows)
-		RHSPanelCrossSize:    512, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols)
+		RHSPanelCrossSize:    256, // Nc: Fits in L2/L3 cache (multiple of RHSL1KernelCols)
 	}
 
 	// AVX2ParamsBFloat16 are the parameters to use for BFloat16, tuned for the 16 registers implementations.
@@ -58,6 +58,10 @@ var (
 )
 
 func init() {
+	if !AVX2UseAsm {
+		AVX2ParamsFloat32.RHSL1KernelCols = 16
+		AVX2ParamsFloat32.RHSPanelCrossSize = 512
+	}
 	if kc := envutil.MustReadInt(envutil.GoBackendAVX2_KC, 0); kc > 0 {
 		AVX2ParamsFloat32.PanelContractingSize = kc
 		AVX2ParamsFloat16.PanelContractingSize = kc
@@ -144,7 +148,7 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 
 	panelPtr := panelBasePtr
 	stripColIdx := uintptr(0)
-	if AVX2UseAsm && (kernelColsBytes == 128 || kernelColsBytes == 64 || kernelColsBytes == 32) {
+	if AVX2UseAsm && (kernelColsBytes == 128 || kernelColsBytes == 96 || kernelColsBytes == 64 || kernelColsBytes == 32) {
 		numFullStrips := int(copyColsBytesAll / kernelColsBytes)
 		if numFullStrips > 0 {
 			rhsStartPtr := unsafe.Pointer(rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes)
@@ -166,6 +170,20 @@ func avx2PackRHSNonTransposed[T gotype.ScalarNotComplex](
 					v1.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
 					v2.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 64)))
 					v3.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 96)))
+					panelPtr += kernelColsBytes
+					rhsPtr += rhsStrideBytes
+				}
+			}
+		case 96:
+			for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
+				rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
+				for range contractingRows {
+					v0 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr)))
+					v1 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 32)))
+					v2 := archsimd.LoadUint8x32Array((*[32]uint8)(unsafe.Pointer(rhsPtr + 64)))
+					v0.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr)))
+					v1.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 32)))
+					v2.StoreArray((*[32]uint8)(unsafe.Pointer(panelPtr + 64)))
 					panelPtr += kernelColsBytes
 					rhsPtr += rhsStrideBytes
 				}
@@ -254,6 +272,11 @@ func avx2PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	lhsColStartBytes := uintptr(lhsColStart) * bytesPerElement
 	contractingColsBytes := uintptr(contractingCols) * bytesPerElement
 
+	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement
+	panelPtr := panelBasePtr
+
+	stripRowIdx := 0
+
 	if kernelRows != 4 {
 		if kernelRows > 0 && kernelRows%8 == 0 && bytesPerElement == 4 && copyRows > 0 && contractingCols > 0 {
 			fullRows := (copyRows / kernelRows) * kernelRows
@@ -270,11 +293,6 @@ func avx2PackLHSKernelRows4[T gotype.ScalarNotComplex](
 		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
 		return
 	}
-
-	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement
-	panelPtr := panelBasePtr
-
-	stripRowIdx := 0
 
 	if AVX2UseAsm {
 		handled := false
