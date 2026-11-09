@@ -2,6 +2,7 @@ package fusedops
 
 import (
 	"math"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
@@ -9,6 +10,7 @@ import (
 	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/ops"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -968,15 +970,13 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	}
 
 	headTasks := batchSize * numKVHeads
+	totalMACs := batchSize * numHeads * seqLen * kvLen * headDim * 2
 	qBlockSize := max(seqLen, 1)
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
-		if numWorkers > 1 && seqLen > 1 && headTasks*seqLen*kvLen >= 1024 {
-			targetTasks := numWorkers * 8
-			if headTasks < targetTasks {
-				neededQBlocks := (targetTasks + headTasks - 1) / headTasks
-				qBlockSize = max(8, (seqLen+neededQBlocks-1)/neededQBlocks)
-			}
+		if numWorkers > 1 && seqLen > 64 && totalMACs >= 1024*1024 && headTasks < numWorkers {
+			neededQBlocks := (numWorkers + headTasks - 1) / headTasks
+			qBlockSize = max(32, ((seqLen+neededQBlocks-1)/neededQBlocks+31)&^31)
 		}
 	}
 	numQBlocks := 1
@@ -985,14 +985,53 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 	}
 	totalTasks := headTasks * numQBlocks
 	scratchSize := max(32*kvLen+16, 64)
+	useSMEPath := gobackend.IsSMEAllowed && query.RawShape.DType == dtypes.Float32 && seqLen >= 4 && kvLen >= 16 && headDim >= 16 && headDim <= 256
+	if useSMEPath {
+		kvPadded := (kvLen + 31) &^ 31
+		scratchSize = max(scratchSize, 32*kvLen+(32+headDim)*kvPadded+32*headDim+16)
+	}
 	scratchShape := shapes.Make(query.RawShape.DType, scratchSize)
 
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 && totalMACs >= 1024*1024 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
 		workersToStart := min(totalTasks, numWorkers)
+		if useSMEPath && simdarch.NumHighPerfSMEUnits > 0 {
+			// Start up to numWorkers so Go's scheduler populates all Ps on Cluster 1 (Super/Perf cores),
+			// while E-core workers yield tasks to Cluster 1 workers below.
+			workersToStart = numWorkers
+		}
 		var taskCounter atomic.Int64
+		var fastWorkers atomic.Int32
+		var droppedWorkers atomic.Int32
+		preferFastCluster := useSMEPath && simdarch.NumHighPerfSMEUnits > 0
 
 		backend.Scheduler.SaturateUpTo(workersToStart, func() {
+			if preferFastCluster {
+				runtime.LockOSThread()
+				defer runtime.UnlockOSThread()
+				_, _, isEff := simdarch.CurrentSMECluster()
+				if !isEff {
+					fastWorkers.Add(1)
+					defer fastWorkers.Add(-1)
+				} else if int(droppedWorkers.Add(1)) < workersToStart {
+					for spins := 0; spins < 2048 && fastWorkers.Load() == 0 && taskCounter.Load() < int64(totalTasks); spins++ {
+					}
+					if fastWorkers.Load() > 0 {
+						for taskCounter.Load() < int64(totalTasks) && fastWorkers.Load() > 0 {
+							rem := totalTasks - int(taskCounter.Load())
+							if rem > 8*int(fastWorkers.Load()) {
+								break
+							}
+						}
+						if taskCounter.Load() >= int64(totalTasks) || totalTasks-int(taskCounter.Load()) <= 8*int(fastWorkers.Load()) {
+							for taskCounter.Load() < int64(totalTasks) && fastWorkers.Load() > 0 {
+							}
+							return
+						}
+					}
+				}
+			}
+
 			scoreBuf, err := backend.GetBuffer(scratchShape)
 			var workerScores []T
 			if err == nil && scoreBuf != nil {

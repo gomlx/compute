@@ -59,7 +59,6 @@ type opProfileEntry struct {
 var (
 	opProfileByType [compute.OpTypeLast]opProfileEntry
 	opProfileBySig  sync.Map // map[string]*opProfileEntry
-	opProfileRuns   atomic.Int64
 )
 
 // startOpProfile captures the starting wall and process CPU time before executing a node.
@@ -72,9 +71,10 @@ func startOpProfile(execMode OpsExecutionType) opProfileTimer {
 }
 
 // recordOpProfileNode records the elapsed wall and CPU time for a completed node execution.
-func recordOpProfileNode(node *Node, execMode OpsExecutionType, timer opProfileTimer) {
-	// Skip recording during the first (warm-up) run.
-	if opProfileRuns.Load() < 1 {
+func (fe *FunctionExecutable) recordOpProfileNode(node *Node, execMode OpsExecutionType, timer opProfileTimer) {
+	// Skip recording during the first (warm-up) run of this executable (this also ignores
+	// one-shot constant-precomputation graphs executed once during model load/compile).
+	if fe.profileRuns.Load() < 1 {
 		return
 	}
 	wall := time.Since(timer.startWall)
@@ -118,7 +118,7 @@ func (fe *FunctionExecutable) recordOpProfileRun(execMode OpsExecutionType) {
 		// Only count top-level function executions, not nested closures.
 		return
 	}
-	r := opProfileRuns.Add(1)
+	r := fe.profileRuns.Add(1)
 	if r == 1 {
 		// Warm-up run completed; subsequent runs will be recorded.
 		return
@@ -127,7 +127,7 @@ func (fe *FunctionExecutable) recordOpProfileRun(execMode OpsExecutionType) {
 	if timedRuns%opProfileInterval != 0 {
 		return
 	}
-	printAndResetOpProfile(timedRuns, execMode)
+	printAndResetOpProfile(opProfileInterval, execMode)
 }
 
 func printAndResetOpProfile(runs int64, execMode OpsExecutionType) {
@@ -225,7 +225,4 @@ func printAndResetOpProfile(runs int64, execMode OpsExecutionType) {
 			r.name, r.calls/runs, humanize.Duration(wallPerRun), humanize.Duration(wallPerCall), humanize.Duration(cpuPerRun), cores)
 	}
 	fmt.Println()
-
-	// Reset timed run counter to 1 so the next interval of `runs` starts fresh without repeating warm-up.
-	opProfileRuns.Store(1)
 }

@@ -376,12 +376,89 @@ Each call executes **6 separate graph operations** over `[2, 405, H, 64]`:
 
 ## 6. Summary of Optimization Roadmap & Target Performance
 
-| Priority | Optimization Target | Files Affected | `28M` Baseline | `28M` Target | `123M` Baseline | `123M` Target |
-| :---: | :--- | :--- | ---: | ---: | ---: | ---: |
-| **P1** | **`FusedScaledDotProductAttention`**: Enable SME (`1..32` active rows) & 4-Row NEON Asm with `booleanMask` + causal, lower-triangular `activeKVLen` trimming, once-per-head `ZA` $K/V$ packing | `internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/fusedops/sdpa.go` | 25.4 ms | **~4.5 ms** | 69.8 ms | **~12.0 ms** |
-| **P2** | **`FusedActivation` (`SwiGLU`)**: Handwritten ARM64 NEON / SME-Streaming assembly kernel | `internal/gobackend/activations/neon/` | 2.8 ms | **~0.8 ms** | 7.1 ms | **~2.0 ms** |
-| **P3** | **`RMSNorm` Sub-Ops**: Parallelize `ReduceSum` trailing reduction + fast path for `[Outer, Inner]` $\times$ `[Outer, 1]` `BroadcastOuter` | `internal/gobackend/ops/reduce_simd.go`, `internal/gobackend/ops/binary_ops_simd.go` | 3.8 ms | **~2.2 ms** | 8.9 ms | **~5.0 ms** |
-| **P4** | **RoPE & QKV Slicing**: Fast `[Outer, Middle, Inner]` $\times$ `[Outer, 1, Inner]` broadcast + 2D strided-block `Slice`/`Concatenate` | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/slice.go` | 5.3 ms | **~2.8 ms** | 12.7 ms | **~6.5 ms** |
-| **P5** | **L2-Cache-Aware Chunking**: Reduce cross-cluster E-core fan-out & condvar churn on `< 2 MB` bandwidth-bound ops | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/unary_ops_simd.go` | 5.2 ms | **~3.5 ms** | 11.2 ms | **~7.5 ms** |
-| — | `FusedDense` + Remaining Ops | — | 22.8 ms | ~22.0 ms | 83.5 ms | ~81.0 ms |
-| **Total** | **End-to-End Forward Pass (`gomlx-simd`)** | — | **58.0 ms** | **~32–36 ms (`~1.7×` faster)** | **179.4 ms** | **~105–115 ms (`~1.65×` faster)** |
+| Priority | Optimization Target | Files Affected | `28M` Baseline | `28M` Target / Actual | `123M` Baseline | `123M` Target / Actual | Status |
+| :---: | :--- | :--- | ---: | ---: | ---: | ---: | :---: |
+| **P1** | **`FusedScaledDotProductAttention`**: Enable SME (`4..32` active rows) & 4-Row NEON Asm (`1..4` rows) with `booleanMask` + `causal`, active-key trimming (`sdpaActiveKVLenForBlock`), lazy once-per-head `smePackLHS32Float32Asm` $K$ packing, fused single-`SMSTART` `smeDirectStridedFloat32Asm_32x32` ($\text{Probs} \times V$), and fine-grained SME lock release during NEON Softmax | `internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/dot/matmul/neon/sme_arm64.{go,s}`, `internal/gobackend/fusedops/sdpa.go` | 25.4 ms | **7.8 ms (`3.26×` faster)** | 69.8 ms | **23.1 ms (`3.02×` faster)** | **Done** |
+| **P2** | **`FusedActivation` (`SwiGLU`)**: Handwritten ARM64 NEON / SME-Streaming assembly kernel | `internal/gobackend/activations/neon/` | 2.8 ms | ~0.8 ms | 7.1 ms | ~2.0 ms | Planned |
+| **P3** | **`RMSNorm` Sub-Ops**: Parallelize `ReduceSum` trailing reduction + fast path for `[Outer, Inner]` $\times$ `[Outer, 1]` `BroadcastOuter` | `internal/gobackend/ops/reduce_simd.go`, `internal/gobackend/ops/binary_ops_simd.go` | 3.8 ms | ~2.2 ms | 8.9 ms | ~5.0 ms | Planned |
+| **P4** | **RoPE & QKV Slicing**: Fast `[Outer, Middle, Inner]` $\times$ `[Outer, 1, Inner]` broadcast + 2D strided-block `Slice`/`Concatenate` | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/slice.go` | 5.3 ms | ~2.8 ms | 12.7 ms | ~6.5 ms | Planned |
+| **P5** | **L2-Cache-Aware Chunking**: Reduce cross-cluster E-core fan-out & condvar churn on `< 2 MB` bandwidth-bound ops | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/unary_ops_simd.go` | 5.2 ms | ~3.5 ms | 11.2 ms | ~7.5 ms | Planned |
+| — | `FusedDense` + Remaining Ops | — | 22.8 ms | ~22.0 ms | 83.5 ms | ~81.0 ms | — |
+| **Total** | **End-to-End Forward Pass (`gomlx-simd`)** | — | **58.0 ms** | **41.5–42.4 ms (`1.37×–1.40×` faster after P1; target ~32–36 ms)** | **179.4 ms** | **128.4 ms (`1.40×` faster after P1; target ~105–115 ms)** | **In Progress** |
+
+---
+
+## 7. Priority 1 Results: SME + 4-Row NEON Assembly for `FusedScaledDotProductAttention`
+
+### 7.1 What Was Implemented
+
+1. **Unlocked `booleanMask` and `causal` in Both SME (`sdpaSMEBlockFloat32`) and 4-Row NEON (`sdpaNEONBlockFloat32`) ([`internal/gobackend/dot/matmul/neon/sdpa_arm64.go`](../internal/gobackend/dot/matmul/neon/sdpa_arm64.go))**:
+   - Removed `!causal && len(booleanMask) == 0` from `canBatchQueries`.
+   - Added `sdpaActiveKVLenForBlock`, which inspects the query block `[qBase .. qBase+activeRows)` under `causal` and/or `booleanMask` and computes the tightest `blockKVLen` (trimming trailing masked keys). For causal / lower-triangular masks, early query blocks only pack and multiply the active prefix `[0 .. blockKVLen)`, cutting $Q K^T$ and $\text{Probs} \times V$ work in half.
+   - Updated `sdpaScaleMaskSoftmaxRowNEON` to support `booleanMask` with 4-byte `*(*uint32)` fast-paths for `0x01010101` (4 unmasked keys: vector `FMLA` / `FMUL`) and `0x00000000` (4 masked keys: store `-Inf`), plus an all-masked row guard (`rowMax == -Inf` $\to$ zero probabilities).
+2. **Partial Query Block Support (`activeRows = 4..32` in SME, `1..4` in NEON Assembly)**:
+   - Generalized `sdpaSME32RowsFloat32` to `sdpaSMEBlockFloat32` (`activeRows` in `4..32`, `blockKVLen >= 16`) so Timestral Decoder Self/Cross-Attention (`qLen = 27`) and Encoder tail blocks (`378 % 32 = 26` rows) execute directly on SME!
+   - Generalized `sdpaNEON4RowsFloat32` to `sdpaNEONBlockFloat32` (`activeRows` in `1..4`) using `neonSmallTransposedTile4x4Float32Asm` + `Tile4x1` for $Q \times K^T$ and `neonSmallNonTransposedTile4x16Float32Asm` + `Tile4x4` for $\text{Probs} \times V$, so even `qLen = 2` Variate Attention (`[405, 2, H, 64]`) runs in handwritten NEON assembly.
+3. **Lazy Once-Per-KV-Head Hardware `ZA` $K$ Packing (`smePackLHS32Float32Asm`)**:
+   - Replaced per-32-query-row scalar/NEON $K$ packing with lazy incremental `ZA` hardware transpose packing (`smePackLHS32Float32Asm`) tracked by `packedKUpTo` across the entire KV head (`qStart..qEnd`).
+   - Replaced multi-strip `smeLargeKernelFloat32Asm_32x32` loops with a single multi-tile assembly call over `(blockKVLen + 31) &^ 31` columns.
+4. **Fused Single-`SMSTART` `ZA` Transpose + Direct Strided $V$ Kernel (`smeDirectStridedFloat32Asm_32x32` in [`internal/gobackend/dot/matmul/neon/sme_arm64.s`](../internal/gobackend/dot/matmul/neon/sme_arm64.s))**:
+   - Eliminated $V$ packing (`packedV`) entirely!
+   - Added `smeDirectStridedFloat32Asm_32x32`, which enters `SMSTART` once, transposes `scoresScratch[activeRows, blockKVLen]` into L1-resident `packedS[blockKVLen, 32]` via `LD1W ZA*H` + `ST1W ZA*V`, and immediately computes $\text{Probs} \times V$ via `FMOPA` reading `V[blockKVLen, headDim]` directly with byte stride `kvSeqStride * 4` (`headDim * 4` for BHSD or `numKVHeads * headDim * 4` for BSHD).
+5. **Fine-Grained Per-Phase SME Lock Release & Cluster-1 Preference ([`internal/gobackend/fusedops/sdpa.go`](../internal/gobackend/fusedops/sdpa.go))**:
+   - Inside `sdpaSMEBlockFloat32`, the worker holds the cluster SME lock during **Phase 1** ($K/Q$ `ZA` packing + $Q K^T$ `FMOPA`), **releases the SME lock (`simdarch.ReleaseSME`) before Phase 2** (32-row `sdpaScaleMaskSoftmaxRowNEON` on the core's private NEON unit), and **re-acquires the SME lock for Phase 3** (`smeDirectStridedFloat32Asm_32x32`).
+   - Why this matters: For a 32-row block (`kvLen = 378, headDim = 64`), Phase 1 + Phase 3 on Cluster 1's 2.26 TFlops/s SME unit take only **`~0.8 µs`**, while Phase 2 (32 rows of NEON `exp` + normalization) takes **`~2.0 µs`** on a single core. Releasing the SME lock during Phase 2 pipelines all 6 Super/Performance cores on Cluster 1 through NEON Softmax in parallel while time-multiplexing Phase 1 and Phase 3 onto Cluster 1's shared SME unit (`42.4 ms` multi-worker pipelined vs `53.9 ms` single-threaded SME on `Timestral-28M`)!
+   - In `sdpaMultiHeadGeneric` (`fusedops/sdpa.go`), kept each head unsplit (`qBlockSize = max(seqLen, 1)`) when `headTasks >= numWorkers` (`12` in `28M`, `20` in `123M`), and added Cluster-1 task preference (`preferFastCluster`) so Efficiency-core workers yield remaining heads (`rem <= 8 * fastWorkers`) to active Cluster 1 workers.
+
+### 7.2 End-to-End Benchmark Comparison (Before vs. After Priority 1)
+
+| Model | Configuration | Baseline (`ecd18aa`) | **After Priority 1** | Wall-Time Speedup | CPU-Time Reduction | Max Abs Diff vs PyTorch |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| **`Timestral-28M`** | `gomlx-simd` (Default) | 58.0 ms (`558.8 ms` CPU) | **41.5–42.4 ms (`286.2–309.2 ms` CPU)** | **`1.37×–1.40×` (`-27%` to `-28.4%`)** | **`-45%` (`-250 ms` CPU)** | `3.4e-05` (`0.0000`) |
+| **`Timestral-28M`** | `gomlx-simd-seq` (`ops_sequential`) | 65.2 ms (`548.8 ms` CPU) | **49.5 ms (`320.2 ms` CPU)** | **`1.32×` (`-24.1%`)** | **`-42%` (`-228 ms` CPU)** | `3.4e-05` (`0.0000`) |
+| **`Timestral-123M`** | `gomlx-simd` (Default) | 179.4 ms (`1,860 ms` CPU) | **128.4 ms (`1,300 ms` CPU)** | **`1.40×` (`-28.4%`, `-51.0 ms`)** | **`-30%` (`-560 ms` CPU)** | `1.9e-05` (`0.0000`) |
+
+#### Detailed Run-by-Run After Priority 1 (`gomlx-simd`)
+
+##### `mistralai/Timestral-28M`
+| Obs | Model | Run | Wall | CPU Time | Cores | Max Abs Diff vs PyTorch | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-28M` | warm-up | 53.7ms | 341.0ms | 6.4 | 3.4e-05 | 0.22 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 1 | 44.3ms | 328.9ms | 7.4 | 3.4e-05 | 0.25 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 2 | 46.7ms | 334.7ms | 7.2 | 3.4e-05 | 0.27 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 3 | 43.3ms | 318.1ms | 7.3 | 3.4e-05 | 0.30 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 4 | 43.7ms | 316.9ms | 7.3 | 3.4e-05 | 0.32 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 5 | 43.0ms | 314.3ms | 7.3 | 3.4e-05 | 0.34 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 6 | 42.4ms | 309.2ms | 7.3 | 3.4e-05 | 0.37 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 7 | 42.7ms | 311.5ms | 7.3 | 3.4e-05 | 0.39 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 8 | 45.2ms | 328.1ms | 7.3 | 3.4e-05 | 0.36 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 9 | 43.5ms | 319.8ms | 7.3 | 3.4e-05 | 0.39 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 10 | 45.7ms | 331.4ms | 7.2 | 3.4e-05 | 0.41 GB | 0.42 GB |
+| **`gomlx-simd`** | **`Timestral-28M`** | **`best`** | **`42.4ms`** | **`309.2ms`** | **`7.3`** | **`3.4e-05`** | **`0.41 GB`** | **`0.42 GB`** |
+
+##### `mistralai/Timestral-123M`
+| Obs | Model | Run | Wall | CPU Time | Cores | Max Abs Diff vs PyTorch | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-123M` | warm-up | 164.7ms | 1.4s | 8.2 | 1.9e-05 | 1.07 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 1 | 132.4ms | 1.3s | 9.9 | 1.9e-05 | 1.13 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 2 | 129.0ms | 1.3s | 9.9 | 1.9e-05 | 1.19 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 3 | 128.4ms | 1.3s | 9.9 | 1.9e-05 | 1.25 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 4 | 131.6ms | 1.3s | 10.0 | 1.9e-05 | 1.30 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 5 | 136.6ms | 1.3s | 9.7 | 1.9e-05 | 1.30 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 6 | 130.9ms | 1.3s | 10.0 | 1.9e-05 | 1.30 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 7 | 132.7ms | 1.3s | 10.0 | 1.9e-05 | 1.35 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 8 | 135.4ms | 1.4s | 10.0 | 1.9e-05 | 1.35 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 9 | 130.9ms | 1.3s | 10.0 | 1.9e-05 | 1.34 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 10 | 131.8ms | 1.3s | 10.0 | 1.9e-05 | 1.34 GB | 1.35 GB |
+| **`gomlx-simd`** | **`Timestral-123M`** | **`best`** | **`128.4ms`** | **`1.3s`** | **`9.9`** | **`1.9e-05`** | **`1.34 GB`** | **`1.35 GB`** |
+
+### 7.3 Per-Op `FusedScaledDotProductAttention` Speedup Breakdown (`GOMLX_OP_PROFILE`)
+
+| SDPA Op Signature | Calls/run | Baseline Wall/run | **After P1 Wall/run** | Wall Speedup | Baseline CPU/run | **After P1 CPU/run** | CPU Reduction |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`28M` Encoder**: `SDPA([2, 378, 6, 64], ..., (Bool)[2, 378, 378])` | 12 | 21.6 ms | **6.1 ms** | **`3.54×`** | 234.3 ms | **32.2 ms** | **`7.28×`** |
+| **`28M` Decoder**: `SDPA([2, 27, 6, 64], [2, 405, 6, 64], ..., (Bool)[2, 27, 405])` | 12 | 3.5 ms | **1.2 ms** | **`2.92×`** | 33.0 ms | **6.2 ms** | **`5.32×`** |
+| **`28M` Total `FusedScaledDotProductAttention`** | **27** | **25.4 ms (`39.0%`)** | **7.8 ms (`15.1%`)** | **`3.26×`** | **269.8 ms** | **39.9 ms** | **`6.76×`** |
+| **`123M` Encoder**: `SDPA([2, 378, 10, 64], ..., (Bool)[2, 378, 378])` | 20 | 59.8 ms | **15.7 ms** | **`3.81×`** | 652.1 ms | **113.0 ms** | **`5.77×`** |
+| **`123M` Decoder**: `SDPA([2, 27, 10, 64], [2, 405, 10, 64], ..., (Bool)[2, 27, 405])` | 20 | 9.1 ms | **5.8 ms** | **`1.57×`** | 93.1 ms | **46.6 ms** | **`2.00×`** |
+| **`123M` Total `FusedScaledDotProductAttention`** | **45** | **69.8 ms (`36.1%`)** | **23.1 ms (`17.6%`)** | **`3.02×`** | **753.1 ms** | **168.4 ms** | **`4.47×`** |

@@ -71,6 +71,17 @@ func smeDirectNonTransposedFloat32Asm_32x32(
 	lhsActiveRows, rhsActiveCols, contractingLen int,
 )
 
+// smeDirectStridedFloat32Asm_32x32 performs a fused single-SMSTART 32x32 SME GEMM for C = A @ B with explicit
+// row byte strides for A (lhsStrideBytes), B (rhsStrideBytes), and C (outStrideBytes).
+// Defined in sme_arm64.s.
+//
+//go:noescape
+func smeDirectStridedFloat32Asm_32x32(
+	lhsPtr, rhsPtr, outPtr, packedLHSStrip unsafe.Pointer,
+	lhsActiveRows, rhsActiveCols, contractingLen int,
+	lhsStrideBytes, rhsStrideBytes, outStrideBytes uintptr,
+)
+
 // smeLargeKernelFloat16Asm_16x16 implements a 16x16 GEMM microkernel for Float16 -> Float32 using 1 SME ZA tile (ZA0.S).
 // Defined in sme_arm64.s.
 //

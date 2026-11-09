@@ -48,6 +48,9 @@ type FunctionExecutable struct {
 
 	// ExecutionBuffersPool allows reuse of execution buffers.
 	ExecutionBuffersPool sync.Pool
+
+	// profileRuns counts top-level executions of this FunctionExecutable when GOMLX_OP_PROFILE is enabled.
+	profileRuns atomic.Int64
 }
 
 // newFunctionExecutable creates a FunctionExecutable for the given function.
@@ -1006,7 +1009,7 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		execBuf.opInputsOwned = inputsOwned
 	}
 	if isOpProfileEnabled {
-		recordOpProfileNode(node, execBuf.opsExecutionType, profTimer)
+		fe.recordOpProfileNode(node, execBuf.opsExecutionType, profTimer)
 	}
 	return nil
 }
