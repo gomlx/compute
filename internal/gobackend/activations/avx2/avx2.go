@@ -213,29 +213,37 @@ func registerAVX2() {
 	activations.RegisterKernel[float32]("avx2:silu", compute.ActivationSilu, SiluKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterBiasTile[float32]("avx2:silu", compute.ActivationSilu, SiluBiasTileAVX2, PriorityAVX2)
 	activations.RegisterBiasTile[float32]("avx2:gelu", compute.ActivationGelu, GeluExactBiasTileAVX2, PriorityAVX2)
 	activations.RegisterBiasTile[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileAVX2, PriorityAVX2)
 	activations.RegisterKernel[float32]("avx2:tanh", compute.ActivationTanh, TanhKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterVJPKernel[float32]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// Float64
+	activations.RegisterKernel[float64]("avx2:silu", compute.ActivationSilu, SiluAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterVJPKernel[float64]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// BFloat16
 	activations.Register[bfloat16.BFloat16]("avx2:relu", compute.ActivationRelu, reluBF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
 	activations.Register[bfloat16.BFloat16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishBF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
 	activations.Register[bfloat16.BFloat16]("avx2:silu", compute.ActivationSilu, siluBF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterKernel[bfloat16.BFloat16]("avx2:silu", compute.ActivationSilu, SiluAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[bfloat16.BFloat16]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[bfloat16.BFloat16]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.Register[bfloat16.BFloat16]("avx2:tanh", compute.ActivationTanh, tanhBF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterVJPKernel[bfloat16.BFloat16]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// Float16
 	activations.Register[float16.Float16]("avx2:relu", compute.ActivationRelu, reluF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
 	activations.Register[float16.Float16]("avx2:hardswish", compute.ActivationHardSwish, hardSwishF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
 	activations.Register[float16.Float16]("avx2:silu", compute.ActivationSilu, siluF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterKernel[float16.Float16]("avx2:silu", compute.ActivationSilu, SiluAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float16.Float16]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float16.Float16]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.Register[float16.Float16]("avx2:tanh", compute.ActivationTanh, tanhF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterVJPKernel[float16.Float16]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
 }
 
 func ReluAVX2(data []float32) {
@@ -300,23 +308,98 @@ func exp256(x archsimd.Float32x8) archsimd.Float32x8 {
 	return n.Mul(poly)
 }
 
+//go:noescape
+func siluFloat32AVX2Asm(in, out unsafe.Pointer, n int)
+
+//go:noescape
+func siluBiasTileFloat32AVX2Asm(out, bias unsafe.Pointer, rowStrideBytes, numRows, width int)
+
+//go:noescape
+func siluVJPFloat32AVX2Asm(x, dOut, dx unsafe.Pointer, n int)
+
 func SiluAVX2(data []float32) {
 	SiluKernelAVX2(data, data)
 }
 
 func SiluKernelAVX2(in, out []float32) {
-	vOne := archsimd.BroadcastFloat32x8(1.0)
-	i := 0
-	for ; i+8 <= len(in); i += 8 {
-		v := archsimd.LoadFloat32x8(in[i : i+8])
-		negV := v.Neg()
-		expNegV := exp256(negV)
-		denom := vOne.Add(expNegV)
-		v.Div(denom).Store(out[i : i+8])
+	n := len(in)
+	if n == 0 {
+		return
 	}
-	for ; i < len(in); i++ {
-		x := in[i]
-		out[i] = x / (1.0 + float32(math.Exp(float64(-x))))
+	_ = out[n-1]
+	vecN := n &^ 7
+	if vecN > 0 {
+		siluFloat32AVX2Asm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
+	}
+	if vecN < n {
+		rem := n - vecN
+		var bufIn, bufOut [8]float32
+		copy(bufIn[:rem], in[vecN:])
+		siluFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 8)
+		copy(out[vecN:], bufOut[:rem])
+	}
+}
+
+func SiluBiasTileAVX2(out []float32, rowStride, numRows, width int, bias []float32) {
+	if numRows <= 0 || width <= 0 || len(out) == 0 {
+		return
+	}
+	_ = bias[width-1]
+	_ = out[(numRows-1)*rowStride+width-1]
+	vecWidth := width &^ 7
+	if vecWidth > 0 {
+		siluBiasTileFloat32AVX2Asm(
+			unsafe.Pointer(&out[0]),
+			unsafe.Pointer(&bias[0]),
+			rowStride*4, numRows, vecWidth,
+		)
+	}
+	if vecWidth < width {
+		rem := width - vecWidth
+		var bufIn, bufBias [8]float32
+		copy(bufBias[:rem], bias[vecWidth:width])
+		for r := range numRows {
+			rowOff := r*rowStride + vecWidth
+			copy(bufIn[:rem], out[rowOff:rowOff+rem])
+			siluBiasTileFloat32AVX2Asm(
+				unsafe.Pointer(&bufIn[0]),
+				unsafe.Pointer(&bufBias[0]),
+				32, 1, 8,
+			)
+			copy(out[rowOff:rowOff+rem], bufIn[:rem])
+		}
+	}
+}
+
+func SiluVJPAVX2(y, x, dOutput, dx []float32) {
+	_ = y
+	n := len(dOutput)
+	if n == 0 {
+		return
+	}
+	_ = x[n-1]
+	_ = dx[n-1]
+	vecN := n &^ 7
+	if vecN > 0 {
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&x[0]),
+			unsafe.Pointer(&dOutput[0]),
+			unsafe.Pointer(&dx[0]),
+			vecN,
+		)
+	}
+	if vecN < n {
+		rem := n - vecN
+		var bufX, bufDOut, bufDx [8]float32
+		copy(bufX[:rem], x[vecN:])
+		copy(bufDOut[:rem], dOutput[vecN:])
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&bufX[0]),
+			unsafe.Pointer(&bufDOut[0]),
+			unsafe.Pointer(&bufDx[0]),
+			8,
+		)
+		copy(dx[vecN:], bufDx[:rem])
 	}
 }
 
@@ -506,18 +589,119 @@ func hardSwishBF16AVX2(data []bfloat16.BFloat16) {
 	}
 }
 
+func packBF16AVX2(evenRes, oddRes archsimd.Float32x8) archsimd.Uint32x8 {
+	evenBits := evenRes.ToBits()
+	evenBias := bf16Bias7FFF.Add(evenBits.ShiftAllRight(16).And(bf16One))
+	evenRounded := evenBits.Add(evenBias).ShiftAllRight(16)
+
+	oddBits := oddRes.ToBits()
+	oddBias := bf16Bias7FFF.Add(oddBits.ShiftAllRight(16).And(bf16One))
+	oddRounded := oddBits.Add(oddBias).And(bf16MaskHi)
+
+	return evenRounded.Or(oddRounded)
+}
+
 func siluBF16AVX2(data []bfloat16.BFloat16) {
-	var buf [halfChunk]float32
-	for i := 0; i < len(data); i += halfChunk {
-		end := min(i+halfChunk, len(data))
-		chunk := data[i:end]
-		for j, v := range chunk {
-			buf[j] = v.Float32()
-		}
-		SiluAVX2(buf[:len(chunk)])
-		for j := range chunk {
-			chunk[j] = bfloat16.FromFloat32(buf[j])
-		}
+	SiluAVX2BF16(data, data)
+}
+
+func SiluAVX2BF16(in, out []bfloat16.BFloat16) {
+	n := len(in)
+	if n == 0 {
+		return
+	}
+	var bufIn, bufOut [16]float32
+	i := 0
+	for ; i+16 <= n; i += 16 {
+		u32 := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&in[i])), 8))
+		even := u32.ShiftAllLeft(16).BitsToFloat32()
+		odd := u32.And(bf16MaskHi).BitsToFloat32()
+		even.Store(bufIn[0:8])
+		odd.Store(bufIn[8:16])
+		siluFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 16)
+		resEven := archsimd.LoadFloat32x8(bufOut[0:8])
+		resOdd := archsimd.LoadFloat32x8(bufOut[8:16])
+		packed := packBF16AVX2(resEven, resOdd)
+		packed.Store(unsafe.Slice((*uint32)(unsafe.Pointer(&out[i])), 8))
+	}
+	if i < n {
+		rem := n - i
+		var remIn, remOut [16]bfloat16.BFloat16
+		copy(remIn[:rem], in[i:])
+		u32 := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&remIn[0])), 8))
+		even := u32.ShiftAllLeft(16).BitsToFloat32()
+		odd := u32.And(bf16MaskHi).BitsToFloat32()
+		even.Store(bufIn[0:8])
+		odd.Store(bufIn[8:16])
+		siluFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 16)
+		resEven := archsimd.LoadFloat32x8(bufOut[0:8])
+		resOdd := archsimd.LoadFloat32x8(bufOut[8:16])
+		packed := packBF16AVX2(resEven, resOdd)
+		packed.Store(unsafe.Slice((*uint32)(unsafe.Pointer(&remOut[0])), 8))
+		copy(out[i:], remOut[:rem])
+	}
+}
+
+func SiluVJPAVX2BF16(y, x, dOutput, dx []bfloat16.BFloat16) {
+	_ = y
+	n := len(dOutput)
+	if n == 0 {
+		return
+	}
+	var bufX, bufDOut, bufDx [16]float32
+	i := 0
+	for ; i+16 <= n; i += 16 {
+		u32X := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&x[i])), 8))
+		evenX := u32X.ShiftAllLeft(16).BitsToFloat32()
+		oddX := u32X.And(bf16MaskHi).BitsToFloat32()
+		evenX.Store(bufX[0:8])
+		oddX.Store(bufX[8:16])
+
+		u32DOut := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&dOutput[i])), 8))
+		evenDOut := u32DOut.ShiftAllLeft(16).BitsToFloat32()
+		oddDOut := u32DOut.And(bf16MaskHi).BitsToFloat32()
+		evenDOut.Store(bufDOut[0:8])
+		oddDOut.Store(bufDOut[8:16])
+
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&bufX[0]),
+			unsafe.Pointer(&bufDOut[0]),
+			unsafe.Pointer(&bufDx[0]),
+			16,
+		)
+		resEven := archsimd.LoadFloat32x8(bufDx[0:8])
+		resOdd := archsimd.LoadFloat32x8(bufDx[8:16])
+		packed := packBF16AVX2(resEven, resOdd)
+		packed.Store(unsafe.Slice((*uint32)(unsafe.Pointer(&dx[i])), 8))
+	}
+	if i < n {
+		rem := n - i
+		var remX, remDOut, remDx [16]bfloat16.BFloat16
+		copy(remX[:rem], x[i:])
+		copy(remDOut[:rem], dOutput[i:])
+		u32X := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&remX[0])), 8))
+		evenX := u32X.ShiftAllLeft(16).BitsToFloat32()
+		oddX := u32X.And(bf16MaskHi).BitsToFloat32()
+		evenX.Store(bufX[0:8])
+		oddX.Store(bufX[8:16])
+
+		u32DOut := archsimd.LoadUint32x8(unsafe.Slice((*uint32)(unsafe.Pointer(&remDOut[0])), 8))
+		evenDOut := u32DOut.ShiftAllLeft(16).BitsToFloat32()
+		oddDOut := u32DOut.And(bf16MaskHi).BitsToFloat32()
+		evenDOut.Store(bufDOut[0:8])
+		oddDOut.Store(bufDOut[8:16])
+
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&bufX[0]),
+			unsafe.Pointer(&bufDOut[0]),
+			unsafe.Pointer(&bufDx[0]),
+			16,
+		)
+		resEven := archsimd.LoadFloat32x8(bufDx[0:8])
+		resOdd := archsimd.LoadFloat32x8(bufDx[8:16])
+		packed := packBF16AVX2(resEven, resOdd)
+		packed.Store(unsafe.Slice((*uint32)(unsafe.Pointer(&remDx[0])), 8))
+		copy(dx[i:], remDx[:rem])
 	}
 }
 
@@ -567,17 +751,91 @@ func hardSwishF16AVX2(data []float16.Float16) {
 }
 
 func siluF16AVX2(data []float16.Float16) {
-	var buf [halfChunk]float32
-	for i := 0; i < len(data); i += halfChunk {
-		end := min(i+halfChunk, len(data))
-		chunk := data[i:end]
-		for j, v := range chunk {
-			buf[j] = v.Float32()
-		}
-		SiluAVX2(buf[:len(chunk)])
-		for j := range chunk {
-			chunk[j] = float16.FromFloat32(buf[j])
-		}
+	SiluAVX2F16(data, data)
+}
+
+func SiluAVX2F16(in, out []float16.Float16) {
+	n := len(in)
+	if n == 0 {
+		return
+	}
+	vecLen := simd.BroadcastUint16s(0).Len()
+	halfLen := vecLen / 2
+	var bufIn, bufOut [32]float32
+	i := 0
+	for ; i+vecLen <= n; i += vecLen {
+		v := float16.LoadFloat16s(in[i : i+vecLen])
+		even, odd := float16.ToFloat32SIMD(v)
+		even.Store(bufIn[0:halfLen])
+		odd.Store(bufIn[halfLen:vecLen])
+		siluFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), vecLen)
+		resEven := simd.LoadFloat32s(bufOut[0:halfLen])
+		resOdd := simd.LoadFloat32s(bufOut[halfLen:vecLen])
+		float16.StoreFloat16s(float16.FromFloat32SIMD(resEven, resOdd), out[i:i+vecLen])
+	}
+	if i < n {
+		v, _ := float16.LoadFloat16sPart(in[i:])
+		even, odd := float16.ToFloat32SIMD(v)
+		even.Store(bufIn[0:halfLen])
+		odd.Store(bufIn[halfLen:vecLen])
+		siluFloat32AVX2Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), vecLen)
+		resEven := simd.LoadFloat32s(bufOut[0:halfLen])
+		resOdd := simd.LoadFloat32s(bufOut[halfLen:vecLen])
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(resEven, resOdd), out[i:])
+	}
+}
+
+func SiluVJPAVX2F16(y, x, dOutput, dx []float16.Float16) {
+	_ = y
+	n := len(dOutput)
+	if n == 0 {
+		return
+	}
+	vecLen := simd.BroadcastUint16s(0).Len()
+	halfLen := vecLen / 2
+	var bufX, bufDOut, bufDx [32]float32
+	i := 0
+	for ; i+vecLen <= n; i += vecLen {
+		vX := float16.LoadFloat16s(x[i : i+vecLen])
+		evenX, oddX := float16.ToFloat32SIMD(vX)
+		evenX.Store(bufX[0:halfLen])
+		oddX.Store(bufX[halfLen:vecLen])
+
+		vDOut := float16.LoadFloat16s(dOutput[i : i+vecLen])
+		evenDOut, oddDOut := float16.ToFloat32SIMD(vDOut)
+		evenDOut.Store(bufDOut[0:halfLen])
+		oddDOut.Store(bufDOut[halfLen:vecLen])
+
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&bufX[0]),
+			unsafe.Pointer(&bufDOut[0]),
+			unsafe.Pointer(&bufDx[0]),
+			vecLen,
+		)
+		resEven := simd.LoadFloat32s(bufDx[0:halfLen])
+		resOdd := simd.LoadFloat32s(bufDx[halfLen:vecLen])
+		float16.StoreFloat16s(float16.FromFloat32SIMD(resEven, resOdd), dx[i:i+vecLen])
+	}
+	if i < n {
+		vX, _ := float16.LoadFloat16sPart(x[i:])
+		evenX, oddX := float16.ToFloat32SIMD(vX)
+		evenX.Store(bufX[0:halfLen])
+		oddX.Store(bufX[halfLen:vecLen])
+
+		vDOut, _ := float16.LoadFloat16sPart(dOutput[i:])
+		evenDOut, oddDOut := float16.ToFloat32SIMD(vDOut)
+		evenDOut.Store(bufDOut[0:halfLen])
+		oddDOut.Store(bufDOut[halfLen:vecLen])
+
+		siluVJPFloat32AVX2Asm(
+			unsafe.Pointer(&bufX[0]),
+			unsafe.Pointer(&bufDOut[0]),
+			unsafe.Pointer(&bufDx[0]),
+			vecLen,
+		)
+		resEven := simd.LoadFloat32s(bufDx[0:halfLen])
+		resOdd := simd.LoadFloat32s(bufDx[halfLen:vecLen])
+		float16.StoreFloat16sPart(float16.FromFloat32SIMD(resEven, resOdd), dx[i:])
 	}
 }
 
@@ -627,6 +885,71 @@ func exp256Float64(x archsimd.Float64x4) archsimd.Float64x4 {
 	poly = poly.Mul(g).Mul(g).Add(g).Add(expF64One)
 
 	return scale.Mul(poly)
+}
+
+func SiluAVX2Float64(in, out []float64) {
+	i := 0
+	for ; i+8 <= len(in); i += 8 {
+		x0 := archsimd.LoadFloat64x4(in[i : i+4])
+		x1 := archsimd.LoadFloat64x4(in[i+4 : i+8])
+		expNeg0 := exp256Float64(x0.Neg())
+		expNeg1 := exp256Float64(x1.Neg())
+		res0 := x0.Div(expF64One.Add(expNeg0))
+		res1 := x1.Div(expF64One.Add(expNeg1))
+		res0.Store(out[i : i+4])
+		res1.Store(out[i+4 : i+8])
+	}
+	for ; i+4 <= len(in); i += 4 {
+		x := archsimd.LoadFloat64x4(in[i : i+4])
+		res := x.Div(expF64One.Add(exp256Float64(x.Neg())))
+		res.Store(out[i : i+4])
+	}
+	if i < len(in) {
+		rem := len(in) - i
+		var bufIn, bufOut [4]float64
+		copy(bufIn[:rem], in[i:])
+		x := archsimd.LoadFloat64x4(bufIn[:])
+		res := x.Div(expF64One.Add(exp256Float64(x.Neg())))
+		res.Store(bufOut[:])
+		copy(out[i:], bufOut[:rem])
+	}
+}
+
+func SiluVJPAVX2Float64(y, x, dOutput, dx []float64) {
+	_ = y
+	n := len(dOutput)
+	i := 0
+	for ; i+8 <= n; i += 8 {
+		x0 := archsimd.LoadFloat64x4(x[i : i+4])
+		x1 := archsimd.LoadFloat64x4(x[i+4 : i+8])
+		dOut0 := archsimd.LoadFloat64x4(dOutput[i : i+4])
+		dOut1 := archsimd.LoadFloat64x4(dOutput[i+4 : i+8])
+		s0 := expF64One.Div(expF64One.Add(exp256Float64(x0.Neg())))
+		s1 := expF64One.Div(expF64One.Add(exp256Float64(x1.Neg())))
+		term0 := expF64One.Add(x0).Sub(x0.Mul(s0))
+		term1 := expF64One.Add(x1).Sub(x1.Mul(s1))
+		dOut0.Mul(s0).Mul(term0).Store(dx[i : i+4])
+		dOut1.Mul(s1).Mul(term1).Store(dx[i+4 : i+8])
+	}
+	for ; i+4 <= n; i += 4 {
+		x0 := archsimd.LoadFloat64x4(x[i : i+4])
+		dOut0 := archsimd.LoadFloat64x4(dOutput[i : i+4])
+		s0 := expF64One.Div(expF64One.Add(exp256Float64(x0.Neg())))
+		term0 := expF64One.Add(x0).Sub(x0.Mul(s0))
+		dOut0.Mul(s0).Mul(term0).Store(dx[i : i+4])
+	}
+	if i < n {
+		rem := n - i
+		var bufX, bufDOut, bufDx [4]float64
+		copy(bufX[:rem], x[i:])
+		copy(bufDOut[:rem], dOutput[i:])
+		x0 := archsimd.LoadFloat64x4(bufX[:])
+		dOut0 := archsimd.LoadFloat64x4(bufDOut[:])
+		s0 := expF64One.Div(expF64One.Add(exp256Float64(x0.Neg())))
+		term0 := expF64One.Add(x0).Sub(x0.Mul(s0))
+		dOut0.Mul(s0).Mul(term0).Store(bufDx[:])
+		copy(dx[i:], bufDx[:rem])
+	}
 }
 
 func tanh256Float64(x archsimd.Float64x4) archsimd.Float64x4 {

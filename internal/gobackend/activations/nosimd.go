@@ -89,7 +89,7 @@ func registerNoSIMD() {
 	RegisterVJPKernel[float32]("nosimd:vjp_hardsigmoid", compute.ActivationHardSigmoid, vjpHardSigmoidNoSIMD[float32], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float32]("nosimd:vjp_leakyrelu", compute.ActivationLeakyRelu, vjpLeakyReluNoSIMD[float32], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float32]("nosimd:vjp_selu", compute.ActivationSelu, vjpSeluNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterVJPKernel[float32]("nosimd:vjp_silu", compute.ActivationSilu, vjpSiluNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterVJPKernel[float32]("nosimd:vjp_silu", compute.ActivationSilu, VJPSiluNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float32]("nosimd:vjp_hardswish", compute.ActivationHardSwish, vjpHardSwishNoSIMD[float32], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float32]("nosimd:vjp_tanh", compute.ActivationTanh, vjpTanhNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float32]("nosimd:vjp_gelu", compute.ActivationGelu, vjpGeluExactNoSIMD[float32], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
@@ -101,7 +101,7 @@ func registerNoSIMD() {
 	RegisterVJPKernel[float64]("nosimd:vjp_hardsigmoid", compute.ActivationHardSigmoid, vjpHardSigmoidNoSIMD[float64], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float64]("nosimd:vjp_leakyrelu", compute.ActivationLeakyRelu, vjpLeakyReluNoSIMD[float64], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float64]("nosimd:vjp_selu", compute.ActivationSelu, vjpSeluNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterVJPKernel[float64]("nosimd:vjp_silu", compute.ActivationSilu, vjpSiluNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterVJPKernel[float64]("nosimd:vjp_silu", compute.ActivationSilu, VJPSiluNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float64]("nosimd:vjp_hardswish", compute.ActivationHardSwish, vjpHardSwishNoSIMD[float64], PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float64]("nosimd:vjp_tanh", compute.ActivationTanh, vjpTanhNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float64]("nosimd:vjp_gelu", compute.ActivationGelu, vjpGeluExactNoSIMD[float64], PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
@@ -113,7 +113,7 @@ func registerNoSIMD() {
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_hardsigmoid", compute.ActivationHardSigmoid, MakeBF16VJPKernelFromF32(vjpHardSigmoidNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_leakyrelu", compute.ActivationLeakyRelu, MakeBF16VJPKernelFromF32(vjpLeakyReluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_selu", compute.ActivationSelu, MakeBF16VJPKernelFromF32(vjpSeluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_silu", compute.ActivationSilu, MakeBF16VJPKernelFromF32(vjpSiluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_silu", compute.ActivationSilu, MakeBF16VJPKernelFromF32(VJPSiluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_hardswish", compute.ActivationHardSwish, MakeBF16VJPKernelFromF32(vjpHardSwishNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_tanh", compute.ActivationTanh, MakeBF16VJPKernelFromF32(vjpTanhNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[bfloat16.BFloat16]("nosimd:vjp_gelu", compute.ActivationGelu, MakeBF16VJPKernelFromF32(vjpGeluExactNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
@@ -125,7 +125,7 @@ func registerNoSIMD() {
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_hardsigmoid", compute.ActivationHardSigmoid, MakeF16VJPKernelFromF32(vjpHardSigmoidNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_leakyrelu", compute.ActivationLeakyRelu, MakeF16VJPKernelFromF32(vjpLeakyReluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_selu", compute.ActivationSelu, MakeF16VJPKernelFromF32(vjpSeluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
-	RegisterVJPKernel[float16.Float16]("nosimd:vjp_silu", compute.ActivationSilu, MakeF16VJPKernelFromF32(vjpSiluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
+	RegisterVJPKernel[float16.Float16]("nosimd:vjp_silu", compute.ActivationSilu, MakeF16VJPKernelFromF32(VJPSiluNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_hardswish", compute.ActivationHardSwish, MakeF16VJPKernelFromF32(vjpHardSwishNoSIMD[float32]), PriorityNoSIMD, &NoSIMDSimpleMetadata)
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_tanh", compute.ActivationTanh, MakeF16VJPKernelFromF32(vjpTanhNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
 	RegisterVJPKernel[float16.Float16]("nosimd:vjp_gelu", compute.ActivationGelu, MakeF16VJPKernelFromF32(vjpGeluExactNoSIMD[float32]), PriorityNoSIMD, &NoSIMDTranscendentalMetadata)
@@ -634,7 +634,19 @@ func vjpTanhNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	}
 }
 
-func vjpSiluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
+// ApplyBiasTileNoSIMD is the reference scalar implementation of BiasTileFn using actFn.
+func ApplyBiasTileNoSIMD[T float32 | float64](actFn KernelFn[T], out []T, rowStride, numRows, width int, bias []T) {
+	rowBuf := make([]T, width)
+	for r := range numRows {
+		row := out[r*rowStride : r*rowStride+width]
+		for c := range width {
+			rowBuf[c] = row[c] + bias[c]
+		}
+		actFn(rowBuf, row)
+	}
+}
+
+func VJPSiluNoSIMD[T float32 | float64](y, x, dOutput, dx []T) {
 	for i, dOut := range dOutput {
 		xi := float64(x[i])
 		s := 1.0 / (1.0 + math.Exp(-xi))

@@ -1,3 +1,5 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
 package ops
 
 import (
@@ -75,12 +77,12 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
-	if backend.NoOps {
+	if backend.NoOps || outputShape.Size() == 0 {
 		return output, nil
 	}
 	outputBytes, err := output.MutableBytes()
-	if err != nil {
-		return nil, err
+	if err != nil || len(outputBytes) == 0 {
+		return output, err
 	}
 
 	// Calculate the size of the blocks before and after the concatenation axis.
@@ -106,44 +108,127 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	var stackInfos [8]inputInfo
 	var infos []inputInfo
 	if len(inputs) <= len(stackInfos) {
-		infos = stackInfos[:len(inputs)]
+		infos = stackInfos[:0]
 	} else {
-		infos = make([]inputInfo, len(inputs))
+		infos = make([]inputInfo, 0, len(inputs))
 	}
 
 	outputAxisOffsetBytes := 0
-	for i, inputBuf := range inputs {
+	for _, inputBuf := range inputs {
+		inputBlockBytes := inputBuf.RawShape.Dimensions[axis] * innerBlockBytes
+		if inputBlockBytes == 0 {
+			continue
+		}
 		inputBytes, err := inputBuf.MutableBytes()
 		if err != nil {
 			return nil, err
 		}
-		inputBlockBytes := inputBuf.RawShape.Dimensions[axis] * innerBlockBytes
-		infos[i] = inputInfo{
+		infos = append(infos, inputInfo{
 			bytes:      inputBytes,
 			blockBytes: inputBlockBytes,
 			outOffset:  outputAxisOffsetBytes,
-		}
+		})
 		outputAxisOffsetBytes += inputBlockBytes
 	}
 
-	copyOuterRange := func(startOuter, endOuter int) {
-		for outerIdx := startOuter; outerIdx < endOuter; outerIdx++ {
-			outBase := outerIdx * outputConcatAxisStrideBytes
-			for _, info := range infos {
-				if info.blockBytes == 0 {
-					continue
+	if len(infos) == 0 {
+		return output, nil
+	}
+
+	canParallelize := len(outputBytes) >= minParallelCopyBytes &&
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
+	// Fast path 0: single non-empty input is a flat contiguous copy.
+	if len(infos) == 1 {
+		src := infos[0].bytes[:len(outputBytes)]
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(len(outputBytes), minParallelCopyChunkBytes, func(start, end int) {
+				copy(outputBytes[start:end], src[start:end])
+			})
+		} else {
+			copy(outputBytes, src)
+		}
+		return output, nil
+	}
+
+	// Fast path 1: outerBlockSize == 1 (concatenating along leading axis).
+	if outerBlockSize == 1 {
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(len(outputBytes), minParallelCopyChunkBytes, func(startByte, endByte int) {
+				for _, info := range infos {
+					s := max(startByte, info.outOffset)
+					e := min(endByte, info.outOffset+info.blockBytes)
+					if s < e {
+						copy(outputBytes[s:e], info.bytes[s-info.outOffset:e-info.outOffset])
+					}
 				}
-				inStart := outerIdx * info.blockBytes
-				outStart := outBase + info.outOffset
-				copy(outputBytes[outStart:outStart+info.blockBytes], info.bytes[inStart:inStart+info.blockBytes])
+			})
+		} else {
+			for _, info := range infos {
+				copy(outputBytes[info.outOffset:info.outOffset+info.blockBytes], info.bytes[:info.blockBytes])
+			}
+		}
+		return output, nil
+	}
+
+	// Fast path 2: few outer blocks with large inner blocks — sub-chunk along the concatenation stride
+	// so all worker threads participate.
+	if canParallelize && outerBlockSize < 16 && outputConcatAxisStrideBytes >= minParallelCopyBytes {
+		subChunksPerOuter := (outputConcatAxisStrideBytes + minParallelCopyChunkBytes - 1) / minParallelCopyChunkBytes
+		totalSubChunks := outerBlockSize * subChunksPerOuter
+		backend.Scheduler.ParallelizeChunks(totalSubChunks, 1, func(startSub, endSub int) {
+			for sc := startSub; sc < endSub; sc++ {
+				outerIdx := sc / subChunksPerOuter
+				sub := sc % subChunksPerOuter
+				subStart := sub * minParallelCopyChunkBytes
+				subEnd := min(outputConcatAxisStrideBytes, subStart+minParallelCopyChunkBytes)
+				outBase := outerIdx * outputConcatAxisStrideBytes
+				for _, info := range infos {
+					s := max(subStart, info.outOffset)
+					e := min(subEnd, info.outOffset+info.blockBytes)
+					if s < e {
+						inOff := outerIdx*info.blockBytes + (s - info.outOffset)
+						copy(outputBytes[outBase+s:outBase+e], info.bytes[inOff:inOff+(e-s)])
+					}
+				}
+			}
+		})
+		return output, nil
+	}
+
+	copyOuterRange := func(startOuter, endOuter int) {
+		count := endOuter - startOuter
+		if count <= 0 {
+			return
+		}
+		if len(infos) == 2 {
+			b0 := infos[0].blockBytes
+			b1 := infos[1].blockBytes
+			concat2StridedBytes(
+				outputBytes[startOuter*outputConcatAxisStrideBytes:],
+				infos[0].bytes[startOuter*b0:],
+				infos[1].bytes[startOuter*b1:],
+				count, b0, b1,
+			)
+			return
+		}
+
+		tileRows := max(16, min(256, 16384/max(1, outputConcatAxisStrideBytes)))
+		for r := startOuter; r < endOuter; r += tileRows {
+			tRows := min(tileRows, endOuter-r)
+			outBase := r * outputConcatAxisStrideBytes
+			for _, info := range infos {
+				copyStridedBytes(
+					outputBytes[outBase+info.outOffset:],
+					info.bytes[r*info.blockBytes:],
+					tRows, info.blockBytes, outputConcatAxisStrideBytes, info.blockBytes,
+				)
 			}
 		}
 	}
 
-	totalElements := outputShape.Size()
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalElements >= 65536 && outerBlockSize > 1 {
-		elementsPerOuter := max(1, totalElements/outerBlockSize)
-		minOuterChunk := max(1, 32768/elementsPerOuter)
+	if canParallelize {
+		minOuterChunk := max(1, (minParallelCopyChunkBytes+outputConcatAxisStrideBytes-1)/outputConcatAxisStrideBytes)
 		backend.Scheduler.ParallelizeChunks(outerBlockSize, minOuterChunk, copyOuterRange)
 	} else {
 		copyOuterRange(0, outerBlockSize)

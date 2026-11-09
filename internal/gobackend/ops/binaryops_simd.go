@@ -33,12 +33,31 @@ func init() {
 
 // Float32
 func simdAddVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Add(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Add(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Add(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Add(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Add(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -46,25 +65,62 @@ func simdAddVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdAddVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Add(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Sub(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Sub(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Sub(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Sub(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -72,38 +128,93 @@ func simdSubVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdSubVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVFloat32(c float32, rhs []float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadFloat32s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
 
 func simdMulVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Mul(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Mul(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Mul(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Mul(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Mul(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
@@ -111,25 +222,62 @@ func simdMulVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdMulVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Mul(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Mul(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Mul(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Mul(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
 
 func simdDivVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Div(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Div(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Div(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Div(vR).StorePart(out[i:])
@@ -137,26 +285,62 @@ func simdDivVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdDivVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Div(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Div(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Div(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Div(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Div(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Div(vC).StorePart(out[i:])
 	}
 }
 
 func simdDivSVFloat32(c float32, rhs []float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Div(simd.LoadFloat32s(rhs[i:]))
+		v1 := vC.Div(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := vC.Div(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := vC.Div(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Div(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vC.Div(vR).StorePart(out[i:])
 	}
@@ -164,12 +348,31 @@ func simdDivSVFloat32(c float32, rhs []float32, out []float32) {
 
 // Float64
 func simdAddVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Add(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Add(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Add(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Add(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Add(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -177,25 +380,62 @@ func simdAddVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdAddVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Add(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Sub(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Sub(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Sub(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Sub(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Sub(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -203,38 +443,93 @@ func simdSubVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdSubVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVFloat64(c float64, rhs []float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadFloat64s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
 
 func simdMulVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Mul(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Mul(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Mul(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Mul(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Mul(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
@@ -242,25 +537,62 @@ func simdMulVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdMulVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Mul(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Mul(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Mul(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Mul(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
 }
 
 func simdDivVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Div(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Div(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Div(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Div(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Div(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Div(vR).StorePart(out[i:])
@@ -268,26 +600,62 @@ func simdDivVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdDivVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Div(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Div(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Div(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Div(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Div(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Div(vC).StorePart(out[i:])
 	}
 }
 
 func simdDivSVFloat64(c float64, rhs []float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Div(simd.LoadFloat64s(rhs[i:]))
+		v1 := vC.Div(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := vC.Div(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := vC.Div(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Div(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vC.Div(vR).StorePart(out[i:])
 	}
@@ -295,12 +663,31 @@ func simdDivSVFloat64(c float64, rhs []float64, out []float64) {
 
 // Int32
 func simdAddVVInt32(lhs, rhs, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Add(simd.LoadInt32s(rhs[i:]))
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Add(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Add(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Add(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Add(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -308,25 +695,62 @@ func simdAddVVInt32(lhs, rhs, out []int32) {
 }
 
 func simdAddVSInt32(lhs []int32, c int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Add(vC)
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVInt32(lhs, rhs, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Sub(simd.LoadInt32s(rhs[i:]))
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Sub(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Sub(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Sub(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Sub(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -334,38 +758,93 @@ func simdSubVVInt32(lhs, rhs, out []int32) {
 }
 
 func simdSubVSInt32(lhs []int32, c int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVInt32(c int32, rhs []int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadInt32s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
 
 func simdMulVVInt32(lhs, rhs, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Mul(simd.LoadInt32s(rhs[i:]))
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Mul(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Mul(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Mul(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Mul(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
@@ -373,13 +852,31 @@ func simdMulVVInt32(lhs, rhs, out []int32) {
 }
 
 func simdMulVSInt32(lhs []int32, c int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Mul(vC)
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Mul(vC)
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Mul(vC)
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Mul(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
@@ -387,12 +884,31 @@ func simdMulVSInt32(lhs []int32, c int32, out []int32) {
 
 // Uint32
 func simdAddVVUint32(lhs, rhs, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Add(simd.LoadUint32s(rhs[i:]))
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Add(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Add(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Add(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Add(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -400,25 +916,62 @@ func simdAddVVUint32(lhs, rhs, out []uint32) {
 }
 
 func simdAddVSUint32(lhs []uint32, c uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Add(vC)
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVUint32(lhs, rhs, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Sub(simd.LoadUint32s(rhs[i:]))
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Sub(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Sub(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Sub(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Sub(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -426,38 +979,93 @@ func simdSubVVUint32(lhs, rhs, out []uint32) {
 }
 
 func simdSubVSUint32(lhs []uint32, c uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVUint32(c uint32, rhs []uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadUint32s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
 }
 
 func simdMulVVUint32(lhs, rhs, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Mul(simd.LoadUint32s(rhs[i:]))
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Mul(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Mul(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Mul(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Mul(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Mul(vR).StorePart(out[i:])
@@ -465,13 +1073,31 @@ func simdMulVVUint32(lhs, rhs, out []uint32) {
 }
 
 func simdMulVSUint32(lhs []uint32, c uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Mul(vC)
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Mul(vC)
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Mul(vC)
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Mul(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Mul(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Mul(vC).StorePart(out[i:])
 	}
@@ -479,12 +1105,31 @@ func simdMulVSUint32(lhs []uint32, c uint32, out []uint32) {
 
 // Int64
 func simdAddVVInt64(lhs, rhs, out []int64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt64s(lhs[i:]).Add(simd.LoadInt64s(rhs[i:]))
+		v1 := simd.LoadInt64s(lhs[i+vLen:]).Add(simd.LoadInt64s(rhs[i+vLen:]))
+		v2 := simd.LoadInt64s(lhs[i+vLen2:]).Add(simd.LoadInt64s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt64s(lhs[i+vLen3:]).Add(simd.LoadInt64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt64s(lhs[i:]).Add(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -492,25 +1137,62 @@ func simdAddVVInt64(lhs, rhs, out []int64) {
 }
 
 func simdAddVSInt64(lhs []int64, c int64, out []int64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt64s(lhs[i:]).Add(vC)
+		v1 := simd.LoadInt64s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadInt64s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadInt64s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVInt64(lhs, rhs, out []int64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt64s(lhs[i:]).Sub(simd.LoadInt64s(rhs[i:]))
+		v1 := simd.LoadInt64s(lhs[i+vLen:]).Sub(simd.LoadInt64s(rhs[i+vLen:]))
+		v2 := simd.LoadInt64s(lhs[i+vLen2:]).Sub(simd.LoadInt64s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt64s(lhs[i+vLen3:]).Sub(simd.LoadInt64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt64s(lhs[i:]).Sub(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -518,26 +1200,62 @@ func simdSubVVInt64(lhs, rhs, out []int64) {
 }
 
 func simdSubVSInt64(lhs []int64, c int64, out []int64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt64s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadInt64s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadInt64s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadInt64s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVInt64(c int64, rhs []int64, out []int64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastInt64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadInt64s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadInt64s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadInt64s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadInt64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadInt64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadInt64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
@@ -545,12 +1263,31 @@ func simdSubSVInt64(c int64, rhs []int64, out []int64) {
 
 // Uint64
 func simdAddVVUint64(lhs, rhs, out []uint64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint64s(lhs[i:]).Add(simd.LoadUint64s(rhs[i:]))
+		v1 := simd.LoadUint64s(lhs[i+vLen:]).Add(simd.LoadUint64s(rhs[i+vLen:]))
+		v2 := simd.LoadUint64s(lhs[i+vLen2:]).Add(simd.LoadUint64s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint64s(lhs[i+vLen3:]).Add(simd.LoadUint64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint64s(lhs[i:]).Add(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vL.Add(vR).StorePart(out[i:])
@@ -558,25 +1295,62 @@ func simdAddVVUint64(lhs, rhs, out []uint64) {
 }
 
 func simdAddVSUint64(lhs []uint64, c uint64, out []uint64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint64s(lhs[i:]).Add(vC)
+		v1 := simd.LoadUint64s(lhs[i+vLen:]).Add(vC)
+		v2 := simd.LoadUint64s(lhs[i+vLen2:]).Add(vC)
+		v3 := simd.LoadUint64s(lhs[i+vLen3:]).Add(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint64s(lhs[i:]).Add(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vL.Add(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubVVUint64(lhs, rhs, out []uint64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint64s(lhs[i:]).Sub(simd.LoadUint64s(rhs[i:]))
+		v1 := simd.LoadUint64s(lhs[i+vLen:]).Sub(simd.LoadUint64s(rhs[i+vLen:]))
+		v2 := simd.LoadUint64s(lhs[i+vLen2:]).Sub(simd.LoadUint64s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint64s(lhs[i+vLen3:]).Sub(simd.LoadUint64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint64s(lhs[i:]).Sub(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vL.Sub(vR).StorePart(out[i:])
@@ -584,26 +1358,62 @@ func simdSubVVUint64(lhs, rhs, out []uint64) {
 }
 
 func simdSubVSUint64(lhs []uint64, c uint64, out []uint64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint64s(lhs[i:]).Sub(vC)
+		v1 := simd.LoadUint64s(lhs[i+vLen:]).Sub(vC)
+		v2 := simd.LoadUint64s(lhs[i+vLen2:]).Sub(vC)
+		v3 := simd.LoadUint64s(lhs[i+vLen3:]).Sub(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint64s(lhs[i:]).Sub(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint64sPart(lhs[i:])
 		vL.Sub(vC).StorePart(out[i:])
 	}
 }
 
 func simdSubSVUint64(c uint64, rhs []uint64, out []uint64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = rhs[n-1]
 	vC := simd.BroadcastUint64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := vC.Sub(simd.LoadUint64s(rhs[i:]))
+		v1 := vC.Sub(simd.LoadUint64s(rhs[i+vLen:]))
+		v2 := vC.Sub(simd.LoadUint64s(rhs[i+vLen2:]))
+		v3 := vC.Sub(simd.LoadUint64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		vC.Sub(simd.LoadUint64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vR, _ := simdmath.LoadUint64sPart(rhs[i:])
 		vC.Sub(vR).StorePart(out[i:])
 	}
@@ -1414,6 +2224,16 @@ func simdV2V1DivFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			v0 := simd.LoadFloat32s(lRow[i:]).Div(simd.LoadFloat32s(rhs[i:]))
+			v1 := simd.LoadFloat32s(lRow[i+vLen:]).Div(simd.LoadFloat32s(rhs[i+vLen:]))
+			v2 := simd.LoadFloat32s(lRow[i+2*vLen:]).Div(simd.LoadFloat32s(rhs[i+2*vLen:]))
+			v3 := simd.LoadFloat32s(lRow[i+3*vLen:]).Div(simd.LoadFloat32s(rhs[i+3*vLen:]))
+			v0.Store(oRow[i:])
+			v1.Store(oRow[i+vLen:])
+			v2.Store(oRow[i+2*vLen:])
+			v3.Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Div(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1504,6 +2324,16 @@ func simdV1V2DivFloat32(lhs, rhs, out []float32, A, B int) {
 		rRow := rhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			v0 := simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rRow[i:]))
+			v1 := simd.LoadFloat32s(lhs[i+vLen:]).Div(simd.LoadFloat32s(rRow[i+vLen:]))
+			v2 := simd.LoadFloat32s(lhs[i+2*vLen:]).Div(simd.LoadFloat32s(rRow[i+2*vLen:]))
+			v3 := simd.LoadFloat32s(lhs[i+3*vLen:]).Div(simd.LoadFloat32s(rRow[i+3*vLen:]))
+			v0.Store(oRow[i:])
+			v1.Store(oRow[i+vLen:])
+			v2.Store(oRow[i+2*vLen:])
+			v3.Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lhs[i:]).Div(simd.LoadFloat32s(rRow[i:])).Store(oRow[i:])
 		}
@@ -1540,6 +2370,16 @@ func simdV2V1MaxFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			v0 := simd.LoadFloat32s(lRow[i:]).Max(simd.LoadFloat32s(rhs[i:]))
+			v1 := simd.LoadFloat32s(lRow[i+vLen:]).Max(simd.LoadFloat32s(rhs[i+vLen:]))
+			v2 := simd.LoadFloat32s(lRow[i+2*vLen:]).Max(simd.LoadFloat32s(rhs[i+2*vLen:]))
+			v3 := simd.LoadFloat32s(lRow[i+3*vLen:]).Max(simd.LoadFloat32s(rhs[i+3*vLen:]))
+			v0.Store(oRow[i:])
+			v1.Store(oRow[i+vLen:])
+			v2.Store(oRow[i+2*vLen:])
+			v3.Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1580,6 +2420,16 @@ func simdV2V1MinFloat32(lhs, rhs, out []float32, A, B int) {
 		lRow := lhs[off : off+B]
 		oRow := out[off : off+B]
 		i := 0
+		for ; i+4*vLen <= B; i += 4 * vLen {
+			v0 := simd.LoadFloat32s(lRow[i:]).Min(simd.LoadFloat32s(rhs[i:]))
+			v1 := simd.LoadFloat32s(lRow[i+vLen:]).Min(simd.LoadFloat32s(rhs[i+vLen:]))
+			v2 := simd.LoadFloat32s(lRow[i+2*vLen:]).Min(simd.LoadFloat32s(rhs[i+2*vLen:]))
+			v3 := simd.LoadFloat32s(lRow[i+3*vLen:]).Min(simd.LoadFloat32s(rhs[i+3*vLen:]))
+			v0.Store(oRow[i:])
+			v1.Store(oRow[i+vLen:])
+			v2.Store(oRow[i+2*vLen:])
+			v3.Store(oRow[i+3*vLen:])
+		}
 		for ; i+vLen <= B; i += vLen {
 			simd.LoadFloat32s(lRow[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(oRow[i:])
 		}
@@ -1601,12 +2451,31 @@ func simdV1V2MinFloat32(lhs, rhs, out []float32, A, B int) {
 
 // Float32
 func simdMaxVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Max(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Max(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Max(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Max(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Max(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
@@ -1614,25 +2483,62 @@ func simdMaxVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdMaxVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Max(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Max(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Max(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Max(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
 
 func simdMinVVFloat32(lhs, rhs, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Min(simd.LoadFloat32s(rhs[i:]))
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Min(simd.LoadFloat32s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Min(simd.LoadFloat32s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Min(simd.LoadFloat32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Min(simd.LoadFloat32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
@@ -1640,13 +2546,31 @@ func simdMinVVFloat32(lhs, rhs, out []float32) {
 }
 
 func simdMinVSFloat32(lhs []float32, c float32, out []float32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat32s(lhs[i:]).Min(vC)
+		v1 := simd.LoadFloat32s(lhs[i+vLen:]).Min(vC)
+		v2 := simd.LoadFloat32s(lhs[i+vLen2:]).Min(vC)
+		v3 := simd.LoadFloat32s(lhs[i+vLen3:]).Min(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
@@ -1654,12 +2578,31 @@ func simdMinVSFloat32(lhs []float32, c float32, out []float32) {
 
 // Float64
 func simdMaxVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Max(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Max(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Max(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Max(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Max(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
@@ -1667,25 +2610,62 @@ func simdMaxVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdMaxVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Max(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Max(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Max(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Max(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Max(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
 
 func simdMinVVFloat64(lhs, rhs, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastFloat64s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Min(simd.LoadFloat64s(rhs[i:]))
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Min(simd.LoadFloat64s(rhs[i+vLen:]))
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Min(simd.LoadFloat64s(rhs[i+vLen2:]))
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Min(simd.LoadFloat64s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Min(simd.LoadFloat64s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vR, _ := simdmath.LoadFloat64sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
@@ -1693,13 +2673,31 @@ func simdMinVVFloat64(lhs, rhs, out []float64) {
 }
 
 func simdMinVSFloat64(lhs []float64, c float64, out []float64) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastFloat64s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadFloat64s(lhs[i:]).Min(vC)
+		v1 := simd.LoadFloat64s(lhs[i+vLen:]).Min(vC)
+		v2 := simd.LoadFloat64s(lhs[i+vLen2:]).Min(vC)
+		v3 := simd.LoadFloat64s(lhs[i+vLen3:]).Min(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadFloat64s(lhs[i:]).Min(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadFloat64sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
@@ -1707,12 +2705,31 @@ func simdMinVSFloat64(lhs []float64, c float64, out []float64) {
 
 // Int32
 func simdMaxVVInt32(lhs, rhs, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Max(simd.LoadInt32s(rhs[i:]))
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Max(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Max(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Max(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Max(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
@@ -1720,25 +2737,62 @@ func simdMaxVVInt32(lhs, rhs, out []int32) {
 }
 
 func simdMaxVSInt32(lhs []int32, c int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Max(vC)
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Max(vC)
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Max(vC)
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Max(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
 
 func simdMinVVInt32(lhs, rhs, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastInt32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Min(simd.LoadInt32s(rhs[i:]))
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Min(simd.LoadInt32s(rhs[i+vLen:]))
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Min(simd.LoadInt32s(rhs[i+vLen2:]))
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Min(simd.LoadInt32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Min(simd.LoadInt32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vR, _ := simdmath.LoadInt32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
@@ -1746,13 +2800,31 @@ func simdMinVVInt32(lhs, rhs, out []int32) {
 }
 
 func simdMinVSInt32(lhs []int32, c int32, out []int32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastInt32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadInt32s(lhs[i:]).Min(vC)
+		v1 := simd.LoadInt32s(lhs[i+vLen:]).Min(vC)
+		v2 := simd.LoadInt32s(lhs[i+vLen2:]).Min(vC)
+		v3 := simd.LoadInt32s(lhs[i+vLen3:]).Min(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadInt32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadInt32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}
@@ -1760,12 +2832,31 @@ func simdMinVSInt32(lhs []int32, c int32, out []int32) {
 
 // Uint32
 func simdMaxVVUint32(lhs, rhs, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Max(simd.LoadUint32s(rhs[i:]))
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Max(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Max(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Max(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Max(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Max(vR).StorePart(out[i:])
@@ -1773,25 +2864,62 @@ func simdMaxVVUint32(lhs, rhs, out []uint32) {
 }
 
 func simdMaxVSUint32(lhs []uint32, c uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Max(vC)
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Max(vC)
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Max(vC)
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Max(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Max(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Max(vC).StorePart(out[i:])
 	}
 }
 
 func simdMinVVUint32(lhs, rhs, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
+	_ = rhs[n-1]
 	vLen := simd.BroadcastUint32s(0).Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Min(simd.LoadUint32s(rhs[i:]))
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Min(simd.LoadUint32s(rhs[i+vLen:]))
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Min(simd.LoadUint32s(rhs[i+vLen2:]))
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Min(simd.LoadUint32s(rhs[i+vLen3:]))
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Min(simd.LoadUint32s(rhs[i:])).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vR, _ := simdmath.LoadUint32sPart(rhs[i:])
 		vL.Min(vR).StorePart(out[i:])
@@ -1799,13 +2927,31 @@ func simdMinVVUint32(lhs, rhs, out []uint32) {
 }
 
 func simdMinVSUint32(lhs []uint32, c uint32, out []uint32) {
+	n := len(out)
+	if n == 0 {
+		return
+	}
+	_ = lhs[n-1]
 	vC := simd.BroadcastUint32s(c)
 	vLen := vC.Len()
+	vLen2 := 2 * vLen
+	vLen3 := 3 * vLen
+	vLen4 := 4 * vLen
 	i := 0
-	for ; i+vLen <= len(out); i += vLen {
+	for ; i+vLen4 <= n; i += vLen4 {
+		v0 := simd.LoadUint32s(lhs[i:]).Min(vC)
+		v1 := simd.LoadUint32s(lhs[i+vLen:]).Min(vC)
+		v2 := simd.LoadUint32s(lhs[i+vLen2:]).Min(vC)
+		v3 := simd.LoadUint32s(lhs[i+vLen3:]).Min(vC)
+		v0.Store(out[i:])
+		v1.Store(out[i+vLen:])
+		v2.Store(out[i+vLen2:])
+		v3.Store(out[i+vLen3:])
+	}
+	for ; i+vLen <= n; i += vLen {
 		simd.LoadUint32s(lhs[i:]).Min(vC).Store(out[i:])
 	}
-	if i < len(out) {
+	if i < n {
 		vL, _ := simdmath.LoadUint32sPart(lhs[i:])
 		vL.Min(vC).StorePart(out[i:])
 	}

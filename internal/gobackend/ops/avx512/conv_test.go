@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package ops
+package avx512
 
 import (
 	"fmt"
@@ -13,8 +13,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	"github.com/gomlx/compute/internal/gobackend/ops/avx2"
-	"github.com/gomlx/compute/internal/gobackend/ops/avx512"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -42,16 +41,15 @@ func makeDeterministicBuffer(t *testing.T, backend *gobackend.Backend, shape sha
 	}
 	flat := buf.Flat.([]float32)
 	for i := range flat {
-		// Values in [-0.5, 0.5] to avoid large accumulation error.
 		v := float32(((i*73+19)%101)-50) * 0.01
 		flat[i] = v + seed*0.001
 	}
 	return buf
 }
 
-func TestConvGeneralAVX2AndAVX512(t *testing.T) {
-	if !gobackend.IsAVX2Allowed {
-		t.Skip("AVX2 is not supported or allowed on this host")
+func TestConvGeneralAVX512(t *testing.T) {
+	if !gobackend.IsAVX512Allowed {
+		t.Skip("AVX-512 is not supported or allowed on this host")
 	}
 
 	bIntf, err := gobackend.New("")
@@ -70,7 +68,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 		paddings         [][2]int
 		inputDilations   []int
 		kernelDilations  []int
-		expectedKind     Conv2DKind
+		expectedKind     ops.Conv2DKind
 		expectIs1x1Unit  bool
 		expectTransposed bool
 	}
@@ -144,7 +142,6 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 	}
 
 	cases := []convCase{
-		// 2D Forward
 		{
 			name:         "2D_Fwd_MNIST_Conv1",
 			inputDims:    []int{4, 28, 28, 1},
@@ -152,7 +149,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:         axes2DFwd,
 			strides:      []int{1, 1},
 			paddings:     [][2]int{{1, 1}, {1, 1}},
-			expectedKind: Conv2DStandard,
+			expectedKind: ops.Conv2DStandard,
 		},
 		{
 			name:         "2D_Fwd_MNIST_Conv2",
@@ -161,14 +158,14 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:         axes2DFwd,
 			strides:      []int{1, 1},
 			paddings:     [][2]int{{1, 1}, {1, 1}},
-			expectedKind: Conv2DStandard,
+			expectedKind: ops.Conv2DStandard,
 		},
 		{
 			name:            "2D_Fwd_1x1_Unit",
 			inputDims:       []int{2, 9, 9, 19},
 			kernelDims:      []int{1, 1, 19, 37},
 			axes:            axes2DFwd,
-			expectedKind:    Conv2DStandard,
+			expectedKind:    ops.Conv2DStandard,
 			expectIs1x1Unit: true,
 		},
 		{
@@ -176,7 +173,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			inputDims:       []int{1, 2, 3, 11},
 			kernelDims:      []int{1, 1, 11, 32},
 			axes:            axes2DFwd,
-			expectedKind:    Conv2DStandard,
+			expectedKind:    ops.Conv2DStandard,
 			expectIs1x1Unit: true,
 		},
 		{
@@ -185,7 +182,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			kernelDims:   []int{3, 3, 7, 13},
 			axes:         axes2DFwd,
 			paddings:     [][2]int{{1, 1}, {1, 1}},
-			expectedKind: Conv2DStandard,
+			expectedKind: ops.Conv2DStandard,
 		},
 		{
 			name:            "2D_Fwd_StridedDilatedOddChannels",
@@ -195,17 +192,15 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{2, 2},
 			paddings:        [][2]int{{1, 2}, {2, 1}},
 			kernelDilations: []int{2, 2},
-			expectedKind:    Conv2DStandard,
+			expectedKind:    ops.Conv2DStandard,
 		},
-
-		// 2D VJP wrt Input (Transposed Kernel + Input Dilation)
 		{
 			name:             "2D_VJPInput_MNIST_Conv2",
 			inputDims:        []int{4, 14, 14, 64},
 			kernelDims:       []int{3, 3, 32, 64},
 			axes:             axes2DVJPInput,
 			paddings:         [][2]int{{1, 1}, {1, 1}},
-			expectedKind:     Conv2DStandard,
+			expectedKind:     ops.Conv2DStandard,
 			expectTransposed: true,
 		},
 		{
@@ -215,11 +210,9 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:             axes2DVJPInput,
 			paddings:         [][2]int{{2, 1}, {1, 2}},
 			inputDilations:   []int{2, 2},
-			expectedKind:     Conv2DStandard,
+			expectedKind:     ops.Conv2DStandard,
 			expectTransposed: true,
 		},
-
-		// 2D VJP wrt Kernel (Outer-Product Kernel Gradient)
 		{
 			name:            "2D_VJPKernel_MNIST_Conv1_Cin1",
 			inputDims:       []int{4, 28, 28, 1},
@@ -228,7 +221,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1, 1},
 			paddings:        [][2]int{{1, 1}, {1, 1}},
 			kernelDilations: []int{1, 1},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
 		{
 			name:            "2D_VJPKernel_MNIST_Conv2_Cin32_Cout64",
@@ -238,7 +231,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1, 1},
 			paddings:        [][2]int{{1, 1}, {1, 1}},
 			kernelDilations: []int{1, 1},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
 		{
 			name:            "2D_VJPKernel_OddChannels_Strided",
@@ -248,7 +241,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1, 1},
 			paddings:        [][2]int{{1, 1}, {1, 1}},
 			kernelDilations: []int{2, 2},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
 		{
 			name:            "2D_VJPKernel_LargeChannels35x50",
@@ -258,7 +251,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1, 1},
 			paddings:        [][2]int{{1, 1}, {1, 1}},
 			kernelDilations: []int{1, 1},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
 		{
 			name:         "2D_Fwd_Direct2D_LargeSpatial",
@@ -267,7 +260,34 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:         axes2DFwd,
 			strides:      []int{1, 1},
 			paddings:     [][2]int{{1, 1}, {1, 1}},
-			expectedKind: Conv2DStandard,
+			expectedKind: ops.Conv2DStandard,
+		},
+		{
+			name:         "2D_Fwd_Direct2D_64x64",
+			inputDims:    []int{2, 64, 64, 32},
+			kernelDims:   []int{3, 3, 32, 32},
+			axes:         axes2DFwd,
+			strides:      []int{1, 1},
+			paddings:     [][2]int{{1, 1}, {1, 1}},
+			expectedKind: ops.Conv2DStandard,
+		},
+		{
+			name:         "2D_Fwd_Direct2D_8x8_Bottleneck",
+			inputDims:    []int{4, 8, 8, 96},
+			kernelDims:   []int{3, 3, 96, 128},
+			axes:         axes2DFwd,
+			strides:      []int{1, 1},
+			paddings:     [][2]int{{1, 1}, {1, 1}},
+			expectedKind: ops.Conv2DStandard,
+		},
+		{
+			name:         "2D_Fwd_Direct2D_OddWidths",
+			inputDims:    []int{2, 11, 15, 16},
+			kernelDims:   []int{3, 3, 16, 35},
+			axes:         axes2DFwd,
+			strides:      []int{1, 1},
+			paddings:     [][2]int{{1, 1}, {1, 1}},
+			expectedKind: ops.Conv2DStandard,
 		},
 		{
 			name:            "2D_VJPKernel_SmallBatch_LargeSpatial",
@@ -277,10 +297,8 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1, 1},
 			paddings:        [][2]int{{1, 1}, {1, 1}},
 			kernelDilations: []int{1, 1},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
-
-		// 1D Convolutions (Forward, VJP wrt Input, VJP wrt Kernel)
 		{
 			name:         "1D_Fwd_Standard",
 			inputDims:    []int{4, 33, 12},
@@ -288,7 +306,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:         axes1DFwd,
 			strides:      []int{2},
 			paddings:     [][2]int{{2, 2}},
-			expectedKind: Conv2DStandard,
+			expectedKind: ops.Conv2DStandard,
 		},
 		{
 			name:             "1D_VJPInput",
@@ -297,7 +315,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			axes:             axes1DVJPInput,
 			paddings:         [][2]int{{1, 1}},
 			inputDilations:   []int{2},
-			expectedKind:     Conv2DStandard,
+			expectedKind:     ops.Conv2DStandard,
 			expectTransposed: true,
 		},
 		{
@@ -308,7 +326,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			strides:         []int{1},
 			paddings:        [][2]int{{2, 2}},
 			kernelDilations: []int{1},
-			expectedKind:    Conv2DKernelGrad,
+			expectedKind:    ops.Conv2DKernelGrad,
 		},
 	}
 
@@ -336,7 +354,7 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 				t.Fatalf("ConvGeneral build failed: %+v", err)
 			}
 			convNode := outOp.(*gobackend.Node)
-			p := GetConv2DParams(convNode)
+			p := ops.GetConv2DParams(convNode)
 			if p.Kind != tc.expectedKind {
 				t.Fatalf("expected Conv2DKind %v, got %v", tc.expectedKind, p.Kind)
 			}
@@ -355,34 +373,25 @@ func TestConvGeneralAVX2AndAVX512(t *testing.T) {
 			inputs := []*gobackend.Buffer{inBuf, kerBuf}
 			owned := []bool{false, false}
 
-			wantBuf, err := execConvGeneral(backend, convNode, inputs, owned)
+			wantBuf, err := ops.ExecConvGeneral(backend, convNode, inputs, owned)
 			if err != nil {
-				t.Fatalf("execConvGeneral failed: %+v", err)
+				t.Fatalf("ExecConvGeneral failed: %+v", err)
 			}
 			defer backend.PutBuffer(wantBuf)
 
-			avx2Buf, err := execConvGeneralAVX2(backend, convNode, inputs, owned)
+			avx512Buf, err := execConvGeneralAVX512(backend, convNode, inputs, owned)
 			if err != nil {
-				t.Fatalf("execConvGeneralAVX2 failed: %+v", err)
+				t.Fatalf("execConvGeneralAVX512 failed: %+v", err)
 			}
-			defer backend.PutBuffer(avx2Buf)
-			compareConvBuffers(t, "AVX2", avx2Buf, wantBuf, 1e-4)
-
-			if gobackend.IsAVX512Allowed {
-				avx512Buf, err := execConvGeneralAVX512(backend, convNode, inputs, owned)
-				if err != nil {
-					t.Fatalf("execConvGeneralAVX512 failed: %+v", err)
-				}
-				defer backend.PutBuffer(avx512Buf)
-				compareConvBuffers(t, "AVX512", avx512Buf, wantBuf, 1e-4)
-			}
+			defer backend.PutBuffer(avx512Buf)
+			compareConvBuffers(t, "AVX512", avx512Buf, wantBuf, 1e-4)
 		})
 	}
 }
 
-func TestConvMicrokernelsDirect(t *testing.T) {
-	if !gobackend.IsAVX2Allowed {
-		t.Skip("AVX2 is not supported or allowed on this host")
+func TestConvMicrokernelsAVX512Direct(t *testing.T) {
+	if !gobackend.IsAVX512Allowed {
+		t.Skip("AVX-512 is not supported or allowed on this host")
 	}
 
 	for _, K := range []int{1, 2, 3, 4, 5, 8, 9, 17, 32} {
@@ -409,49 +418,31 @@ func TestConvMicrokernelsDirect(t *testing.T) {
 				}
 			}
 
-			gotAVX2 := make([]float32, 4*16)
-			avx2.ConvAVX2Kernel4x16Float32Asm(
+			got8x32 := make([]float32, 8*32)
+			ConvAVX512Kernel8x32Float32Asm(
 				unsafe.Pointer(&lhs[0]),
 				unsafe.Pointer(&rhs[0]),
-				unsafe.Pointer(&gotAVX2[0]),
-				K, K*4, cols*4, 16*4,
+				unsafe.Pointer(&got8x32[0]),
+				K, K*4, cols*4, 32*4,
 			)
-			for r := range 4 {
-				for c := range 16 {
-					diff := math.Abs(float64(gotAVX2[r*16+c] - want[r*cols+c]))
-					if diff > 1e-4 {
-						t.Fatalf("AVX2 4x16 mismatch at (%d,%d): got %v, want %v", r, c, gotAVX2[r*16+c], want[r*cols+c])
-					}
+			for i := range got8x32 {
+				diff := math.Abs(float64(got8x32[i] - want[i]))
+				if diff > 1e-4 {
+					t.Fatalf("AVX512 8x32 mismatch at %d: got %v, want %v", i, got8x32[i], want[i])
 				}
 			}
 
-			if gobackend.IsAVX512Allowed {
-				got8x32 := make([]float32, 8*32)
-				avx512.ConvAVX512Kernel8x32Float32Asm(
-					unsafe.Pointer(&lhs[0]),
-					unsafe.Pointer(&rhs[0]),
-					unsafe.Pointer(&got8x32[0]),
-					K, K*4, cols*4, 32*4,
-				)
-				for i := range got8x32 {
-					diff := math.Abs(float64(got8x32[i] - want[i]))
-					if diff > 1e-4 {
-						t.Fatalf("AVX512 8x32 mismatch at %d: got %v, want %v", i, got8x32[i], want[i])
-					}
-				}
-
-				got4x32 := make([]float32, 4*32)
-				avx512.ConvAVX512Kernel4x32Float32Asm(
-					unsafe.Pointer(&lhs[0]),
-					unsafe.Pointer(&rhs[0]),
-					unsafe.Pointer(&got4x32[0]),
-					K, K*4, cols*4, 32*4,
-				)
-				for i := range got4x32 {
-					diff := math.Abs(float64(got4x32[i] - want[i]))
-					if diff > 1e-4 {
-						t.Fatalf("AVX512 4x32 mismatch at %d: got %v, want %v", i, got4x32[i], want[i])
-					}
+			got4x32 := make([]float32, 4*32)
+			ConvAVX512Kernel4x32Float32Asm(
+				unsafe.Pointer(&lhs[0]),
+				unsafe.Pointer(&rhs[0]),
+				unsafe.Pointer(&got4x32[0]),
+				K, K*4, cols*4, 32*4,
+			)
+			for i := range got4x32 {
+				diff := math.Abs(float64(got4x32[i] - want[i]))
+				if diff > 1e-4 {
+					t.Fatalf("AVX512 4x32 mismatch at %d: got %v, want %v", i, got4x32[i], want[i])
 				}
 			}
 		})

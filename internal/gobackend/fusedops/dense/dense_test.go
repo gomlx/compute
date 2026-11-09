@@ -15,10 +15,12 @@ import (
 	_ "github.com/gomlx/compute/internal/gobackend/activations"
 	_ "github.com/gomlx/compute/internal/gobackend/activations/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/activations/avx512"
+	_ "github.com/gomlx/compute/internal/gobackend/activations/neon"
 	_ "github.com/gomlx/compute/internal/gobackend/dot"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/avx512"
+	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/neon"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/dense"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
@@ -925,6 +927,104 @@ func TestFusedDenseVJPDTypes(t *testing.T) {
 		}
 		if ok, diff := testutil.IsEqual(wantDB, results[2]); !ok {
 			t.Errorf("Float16 db mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("TallSkinnyFloat32", func(t *testing.T) {
+		const m = 2048
+		for _, dims := range [][2]int{{3, 32}, {19, 37}, {32, 64}} {
+			k, n := dims[0], dims[1]
+			x := make([][]float32, m)
+			y := make([][]float32, m)
+			dOut := make([][]float32, m)
+			for r := range m {
+				x[r] = make([]float32, k)
+				y[r] = make([]float32, n)
+				dOut[r] = make([]float32, n)
+				for c := range k {
+					x[r][c] = float32((r*13+c*7)%41-20) * 0.05
+				}
+				for c := range n {
+					dOut[r][c] = float32((r*11+c*5)%37-18) * 0.05
+				}
+			}
+			wIO := make([][]float32, k)
+			for r := range k {
+				wIO[r] = make([]float32, n)
+				for c := range n {
+					wIO[r][c] = float32((r*3+c*9)%23-11) * 0.1
+				}
+			}
+			wOI := make([][]float32, n)
+			for c := range n {
+				wOI[c] = make([]float32, k)
+				for r := range k {
+					wOI[c][r] = wIO[r][c]
+				}
+			}
+			bias := make([]float32, n)
+
+			wantDW_IO := make([][]float32, k)
+			for r := range k {
+				wantDW_IO[r] = make([]float32, n)
+			}
+			wantDB := make([]float32, n)
+			for r := range m {
+				for cOut := range n {
+					dy := dOut[r][cOut]
+					wantDB[cOut] += dy
+					for cIn := range k {
+						wantDW_IO[cIn][cOut] += x[r][cIn] * dy
+					}
+				}
+			}
+			wantDW_OI := make([][]float32, n)
+			for c := range n {
+				wantDW_OI[c] = make([]float32, k)
+				for r := range k {
+					wantDW_OI[c][r] = wantDW_IO[r][c]
+				}
+			}
+
+			resIO, err := testutil.Exec(b, []any{x, wIO, bias, y, dOut}, func(f compute.Function, params []compute.Value) ([]compute.Value, error) {
+				dx, dw, db, err := f.FusedDenseVJP(params[0], params[1], params[2], params[3], params[4], compute.DenseConfig{
+					Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
+					WeightLayout: compute.DenseLayoutInputOutputs,
+				})
+				if err != nil {
+					return nil, err
+				}
+				return []compute.Value{dx, dw, db}, nil
+			})
+			if err != nil {
+				t.Fatalf("TallSkinny InputOutputs FusedDenseVJP failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantDW_IO, resIO[1], 1e-3); !ok {
+				t.Errorf("TallSkinny InputOutputs (%dx%d) dw mismatch:\n%s", k, n, diff)
+			}
+			if ok, diff := testutil.IsInDelta(wantDB, resIO[2], 1e-3); !ok {
+				t.Errorf("TallSkinny InputOutputs (%dx%d) db mismatch:\n%s", k, n, diff)
+			}
+
+			resOI, err := testutil.Exec(b, []any{x, wOI, bias, y, dOut}, func(f compute.Function, params []compute.Value) ([]compute.Value, error) {
+				dx, dw, db, err := f.FusedDenseVJP(params[0], params[1], params[2], params[3], params[4], compute.DenseConfig{
+					Activation:   compute.ActivationConfig{Type: compute.ActivationNone},
+					WeightLayout: compute.DenseLayoutOutputsInput,
+				})
+				if err != nil {
+					return nil, err
+				}
+				return []compute.Value{dx, dw, db}, nil
+			})
+			if err != nil {
+				t.Fatalf("TallSkinny OutputsInput FusedDenseVJP failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(wantDW_OI, resOI[1], 1e-3); !ok {
+				t.Errorf("TallSkinny OutputsInput (%dx%d) dw mismatch:\n%s", k, n, diff)
+			}
+			if ok, diff := testutil.IsInDelta(wantDB, resOI[2], 1e-3); !ok {
+				t.Errorf("TallSkinny OutputsInput (%dx%d) db mismatch:\n%s", k, n, diff)
+			}
 		}
 	})
 }

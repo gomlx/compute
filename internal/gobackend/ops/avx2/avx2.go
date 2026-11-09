@@ -44,6 +44,13 @@ func registerAVX2() {
 		}
 		return DispatchBinaryTrailingAVX2(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetStridedCopyArchDispatcher(
+		gobackend.PriorityAVX2,
+		DispatchCopyStridedBytesAVX2,
+		DispatchDupStridedBytesAVX2,
+		DispatchConcat2StridedBytesAVX2,
+	)
+	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityAVX2, execConvGeneralAVX2)
 }
 
 //go:noescape

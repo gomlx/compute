@@ -10,8 +10,6 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend/activations"
-	_ "github.com/gomlx/compute/internal/gobackend/activations/avx2"
-	_ "github.com/gomlx/compute/internal/gobackend/activations/avx512"
 	"github.com/gomlx/compute/support/testutil"
 )
 

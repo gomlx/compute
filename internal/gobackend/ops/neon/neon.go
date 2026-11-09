@@ -18,6 +18,9 @@ func init() {
 	if gobackend.IsNEONAllowed {
 		registerNEON()
 	}
+	if gobackend.IsSMEAllowed {
+		gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PrioritySME, execConvGeneralSME)
+	}
 }
 
 func registerNEON() {
@@ -46,6 +49,13 @@ func registerNEON() {
 		}
 		return DispatchBinaryTrailingNEON(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetStridedCopyArchDispatcher(
+		gobackend.PriorityNEON,
+		DispatchCopyStridedBytesNEON,
+		DispatchDupStridedBytesNEON,
+		DispatchConcat2StridedBytesNEON,
+	)
+	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityNEON, execConvGeneralNEON)
 }
 
 //go:noescape

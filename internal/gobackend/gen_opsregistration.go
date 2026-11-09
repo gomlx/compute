@@ -401,6 +401,14 @@ func (f *Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, 
 	return RegisterFusedLayerNorm.Fn(f, x, axes, epsilon, gamma, beta)
 }
 
+func (f *Function) FusedLayerNormVJP(x compute.Value, dOutput compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (dx compute.Value, dGamma compute.Value, dBeta compute.Value, err error) {
+	if RegisterFusedLayerNormVJP.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedLayerNormVJP(x, dOutput, axes, epsilon, gamma, beta)
+	}
+	return RegisterFusedLayerNormVJP.Fn(f, x, dOutput, axes, epsilon, gamma, beta)
+}
+
 func (f *Function) FusedQuantizedDense(x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error) {
 	if RegisterFusedQuantizedDense.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -1133,6 +1141,9 @@ var (
 	}
 	RegisterFusedLayerNorm = OpHandlerRegistration[func(f *Function, x compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (compute.Value, error)]{
 		Method: "FusedLayerNorm",
+	}
+	RegisterFusedLayerNormVJP = OpHandlerRegistration[func(f *Function, x compute.Value, dOutput compute.Value, axes []int, epsilon float64, gamma compute.Value, beta compute.Value) (dx compute.Value, dGamma compute.Value, dBeta compute.Value, err error)]{
+		Method: "FusedLayerNormVJP",
 	}
 	RegisterFusedQuantizedDense = OpHandlerRegistration[func(f *Function, x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error)]{
 		Method: "FusedQuantizedDense",

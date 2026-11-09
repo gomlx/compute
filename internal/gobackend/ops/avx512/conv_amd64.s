@@ -1433,3 +1433,220 @@ conv_avx512_d2d_4x32_store:
 	VZEROUPPER
 	RET
 
+
+// ===========================================================================
+// 8. ConvAVX512Direct2DKernel2x32Float32Asm: Direct Zero-Im2Col 2D 2x32 Kernel
+// ===========================================================================
+// func ConvAVX512Direct2DKernel2x32Float32Asm(
+//     lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+//     kWC, numKy, lhsRowStrideBytes, lhsKyJumpBytes, rhsStepBytes, outRowStrideBytes int)
+TEXT ·ConvAVX512Direct2DKernel2x32Float32Asm(SB), NOSPLIT, $0-72
+	MOVQ lhsPtr+0(FP), SI
+	MOVQ rhsPtr+8(FP), DI
+	MOVQ outPtr+16(FP), R8
+	MOVQ kWC+24(FP), CX
+	MOVQ numKy+32(FP), BX
+	MOVQ lhsRowStrideBytes+40(FP), DX
+	MOVQ lhsKyJumpBytes+48(FP), R14
+	MOVQ rhsStepBytes+56(FP), R9
+	MOVQ outRowStrideBytes+64(FP), R10
+
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+	VXORPS Z4, Z4, Z4
+	VXORPS Z5, Z5, Z5
+	VXORPS Z6, Z6, Z6
+	VXORPS Z7, Z7, Z7
+
+	TESTQ CX, CX
+	JLE conv_avx512_d2d_2x32_store
+	TESTQ BX, BX
+	JLE conv_avx512_d2d_2x32_store
+
+	LEAQ (SI)(DX*1), R11
+
+conv_avx512_d2d_2x32_ky_loop:
+	MOVQ CX, AX
+	SHRQ $1, AX
+	JZ conv_avx512_d2d_2x32_odd
+
+	PCALIGN $64
+conv_avx512_d2d_2x32_pair_loop:
+	VMOVUPS (DI), Z16
+	VMOVUPS 64(DI), Z17
+	VBROADCASTSS 0(SI), Z18
+	VBROADCASTSS 0(R11), Z19
+	ADDQ R9, DI
+
+	VMOVUPS (DI), Z20
+	VMOVUPS 64(DI), Z21
+	VBROADCASTSS 4(SI), Z22
+	VBROADCASTSS 4(R11), Z23
+	ADDQ R9, DI
+
+	VFMADD231PS Z16, Z18, Z0
+	VFMADD231PS Z17, Z18, Z1
+	VFMADD231PS Z16, Z19, Z2
+	VFMADD231PS Z17, Z19, Z3
+
+	VFMADD231PS Z20, Z22, Z4
+	VFMADD231PS Z21, Z22, Z5
+	VFMADD231PS Z20, Z23, Z6
+	VFMADD231PS Z21, Z23, Z7
+
+	ADDQ $8, SI
+	ADDQ $8, R11
+	DECQ AX
+	JNZ conv_avx512_d2d_2x32_pair_loop
+
+conv_avx512_d2d_2x32_odd:
+	TESTQ $1, CX
+	JZ conv_avx512_d2d_2x32_next_ky
+
+	VMOVUPS (DI), Z16
+	VMOVUPS 64(DI), Z17
+	VBROADCASTSS 0(SI), Z18
+	VBROADCASTSS 0(R11), Z19
+
+	VFMADD231PS Z16, Z18, Z0
+	VFMADD231PS Z17, Z18, Z1
+	VFMADD231PS Z16, Z19, Z2
+	VFMADD231PS Z17, Z19, Z3
+
+	ADDQ $4, SI
+	ADDQ $4, R11
+	ADDQ R9, DI
+
+conv_avx512_d2d_2x32_next_ky:
+	ADDQ R14, SI
+	ADDQ R14, R11
+	DECQ BX
+	JNZ conv_avx512_d2d_2x32_ky_loop
+
+conv_avx512_d2d_2x32_store:
+	VADDPS Z4, Z0, Z0
+	VADDPS Z5, Z1, Z1
+	VADDPS Z6, Z2, Z2
+	VADDPS Z7, Z3, Z3
+
+	VMOVUPS Z0, (R8)
+	VMOVUPS Z1, 64(R8)
+	ADDQ R10, R8
+	VMOVUPS Z2, (R8)
+	VMOVUPS Z3, 64(R8)
+	VZEROUPPER
+	RET
+
+
+// ===========================================================================
+// 9. ConvAVX512Direct2DKernel1x32Float32Asm: Direct Zero-Im2Col 2D 1x32 Kernel
+// ===========================================================================
+// Computes 1 output pixel (interior or clipped border) with 4-way accumulator
+// unrolling across Z0..Z7 to hide FMA latency.
+//
+// func ConvAVX512Direct2DKernel1x32Float32Asm(
+//     lhsPtr, rhsPtr, outPtr unsafe.Pointer,
+//     kWC, numKy, lhsKyJumpBytes, rhsKyJumpBytes, rhsStepBytes int)
+TEXT ·ConvAVX512Direct2DKernel1x32Float32Asm(SB), NOSPLIT, $0-64
+	MOVQ lhsPtr+0(FP), SI
+	MOVQ rhsPtr+8(FP), DI
+	MOVQ outPtr+16(FP), R8
+	MOVQ kWC+24(FP), CX
+	MOVQ numKy+32(FP), BX
+	MOVQ lhsKyJumpBytes+40(FP), R14
+	MOVQ rhsKyJumpBytes+48(FP), R15
+	MOVQ rhsStepBytes+56(FP), R9
+
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+	VXORPS Z4, Z4, Z4
+	VXORPS Z5, Z5, Z5
+	VXORPS Z6, Z6, Z6
+	VXORPS Z7, Z7, Z7
+
+	TESTQ CX, CX
+	JLE conv_avx512_d2d_1x32_store
+	TESTQ BX, BX
+	JLE conv_avx512_d2d_1x32_store
+
+	LEAQ (R9)(R9*1), R10                 // R10 = 2 * rhsStepBytes
+	LEAQ (R9)(R9*2), R11                 // R11 = 3 * rhsStepBytes
+	LEAQ (R10)(R10*1), R12               // R12 = 4 * rhsStepBytes
+
+conv_avx512_d2d_1x32_ky_loop:
+	MOVQ CX, AX
+	CMPQ AX, $4
+	JL conv_avx512_d2d_1x32_rem
+
+	PCALIGN $64
+conv_avx512_d2d_1x32_loop4:
+	VMOVUPS (DI), Z16
+	VMOVUPS 64(DI), Z17
+	VBROADCASTSS 0(SI), Z24
+
+	VMOVUPS (0)(DI)(R9*1), Z18
+	VMOVUPS (64)(DI)(R9*1), Z19
+	VBROADCASTSS 4(SI), Z25
+
+	VMOVUPS (0)(DI)(R10*1), Z20
+	VMOVUPS (64)(DI)(R10*1), Z21
+	VBROADCASTSS 8(SI), Z26
+
+	VMOVUPS (0)(DI)(R11*1), Z22
+	VMOVUPS (64)(DI)(R11*1), Z23
+	VBROADCASTSS 12(SI), Z27
+
+	VFMADD231PS Z16, Z24, Z0
+	VFMADD231PS Z17, Z24, Z1
+	VFMADD231PS Z18, Z25, Z2
+	VFMADD231PS Z19, Z25, Z3
+	VFMADD231PS Z20, Z26, Z4
+	VFMADD231PS Z21, Z26, Z5
+	VFMADD231PS Z22, Z27, Z6
+	VFMADD231PS Z23, Z27, Z7
+
+	ADDQ $16, SI
+	ADDQ R12, DI
+	SUBQ $4, AX
+	CMPQ AX, $4
+	JGE conv_avx512_d2d_1x32_loop4
+
+conv_avx512_d2d_1x32_rem:
+	TESTQ AX, AX
+	JZ conv_avx512_d2d_1x32_next_ky
+
+conv_avx512_d2d_1x32_rem_loop:
+	VMOVUPS (DI), Z16
+	VMOVUPS 64(DI), Z17
+	VBROADCASTSS 0(SI), Z24
+	VFMADD231PS Z16, Z24, Z0
+	VFMADD231PS Z17, Z24, Z1
+	ADDQ $4, SI
+	ADDQ R9, DI
+	DECQ AX
+	JNZ conv_avx512_d2d_1x32_rem_loop
+
+conv_avx512_d2d_1x32_next_ky:
+	ADDQ R14, SI
+	ADDQ R15, DI
+	DECQ BX
+	JNZ conv_avx512_d2d_1x32_ky_loop
+
+conv_avx512_d2d_1x32_store:
+	VADDPS Z2, Z0, Z0
+	VADDPS Z3, Z1, Z1
+	VADDPS Z6, Z4, Z4
+	VADDPS Z7, Z5, Z5
+	VADDPS Z4, Z0, Z0
+	VADDPS Z5, Z1, Z1
+
+	VMOVUPS Z0, (R8)
+	VMOVUPS Z1, 64(R8)
+	VZEROUPPER
+	RET
+
+

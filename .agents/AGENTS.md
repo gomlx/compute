@@ -238,8 +238,8 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 
 | Category | Operations |
 | :--- | :--- |
-| **Activations & Normalization** | `FusedSoftmax`, `FusedGelu`, `FusedLayerNorm` |
-| **Dense & Projections** | `FusedDense`, `FusedAttentionQKVProjection` |
+| **Activations & Normalization** | `FusedSoftmax`, `FusedActivation`, `FusedActivationVJP`, `FusedLayerNorm`, `FusedLayerNormVJP` |
+| **Dense & Projections** | `FusedDense`, `FusedDenseVJP`, `FusedAttentionQKVProjection` |
 | **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
 | **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense` |
 
@@ -290,8 +290,12 @@ When implementing or modifying assembly routines in `./internal/gobackend/...`, 
 
 ### 1. Directory and File Organization
 
-Assembly implementations are organized in subdirectories per SIMD architecture:
-- Separate subdirectories: `avx2/` and `avx512/` under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512}`, `internal/gobackend/activations/{avx2,avx512}`, `internal/gobackend/dot/matmul/{avx2,avx512}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+All code specific to a SIMD architecture—including Go wrappers, assembly routines, and unit/benchmark tests (`*_test.go`)—must be placed in the corresponding architecture subdirectory, never in the parent generic package directory:
+- **Separate subdirectories**: `avx2/`, `avx512/`, `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512,neon}`, `internal/gobackend/activations/{avx2,avx512,neon}`, `internal/gobackend/dot/matmul/{avx2,avx512,neon}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+- **Registration & Default Imports**: Subpackages register their implementations in `init()` (using `gobackend.RegisterPriority`) and are blank-imported in `internal/gobackend/defaultpkgs/defaultpkgs_<arch>_simd.go`. Include an untagged `doc.go` in each subdirectory so the package remains valid across all build configurations.
+- **Tests in Architecture Subdirectories**:
+  - Place architecture-specific unit tests and microbenchmarks inside the subdirectory (e.g. `avx2/avx2_test.go`, `avx512/avx512_test.go`, `neon/neon_test.go`).
+  - Rather than reimplementing mathematical formulas in architecture tests, import the parent package and compare the SIMD kernel outputs directly against the baseline `NoSIMD` reference implementation (generic operation semantics belong in `support/backendtest`).
 - **Go Declaration (`*_amd64.go`)**: Forward-declare assembly functions with `//go:noescape`, e.g.:
   ```go
   //go:noescape
@@ -442,9 +446,10 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
   - `dtypes/float16/neon.go` (`Float16x8` load/store/conversions to pair of `archsimd.Float32x4` and `ToFloat32SIMD`/`FromFloat32SIMD` slice helpers).
   - `dtypes/bfloat16/neon.go` (`BFloat16x8` load/store/conversions to pair of `archsimd.Float32x4` using `ExtendLo4ToUint32` / `HiToLo` and IEEE-754 round-to-nearest-even narrowing).
   - `internal/gobackend/ops/reduce_thresholds_arm64.go` (ARM64 NEON empirically tuned SIMD reduction thresholds).
-- **Phase 4 — Standard Operations (`ops/neon`, `where_arm64`, `epilogue_arm64`, `convgeneral_arm64`)**:
-  - `internal/gobackend/ops/neon`: NEON trailing-axis sum (`DispatchTrailingSumNEON`), leading-axis sum (`DispatchLeadingSumNEON`), and trailing-broadcast binary ops (`DispatchBinaryTrailingNEON`) across `Float32`, `Float64`, `Float16`, `BFloat16`, and integer types.
-  - `internal/gobackend/ops/convgeneral_arm64.go` and `internal/gobackend/ops/neon/conv_arm64.s`: 1D and 2D `ChannelsLast` `ConvGeneral` acceleration for both forward/input-VJP (`ConvNEONKernel4x16Float32Asm`, `ConvNEONDirect2DKernel4x16Float32Asm` zero-`im2col` direct 2D kernel, `ConvSMEKernel32x32Float32Asm`, `ConvSMEKernel16x16Float32Asm`, `ConvPackLHS8StridedFloat32Asm` direct-from-input SME LHS packing, and `SMEAcquireClusterWithLimit(2, 1)` dual-worker fast-cluster pipelining) and zero-packing outer-product kernel-VJP (`ConvKernelGradNEON4x16Float32Asm`, `ConvKernelGradNEON1x16Float32Asm`, `ConvKernelGradSME32x32Float32Asm` with 2D `(Cin x Cout)` panel tiling and unified `(BatchSize, OutH)` reduction slicing), plus $1\times 1$ unit-stride zero-copy GEMM fast path.
+- **Phase 4 — Standard Operations (`ops/neon`, `activations/neon`, `where_arm64`, `epilogue_arm64`)**:
+  - `internal/gobackend/ops/neon`: NEON trailing-axis sum (`DispatchTrailingSumNEON`), leading-axis sum (`DispatchLeadingSumNEON`), trailing-broadcast binary ops (`DispatchBinaryTrailingNEON`), strided byte-block copy/dup/concat (`DispatchCopyStridedBytesNEON`, `DispatchDupStridedBytesNEON`, `DispatchConcat2StridedBytesNEON` in `stridedcopy_arm64.go`), and tall-skinny `FusedDenseVJP` outer-product accumulation + bias reduction (`ExecTallSkinnyAtBFloat32ARM64`, `ReduceBiasFloat32ARM64` in `dense_vjp_arm64.go`) across `Float32`, `Float64`, `Float16`, `BFloat16`, and integer types.
+  - `internal/gobackend/ops/neon/conv_arm64.go` and `internal/gobackend/ops/neon/conv_arm64.s`: 1D and 2D `ChannelsLast` `ConvGeneral` acceleration for both forward/input-VJP (`ConvNEONKernel4x16Float32Asm`, `ConvNEONDirect2DKernel4x16Float32Asm`, `ConvNEONDirect2DKernel2x16Float32Asm`, and `ConvNEONDirect2DKernel1x16Float32Asm` zero-`im2col` direct 2D interior and border kernels, `ConvSMEKernel32x32Float32Asm`, `ConvSMEKernel16x16Float32Asm`, `ConvPackLHS8StridedFloat32Asm` direct-from-input SME LHS packing, and `SMEAcquireClusterWithLimit(2, 1)` dual-worker fast-cluster pipelining) and zero-packing outer-product kernel-VJP (`ConvKernelGradNEON4x16Float32Asm`, `ConvKernelGradNEON1x16Float32Asm`, `ConvKernelGradSME32x32Float32Asm` with 2D `(Cin x Cout)` panel tiling and unified `(BatchSize, OutH)` reduction slicing), plus $1\times 1$ unit-stride zero-copy GEMM fast path.
+  - `internal/gobackend/activations/neon/neon_arm64.go` and `internal/gobackend/activations/neon/neon_arm64.s`: Handwritten ARM64 NEON assembly for `GeluExact`, `GeluApprox`, `Silu`, `SiluVJP`, and fused 2D-tile `Bias + Activation` (`GeluExactBiasTile`, `GeluApproxBiasTile`, `SiluBiasTile`), plus `Float64`, `BFloat16`, and `Float16` vectorized forward/VJP kernels.
   - `internal/gobackend/ops/where_arm64.go`: Vectorized `whereFloat32Arch` (`VV`, `VS`, `SV`, `SS` modes).
   - `internal/gobackend/dot/matmul/epilogue_arm64.go`: Vectorized `addBiasFloat32Arch` and `copyAndAddBiasFloat32Arch`.
 - **Phase 5 — ARM64 Assembly Guidelines**: Documented below.
@@ -457,7 +462,7 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
 When implementing or modifying ARM64 assembly routines in `./internal/gobackend/...` or `./dtypes/...`, follow these guidelines:
 
 ### 1. Directory and File Organization
-- Separate subdirectories: `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`).
+- **Separate subdirectories**: Place all ARM64-specific SIMD code, assembly files, and unit/benchmark tests (`*_test.go`) in `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/activations/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`), and blank-import the package in `internal/gobackend/defaultpkgs/defaultpkgs_arm64_simd.go`.
 - **Go Declaration (`*_arm64.go`)**: Forward-declare assembly functions with `//go:noescape`.
 - **Assembly Implementation (`*_arm64.s`)**:
   - Build tag: `//go:build arm64 && goexperiment.simd` (or `//go:build arm64`).

@@ -464,6 +464,23 @@ type FusedOps interface {
 	// epsilon: numerical stability constant (typically 1e-5).
 	FusedLayerNorm(x Value, axes []int, epsilon float64, gamma, beta Value) (Value, error)
 
+	// FusedLayerNormVJP computes the vector-jacobian product (gradients) of FusedLayerNorm
+	// with respect to its inputs (x, gamma, and beta).
+	//
+	// Parameters:
+	//   - x: original input tensor to FusedLayerNorm.
+	//   - dOutput: incoming adjoint gradient with respect to the output of FusedLayerNorm (same shape as x).
+	//   - axes: normalization axes passed to the forward FusedLayerNorm call.
+	//   - epsilon: numerical stability constant passed to the forward FusedLayerNorm call.
+	//   - gamma: scale tensor passed to FusedLayerNorm (can be nil if FusedLayerNorm was called without gamma).
+	//   - beta: offset tensor passed to FusedLayerNorm (can be nil if FusedLayerNorm was called without beta).
+	//
+	// Outputs:
+	//   - dx: gradient with respect to x (same shape as x).
+	//   - dGamma: gradient with respect to gamma (same shape as gamma, or nil if gamma was nil).
+	//   - dBeta: gradient with respect to beta (same shape as beta, or nil if beta was nil).
+	FusedLayerNormVJP(x, dOutput Value, axes []int, epsilon float64, gamma, beta Value) (dx, dGamma, dBeta Value, err error)
+
 	// FusedDense performs fused matmul + optional bias + optional activation.
 	//
 	// It does y = activation(x @ W + bias) for DenseLayoutInputOutputs, or

@@ -15,8 +15,6 @@ import (
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
-	_ "github.com/gomlx/compute/internal/gobackend/ops/avx2"
-	_ "github.com/gomlx/compute/internal/gobackend/ops/avx512"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )

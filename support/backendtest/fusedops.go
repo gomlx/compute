@@ -167,6 +167,63 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
+		t.Run("VJP", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeFusedLayerNormVJP)
+			input := [][]float32{{1, 2, 3}, {4, 6, 8}}
+			dy := [][]float32{{0.5, -1.0, 1.5}, {1.0, 0.0, -0.5}}
+			gamma := []float32{2.0, 0.5, 1.5}
+			beta := []float32{0.1, -0.2, 0.3}
+			epsilon := 1e-5
+			outs, err := testutil.Exec(b, []any{input, dy, gamma, beta}, func(f compute.Function, params []compute.Value) ([]compute.Value, error) {
+				dx, dg, db, err := f.FusedLayerNormVJP(params[0], params[1], []int{1}, epsilon, params[2], params[3])
+				if err != nil {
+					return nil, err
+				}
+				return []compute.Value{dx, dg, db}, nil
+			})
+			if err != nil {
+				t.Fatalf("FusedLayerNormVJP failed: %+v", err)
+			}
+			wantDX := make([][]float32, 2)
+			wantDG := make([]float32, 3)
+			wantDB := make([]float32, 3)
+			for r := range 2 {
+				wantDX[r] = make([]float32, 3)
+				var sum float32
+				for c := range 3 {
+					sum += input[r][c]
+				}
+				mean := sum / 3.0
+				var varSum, sumG, sumGD float32
+				for c := range 3 {
+					d := input[r][c] - mean
+					varSum += d * d
+					g := dy[r][c] * gamma[c]
+					sumG += g
+					sumGD += g * d
+				}
+				invStd := float32(1.0 / math.Sqrt(float64(varSum/3.0)+epsilon))
+				meanG := sumG / 3.0
+				meanGHat := (sumGD / 3.0) * invStd
+				for c := range 3 {
+					xHat := (input[r][c] - mean) * invStd
+					g := dy[r][c] * gamma[c]
+					wantDX[r][c] = invStd * (g - meanG - xHat*meanGHat)
+					wantDG[c] += dy[r][c] * xHat
+					wantDB[c] += dy[r][c]
+				}
+			}
+			if ok, diff := testutil.IsInDelta(wantDX, outs[0], 1e-4); !ok {
+				t.Errorf("FusedLayerNormVJP dx mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta(wantDG, outs[1], 1e-4); !ok {
+				t.Errorf("FusedLayerNormVJP dGamma mismatch:\n%s", diff)
+			}
+			if ok, diff := testutil.IsInDelta(wantDB, outs[2], 1e-4); !ok {
+				t.Errorf("FusedLayerNormVJP dBeta mismatch:\n%s", diff)
+			}
+		})
+
 		t.Run("ResidualAddFusion", func(t *testing.T) {
 			testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
 			const outerSize, normSize = 4, 71

@@ -156,6 +156,7 @@ const (
 	OpTypeFusedActivationVJP
 	OpTypeFusedSoftmax
 	OpTypeFusedLayerNorm
+	OpTypeFusedLayerNormVJP
 	OpTypeFusedGelu
 	OpTypeFusedDense
 	OpTypeFusedDenseVJP
