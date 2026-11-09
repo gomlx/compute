@@ -392,14 +392,15 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 ### Step 2: Tall-Skinny `FusedDenseVJP` Outer-Product Kernel, Cache-Staged `transpose2D`, and Parallel SIMD `reduceBiasFloat`
 
 #### Changes Implemented
-1. **Direct Tall-Skinny $C = A^T B$ Outer-Product Kernel (`internal/gobackend/fusedops/dense/dense_vjp_amd64.go`)**:
-   - Implemented `execTallSkinnyAtBFloat32AMD64` and wired it into `execFusedDenseVJPGeneric` (`internal/gobackend/fusedops/dense/dense_vjp.go`) for both `DenseLayoutInputOutputs` ($dW = X^T dZ$, shape `[k, n]`) and `DenseLayoutOutputsInput` ($dW = dZ^T X$, shape `[n, k]`).
+1. **Direct Tall-Skinny $C = A^T B$ Outer-Product Kernel (`internal/gobackend/fusedops/dense/dense_vjp_amd64.go`, `internal/gobackend/fusedops/dense/dense_vjp_arm64.go`, `internal/gobackend/ops/neon/dense_vjp_arm64.go`)**:
+   - Implemented `execTallSkinnyAtBFloat32AMD64` (AVX-512 / AVX2) and `ExecTallSkinnyAtBFloat32ARM64` (ARM64 NEON + SME) and wired them into `execFusedDenseVJPGeneric` (`internal/gobackend/fusedops/dense/dense_vjp.go`) for both `DenseLayoutInputOutputs` ($dW = X^T dZ$, shape `[k, n]`) and `DenseLayoutOutputsInput` ($dW = dZ^T X$, shape `[n, k]`).
    - When $M \ge 64$, $M \ge \max(P, Q)$, and $P \times Q \le 131{,}072$, it bypasses `transpose2D`, temporary transposed buffer allocation (`xTBuf` / `dZTBuf`), and `matmul.ExecuteWithEpilogue` (which previously incurred $512\text{ KB}$-strided cache-set conflict misses in `transpose2D`, redundant LHS re-transposition in `avx512PackLHSKernelRows8Float32Asm`, and `sharedRHSReady` spin-wait across 512 K-panels).
-   - Partitions both the output spatial tiles ($32\times 32$ for AVX-512, $16\times 16$ for AVX2) and the tall contracting dimension $M$ across workers, blocking $M$ in L2-resident chunks (`mBlock = 512`) and accumulating outer products directly from row-major $A$ (`[M, P]`) and $B$ (`[M, Q]`) using the non-destructive assembly microkernels (`avx512.ConvKernelGradAVX512_8x32Float32Asm`, `4x32`, `1x32`, and `avx2.ConvKernelGradAVX2_4x16Float32Asm`, `1x16`).
+   - **AMD64 (AVX-512 / AVX2)**: Partitions both the output spatial tiles ($32\times 32$ for AVX-512, $16\times 16$ for AVX2) and the tall contracting dimension $M$ across workers, blocking $M$ in L2-resident chunks (`mBlock = 512`) and accumulating outer products directly from row-major $A$ (`[M, P]`) and $B$ (`[M, Q]`) using the non-destructive assembly microkernels (`avx512.ConvKernelGradAVX512_8x32Float32Asm`, `4x32`, `1x32`, and `avx2.ConvKernelGradAVX2_4x16Float32Asm`, `1x16`).
+   - **ARM64 (NEON & NEON + SME)**: Partitions `(mSlices, pTiles × qTiles)` across workers (`tileP = 32, tileQ = 32` when SME is active; `tileP = 16, tileQ = 16` on NEON-only). On Apple Silicon (`FEAT_SME`), workers acquiring an SME cluster lock (`matmulneon.SMEAcquireClusterWithLimit(2, 1)`) execute the 4-tile $32\times 32$ outer-product streaming `FMOPA` kernel (`ConvKernelGradSME32x32Float32Asm`) directly on row-major $A$ and $B$ (`mStep = 512`) with `Z31` `SIGURG` canary validation and automatic NEON retry, while remaining P-core workers co-execute the $4\times 16$ (`ConvKernelGradNEON4x16Float32Asm`) and 4-bank unrolled $1\times 16$ (`ConvKernelGradNEON1x16Float32Asm`) NEON outer-product kernels.
 2. **Cache-Friendly Staged `transpose2D` (`internal/gobackend/fusedops/dense/dense_vjp.go`)**:
    - Updated `transpose2D` (`transposeTile`) to stage each up-to-$32\times 32$ block through a stack-allocated `var tile [32][32]T` buffer and write contiguous rows (`copy`) to `dst`, avoiding power-of-2 strided store conflicts for non-`float32` dtypes or shapes outside the tall-skinny threshold.
-3. **Parallel Row-Chunked & SIMD `reduceBiasFloat` (`dense_vjp.go`, `dense_vjp_amd64.go`)**:
-   - Parallelized `reduceBiasFloat` across row chunks of $M$ (`ParallelizeChunked`) with stack-allocated partial accumulators and 16-wide/8-wide SIMD reduction in `reduceBiasFloat32AMD64`.
+3. **Parallel Row-Chunked & SIMD `reduceBiasFloat` (`dense_vjp.go`, `dense_vjp_amd64.go`, `dense_vjp_arm64.go`, `ops/neon/dense_vjp_arm64.go`)**:
+   - Parallelized `reduceBiasFloat` across row chunks of $M$ (`ParallelizeChunked`) with stack-allocated partial accumulators and 16-wide/8-wide/4×4-wide SIMD reduction in `reduceBiasFloat32AMD64` and `ReduceBiasFloat32ARM64`.
 
 #### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
 
@@ -414,11 +415,11 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 ### Step 3: DType-Agnostic Strided Byte-Block Copy Engine and Parallelization for `Slice` and `Concatenate`
 
 #### Changes Implemented
-1. **DType-Agnostic Strided Byte-Block Copy Engine (`internal/gobackend/stridedcopy_arch.go`, `internal/gobackend/ops/stridedcopy.go`, `internal/gobackend/ops/{avx2,avx512}/stridedcopy_amd64.go`)**:
+1. **DType-Agnostic Strided Byte-Block Copy Engine (`internal/gobackend/stridedcopy_arch.go`, `internal/gobackend/ops/stridedcopy.go`, `internal/gobackend/ops/{avx2,avx512}/stridedcopy_amd64.go`, `internal/gobackend/ops/neon/stridedcopy_arm64.go`)**:
    - Added priority-sorted architecture registration (`gobackend.SetStridedCopyArchDispatcher`) and implemented `copyStridedBytes`, `dupStridedBytes`, and `concat2StridedBytes` operating on `blockBytes = blockElements * dtype.Size()`, accelerating **all data types** (`Bool`, `Int8`–`Int64`, `Uint8`–`Uint64`, `Float16`, `BFloat16`, `Float32`, `Float64`, `Complex64`, `Complex128`).
-   - Replaced per-row `copy(...)` (`CALL runtime.memmove` on every row) with branch-outside-the-loop SIMD (`DispatchCopyStridedBytesAVX512` / `DispatchCopyStridedBytesAVX2`) and 64-bit word (`uint64`) strided loops using overlapping tail loads/stores at `blockBytes - W` (`1 B` up to `4096 B`) with zero function calls inside the row loop.
-   - Added `DispatchDupStridedBytesAVX512` / `DispatchDupStridedBytesAVX2` for self-concatenations (`Concatenate([x, x], axis)`, as used in `UpSampleImages`), reading each input block once into registers and storing it twice consecutively.
-   - Added inlined single-pass 2-input concatenation (`DispatchConcat2StridedBytesAVX512` / `DispatchConcat2StridedBytesAVX2`) and L1D-tiled (`16 KB` strip) multi-input concatenation.
+   - Replaced per-row `copy(...)` (`CALL runtime.memmove` on every row) with branch-outside-the-loop SIMD (`DispatchCopyStridedBytesAVX512`, `DispatchCopyStridedBytesAVX2`, `DispatchCopyStridedBytesNEON`) and 64-bit word (`uint64`) strided loops using overlapping tail loads/stores at `blockBytes - W` (`1 B` up to `4096 B`) with zero function calls inside the row loop.
+   - Added `DispatchDupStridedBytesAVX512`, `DispatchDupStridedBytesAVX2`, and `DispatchDupStridedBytesNEON` for self-concatenations (`Concatenate([x, x], axis)`, as used in `UpSampleImages`), reading each input block once into registers and storing it twice consecutively.
+   - Added inlined single-pass 2-input concatenation (`DispatchConcat2StridedBytesAVX512`, `DispatchConcat2StridedBytesAVX2`, `DispatchConcat2StridedBytesNEON`) and L1D-tiled (`16 KB` strip) multi-input concatenation.
 2. **Unified Byte-Level `Slice` (`internal/gobackend/ops/slice.go`) and `Concatenate` (`internal/gobackend/ops/concatenate.go`)**:
    - Replaced generic `execSliceGeneric[T]` loops with `execSliceBytes`, eliminating heap allocations in `operand.RawShape.Strides()`, switching parallelization thresholds from element counts to byte counts (`minParallelCopyBytes = 64 KB`, `minParallelCopyChunkBytes = 32 KB`), adding a dedicated `numOuter == 2` fast path, and peeling the innermost outer axis in `numOuter >= 3` to call `copyStridedBytes`.
    - Added parallelization for leading-axis concatenations (`outerBlockSize == 1`), sub-chunk parallelization when `outerBlockSize < 16` with large inner blocks, and a direct `b.RawBytes[:byteSize]` fast path in `Buffer.MutableBytes` (`internal/gobackend/buffers.go`).
@@ -433,23 +434,27 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 
 ---
 
-### Step 4: Handwritten AVX-512 & AVX2 Assembly for `SiLU` (`Swish`) Forward, `SiluBiasTile`, and `SiluVJP` Across All Floating-Point DTypes
+### Step 4: Handwritten AVX-512, AVX2 & ARM64 NEON Assembly for `SiLU` (`Swish`) Forward, `SiluBiasTile`, and `SiluVJP` Across All Floating-Point DTypes
 
 #### Changes Implemented
-1. **Handwritten AVX-512 & AVX2 `Float32` Assembly (`internal/gobackend/activations/{avx512,avx2}/silu_amd64.s`)**:
-   - Implemented `siluFloat32AVX512Asm` (`32` floats/iter, 2× unrolled `ZMM` loop + `16`-float tail), `siluBiasTileFloat32AVX512Asm` (fused 2D tile `Bias + SiLU`), and `siluVJPFloat32AVX512Asm` ($dx = (dOut \cdot \sigma) \cdot ((1 + x) - x \cdot \sigma)$), plus AVX2 counterparts (`siluFloat32AVX2Asm`, `siluBiasTileFloat32AVX2Asm`, `siluVJPFloat32AVX2Asm`).
-   - Pinned all 14 constants in `Z18`–`Z31` (AVX-512), replaced `ConvertToInt32` with magic-number integer $2^n$ reconstruction (`12582912.0` + `VPSLLD $23` + `VPADDD`), evaluated the degree-7 polynomial via Estrin's tree, and fused `denom = 1.0 + scale * expPoly` into a single `VFMADD231PS`.
+1. **Handwritten AVX-512, AVX2 & ARM64 NEON `Float32` Assembly (`internal/gobackend/activations/{avx512,avx2}/silu_amd64.s`, `internal/gobackend/activations/neon/neon_arm64.s`)**:
+   - Implemented `siluFloat32AVX512Asm` (`32` floats/iter, 2× unrolled `ZMM` loop + `16`-float tail), `siluBiasTileFloat32AVX512Asm` (fused 2D tile `Bias + SiLU`), and `siluVJPFloat32AVX512Asm` ($dx = (dOut \cdot \sigma) \cdot ((1 + x) - x \cdot \sigma)$), plus AVX2 counterparts (`siluFloat32AVX2Asm`, `siluBiasTileFloat32AVX2Asm`, `siluVJPFloat32AVX2Asm`) and ARM64 NEON counterparts (`siluFloat32NEONAsm`, `siluBiasTileFloat32NEONAsm`, `siluVJPFloat32NEONAsm`, `geluExactBiasTileFloat32NEONAsm`, `geluApproxBiasTileFloat32NEONAsm`).
+   - Pinned all polynomial and range-reduction constants in registers (`Z18`–`Z31` on AVX-512; `V19`–`V31` on ARM64 NEON via `DUP_4S_W`), replaced `ConvertToInt32` with magic-number integer $2^n$ reconstruction (`12582912.0` + `VPSLLD $23` / `SHL23_4S` + integer add), evaluated the degree-7 polynomial via Estrin's tree, and fused `denom = 1.0 + scale * expPoly` into a single FMA (`VFMADD231PS` / `FMLA_4S`).
 2. **All-DType Vectorized `SiLU` Forward & VJP (`Float64`, `BFloat16`, `Float16`)**:
-   - Registered `SiluAVX512Float64`, `SiluVJPAVX512Float64`, `SiluAVX512BF16`, `SiluVJPAVX512BF16`, `SiluAVX512F16`, `SiluVJPAVX512F16` (and AVX2 counterparts in `activations/avx2/avx2.go`).
+   - Registered `Float64`, `BFloat16`, and `Float16` `SiLU` forward and VJP kernels across `activations/avx512`, `activations/avx2`, and `activations/neon` (using hardware NEON `bfloat16.ToFloat32SliceNEON`/`FromFloat32SliceNEON` and `float16.ToFloat32SliceNEON`/`FromFloat32SliceNEON` conversions on ARM64, plus `GeluExact`, `GeluApprox`, `Relu`, `HardSwish`, and `Tanh` for `Float64`/`BFloat16`/`Float16`).
 3. **Architecture Subdirectory Reorganization**:
    - Moved AVX2, AVX-512, and ARM64 NEON activation tests and kernels into `internal/gobackend/activations/{avx2,avx512,neon}/`.
 
 #### Measured Microbenchmark & End-to-End Results
 - **Activation Microbenchmarks (`Small_512` / `Large_65536`)**:
-  - `Float32` `Silu`: **`50.7 ns` / `6.43 µs`** on AVX-512 (**3.0× faster** than `PortableSIMD`, **34.3× faster** than `NoSIMD`).
-  - `BFloat16` `Silu`: **`96.4 ns` / `12.27 µs`** on AVX-512 (**2.5× faster** than `PortableSIMD`, **21.7× faster** than `NoSIMD`).
-  - `Float64` `Silu`: **`210.8 ns` / `27.35 µs`** on AVX-512 (**2.4× faster** than `PortableSIMD`, **17.4× faster** than `NoSIMD`).
-- **End-to-End FlowMatching (10 Training Steps, `eval=false`)**:
+  - **AMD64 AVX-512**:
+    - `Float32` `Silu`: **`50.7 ns` / `6.43 µs`** (**3.0× faster** than `PortableSIMD`, **34.3× faster** than `NoSIMD`).
+    - `BFloat16` `Silu`: **`96.4 ns` / `12.27 µs`** (**2.5× faster** than `PortableSIMD`, **21.7× faster** than `NoSIMD`).
+    - `Float64` `Silu`: **`210.8 ns` / `27.35 µs`** (**2.4× faster** than `PortableSIMD`, **17.4× faster** than `NoSIMD`).
+  - **ARM64 NEON (Apple M6)**:
+    - `Float32` `Silu`: **`144.5 ns` / `18.60 µs`** (**2.39× faster** than `PortableSIMD` at `345.1 ns` / `43.80 µs`, **5.53× faster** than `NoSIMD` at `799.8 ns` / `102.97 µs`).
+    - `Float32` `SiluVJP`: **`177.1 ns` / `23.02 µs`** (**8.61× faster** than `NoSIMD` at `1,525 ns` / `196.20 µs`).
+- **End-to-End FlowMatching (10 Training Steps, `eval=false`, AMD64 AVX-512)**:
   - Median `362.5 ms/step`, Mean `370.5 ms/step`, CPU `7.6 s/step` (`19.9` cores).
 
 ---
@@ -457,20 +462,37 @@ While a large portion of these calls will disappear once `LayerNorm` is fused (O
 ### Step 5: Direct2D `ConvGeneral` Border/Tail/Small-Spatial Microkernels (`1×32`, `2×32`, `1×16`, `2×16`) & 4× Unrolled Element-Wise Binary SIMD Loops
 
 #### Changes Implemented
-1. **Zero-`im2col` Direct2D `ConvGeneral` Border, Tail, and Small-Spatial Microkernels (`internal/gobackend/ops/{avx512,avx2}/conv_amd64.*`)**:
-   - Added handwritten assembly microkernels `ConvAVX512Direct2DKernel2x32Float32Asm` and `ConvAVX512Direct2DKernel1x32Float32Asm` (4-way unrolled across 4 independent accumulator pairs `Z0`–`Z7` to hide 4-cycle FMA latency) in `internal/gobackend/ops/avx512/conv_amd64.s`, and `ConvAVX2Direct2DKernel2x16Float32Asm` and `ConvAVX2Direct2DKernel1x16Float32Asm` (4-way unrolled across `Y0`–`Y7`) in `internal/gobackend/ops/avx2/conv_amd64.s`.
-   - Updated `execConvStandardAVX512` (`internal/gobackend/ops/avx512/conv_amd64.go`) and `execConvStandardAVX2` (`internal/gobackend/ops/avx2/conv_amd64.go`) to:
-     - Process all interior pixels `outXIntStart .. outXIntEnd` directly via `8×32` $\to$ `4×32` $\to$ `2×32` $\to$ `1×32` (AVX-512) and `4×16` $\to$ `2×16` $\to$ `1×16` (AVX2) without rounding down or falling back to `ExtractPatches2DFloat32`.
-     - Process left (`outX < outXIntStart`) and right (`outX >= outXIntEnd`) padded border pixels directly via `Direct2DKernel1x32` / `Direct2DKernel1x16` using the contiguous valid kernel slice `kx in [kxStart, kxEnd)` (`kWC_clipped = (kxEnd - kxStart) * InChannels`), completely eliminating `allPatchBuf` scratch allocations and `ExtractPatches2DFloat32` calls from the `Direct2D` path.
+1. **Zero-`im2col` Direct2D `ConvGeneral` Border, Tail, and Small-Spatial Microkernels (`internal/gobackend/ops/{avx512,avx2}/conv_amd64.*`, `internal/gobackend/ops/neon/conv_arm64.*`)**:
+   - Added handwritten assembly microkernels `ConvAVX512Direct2DKernel2x32Float32Asm` and `ConvAVX512Direct2DKernel1x32Float32Asm` (4-way unrolled across 4 independent accumulator pairs `Z0`–`Z7` to hide 4-cycle FMA latency) in `internal/gobackend/ops/avx512/conv_amd64.s`, `ConvAVX2Direct2DKernel2x16Float32Asm` and `ConvAVX2Direct2DKernel1x16Float32Asm` (4-way unrolled across `Y0`–`Y7`) in `internal/gobackend/ops/avx2/conv_amd64.s`, and `ConvNEONDirect2DKernel2x16Float32Asm` and `ConvNEONDirect2DKernel1x16Float32Asm` (4-bank unrolled across `V0`–`V15` to hide ARM64 4-cycle `FMLA` latency) in `internal/gobackend/ops/neon/conv_arm64.s`.
+   - Updated `execConvStandardAVX512` (`internal/gobackend/ops/avx512/conv_amd64.go`), `execConvStandardAVX2` (`internal/gobackend/ops/avx2/conv_amd64.go`), `execConvStandardNEON` (`internal/gobackend/ops/neon/conv_arm64.go`), and P-core NEON co-execution (`processMTileNEONFromSME`) in `execConvStandardSME` to:
+     - Process all interior pixels `outXIntStart .. outXIntEnd` directly via `8×32` $\to$ `4×32` $\to$ `2×32` $\to$ `1×32` (AVX-512) and `4×16` $\to$ `2×16` $\to$ `1×16` (AVX2 & ARM64 NEON) without rounding down or falling back to `ExtractPatches2DFloat32`.
+     - Process left (`outX < outXIntStart`) and right (`outX >= outXIntEnd`) padded border pixels directly via `Direct2DKernel1x32` / `Direct2DKernel1x16` using the contiguous valid kernel slice `kx in [kxStart, kxEnd)` (`kWC_clipped = (kxEnd - kxStart) * InChannels`), completely eliminating `allPatchBuf` / `patchBuf` scratch allocations and `ExtractPatches2DFloat32` calls from the `Direct2D` path (as well as skipping `patchBuf` allocation for P-core NEON workers in `execConvStandardSME` when `canDirect2D && p.OutW%4 == 0 && M%4 == 0`).
      - Lower the `useDirect2D` spatial threshold to `OutW >= 4`, enabling direct zero-`im2col` 2D convolution on $8\times 8$ bottleneck U-Net blocks (`OutH*OutW = 64`).
    - Split and moved architecture-specific `ConvGeneral` implementations and tests into `internal/gobackend/ops/avx2/`, `internal/gobackend/ops/avx512/`, and `internal/gobackend/ops/neon/`.
 2. **4× Unrolled Element-Wise Binary SIMD Loops Across All Numeric DTypes (`internal/gobackend/ops/binaryops_simd.go`)**:
    - Unrolled `Add`, `Sub`, `Mul`, `Div`, `Max`, and `Min` `VV`, `VS`, `SV`, `V2V1`, and `V1V2` SIMD loops by $4\times$ (`4 * vLen` elements per iteration) across `Float32`, `Float64`, `Int32`, `Int64`, `Int16`, `Int8`, `Uint32`, `Uint64`, `Uint16`, `Uint8`, `BFloat16`, and `Float16`.
 
-#### Measured Benchmark Comparison (10 Training Steps, `eval=false`)
+#### Measured Benchmark Comparison — AMD64 (AVX-512, `parallelism=32`, 10 Training Steps, `eval=false`)
 
 | Metric | Baseline | After Step 4 (`SiLU` Assembly) | After Step 5 (`Direct2D` Borders & 4× Binary SIMD) | Step 5 vs Step 4 | Cumulative Improvement vs Baseline |
 | :--- | ---: | ---: | ---: | :--- | :--- |
 | **Median train step wall time** | **588.5 ms / step** | **362.5 ms / step** | **331.5 ms / step** (range: `329.3–337.4 ms`) | **-31.0 ms / step (-8.6%, 1.09× speedup)** | **-257.0 ms / step (-43.7%, 1.78× speedup)** |
 | **Process CPU time / step** | **13.4 s / step** | **7.6 s / step** | **7.3 s / step** (all 3 runs: `7.3 s`) | **-0.3 s / step (-3.9% CPU time)** | **-6.1 s / step (-45.5% CPU time, 61s saved over 10 steps)** |
 | **Mean core utilization** | **19.7 cores** | **19.9 cores** | **20.5 cores** (range: `20.4–20.6`) | **+0.6 cores** | Higher multi-core efficiency at nearly half the CPU work |
+
+#### Measured Benchmark Comparison — ARM64 (Apple M6, `darwin/arm64`, `parallelism=12`, 20 Training Steps, `eval=false`)
+
+Command:
+```bash
+GOMLX_BACKEND=go go run ./examples/FlowMatching/demo/ -set="train_steps=20" -eval=false
+```
+
+| Configuration / Stage | Median Step Wall Time | Process CPU Time / Step | Mean Core Utilization | Improvement vs Initial `400.3 ms` Baseline (`DiffusionOptimization.md`) |
+| :--- | ---: | ---: | ---: | :--- |
+| **Initial Apple M6 Baseline (Pre-Step 1, `NEON + SME`)** | **400.3 ms / step** | — | — | — |
+| **After Step 1 (`FusedLayerNormVJP` + 4× Binary SIMD, `NEON + SME`)** | **329.4 ms / step** (range: `325.9–335.0 ms`) | **2.7 s / step** | **7.9 cores** | **-70.9 ms / step (-17.7%, 1.22× speedup)** |
+| **After Step 2 (`FusedDenseVJP` Tall-Skinny SME+NEON, `NEON + SME`)** | **312.1 ms / step** (range: `311.8–312.5 ms`) | **2.4 s / step** | **7.4–7.5 cores** | **-88.2 ms / step (-22.0%, 1.28× speedup)** |
+| **After Steps 2–5 (`NEON + SME`: Tall-Skinny + StridedCopy + SiLU Asm + Direct2D)** | **311.8 ms / step** (best: **`303.2 ms`**, range: `303.2–313.0 ms`) | **2.3 s / step** (**-14.8% CPU** vs Step 1) | **7.0–7.1 cores** | **-88.5 ms / step (-22.1%, 1.28×–1.32× speedup vs `400.3 ms`; 1.92× vs `596.6 ms`)** |
+| **Before Steps 2–5 (`NEON-only`, `GOMLX_GO_SIMD_SME=0`)** | **473.3 ms / step** | **5.3 s / step** | **10.9 cores** | — |
+| **After Step 2 (`NEON-only`, `GOMLX_GO_SIMD_SME=0`)** | **461.4 ms / step** | **5.2 s / step** | **10.9 cores** | **-11.9 ms / step (-2.5%)** vs Pre-Step 2 NEON-only |
+| **After Steps 2–5 (`NEON-only`, `GOMLX_GO_SIMD_SME=0`)** | **453.3 ms / step** | **5.0 s / step** (**-5.7% CPU**) | **10.9 cores** | **-20.0 ms / step (-4.2%)** vs Pre-Step 2 NEON-only |

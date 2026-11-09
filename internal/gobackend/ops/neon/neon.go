@@ -49,6 +49,12 @@ func registerNEON() {
 		}
 		return DispatchBinaryTrailingNEON(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetStridedCopyArchDispatcher(
+		gobackend.PriorityNEON,
+		DispatchCopyStridedBytesNEON,
+		DispatchDupStridedBytesNEON,
+		DispatchConcat2StridedBytesNEON,
+	)
 	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityNEON, execConvGeneralNEON)
 }
 
