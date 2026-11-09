@@ -2,7 +2,7 @@
 
 //go:build amd64 && goexperiment.simd
 
-package gobackend
+package simdarch
 
 import (
 	"simd/archsimd"

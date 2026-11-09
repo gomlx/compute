@@ -45,8 +45,10 @@ auto-differentiation, use GoMLX instead.
 - `internal/gobackend`: the implementation of the "go" backend. It consists of
   buffer and execution logic, and "registration" of ops during build and
   execution. The implementation of each op is (or is being moved to) in its
-  sub-packages `ops`, `activations`, `dot`, `conv`, `fusedops`, and `scheduler`
-  (see `docs/GoBackendScheduler.md`).
+  sub-packages `ops`, `activations`, `dot`, `conv`, `fusedops`, `simdarch`
+  (centralized SIMD feature detection, assembly flags, and Darwin/ARM64 SME L2
+  cluster topology & locking; see `internal/gobackend/simdarch/Neon.md`), and
+  `scheduler` (see `docs/GoBackendScheduler.md`).
 - `support`: generic support libraries (including `CPUTime()` for process CPU time measurement, FLOPs calculation, bucketing, etc.).
   - `support/testutil`: test utilities that can be used by any `compute.Backend`
     implementation to test. 
@@ -429,7 +431,7 @@ Sub-dispatchers maintain a priority-sorted slice of registered hooks: if a highe
 
 ### 2. Runtime CPU Feature Detection & Environment Variables
 
-In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwin.go` via `syscall.SysctlUint32` and `simd_arm64_linux.go` via `/proc/self/auxv` `AT_HWCAP`/`AT_HWCAP2`), the backend exposes:
+In `internal/gobackend/simdarch` (re-exported in `internal/gobackend/simd.go`, with OS-specific helpers `simd_arm64_darwin.go` via `syscall.SysctlUint32` + `TPIDR_EL0` and `simd_arm64_linux.go` via `/proc/self/auxv` `AT_HWCAP`/`AT_HWCAP2`), the backend exposes:
 - `IsNEONAllowed`: Baseline ARM64 AdvSIMD (gated by `GOMLX_GO_SIMD` and `GOMLX_GO_SIMD_NEON`).
 - `IsARM64FP16Allowed`: `FEAT_FP16` half-precision vector arithmetic & conversions (`FCVTL` / `FCVTN`).
 - `IsARM64BF16Allowed`: `FEAT_BF16` (`BFDOT`, `BFMMLA`, `BFCVTN`).
@@ -437,6 +439,8 @@ In `internal/gobackend/simd_arm64.go` (and OS-specific helpers `simd_arm64_darwi
 - `IsARM64I8MMAllowed`: `FEAT_I8MM` (`SMMLA`, `UMMLA`, `USMMLA` 8-bit matrix multiply-accumulate).
 - `IsSVEAllowed`: `FEAT_SVE` / `FEAT_SVE2` (gated by `GOMLX_GO_SIMD_SVE`, for AWS Graviton3/4, Grace, Neoverse).
 - `IsSMEAllowed`: `FEAT_SME` / `FEAT_SME2` (gated by `GOMLX_GO_SIMD_SME`, for Apple M4+).
+- `NEONUseAsm`, `AVX2UseAsm`, `AVX512UseAsm`: Toggle between handwritten Plan9 assembly and pure-Go `archsimd` paths (gated by `GOMLX_GO_NEON_ASM`, `GOMLX_GO_AVX2_ASM`, `GOMLX_GO_AVX512_ASM`, default `true`).
+- `NumSMEUnits`, `NumHighPerfSMEUnits`, `NumEfficiencySMEUnits`, `CurrentSMECluster()`, `AcquireSME()`, `AcquireSMEWithLimit()`, `ReleaseSME()`: Hardware L2-cluster SME unit discovery (`sysctl hw.perflevel*`) and 1-cycle per-L2-cluster SME locking via `MRS TPIDR_EL0, R0` (`clusterID = (TPIDR_EL0 >> 12) & 0xff`).
 - `ActiveArchitectures`: Global `[]string` populated with `<GOOS>/<GOARCH>`, plus `"SIMD"` and any active specialized SIMD architectures (`"AVX2"`, `"AVX512"`, `"NEON"`, `"SVE"`, `"SME"`), rendered in `Backend.Description()`.
 
 ### 3. Phased Implementation Roadmap
@@ -490,7 +494,7 @@ When implementing or modifying ARM64 assembly routines in `./internal/gobackend/
   - If an SME routine enters Streaming SVE / ZA-array mode via `SMSTART`, it **must** execute `SMSTOP` before `RET` (as required by the platform ABI and Go runtime).
   - On 512-bit SVL implementations (e.g. Apple M4/M5/M6), the 4 KB `ZA` matrix array is partitioned into four $16 \times 16$ `.S` tiles (`ZA0.S`–`ZA3.S`). Because `ZA` tile accumulation has a ~4-cycle latency, single-tile $16 \times 16$ kernels stall on back-to-back `FMOPA ZA0.S` instructions; use 4-tile $32 \times 32$ ($2 \times 2$ tiles `ZA0..3.S`) or $16 \times 64$ ($1 \times 4$ tiles `ZA0..3.S`) kernels for full speed (>2.1 TFlops/s per core), stepping down to $16 \times 16$ only when $M < 32$ or $N < 32$.
   - **`darwin/arm64` Async Signal (`SIGURG`) Safety in Streaming Mode**: On macOS (`darwin/arm64`), the POSIX signal context (`_STRUCT_ARM_NEON_STATE64`) only saves/restores the lower 128 bits (`Q0`–`Q31`) of `Z0`–`Z31`. When Go delivers an async `SIGURG` signal during `SMSTART`, `ZA` is preserved, but `sigreturn` zeroes bits `[511:128]` (lanes `4..15`) of all `Z` registers. Always protect SME streaming loops with a `Z31` upper-lane canary (`MOV Z31.S, #1` before the loop, `LASTB W11, P7, Z31.S` + `CBZ R11, retry` before writing `ZA` to memory; see `internal/gobackend/dot/matmul/neon/sme_arm64.s`).
-  - **Asymmetric Cluster-Shared SME Units & Global Hybrid SME+NEON Co-Execution**: On Apple M-series SoCs (e.g. M6 with 2 Super, 4 Performance, and 6 Efficiency cores), each of the 3 CPU clusters shares a single physical SME unit (~2.0 TFlops/s on Super/Performance, ~0.9 TFlops/s on Efficiency), whereas 128-bit NEON pipelines are private per core. In multi-worker SME operations (`internal/gobackend/dot/matmul/neon/sme_arm64.go`), pin workers to OS threads (`runtime.LockOSThread()`), probe the thread's cluster once at the start of the op via `CNTVCT_EL0` (`smeProbeCoreClockTicks` with 1 retry and adjacent fast-cluster thermal fallback), and acquire a global per-cluster SME lock (`globalSMEClusterLocks`); workers whose cluster SME unit is already occupied execute strided per-core NEON microkernels (`neonLargeKernelFromSME*`) directly on the shared SME-packed panels.
+  - **Per-L2-Cluster SME Units (`TPIDR_EL0`) & 5-Tier Hybrid SME+NEON Co-Execution**: On Apple M-series SoCs (e.g. M6 with 2 Super, 4 Performance, and 6 Efficiency cores), each L2 cache cluster (`clusterID = (TPIDR_EL0 >> 12) & 0xff`, read in 1 cycle via `MRS TPIDR_EL0, R0` in `internal/gobackend/simdarch`) has 1 physical SME unit (2 L2 caches and 2 SME units total on M6: Cluster 1 shared by the 2 Super + 4 Performance cores at ~2.26 TFlops/s, and Cluster 0 shared by the 6 Efficiency cores at ~0.38 TFlops/s), whereas 128-bit NEON pipelines are private per core (148 GFlops/s on Super, 139 GFlops/s on Perf, 53 GFlops/s on E-cores). In multi-worker SME operations (`internal/gobackend/dot/matmul/neon/sme_arm64.go`), workers acquire per-L2-cluster SME locks via `simdarch.AcquireSME()` / `AcquireSMEWithLimit()` and re-check `CurrentSMECluster()` if migrated by XNU; workers whose cluster SME unit is already occupied execute strided per-core NEON microkernels (`neonLargeKernelFromSME*`) directly on the shared SME-packed panels.
 
 ### 5. Horizontal Reductions on NEON
 - **Integer Horizontal Sum (`VADDV`)**:
@@ -554,10 +558,10 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
 - **Kernel Metadata for Adaptive Chunking**:
   - Different kernel implementations (e.g., scalar `nosimd` vs. `simd` vs. `avx2`/`avx512`, or simple ReLU vs. transcendental GeLU/Erf) have vastly different per-element costs.
   - Rather than hardcoding chunk sizes in the executor or inferring SIMD support from registration priority, kernels register associated metadata (e.g., `activations.KernelMetadata{MinParallelChunk: ...}`) so each kernel specifies its own minimum parallel chunk size (and package-level metadata structs can be tuned per platform at runtime).
-- **Asymmetric Multi-Worker Loops (`SaturateUpTo`, 3-Phase Tapered Chunking, & Dual-Ended Queue)**:
+- **Asymmetric Multi-Worker Loops (`SaturateUpTo`, 3-Zone Tapered Queue, & 5-Tier Dual-Ended Claiming)**:
   - When workers require per-worker state (e.g., per-worker scratch buffers or panel buffers in `MatMul`), use `backend.Scheduler.SaturateUpTo(numWorkers, fn)`.
-  - For 3D batched / 2D tiled GEMM (`matmul.AppendWorkItems`), work items are ordered from coarse to fine using **3-Phase Tapered Chunking** (Head multi-batch chunks $\to$ Middle 1-batch chunks $\to$ Tail `< 1 batch` 2D sub-tiles along `M` and `N`).
-  - On asymmetric architectures with both fast SME coprocessors and slower per-core NEON units (`internal/gobackend/dot/matmul/neon/large.go`), workers coordinate via a lock-free 64-bit `bounds atomic.Uint64` (`(head << 32) | tail`) dual-ended queue: SME workers pop coarse chunks from `head` while NEON workers pop fine sub-batch tiles from `tail` (and yield the final tail items when `rem <= 3*smeActive`, or `rem <= 6*smeActive` on slow E-cores).
+  - For 3D batched / 2D tiled GEMM (`matmul.AppendWorkItems` and `smeAppendHybridWorkItems`), work items are ordered from coarse to fine using **3-Zone Tapered Chunking** (Coarse Head panels $64 \times 128$ = 8 SME tiles for ~78% of panels $\to$ Medium Middle sub-panels $32 \times 64$ = 2 SME tiles for ~10% $\to$ Fine Tail single $32 \times 32$ SME tiles for ~12%).
+  - On asymmetric architectures with 5 worker tiers (`internal/gobackend/dot/matmul/neon/large.go`), workers coordinate via a lock-free 64-bit `bounds atomic.Uint64` (`(head << 32) | tail`) dual-ended queue: Tier A (`clusterID=1` fast SME) pulls coarse panels from `head`; Tier B (`clusterID=0` efficiency SME) pulls from `head` for the first 2/3 of coarse panels and then switches to `tail`; and Tiers C/D/E (Super/Perf/E-core NEON) pull fine $32 \times 32$ tiles from `tail` (`tail--`) and yield early (`rem <= 4*smeActive` on Super/Perf, `rem <= 8*smeActive` on E-cores) while spinning in user-space until `allClaimed` so Go's work-stealing scheduler keeps 1 goroutine mapped to each physical CPU core.
 
 ### 4. In-Cache Reductions & Register Accumulation
 - **Never Materialize Intermediate Full Matrices**: Materializing $S_q \times S_{kv}$ attention logit matrices in DRAM creates severe memory-bandwidth bottlenecks for sequence lengths $S \ge 512$.

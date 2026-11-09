@@ -5,16 +5,12 @@
 package neon
 
 import (
-	"runtime"
-	"sort"
-	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
-	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 )
 
 // smeLargeKernelFloat32Asm_16x16 implements a 16x16 GEMM microkernel using 1 ARM64 SME ZA tile (ZA0.S).
@@ -51,6 +47,28 @@ func smeLargeKernelFloat32Asm_32x32(
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
 	accumulate bool,
+)
+
+// smePackLHS32Float32Asm packs [copyRows, contractingCols] of float32 into [ceil(copyRows/32), contractingCols, 32]
+// using SME ZA0..ZA3 hardware horizontal-load and vertical-store. Caller must hold the cluster SME lock.
+// Defined in sme_arm64.s.
+//
+//go:noescape
+func smePackLHS32Float32Asm(
+	lhsPtr, panelPtr unsafe.Pointer,
+	lhsStrideBytes uintptr,
+	copyRows, contractingCols int,
+)
+
+// smeDirectNonTransposedFloat32Asm_32x32 performs a fused single-SMSTART 32x32 SME GEMM for LayoutNonTransposed
+// (C = A @ B), transposing 32-row strips of LHS in-SME into packedLHSStrip [K, 32] and reading RHS directly
+// from rhs without packing.
+// Defined in sme_arm64.s.
+//
+//go:noescape
+func smeDirectNonTransposedFloat32Asm_32x32(
+	lhs, rhs, output, packedLHSStrip []float32,
+	lhsActiveRows, rhsActiveCols, contractingLen int,
 )
 
 // smeLargeKernelFloat16Asm_16x16 implements a 16x16 GEMM microkernel for Float16 -> Float32 using 1 SME ZA tile (ZA0.S).
@@ -135,51 +153,17 @@ func smeLargeKernelFloat64Asm_16x16(
 //
 // Architectural Background (Apple M-Series / ARMv9 SME Topology):
 // On ARMv9 processors with FEAT_SME (such as Apple M4/M5/M6), the SME matrix
-// coprocessor is shared at the CPU cluster level rather than duplicated per core:
-//   - Cluster 0 (Super cores):       shares 1 high-throughput SME unit (~2.0 TFlops/s)
-//   - Cluster 1 (Performance cores): shares 1 high-throughput SME unit (~2.0 TFlops/s)
-//   - Cluster 2 (Efficiency cores):  shares 1 smaller SME unit (~0.9 TFlops/s)
+// coprocessor is attached to the L2 cache and shared across all CPU cores sharing
+// that L2 cache (see package simdarch):
+//   - L2 Cluster 1 (Super + Performance cores on M6): shares 1 high-throughput SME unit (~2.26 TFlops/s)
+//   - L2 Cluster 0 (Efficiency cores on M6):          shares 1 smaller SME unit (~0.38 TFlops/s)
 //
-// When all worker goroutines enter streaming mode (`SMSTART`) simultaneously,
-// multiple cores within the same cluster queue and time-slice on their cluster's
-// single SME unit while their private per-core 128-bit NEON vector pipelines sit
-// completely idle.
-//
-// Strategy:
-//  1. Global Per-Cluster Locks (`globalSMEClusterLocks`):
-//     Each of the 3 clusters has a cache-line-padded global atomic counter capped
-//     at `SMEWorkersPerCluster` (default 1). Because the locks are package-global,
-//     they coordinate SME unit ownership across intra-op workers, concurrent
-//     inter-op matmuls, and concurrent inference calls (`Execute()`).
-//  2. One-Time Start-of-MatMul Core Tier Probe (`smeProbeCoreClockTicks`):
-//     At the start of a matmul worker, the goroutine pins itself to its OS thread
-//     via `runtime.LockOSThread()` and runs a ~250-460ns in-register NEON `VFMLA`
-//     probe timed with the hardware virtual counter `CNTVCT_EL0`.
-//     Because `VFMLA` runs on the private per-core SIMD pipes (4 pipes at high clock
-//     on Super/P-cores vs. 2 pipes at lower clock on E-cores), it never contends
-//     across cores and cleanly identifies which cluster the OS thread is running on.
-//  3. Noise & Thermal Throttling Resilience:
-//     - If the first probe exceeds `smeSuperCutoffTicks` (e.g., due to an OS context
-//       switch/interrupt mid-probe or cold core frequency ramp-up), the worker retries
-//       the probe once (`min(t1, t2)`), since context switches can only inflate elapsed
-//       wall-clock ticks, never reduce them.
-//     - The measured ticks are mapped to the closest cluster center.
-//     - If a fast core (Cluster 0 Super or Cluster 1 Performance) finds its primary
-//       cluster lock already held (for instance, if thermal throttling shifted Super
-//       core ticks into the Performance range), it automatically checks and claims the
-//       adjacent fast cluster's lock if free, guaranteeing both fast-cluster SME units
-//       are always utilized.
-//  4. Zero-Repack Hybrid NEON Co-Execution (`neonLargeKernelFromSME*`):
-//     Workers that do not acquire an SME lock execute `neonLargeKernelFromSME*` on
-//     their private per-core NEON pipelines, reading directly from the exact same
-//     `[K, 32]` (or `[K, 16]`) SME-packed LHS and RHS panels by advancing their
-//     pointers by `kernelRows * sizeof(T)` and `kernelCols * sizeof(T)` bytes per K-step.
-
-// smeProbeCoreClockTicks measures CNTVCT_EL0 ticks for 256x16 per-core NEON VFMLAs.
-// Defined in sme_arm64.s.
-//
-//go:noescape
-func smeProbeCoreClockTicks() uint64
+// Hardware L2 cluster identification (`(TPIDR_EL0 >> 12) & 0xff`) and global per-L2-cluster
+// atomic locking are provided by `simdarch.AcquireSME` / `simdarch.ReleaseSME`.
+// Workers that do not acquire an SME lock execute `neonLargeKernelFromSME*` on
+// their private per-core NEON pipelines, reading directly from the exact same
+// `[K, 32]` (or `[K, 16]`) SME-packed LHS and RHS panels by advancing their
+// pointers by `kernelRows * sizeof(T)` and `kernelCols * sizeof(T)` bytes per K-step.
 
 //go:noescape
 func neonSubTile4x16StridedFloat32Asm(
@@ -209,132 +193,34 @@ func neonSubTile8x4StridedFloat64Asm(
 	accumulate bool,
 )
 
-const numSMEClusters = 3
-
-// smeClusterLock is padded to 128 bytes (Apple Silicon cache line size) to prevent false sharing.
-type smeClusterLock struct {
-	active atomic.Int32
-	_      [124]byte
-}
-
 var (
 	// SMEUseHybridNEON enables global per-cluster SME locking with per-core NEON co-execution
-	// on workers whose cluster SME unit is already saturated.
-	SMEUseHybridNEON = true
+	// on workers whose L2 cluster SME unit is already saturated.
+	SMEUseHybridNEON = simdarch.SMEUseHybridNEON
 
-	// SMEWorkersPerCluster is the maximum number of concurrent SME workers per physical CPU cluster.
-	SMEWorkersPerCluster int32 = 1
+	// SMEWorkersPerCluster is the maximum number of concurrent SME workers per L2 cluster.
+	SMEWorkersPerCluster int32 = simdarch.SMEWorkersPerCluster
 
-	globalSMEClusterLocks [numSMEClusters]smeClusterLock
-	smeActiveTotal        atomic.Int32
+	// SMEDropECoreNEON drops Tier E (Efficiency-core NEON fallback, ~50x slower than Tier A SME)
+	// whenever at least one SME worker is active. With the 3-zone tapered work queue where NEON workers
+	// only pull fine 32x32 tail tiles and yield when rem <= 8*smeActive, keeping Tier E enabled
+	// adds ~5-8% throughput on large matrices.
+	SMEDropECoreNEON = false
 
-	smeCalibrateOnce    sync.Once
-	smeSuperCutoffTicks uint64 = 275
-	smePerfCutoffTicks  uint64 = 395
+	// SMETwoSMEsOnly restricts execution to workers that acquire an SME cluster lock (Tier A + Tier B),
+	// dropping all NEON fallback workers.
+	SMETwoSMEsOnly = false
 )
 
-func init() {
-	if gobackend.IsSMEAllowed {
-		calibrateSMEClusters()
-	}
-}
-
-// calibrateSMEClusters runs once to measure per-core NEON VFMLA ticks across all logical CPUs
-// and calibrate the tick midpoints separating Super, Performance, and Efficiency clusters.
-func calibrateSMEClusters() {
-	smeCalibrateOnce.Do(func() {
-		numCPU := runtime.NumCPU()
-		if numCPU < 4 {
-			return
-		}
-		var readyWg sync.WaitGroup
-		readyWg.Add(numCPU)
-		var goSignal atomic.Bool
-		var doneWg sync.WaitGroup
-		doneWg.Add(numCPU)
-
-		samples := make([]uint64, numCPU)
-		for i := range numCPU {
-			go func(id int) {
-				runtime.LockOSThread()
-				defer runtime.UnlockOSThread()
-				for range 64 {
-					_ = smeProbeCoreClockTicks()
-				}
-				readyWg.Done()
-				for spins := 0; !goSignal.Load(); spins++ {
-					if spins > 10000 {
-						runtime.Gosched()
-						spins = 0
-					}
-				}
-				minTicks := uint64(999999)
-				for range 5 {
-					if t := smeProbeCoreClockTicks(); t > 0 && t < minTicks {
-						minTicks = t
-					}
-				}
-				samples[id] = minTicks
-				doneWg.Done()
-			}(i)
-		}
-		readyWg.Wait()
-		goSignal.Store(true)
-		doneWg.Wait()
-
-		sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
-
-		// Identify distinct jumps (>12% gap) between sorted core tick measurements.
-		var clusterCenters []uint64
-		clusterSum := samples[0]
-		clusterCount := uint64(1)
-		prev := samples[0]
-		for i := 1; i < len(samples); i++ {
-			if samples[i] > prev+(prev/8) && len(clusterCenters) < 2 {
-				clusterCenters = append(clusterCenters, clusterSum/clusterCount)
-				clusterSum = samples[i]
-				clusterCount = 1
-			} else {
-				clusterSum += samples[i]
-				clusterCount++
-			}
-			prev = samples[i]
-		}
-		clusterCenters = append(clusterCenters, clusterSum/clusterCount)
-
-		if len(clusterCenters) == 3 {
-			superCut := (clusterCenters[0] + clusterCenters[1]) / 2
-			perfCut := (clusterCenters[1] + clusterCenters[2]) / 2
-			if superCut >= 240 && superCut <= 300 && perfCut >= 330 && perfCut <= 450 {
-				smeSuperCutoffTicks = superCut
-				smePerfCutoffTicks = perfCut
-			}
-		} else if len(clusterCenters) == 2 {
-			// 2-cluster CPU (e.g. Performance + Efficiency without separate Super tier):
-			// split fast cores across slots 0 and 1, and Efficiency cores on slot 2.
-			perfCut := (clusterCenters[0] + clusterCenters[1]) / 2
-			if perfCut >= 300 && perfCut <= 450 {
-				smeSuperCutoffTicks = clusterCenters[0]
-				smePerfCutoffTicks = perfCut
-			}
-		}
-	})
-}
-
-// SMEAcquireCluster probes the current OS thread's CPU cluster and attempts to acquire
+// SMEAcquireCluster reads the current OS thread's L2 cluster ID via TPIDR_EL0 and attempts to acquire
 // that cluster's global SME unit lock.
-// If acquired, returns (clusterIdx, true, false) and the caller MUST call SMEReleaseCluster(clusterIdx).
-// If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
-// is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
-func SMEAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
+func SMEAcquireCluster() (clusterIdx int, useSME bool, isEfficiencyCore bool) {
 	return smeAcquireClusterWithLimit(SMEWorkersPerCluster, SMEWorkersPerCluster)
 }
 
 // SMEAcquireClusterWithLimit is like SMEAcquireCluster, but allows specifying a higher concurrency
-// limit on fast clusters (Super and Performance) for two-stage pipelines (such as ConvGeneral)
-// where each SME worker spends substantial time on its private CPU core packing LHS before
-// entering SMSTART.
-func SMEAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isSlowECore bool) {
+// limit on fast L2 clusters (Super/Performance) for two-stage pipelines (such as ConvGeneral).
+func SMEAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isEfficiencyCore bool) {
 	return smeAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster)
 }
 
@@ -343,150 +229,177 @@ func SMEReleaseCluster(cluster int) {
 	smeReleaseCluster(cluster)
 }
 
-// smeAcquireCluster probes the current OS thread's CPU cluster and attempts to acquire
-// that cluster's global SME unit lock.
-// If acquired, returns (clusterIdx, true, false) and the caller MUST call smeReleaseCluster(clusterIdx).
-// If the cluster's SME unit is already busy, returns (-1, false, isSlowECore) where isSlowECore
-// is true when the thread is on an Efficiency core (Cluster 2) whose SME unit is already occupied.
-func smeAcquireCluster() (clusterIdx int, useSME bool, isSlowECore bool) {
+func smeCurrentCluster() (clusterIdx int, isEfficiencyCore bool) {
+	cl, _, isEff := simdarch.CurrentSMECluster()
+	return cl, isEff
+}
+
+func smeCallerOnFastCluster() bool {
+	_, _, isEff := simdarch.CurrentSMECluster()
+	return !isEff
+}
+
+func smeAcquireCluster() (clusterIdx int, useSME bool, isEfficiencyCore bool) {
 	return smeAcquireClusterWithLimit(SMEWorkersPerCluster, SMEWorkersPerCluster)
 }
 
-func smeAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isSlowECore bool) {
-	if !SMEUseHybridNEON {
+func smeAcquireClusterForWork(numWorkItems int) (clusterIdx int, useSME bool, isEfficiencyCore bool) {
+	maxSlow := SMEWorkersPerCluster
+	if simdarch.NumHighPerfSMEUnits > 0 && numWorkItems <= 16 {
+		maxSlow = 0
+	}
+	return smeAcquireClusterWithLimit(2*SMEWorkersPerCluster, maxSlow)
+}
+
+func smeAcquireClusterWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterIdx int, useSME bool, isEfficiencyCore bool) {
+	if !SMEUseHybridNEON || !simdarch.SMEUseHybridNEON {
 		return -1, true, false
 	}
-	calibrateSMEClusters()
-
-	// 1. Run the ~300ns per-core NEON probe.
-	// Retry once if ticks > smeSuperCutoffTicks to filter out context-switch spikes or cold-core ramp-up.
-	ticks := smeProbeCoreClockTicks()
-	if ticks > smeSuperCutoffTicks {
-		if t2 := smeProbeCoreClockTicks(); t2 > 0 && t2 < ticks {
-			ticks = t2
-		}
-	}
-
-	// 2. Assign to the closest cluster (0 = Super, 1 = Performance, 2 = Efficiency).
-	primaryCluster := 2
-	if ticks <= smeSuperCutoffTicks {
-		primaryCluster = 0
-	} else if ticks <= smePerfCutoffTicks {
-		primaryCluster = 1
-	}
-
-	tryClaim := func(c int) bool {
-		limit := maxFastPerCluster
-		if c == 2 {
-			limit = maxSlowPerCluster
-		}
-		if globalSMEClusterLocks[c].active.Load() >= limit {
-			return false
-		}
-		if globalSMEClusterLocks[c].active.Add(1) <= limit {
-			smeActiveTotal.Add(1)
-			return true
-		}
-		globalSMEClusterLocks[c].active.Add(-1)
-		return false
-	}
-
-	// 3. Try primary cluster first; if on a fast core (Super or Performance) and primary is taken
-	// (e.g. due to thermal throttling shifting ticks between Super and Performance), fall back to
-	// the adjacent fast cluster if it is currently unoccupied.
-	if tryClaim(primaryCluster) {
-		return primaryCluster, true, false
-	}
-	if primaryCluster <= 1 {
-		otherFast := 1 - primaryCluster
-		if tryClaim(otherFast) {
-			return otherFast, true, false
-		}
-	}
-	return -1, false, primaryCluster == 2
+	return simdarch.AcquireSMEWithLimit(maxFastPerCluster, maxSlowPerCluster)
 }
 
-// smeReleaseCluster releases a previously acquired global SME cluster lock.
 func smeReleaseCluster(cluster int) {
-	if cluster >= 0 && cluster < numSMEClusters {
-		smeActiveTotal.Add(-1)
-		globalSMEClusterLocks[cluster].active.Add(-1)
-	}
+	simdarch.ReleaseSME(cluster)
 }
 
-// smeAppendHybridWorkItems partitions a matrix multiplication into tapered 2D (M, N) panel
-// work items (coarse at the head for SME workers, fine micro-tiles at the tail for NEON workers)
-// ordered diagonally so concurrent SME and NEON workers pack distinct LHS/RHS panels in parallel
-// and load-balance dynamically without tail stalls.
+// smeAppendHybridWorkItems partitions a matrix multiplication into a 3-zone tapered 2D (M, N) queue
+// ordered diagonally across L2 cache panels:
+//   - Head zone (first ~65% of panels): coarse [mc x nc] (e.g. 64x128 = 8 SME 32x32 tiles) panels
+//     pulled by Tier A (Cluster 1 SME) and early Tier B (Cluster 0 SME).
+//   - Middle zone (next ~15% of panels): medium [mr x 2*nr] (e.g. 32x64 = 2 SME 32x32 tiles) sub-panels.
+//   - Tail zone (last ~20% of panels): fine [mr x nr] (e.g. 32x32 = 1 SME tile) sub-panels pulled from
+//     the tail by Tier C/D (Super/P-core NEON) and late Tier B/A workers so tail latency is bounded to ~10 µs.
+//
+// It returns the populated slice and coarseEnd (the index where the coarse head zone ends).
 func smeAppendHybridWorkItems(
 	dst []matmul.WorkItem,
 	batchSize, lhsCrossSize, rhsCrossSize int,
 	params *matmul.CacheParams,
 	maxWorkers int,
-) []matmul.WorkItem {
+) ([]matmul.WorkItem, int) {
 	mr := max(1, params.LHSL1KernelRows)
 	nr := max(1, params.RHSL1KernelCols)
 	mc := max(mr, params.LHSPanelCrossSize)
+	nc := max(nr, params.RHSPanelCrossSize)
 
 	maxMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
 	maxNBlocks := max(1, (rhsCrossSize+nr-1)/nr)
 
 	maxCap := max(64, cap(dst))
-	maxItemsPerBatch := max(1, maxCap/max(1, batchSize))
-	if batchSize >= maxWorkers || maxMBlocks*maxNBlocks < 2*maxWorkers || maxItemsPerBatch < 2*maxWorkers {
-		return matmul.AppendWorkItems(dst, batchSize, lhsCrossSize, rhsCrossSize, params, maxWorkers)
+	if batchSize >= maxWorkers || maxMBlocks*maxNBlocks < 2*maxWorkers {
+		items := matmul.AppendWorkItems(dst, batchSize, lhsCrossSize, rhsCrossSize, params, maxWorkers)
+		return items, len(items)
 	}
 
-	colUnit := max(nr, min(params.RHSPanelCrossSize, 4*nr))
-	actualM := max(1, (lhsCrossSize+mc-1)/mc)
-	actualN := max(1, (rhsCrossSize+colUnit-1)/colUnit)
+	numMPanels := max(1, (lhsCrossSize+mc-1)/mc)
+	numNPanels := max(1, (rhsCrossSize+nc-1)/nc)
 
-	targetMinItems := min(maxItemsPerBatch, 8*maxWorkers)
-	for actualM*actualN < targetMinItems {
-		if actualM*2 <= maxMBlocks && (actualM <= actualN || actualN*2 > maxNBlocks) {
-			actualM *= 2
-		} else if actualN*2 <= maxNBlocks {
-			actualN *= 2
-		} else {
-			break
-		}
+	// If total panels exceed maxCap/2, group adjacent row panels in the coarse grid
+	// so there is room in dst to split the middle and tail zones into fine 32x32 tiles.
+	rowGroup := 1
+	for batchSize*((numMPanels+rowGroup-1)/rowGroup)*numNPanels > maxCap/2 && (numMPanels+rowGroup-1)/rowGroup > 1 {
+		rowGroup *= 2
 	}
-	// Coarsen if total items exceed stack buffer capacity.
-	for actualM*actualN > maxItemsPerBatch {
-		if actualN >= actualM && actualN > 1 {
-			actualN = (actualN + 1) / 2
-		} else if actualM > 1 {
-			actualM = (actualM + 1) / 2
-		} else {
-			break
-		}
-	}
+	gridM := max(1, (numMPanels+rowGroup-1)/rowGroup)
+	gridN := numNPanels
+	totalPanels := batchSize * gridM * gridN
 
-	// Emit items in diagonal order (n = (m + step) % actualN) so initial workers pack distinct
-	// LHS row panels and distinct RHS col panels simultaneously.
+	coarseSpanM := rowGroup * mc
+	coarseSpanN := nc
+	subRowStep := mr
+	if numMPanels == 1 {
+		// Keep single-row-panel skinny matrices (M <= mc) unsplit along M so each RHS column strip
+		// is visited only once and does not require a sharedRHSPanels buffer.
+		subRowStep = coarseSpanM
+	}
+	fineTilesPerPanel := max(1, max(1, coarseSpanM/subRowStep)*(coarseSpanN/nr))
+	medTilesPerPanel := max(1, max(1, coarseSpanM/subRowStep)*max(1, coarseSpanN/(2*nr)))
+
+	// Determine how many panels at the end to split into fine (mr x nr) and medium (mr x 2*nr) items
+	// within the capacity maxCap: ~78% coarse at head (matching the ~80% throughput share of the 2 SME
+	// units), ~10% medium in middle, and ~12% fine at tail (matching the ~20% throughput share of the
+	// 5 Super/P-core NEON units).
+	availExtra := max(0, maxCap-totalPanels)
+	wantFinePanels := max(maxWorkers/2, totalPanels/8) // ~12.5% of panels (at least maxWorkers/2)
+	wantMedPanels := max(maxWorkers/2, totalPanels/10) // ~10% of panels (at least maxWorkers/2)
+
+	fineExtraPerPanel := max(1, fineTilesPerPanel-1)
+	medExtraPerPanel := max(1, medTilesPerPanel-1)
+
+	numFinePanels := min(wantFinePanels, availExtra/fineExtraPerPanel)
+	availExtra -= numFinePanels * fineExtraPerPanel
+	numMedPanels := min(wantMedPanels, availExtra/medExtraPerPanel)
+	if numFinePanels+numMedPanels >= totalPanels {
+		numFinePanels = max(0, totalPanels-1)
+		numMedPanels = 0
+	}
+	coarsePanels := totalPanels - numFinePanels - numMedPanels
+
+	panelIdx := 0
+	coarseEnd := 0
 	for batchIdx := range batchSize {
-		for step := range actualN {
-			for m := range actualM {
-				n := (m + step) % actualN
-				lhsRowStart := ((m*maxMBlocks + actualM - 1) / actualM) * mr
-				lhsRowEnd := min(lhsCrossSize, (((m+1)*maxMBlocks+actualM-1)/actualM)*mr)
-				rhsColStart := ((n*maxNBlocks + actualN - 1) / actualN) * nr
-				rhsColEnd := min(rhsCrossSize, (((n+1)*maxNBlocks+actualN-1)/actualN)*nr)
-				if lhsRowStart >= lhsRowEnd || rhsColStart >= rhsColEnd {
+		for step := range gridN {
+			for m := range gridM {
+				n := (m + step) % gridN
+				pRowStart := m * coarseSpanM
+				pRowEnd := min(lhsCrossSize, (m+1)*coarseSpanM)
+				pColStart := n * coarseSpanN
+				pColEnd := min(rhsCrossSize, (n+1)*coarseSpanN)
+				if pRowStart >= pRowEnd || pColStart >= pColEnd {
+					panelIdx++
 					continue
 				}
-				dst = append(dst, matmul.WorkItem{
-					BatchStart:  batchIdx,
-					BatchEnd:    batchIdx + 1,
-					LHSRowStart: lhsRowStart,
-					LHSRowEnd:   lhsRowEnd,
-					RHSColStart: rhsColStart,
-					RHSColEnd:   rhsColEnd,
-				})
+
+				if panelIdx < coarsePanels {
+					dst = append(dst, matmul.WorkItem{
+						BatchStart:  batchIdx,
+						BatchEnd:    batchIdx + 1,
+						LHSRowStart: pRowStart,
+						LHSRowEnd:   pRowEnd,
+						RHSColStart: pColStart,
+						RHSColEnd:   pColEnd,
+					})
+					coarseEnd = len(dst)
+				} else if panelIdx < coarsePanels+numMedPanels {
+					medColStep := max(nr, 2*nr)
+					for r := pRowStart; r < pRowEnd; r += subRowStep {
+						rEnd := min(pRowEnd, r+subRowStep)
+						for c := pColStart; c < pColEnd; c += medColStep {
+							cEnd := min(pColEnd, c+medColStep)
+							dst = append(dst, matmul.WorkItem{
+								BatchStart:  batchIdx,
+								BatchEnd:    batchIdx + 1,
+								LHSRowStart: r,
+								LHSRowEnd:   rEnd,
+								RHSColStart: c,
+								RHSColEnd:   cEnd,
+							})
+						}
+					}
+				} else {
+					for r := pRowStart; r < pRowEnd; r += subRowStep {
+						rEnd := min(pRowEnd, r+subRowStep)
+						for c := pColStart; c < pColEnd; c += nr {
+							cEnd := min(pColEnd, c+nr)
+							dst = append(dst, matmul.WorkItem{
+								BatchStart:  batchIdx,
+								BatchEnd:    batchIdx + 1,
+								LHSRowStart: r,
+								LHSRowEnd:   rEnd,
+								RHSColStart: c,
+								RHSColEnd:   cEnd,
+							})
+						}
+					}
+				}
+				panelIdx++
 			}
 		}
 	}
-	return dst
+	if coarseEnd == 0 {
+		coarseEnd = len(dst)
+	}
+	return dst, coarseEnd
 }
 
 // neonLargeKernelFromSMEFloat32 computes a panel [lhsActiveRows, rhsActiveCols] using per-core NEON

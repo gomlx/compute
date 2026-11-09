@@ -6,6 +6,7 @@ package neon
 
 import (
 	"simd/archsimd"
+	"sync"
 	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
@@ -13,6 +14,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/support/envutil"
 )
 
@@ -26,7 +28,7 @@ import (
 var (
 	// NEONUseAsm enables the handwritten Plan9 ARM64 assembly microkernels.
 	// Set GOMLX_GO_NEON_ASM=false to disable and use the pure-Go archsimd kernels.
-	NEONUseAsm = envutil.MustReadBool(envutil.GoBackendNEON_ASM, true)
+	NEONUseAsm = simdarch.NEONUseAsm
 
 	// NEONUseBFDOT enables the FEAT_BF16 hardware BFDOT instructions for BFloat16 -> Float32
 	// matrix multiplication when supported by the host CPU.
@@ -131,10 +133,10 @@ func init() {
 		return
 	}
 
-	if gobackend.IsNEONAllowed {
+	if simdarch.IsNEONAllowed {
 		registerNEON(false)
 	}
-	if gobackend.IsSMEAllowed && NEONUseAsm {
+	if simdarch.IsSMEAllowed && NEONUseAsm {
 		registerSME(false)
 	}
 }
@@ -353,6 +355,32 @@ func neonTranspose4x8x16bits(r0, r1, r2, r3 archsimd.Uint16x8) (c01, c23, c45, c
 	c45 = t1.InterleaveLo(t3).ReshapeToUint16s()
 	c67 = t1.InterleaveHi(t3).ReshapeToUint16s()
 	return
+}
+
+// neonPackLHSSME packs a block of size [copyRows, contractingCols] from the LHS matrix into a panel
+// structured as [ceil(copyRows/kernelRows), contractingCols, kernelRows]. When useSME is true and
+// kernelRows == 32 for 32-bit elements, it uses SME ZA0..ZA3 hardware horizontal-to-vertical transpose.
+func neonPackLHSSME[T gotype.ScalarNotComplex](
+	lhs, panel []T,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols, kernelRows int,
+	useSME bool,
+) {
+	if useSME && NEONUseAsm && kernelRows == 32 {
+		if copyRows == 0 || contractingCols == 0 {
+			return
+		}
+		var zero T
+		if unsafe.Sizeof(zero) == 4 {
+			lhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(lhs)))
+			panelBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(panel)))
+			lhsStrideBytes := uintptr(lhsCols) * 4
+			lhsStartPtr := unsafe.Pointer(lhsBasePtr + uintptr(lhsRowStart)*lhsStrideBytes + uintptr(lhsColStart)*4)
+			smePackLHS32Float32Asm(lhsStartPtr, unsafe.Pointer(panelBasePtr), lhsStrideBytes, copyRows, contractingCols)
+			return
+		}
+	}
+	neonPackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
 }
 
 // neonPackLHS packs a block of size [copyRows, contractingCols] from the LHS matrix into a panel
@@ -874,6 +902,46 @@ func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int) 
 // ReleaseBuffer forwards buffer release to the shared matmul package.
 func ReleaseBuffer(ref *gobackend.Buffer) {
 	matmul.ReleaseBuffer(ref)
+}
+
+const neonScratchBytes = 2 * 1024 * 1024 // 2 MB aligned scratch buffer for single-worker packedLHS + packedRHS
+
+type neonScratchBuf struct {
+	data [neonScratchBytes / 8]uint64
+}
+
+var neonScratchPool = sync.Pool{
+	New: func() any {
+		return new(neonScratchBuf)
+	},
+}
+
+// GetScratchPair acquires a combined 8-byte-aligned scratch buffer from neonScratchPool
+// with zero heap allocations and zero sync.Map lookups when total bytes <= neonScratchBytes.
+func GetScratchPair[T gotype.Supported](lhsLen, rhsLen int) (scratch *neonScratchBuf, lhsSlice, rhsSlice []T, ok bool) {
+	var zero T
+	elemBytes := int(unsafe.Sizeof(zero))
+	lhsBytes := ((lhsLen*elemBytes + 63) &^ 63)
+	rhsBytes := ((rhsLen*elemBytes + 63) &^ 63)
+	if lhsBytes+rhsBytes > neonScratchBytes {
+		return nil, nil, nil, false
+	}
+	scratch = neonScratchPool.Get().(*neonScratchBuf)
+	basePtr := uintptr(unsafe.Pointer(&scratch.data[0]))
+	if lhsLen > 0 {
+		lhsSlice = unsafe.Slice((*T)(unsafe.Pointer(basePtr)), lhsLen)
+	}
+	if rhsLen > 0 {
+		rhsSlice = unsafe.Slice((*T)(unsafe.Pointer(basePtr+uintptr(lhsBytes))), rhsLen)
+	}
+	return scratch, lhsSlice, rhsSlice, true
+}
+
+// PutScratchPair returns a scratch buffer acquired via GetScratchPair back to neonScratchPool.
+func PutScratchPair(scratch *neonScratchBuf) {
+	if scratch != nil {
+		neonScratchPool.Put(scratch)
+	}
 }
 
 // unsafePackLHS forwards to matmul.UnsafePackLHS.

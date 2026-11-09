@@ -1787,14 +1787,21 @@ func TestSMEHybridCoExecution(t *testing.T) {
 }
 
 // BenchmarkSMEHybrid compares Pure SME (SMEUseHybridNEON=false, all workers queuing on cluster SME units)
-// against Hybrid SME+NEON (SMEUseHybridNEON=true, 1 SME worker per cluster + remaining workers on per-core NEON).
+// against TwoSMEsOnly (Tier A + Tier B only), Hybrid_NoECoreNEON (Tier A + B + Super/P-core NEON, dropping Tier E),
+// and Hybrid_AllTiers (all 5 tiers A+B+C+D+E).
 func BenchmarkSMEHybrid(b *testing.B) {
 	if !gobackend.IsSMEAllowed {
 		b.Skip("ARM64 SME is not supported or allowed on this host")
 	}
 
 	origHybrid := SMEUseHybridNEON
-	defer func() { SMEUseHybridNEON = origHybrid }()
+	origDropE := SMEDropECoreNEON
+	origTwoSMEs := SMETwoSMEsOnly
+	defer func() {
+		SMEUseHybridNEON = origHybrid
+		SMEDropECoreNEON = origDropE
+		SMETwoSMEsOnly = origTwoSMEs
+	}()
 
 	backend, err := gobackend.NewBackend()
 	if err != nil {
@@ -1807,6 +1814,8 @@ func BenchmarkSMEHybrid(b *testing.B) {
 		B, M, N, K int
 		cachedRHS  bool
 	}{
+		{"Skinny_1x64x2048x2048", 1, 64, 2048, 2048, false},
+		{"CachedRHS_Skinny_1x64x2048x2048", 1, 64, 2048, 2048, true},
 		{"Dynamic_1x1024x1024x1024", 1, 1024, 1024, 1024, false},
 		{"CachedRHS_1x1024x1024x1024", 1, 1024, 1024, 1024, true},
 		{"Dynamic_1x1536x1920x384", 1, 1536, 1920, 384, false},
@@ -1835,14 +1844,20 @@ func BenchmarkSMEHybrid(b *testing.B) {
 		}
 
 		for _, mode := range []struct {
-			name   string
-			hybrid bool
+			name    string
+			hybrid  bool
+			twoSMEs bool
+			dropE   bool
 		}{
-			{"PureSME", false},
-			{"HybridSME_NEON", true},
+			{"PureSME", false, false, false},
+			{"TwoSMEsOnly", true, true, true},
+			{"Hybrid_NoECoreNEON", true, false, true},
+			{"Hybrid_AllTiers", true, false, false},
 		} {
 			b.Run("Float32/"+sh.name+"/"+mode.name, func(b *testing.B) {
 				SMEUseHybridNEON = mode.hybrid
+				SMETwoSMEsOnly = mode.twoSMEs
+				SMEDropECoreNEON = mode.dropE
 				for range 3 {
 					smeRouterFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, sh.B, sh.M, sh.N, sh.K, output, nodeData)
 				}

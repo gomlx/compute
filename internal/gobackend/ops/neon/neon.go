@@ -12,13 +12,14 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 )
 
 func init() {
-	if gobackend.IsNEONAllowed {
+	if simdarch.IsNEONAllowed {
 		registerNEON()
 	}
-	if gobackend.IsSMEAllowed {
+	if simdarch.IsSMEAllowed {
 		gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PrioritySME, execConvGeneralSME)
 	}
 }

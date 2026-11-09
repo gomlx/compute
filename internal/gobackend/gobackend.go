@@ -13,7 +13,6 @@ package gobackend
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,9 +30,6 @@ import (
 
 // BackendName to be used in GOMLX_BACKEND to specify this backend.
 const BackendName = "go"
-
-// ActiveArchitectures lists the active OS/architecture and enabled SIMD architectures.
-var ActiveArchitectures = []string{runtime.GOOS + "/" + runtime.GOARCH}
 
 // Registers New() as the default constructor for "go" backend.
 func init() {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/ops/neon"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/support/testutil"
 )
 
@@ -69,10 +70,10 @@ func TestTallSkinnyAtBFloat32ARM64(t *testing.T) {
 				t.Fatalf("ExecTallSkinnyAtBFloat32ARM64 mismatch: %s", diff)
 			}
 
-			if gobackend.IsSMEAllowed {
-				origSME := gobackend.IsSMEAllowed
-				gobackend.IsSMEAllowed = false
-				defer func() { gobackend.IsSMEAllowed = origSME }()
+			if simdarch.IsSMEAllowed {
+				origSME := simdarch.IsSMEAllowed
+				simdarch.IsSMEAllowed = false
+				defer func() { simdarch.IsSMEAllowed = origSME }()
 
 				gotNEON := make([]float32, sc.p*sc.q)
 				if !neon.ExecTallSkinnyAtBFloat32ARM64(backend, a, bMat, sc.m, sc.p, sc.q, gotNEON) {

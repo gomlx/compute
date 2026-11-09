@@ -13,7 +13,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	matmulneon "github.com/gomlx/compute/internal/gobackend/dot/matmul/neon"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -29,7 +29,7 @@ func ExecTallSkinnyAtBFloat32ARM64(
 	m, p, q int,
 	out []float32,
 ) bool {
-	if !gobackend.IsNEONAllowed ||
+	if !simdarch.IsNEONAllowed ||
 		m < 64 || p <= 0 || q <= 0 || p*q > 131072 || m < max(p, q) {
 		return false
 	}
@@ -37,7 +37,7 @@ func ExecTallSkinnyAtBFloat32ARM64(
 	outSize := p * q
 	clear(out[:outSize])
 
-	useSME := gobackend.IsSMEAllowed && p >= 4 && q >= 8
+	useSME := simdarch.IsSMEAllowed && p >= 4 && q >= 8
 	rowGroupSize := 16
 	colPanelSize := 16
 	if useSME {
@@ -170,23 +170,23 @@ func ExecTallSkinnyAtBFloat32ARM64(
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
-			clusterID, hasSME, isSlowECore := matmulneon.SMEAcquireCluster()
+			clusterID, hasSME, isEfficiencyCore := simdarch.AcquireSME()
 			if hasSME {
-				if clusterID == 0 || clusterID == 1 {
+				if !isEfficiencyCore {
 					activeFastSME.Add(1)
 				}
 				defer func() {
-					if clusterID == 0 || clusterID == 1 {
+					if !isEfficiencyCore {
 						activeFastSME.Add(-1)
 					}
-					matmulneon.SMEReleaseCluster(clusterID)
+					simdarch.ReleaseSME(clusterID)
 				}()
-			} else if isSlowECore {
+			} else if isEfficiencyCore {
 				return
 			}
 
 			for {
-				if !hasSME || clusterID == 2 {
+				if !hasSME || isEfficiencyCore {
 					rem := totalTasks - int(nextTask.Load())
 					fastSME := int(activeFastSME.Load())
 					if fastSME > 0 && rem <= 2*fastSME {
@@ -325,7 +325,7 @@ func tallSkinnyAtBTileNEONFloat32(
 // ReduceBiasFloat32ARM64 reduces dZ of shape [m, n] along the m dimension into dBias of shape [n]
 // using parallel row-chunking and 4x-unrolled ARM64 NEON vector accumulation.
 func ReduceBiasFloat32ARM64(backend *gobackend.Backend, dZ []float32, m, n int, dBias []float32) bool {
-	if !gobackend.IsNEONAllowed || n > 4096 {
+	if !simdarch.IsNEONAllowed || n > 4096 {
 		return false
 	}
 	const minParallelWork = 16384

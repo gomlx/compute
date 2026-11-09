@@ -22,6 +22,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/support/envutil"
 )
 
@@ -35,7 +36,7 @@ import (
 var (
 	// AVX512UseAsm enables the assembly microkernel for large matrices (8 rows x 32 cols for F32/F16/BF16, 8 rows x 16 cols for F64).
 	// Set GOMLX_GO_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
-	AVX512UseAsm = envutil.MustReadBool(envutil.GoBackendAVX512_ASM, true)
+	AVX512UseAsm = simdarch.AVX512UseAsm
 
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX512ParamsFloat32 = matmul.CacheParams{
