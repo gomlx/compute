@@ -9,23 +9,28 @@ import (
 
 func TestCPUTime(t *testing.T) {
 	start := CPUTime()
-	if start <= 0 {
-		t.Fatalf("CPUTime() returned non-positive duration: %v", start)
+	if start < 0 {
+		t.Fatalf("CPUTime() returned negative duration: %v", start)
 	}
 
-	// Burn a small amount of CPU time so the counter advances.
-	deadline := time.Now().Add(10 * time.Millisecond)
+	// Burn a small amount of CPU time until the counter advances (up to 100ms to account
+	// for coarse 15.6ms timer ticks in Windows GetProcessTimes).
+	deadline := time.Now().Add(100 * time.Millisecond)
 	acc := 0
-	for time.Now().Before(deadline) {
-		for i := range 1000 {
-			acc += i
+	end := start
+	for end <= start && time.Now().Before(deadline) {
+		stepDeadline := time.Now().Add(5 * time.Millisecond)
+		for time.Now().Before(stepDeadline) {
+			for i := range 1000 {
+				acc += i
+			}
 		}
+		end = CPUTime()
 	}
 	_ = acc
 
-	end := CPUTime()
 	if end <= start {
 		t.Errorf("Expected CPUTime() to advance after busy work: start=%v, end=%v", start, end)
 	}
-	t.Logf("CPUTime elapsed over ~10ms busy loop: %v (%d ns)", end-start, (end - start).Nanoseconds())
+	t.Logf("CPUTime elapsed: %v (%d ns)", end-start, (end - start).Nanoseconds())
 }

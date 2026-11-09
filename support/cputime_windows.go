@@ -18,5 +18,13 @@ func cpuTimeNs() int64 {
 	if err := syscall.GetProcessTimes(handle, &creation, &exit, &kernel, &user); err != nil {
 		return int64(time.Since(processStartTime))
 	}
-	return kernel.Nanoseconds() + user.Nanoseconds()
+	return filetimeDurationNs(kernel) + filetimeDurationNs(user)
+}
+
+// filetimeDurationNs converts a Windows FILETIME representing a duration (in 100-ns ticks)
+// into nanoseconds. Note: syscall.Filetime.Nanoseconds() cannot be used here because it
+// treats the FILETIME as a wall-clock timestamp since 1601-01-01 and subtracts the Unix epoch.
+func filetimeDurationNs(ft syscall.Filetime) int64 {
+	ticks := (uint64(ft.HighDateTime) << 32) | uint64(ft.LowDateTime)
+	return int64(ticks * 100)
 }
