@@ -128,7 +128,10 @@ func neonLargeWithParamsFloat16( //alt:f16
 		// Cluster 1 SME worker completes the entire MatMul faster than waking background workers.
 		maxWorkers = 1
 	}
-	if isSMEKernel && maxWorkers > 1 && batchSize < maxWorkers {
+	// Note: fineNc must NOT depend on maxWorkers (which varies dynamically with smeCallerOnFastCluster()
+	// and EffectiveParallelism()), because cachedRHSPanels is persisted on nodeData.RHSConstantData
+	// across calls and its panel count (numKPanels * numColPanels) must remain invariant.
+	if isSMEKernel {
 		fineNc := max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
 		fineColPanels := (rhsCrossSize + fineNc - 1) / fineNc
 		if batchSize*numKPanels*fineColPanels <= 2048 {
@@ -439,14 +442,6 @@ func neonLargeParallelWithParamsFloat16( //alt:f16
 		coarseEnd = len(workItems)
 	}
 	maxWorkers = min(maxWorkers, len(workItems))
-	if maxWorkers <= 1 {
-		//alt:f32 neonLargeWithParamsFloat32(
-		//alt:bf16  neonLargeWithParamsBFloat16(
-		neonLargeWithParamsFloat16( //alt:f16
-			//alt:f64  neonLargeWithParamsFloat64(
-			backend, layout, lhs, rhs, batchSize, lhsCrossSize, rhsCrossSize, contractingSize, output, nil, params)
-		return
-	}
 
 	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
 	lhsAllocPanels := 1
