@@ -1,0 +1,387 @@
+# Optimizing Timestral (`28M` & `123M`) on Go Backend (ARM64 NEON & SME)
+
+This document records the baseline benchmarks, CPU and per-op profiles, architectural analysis, and optimization plan for running [`mistralai/Timestral-28M`](https://huggingface.co/mistralai/Timestral-28M) and [`mistralai/Timestral-123M`](https://huggingface.co/mistralai/Timestral-123M) on the pure-Go backend (`internal/gobackend`) on Apple Silicon with ARM64 NEON and SME.
+
+It follows the evolution of our ARM64 NEON/SME architecture documented in [`internal/gobackend/simdarch/Neon.md`](../internal/gobackend/simdarch/Neon.md), extending our focus from `DotGeneral`/`FusedDense` to **non-MatMul operations** (`FusedScaledDotProductAttention`, `FusedActivation`/`SwiGLU`, `ReduceSum`, `Mul`/`Add` broadcasting, `Slice`/`Concatenate`, and scheduler/cache-locality interactions).
+
+---
+
+## 1. Benchmark Setup & Hardware Topology
+
+### 1.1 Benchmark Commands
+
+```bash
+# Timestral-28M (d_model=384, n_heads=6, head_dim=64, d_ff=1024, 3 stages x 4 blocks)
+GOEXPERIMENT=simd go run github.com/gomlx/go-huggingface/examples/timestral/ \
+  -backend="go" -model mistralai/Timestral-28M -obs gomlx-simd -mmap=false -runs=10
+
+# Timestral-123M (d_model=640, n_heads=10, head_dim=64, d_ff=1712, 5 stages x 4 blocks)
+GOEXPERIMENT=simd go run github.com/gomlx/go-huggingface/examples/timestral/ \
+  -backend="go" -model mistralai/Timestral-123M -obs gomlx-simd -mmap=false -runs=10
+```
+
+### 1.2 Workload Dimensions
+
+Both models run zero-shot probabilistic time-series forecasting with:
+- **Batch size (`B`)**: `2` variates (`[2, 12096]` input context $\to$ `[2, 864, 21]` output quantiles)
+- **Encoder tokens (`T_enc`)**: `378` patches (`12096 / 32`)
+- **Decoder tokens (`T_dec`)**: `27` horizon patches (`864 / 32`)
+- **Total sequence length (`T_total`)**: `405` (`378 + 27`)
+- **Architecture**: `N_stages` stages (`3` in `28M`, `5` in `123M`), each containing:
+  - `4` Encoder blocks (`T_enc = 378`, causal + group boolean mask `[2, 378, 378]`)
+  - `4` Decoder blocks (`T_dec = 27` attending to `T_total = 405`, forecast boolean mask `[2, 27, 405]`)
+  - `4` Shared Feed-Forward (`SwiGLU`) blocks applied to concatenated `[2, 405, D]`
+  - `1` Variate Attention block applied to transposed `[405, 2, D]` (`[405, 2, 2]` boolean mask) + `1` Variate Feed-Forward (`SwiGLU`) block
+
+| Parameter | `Timestral-28M` | `Timestral-123M` |
+| :--- | ---: | ---: |
+| `d_model` (`D`) | `384` | `640` |
+| `n_heads` (`H`) | `6` | `10` |
+| `head_dim` (`D_h`) | `64` | `64` |
+| `d_ff` (`SwiGLU` inner dim) | `1024` (`w12` output `2048`) | `1712` (`w12` output `3424`) |
+| `n_stages` | `3` (`12` enc + `12` dec + `3` var) | `5` (`20` enc + `20` dec + `5` var) |
+| Total Compiled Graph Ops | `1,636` | `2,590` |
+
+### 1.3 Host Hardware Topology (12-Core Apple M6)
+
+As detailed in [`internal/gobackend/simdarch/Neon.md` (Stage 10)](../internal/gobackend/simdarch/Neon.md), the 12-core Apple M6 has an **asymmetric 2-cluster L2 and SME topology**:
+- **Cluster 1 (Performance Cluster — CPU IDs `6..11`)**:
+  - **2 Super cores + 4 Performance cores** sharing a **20 MB L2 cache**.
+  - **1 High-Throughput SME Unit** (`SVL = 512-bit`, $16 \times 16$ `float32` `ZA` tiles): **2,262.5 GFlops/s** single-thread throughput — **more FLOPs than all 12 NEON cores combined (~1,200 GFlops/s)**.
+- **Cluster 0 (Efficiency Cluster — CPU IDs `0..5`)**:
+  - **6 Efficiency cores** sharing a separate **8 MB L2 cache**.
+  - **1 Low-Power SME Unit**: **385.6 GFlops/s** (`5.9×` slower than Cluster 1's SME unit).
+
+---
+
+## 2. Initial Baseline Benchmarks (Before Optimization)
+
+### 2.1 End-to-End Baseline Summary
+
+| Model | Configuration | Best Wall Time | CPU Time | Avg Cores | Speedup vs NEON-Only |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| **`Timestral-28M`** | `gomlx-simd` (Default: SME + NEON, parallel graph) | **58.0 ms** | 558.8 ms | 9.6 | **1.43×** |
+| **`Timestral-28M`** | `gomlx-simd-seq` (`-backend="go:ops_sequential"`) | **65.2 ms** | 548.8 ms | 8.4 | 1.27× |
+| **`Timestral-28M`** | `gomlx-neon-only` (`GOMLX_GO_SIMD_SME=0`) | **82.7 ms** | 832.1 ms | 10.1 | 1.00× |
+| **`Timestral-123M`** | `gomlx-simd` (Default: SME + NEON, parallel graph) | **179.4 ms** | 1,860.0 ms | 10.4 | **1.64×** |
+| **`Timestral-123M`** | `gomlx-simd-seq` (`-backend="go:ops_sequential"`) | **192.6 ms** | 1,850.0 ms | 9.6 | 1.52× |
+| **`Timestral-123M`** | `gomlx-neon-only` (`GOMLX_GO_SIMD_SME=0`) | **293.4 ms** | 3,170.0 ms | 10.8 | 1.00× |
+
+### 2.2 Detailed Run-by-Run Baseline (`gomlx-simd`)
+
+#### `mistralai/Timestral-28M` (`load + compile: 204.8ms, live 0.12 GB, max RSS 0.29 GB`)
+
+| Obs | Model | Run | Wall | CPU Time | Cores | Max Abs Diff vs PyTorch | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-28M` | warm-up | 70.1ms | 593.6ms | 8.5 | 1.91e-06 | 0.22 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 1 | 58.7ms | 562.9ms | 9.6 | 1.91e-06 | 0.24 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 2 | 58.4ms | 561.9ms | 9.6 | 1.91e-06 | 0.27 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 3 | 58.0ms | 558.8ms | 9.6 | 1.91e-06 | 0.29 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 4 | 60.4ms | 585.0ms | 9.7 | 1.91e-06 | 0.32 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 5 | 59.5ms | 569.7ms | 9.6 | 1.91e-06 | 0.34 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 6 | 65.7ms | 584.9ms | 8.9 | 1.91e-06 | 0.36 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 7 | 59.3ms | 575.5ms | 9.7 | 1.91e-06 | 0.39 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 8 | 59.8ms | 578.8ms | 9.7 | 1.91e-06 | 0.41 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 9 | 58.6ms | 565.5ms | 9.7 | 1.91e-06 | 0.38 GB | 0.42 GB |
+| `gomlx-simd` | `Timestral-28M` | run 10 | 58.9ms | 569.3ms | 9.7 | 1.91e-06 | 0.40 GB | 0.42 GB |
+| **`gomlx-simd`** | **`Timestral-28M`** | **`best`** | **`58.0ms`** | **`558.8ms`** | **`9.6`** | **`1.91e-06`** | **`0.40 GB`** | **`0.42 GB`** |
+
+#### `mistralai/Timestral-123M` (`load + compile: 323.8ms, live 0.50 GB, max RSS 1.10 GB`)
+
+| Obs | Model | Run | Wall | CPU Time | Cores | Max Abs Diff vs PyTorch | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-123M` | warm-up | 220.3ms | 1.9s | 8.7 | - | 1.07 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 1 | 182.4ms | 1.9s | 10.3 | - | 1.13 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 2 | 180.0ms | 1.9s | 10.4 | - | 1.19 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 3 | 180.4ms | 1.9s | 10.4 | - | 1.24 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 4 | 180.3ms | 1.9s | 10.4 | - | 1.30 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 5 | 186.9ms | 1.9s | 10.2 | - | 1.29 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 6 | 179.5ms | 1.9s | 10.4 | - | 1.29 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 7 | 180.1ms | 1.9s | 10.4 | - | 1.35 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 8 | 180.1ms | 1.9s | 10.4 | - | 1.35 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 9 | 179.4ms | 1.9s | 10.4 | - | 1.34 GB | 1.35 GB |
+| `gomlx-simd` | `Timestral-123M` | run 10 | 180.3ms | 1.9s | 10.4 | - | 1.33 GB | 1.35 GB |
+| **`gomlx-simd`** | **`Timestral-123M`** | **`best`** | **`179.4ms`** | **`1.9s`** | **`10.4`** | **-** | **`1.33 GB`** | **`1.35 GB`** |
+
+---
+
+## 3. CPU Profile (`pprof`) & Per-Op Breakdown
+
+### 3.1 CPU Profile (`go tool pprof`) Flat Top Functions
+
+Sampling CPU profiles collected over 30 timed runs of `Timestral-28M` (`16.71s` total CPU samples) and 15 timed runs of `Timestral-123M` (`27.49s` total CPU samples) reveal a striking pattern:
+
+| Function / Symbol | `28M` Flat CPU | `28M` % | `123M` Flat CPU | `123M` % | Category |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| `runtime.pthread_cond_wait` | 8.11s | 48.5% | 12.15s | 44.2% | Worker / GC park & wakeup |
+| `runtime.usleep` | 1.50s | 9.0% | 3.74s | 13.6% | Spin/sleep in `lock2` contention |
+| `runtime.pthread_cond_signal` | 1.00s | 6.0% | 1.37s | 5.0% | Worker wakeup signaling |
+| **`neon.sdpaSingleRowNEONGeneral`** | **2.22s** | **13.3%** | **4.02s** | **14.6%** | **SDPA 1-row `archsimd` fallback!** |
+| **`neon.sdpaSoftmaxRowNEON`** | **0.98s** | **5.9%** | **1.42s** | **5.2%** | **SDPA row softmax (`archsimd`)** |
+| `neon.packedMicroKernelFloat32Asm_4x16` | 0.90s | 5.4% | 2.13s | 7.8% | NEON workers in hybrid `FusedDense` |
+| `activations.SwiGLUFloat32SIMD` | 0.14s | 0.8% | 0.24s | 0.9% | Portable 128-bit `archsimd` SwiGLU |
+| `neon.smeLargeKernelFloat32Asm_32x32` | 0.10s | 0.6% | 0.13s | 0.5% | SME $32 \times 32$ `FMOPA` kernel |
+| `neon.neonPackRHSFloat32Asm` | 0.08s | 0.5% | 0.18s | 0.7% | `FusedDense` RHS packing |
+| `ops.BroadcastMulFloat32SIMD` | 0.07s | 0.4% | 0.09s | 0.3% | Elementwise broadcast `Mul` |
+| `runtime.memmove` | 0.05s | 0.3% | 0.13s | 0.5% | `Slice` / `Concatenate` copies |
+
+> [!IMPORTANT]
+> **Key Observation from `pprof`**:
+> Among actual compute functions (excluding thread-parking `pthread_cond_wait` / `usleep`), **`sdpaSingleRowNEONGeneral` + `sdpaSoftmaxRowNEON` consumes ~60%–65% of all active CPU time** (`3.20s` out of `5.2s` active CPU in `28M`; `5.44s` out of `8.6s` active CPU in `123M`), whereas `smeLargeKernelFloat32Asm_32x32` takes only `0.10s`–`0.13s` because SME is **only** used by `FusedDense` and is **completely bypassed** by `FusedScaledDotProductAttention`!
+
+---
+
+### 3.2 Exact Per-`OpType` Breakdown (`-backend="go:ops_sequential"`, Averaged Over 5 Timed Runs)
+
+Using the built-in Go backend op profiler ([`internal/gobackend/profile.go`](../internal/gobackend/profile.go)) via `GOMLX_OP_PROFILE=1` combined with `-backend="go:ops_sequential"` eliminates overlapping graph op execution and measures the exact wall time, process CPU time, and average core utilization of every operation in a single forward pass:
+
+```bash
+GOEXPERIMENT=simd GOMLX_OP_PROFILE=5 go run github.com/gomlx/go-huggingface/examples/timestral/ \
+  -backend="go:ops_sequential" -model mistralai/Timestral-28M -obs gomlx-simd-seq -mmap=false -runs=5 -verify=false
+```
+
+| OpType | `28M` Calls | `28M` Wall/run | `28M` Wall % | `28M` CPU/run | `28M` Cores | `123M` Calls | `123M` Wall/run | `123M` Wall % | `123M` CPU/run | `123M` Cores |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`FusedScaledDotProductAttention`** | 27 | **25.4 ms** | **39.0%** | **269.8 ms** | 10.6 | 45 | **69.8 ms** | **36.1%** | **753.1 ms** | 10.8 |
+| **`FusedDense`** | 75 | **21.9 ms** | **33.6%** | **215.5 ms** | 9.8 | 121 | **85.1 ms** | **44.0%** | **923.4 ms** | 10.9 |
+| **`Mul`** | 415 | **5.5 ms** | **8.4%** | **16.6 ms** | 3.0 | 529 | **12.2 ms** | **6.3%** | **44.8 ms** | 3.7 |
+| **`FusedActivation` (`SwiGLU`)** | 14 | **2.8 ms** | **4.3%** | **26.4 ms** | 9.5 | 22 | **7.1 ms** | **3.7%** | **73.1 ms** | 10.2 |
+| **`Slice`** | 218 | **2.5 ms** | **3.8%** | **5.9 ms** | 2.4 | 312 | **6.3 ms** | **3.3%** | **22.8 ms** | 3.6 |
+| **`Add`** | 318 | **2.2 ms** | **3.3%** | **8.4 ms** | 3.9 | 370 | **4.7 ms** | **2.4%** | **21.4 ms** | 4.5 |
+| **`Concatenate`** | 48 | **0.85 ms** | **1.3%** | **2.0 ms** | 2.3 | 72 | **1.9 ms** | **1.0%** | **5.9 ms** | 3.1 |
+| **`Neg`** | 26 | **0.68 ms** | **1.0%** | **1.8 ms** | 2.6 | 42 | **1.5 ms** | **0.8%** | **5.1 ms** | 3.5 |
+| **`ReduceSum`** | 84 | **0.50 ms** | **0.8%** | **0.59 ms** | **1.2** | 102 | **1.3 ms** | **0.7%** | **1.3 ms** | **1.0** |
+| **`LogicalAnd`** | 3 | **0.38 ms** | **0.6%** | **0.39 ms** | 1.0 | 3 | **0.38 ms** | **0.2%** | **0.39 ms** | 1.0 |
+| **`Transpose`** | 7 | **0.16 ms** | **0.2%** | **0.21 ms** | 1.3 | 11 | **0.33 ms** | **0.2%** | **0.68 ms** | 2.1 |
+| **`Iota`** | 13 | **0.32 ms** | **0.5%** | **0.32 ms** | 1.0 | 13 | **0.32 ms** | **0.2%** | **0.33 ms** | 1.0 |
+| **All Other Ops** (30+ types) | 388 | **2.11 ms** | **3.2%** | **3.30 ms** | ~1.5 | 948 | **2.27 ms** | **1.2%** | **3.50 ms** | ~1.5 |
+| **Total (Sum of All Ops)** | **1,636** | **65.3 ms** | **100.0%** | **551.2 ms** | **8.4** | **2,590** | **193.2 ms** | **100.0%** | **1,855.8 ms** | **9.6** |
+
+---
+
+### 3.3 Top Individual Op Signatures by Wall Time
+
+#### `Timestral-28M` (`d_model=384, n_heads=6, head_dim=64, d_ff=1024`)
+
+| Rank | Op Signature | Calls/run | Wall/run | Wall/call | CPU/run | Avg Cores | Role in Timestral |
+| ---: | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| 1 | `FusedScaledDotProductAttention([2, 378, 6, 64], ..., (Bool)[2, 378, 378])` | 12 | **21.6 ms** | 1.80 ms | 234.3 ms | 10.8 | Encoder Self-Attention |
+| 2 | `FusedDense([2, 405, 384], [384, 2048]) -> [2, 405, 2048]` | 12 | **6.9 ms** | 577.9 µs | 74.9 ms | 10.8 | FFN `w12` (Gate+Up) |
+| 3 | `FusedDense([2, 405, 384], [384, 384]) -> [2, 405, 384]` | 27 | **4.4 ms** | 163.6 µs | 37.0 ms | 8.4 | Attention `wO` + Gate |
+| 4 | `FusedDense([2, 405, 384], [384, 1152]) -> [2, 405, 1152]` | 12 | **4.1 ms** | 345.2 µs | 40.9 ms | 9.9 | Attention `wQKV` |
+| 5 | `FusedDense([2, 405, 1024], [1024, 384]) -> [2, 405, 384]` | 12 | **3.8 ms** | 316.3 µs | 39.0 ms | 10.3 | FFN `w3` (Down) |
+| 6 | `FusedScaledDotProductAttention([2, 27, 6, 64], [2, 405, 6, 64], ..., (Bool)[2, 27, 405])` | 12 | **3.5 ms** | 291.1 µs | 33.0 ms | 9.4 | Decoder Cross/Self-Attn |
+| 7 | `FusedActivation([2, 405, 2048]) -> [2, 405, 1024]` (`SwiGLU`) | 12 | **2.8 ms** | 231.2 µs | 26.4 ms | 9.5 | FFN `SwiGLU` |
+| 8 | `Mul([2, 405, 6, 64], [2, 405, 1, 64]) -> [2, 405, 6, 64]` | 48 | **1.8 ms** | 38.0 µs | 6.4 ms | 3.5 | RoPE `x * cos` & `rot * sin` |
+| 9 | `Mul([2, 405, 384], [2, 405, 384]) -> [2, 405, 384]` | 40 | **1.6 ms** | 38.8 µs | 5.5 ms | 3.6 | RMSNorm `x * x` + Gating |
+| 10 | `Mul([2, 405, 384], [1, 1, 384]) -> [2, 405, 384]` | 28 | **1.1 ms** | 39.2 µs | 3.4 ms | 3.1 | RMSNorm `* scale` |
+| 11 | `FusedDense([405, 2, 384], [384, 1152]) -> [405, 2, 1152]` | 3 | **1.0 ms** | 342.0 µs | 10.3 ms | 10.0 | Variate Attn `wQKV` |
+| 12 | `Add([2, 405, 384], [2, 405, 384]) -> [2, 405, 384]` | 27 | **1.0 ms** | 37.7 µs | 5.0 ms | 4.9 | Residual `x + sublayer` |
+| 13 | `Add([2, 405, 6, 64], [2, 405, 6, 64]) -> [2, 405, 6, 64]` | 24 | **0.92 ms** | 38.2 µs | 3.1 ms | 3.3 | RoPE `x*cos + rot*sin` |
+| 14 | `Slice([2, 405, 3, 6, 64]) -> [2, 405, 1, 6, 64]` | 36 | **0.82 ms** | 22.9 µs | 2.4 ms | 3.0 | Split `wQKV` into `Q, K, V` |
+| 15 | `Neg([2, 405, 6, 32]) -> [2, 405, 6, 32]` | 24 | **0.67 ms** | 27.8 µs | 1.8 ms | 2.7 | RoPE `-x2` |
+| 16 | `Slice([2, 405, 6, 64]) -> [2, 405, 6, 32]` | 48 | **0.66 ms** | 13.7 µs | 1.2 ms | 1.9 | RoPE split `x1, x2` |
+| 17 | `Slice([2, 405, 6, 64]) -> [2, 378, 6, 64]` | 36 | **0.63 ms** | 17.6 µs | 1.5 ms | 2.3 | Slice Encoder `Q, K, V` |
+| 18 | `Mul([2, 405, 384], [2, 405, 1]) -> [2, 405, 384]` | 28 | **0.60 ms** | 21.6 µs | 0.61 ms | **1.0** | RMSNorm `x * invRMS` |
+| 19 | `Concatenate([2, 405, 6, 32], [2, 405, 6, 32]) -> [2, 405, 6, 64]` | 24 | **0.52 ms** | 21.7 µs | 1.4 ms | 2.7 | RoPE `Concat(-x2, x1)` |
+| 20 | `ReduceSum([2, 405, 384]) -> [2, 405]` | 28 | **0.47 ms** | 16.8 µs | 0.55 ms | **1.2** | RMSNorm sum of squares |
+
+#### `Timestral-123M` (`d_model=640, n_heads=10, head_dim=64, d_ff=1712`)
+
+| Rank | Op Signature | Calls/run | Wall/run | Wall/call | CPU/run | Avg Cores | Role in Timestral |
+| ---: | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| 1 | `FusedScaledDotProductAttention([2, 378, 10, 64], ..., (Bool)[2, 378, 378])` | 20 | **59.8 ms** | 3.00 ms | 652.1 ms | 10.9 | Encoder Self-Attention |
+| 2 | `FusedDense([2, 405, 640], [640, 3424]) -> [2, 405, 3424]` | 20 | **28.5 ms** | 1.40 ms | 314.2 ms | 11.0 | FFN `w12` (Gate+Up) |
+| 3 | `FusedDense([2, 405, 1712], [1712, 640]) -> [2, 405, 640]` | 20 | **15.8 ms** | 787.6 µs | 173.4 ms | 11.0 | FFN `w3` (Down) |
+| 4 | `FusedDense([2, 405, 640], [640, 1920]) -> [2, 405, 1920]` | 20 | **15.6 ms** | 780.2 µs | 170.3 ms | 10.9 | Attention `wQKV` |
+| 5 | `FusedDense([2, 405, 640], [640, 640]) -> [2, 405, 640]` | 45 | **13.5 ms** | 300.6 µs | 140.4 ms | 10.4 | Attention `wO` + Gate |
+| 6 | `FusedScaledDotProductAttention([2, 27, 10, 64], [2, 405, 10, 64], ..., (Bool)[2, 27, 405])` | 20 | **9.1 ms** | 456.8 µs | 93.1 ms | 10.2 | Decoder Cross/Self-Attn |
+| 7 | `FusedActivation([2, 405, 3424]) -> [2, 405, 1712]` (`SwiGLU`) | 20 | **7.1 ms** | 355.0 µs | 72.5 ms | 10.2 | FFN `SwiGLU` |
+| 8 | `Mul([2, 405, 10, 64], [2, 405, 1, 64]) -> [2, 405, 10, 64]` | 80 | **4.2 ms** | 51.9 µs | 16.5 ms | 4.0 | RoPE `x * cos` & `rot * sin` |
+| 9 | `Mul([2, 405, 640], [2, 405, 640]) -> [2, 405, 640]` | 66 | **3.5 ms** | 53.7 µs | 15.1 ms | 4.3 | RMSNorm `x * x` + Gating |
+| 10 | `FusedDense([405, 2, 640], [640, 3424]) -> [405, 2, 3424]` | 5 | **3.4 ms** | 685.6 µs | 36.6 ms | 10.7 | Variate FFN `w12` |
+| 11 | `FusedDense([405, 2, 640], [640, 1920]) -> [405, 2, 1920]` | 5 | **3.4 ms** | 674.9 µs | 36.2 ms | 10.7 | Variate Attn `wQKV` |
+| 12 | `Mul([2, 405, 640], [1, 1, 640]) -> [2, 405, 640]` | 46 | **2.4 ms** | 52.8 µs | 10.2 ms | 4.2 | RMSNorm `* scale` |
+| 13 | `Add([2, 405, 640], [2, 405, 640]) -> [2, 405, 640]` | 45 | **2.2 ms** | 49.0 µs | 11.4 ms | 5.2 | Residual `x + sublayer` |
+| 14 | `Add([2, 405, 10, 64], [2, 405, 10, 64]) -> [2, 405, 10, 64]` | 40 | **2.1 ms** | 52.2 µs | 8.7 ms | 4.2 | RoPE `x*cos + rot*sin` |
+| 15 | `Slice([2, 405, 3, 10, 64]) -> [2, 405, 1, 10, 64]` | 60 | **1.9 ms** | 32.3 µs | 7.3 ms | 3.8 | Split `wQKV` into `Q, K, V` |
+| 16 | `Mul([2, 405, 640], [2, 405, 1]) -> [2, 405, 640]` | 46 | **1.7 ms** | 36.6 µs | 1.7 ms | **1.0** | RMSNorm `x * invRMS` |
+| 17 | `Slice([2, 405, 10, 64]) -> [2, 405, 10, 32]` | 80 | **1.7 ms** | 21.0 µs | 5.2 ms | 3.1 | RoPE split `x1, x2` |
+| 18 | `Slice([2, 405, 10, 64]) -> [2, 378, 10, 64]` | 60 | **1.6 ms** | 26.8 µs | 6.8 ms | 4.2 | Slice Encoder `Q, K, V` |
+| 19 | `FusedDense([405, 2, 1712], [1712, 640]) -> [405, 2, 640]` | 5 | **1.6 ms** | 316.2 µs | 16.4 ms | 10.4 | Variate FFN `w3` |
+| 20 | `Neg([2, 405, 10, 32]) -> [2, 405, 10, 32]` | 40 | **1.5 ms** | 37.3 µs | 5.1 ms | 3.5 | RoPE `-x2` |
+| 21 | `Concatenate([2, 405, 10, 32], [2, 405, 10, 32]) -> [2, 405, 10, 64]` | 40 | **1.3 ms** | 33.4 µs | 4.6 ms | 3.4 | RoPE `Concat(-x2, x1)` |
+| 22 | `ReduceSum([2, 405, 640]) -> [2, 405]` | 46 | **1.3 ms** | 27.6 µs | 1.3 ms | **1.0** | RMSNorm sum of squares |
+
+---
+
+## 4. Architectural Analysis: SME vs. NEON for Non-`DotGeneral` Ops
+
+On the 12-core Apple M6, non-`DotGeneral` operations fall into two distinct hardware regimes:
+
+### Regime A: 2D Outer-Product / Matrix-Like Fused Operations (`FusedScaledDotProductAttention`)
+- **Hardware Capabilities**:
+  - Cluster 1's SME unit executes $32 \times 32$ (`4` `ZA` tiles of $16 \times 16$) `FMOPA` outer products at **2,262.5 GFlops/s** on a single thread.
+  - All 12 NEON cores combined achieve ~`900–1,200 GFlops/s` with $4 \times 16$ microkernels (`packedMicroKernelFloat32Asm_4x16`), and drop to **< 150 GFlops/s** when running the 1-row `archsimd` fallback (`sdpaSingleRowNEONGeneral`).
+- **Why SDPA Is Currently Slow in Timestral**:
+  - Each Encoder SDPA call (`[2, 378, H, 64]`) performs $2 \times H$ attention heads of `[378, 64] x [64, 378] -> [378, 378]` ($Q K^T$) followed by `Softmax([378, 378])` and `[378, 378] x [378, 64] -> [378, 64]` ($\text{Probs} \times V$).
+  - For `Timestral-28M` (`H=6`), one Encoder SDPA call is only **$43.9\text{ MFLOPs}$** ($21.9\text{ MFLOPs}$ for the lower-triangular unmasked region). Yet it takes **1.80 ms** per call (`24 GFlops/s` effective throughput across 10.8 cores!) — **`90×` below Cluster 1's SME peak**.
+  - Even on a single thread (no multi-core fan-out at all!), Cluster 1's SME unit can execute all $43.9\text{ MFLOPs}$ in **~25–40 µs** of pure `FMOPA` compute, or **~150–250 µs** including packing and row-wise softmax — a **`7×` to `10×` speedup** over the current `1.80 ms` (`28M`) / `3.00 ms` (`123M`).
+  - Furthermore, because `batch * numHeads` is `12` (`28M`) or `20` (`123M`), we can either:
+    1. Run **single-threaded SME on Cluster 1** (or 2 SME workers across Clusters 1 & 0) with zero fine-grained sub-head splitting, or
+    2. Use **Hybrid SME (Cluster 1) + 4-Row NEON Assembly (`sdpaNEON4RowsFloat32`)** across heads, where each head (`[378, 64]`) is a self-contained unit of work (`K` and `V` packed once per `(batch, kvHead)`).
+
+### Regime B: 1D Vector / Streaming Operations (`SwiGLU`, `RMSNorm`, `RoPE`, `Mul`, `Add`, `ReduceSum`)
+- **Can SME Accelerate 1D Elementwise / Reduction Ops?**
+  - In **Streaming SVE mode (`SMSTART SM`)**, SME provides 32 vector registers `Z0`–`Z31` of width **`SVL = 512 bits` (16 `float32` per register)** — **$4\times$ wider** than standard 128-bit NEON (`V0`–`V31`, 4 `float32` per register).
+  - Standard SVE/SVE2 instructions (`FADD`, `FMUL`, `FMLA`, `FMAX`, `FSQRT`, `FRSQRT`, `FADDV` horizontal reduction) are legal in Streaming SVE mode on Apple M4/M5/M6!
+  - However, entering/exiting Streaming SVE mode (`SMSTART SM` / `SMSTOP SM`) requires `runtime.LockOSThread()`, `simdarch.SMEAcquireCluster()`, and ~100–150 ns of mode-switch latency, and 1D operations are **L2/DRAM bandwidth-bound** rather than FLOP-bound.
+- **When Single-Thread SME Streaming SVE Beats Multi-Core NEON**:
+  - Look at the tensor sizes in Timestral:
+    - `28M` hidden state `[2, 405, 384]` = **`311,040` `float32` (`1.24 MB`)**.
+    - `123M` hidden state `[2, 405, 640]` = **`518,400` `float32` (`2.07 MB`)**.
+  - Both fit effortlessly inside **Cluster 1's 20 MB L2 cache** (~`300–400 GB/s` L2 bandwidth).
+  - Currently, `dispatchBinarySIMD` (`minParallelElements = 16,384`) fans out every `1.24 MB` / `2.07 MB` `Mul`, `Add`, `Neg`, `Slice`, and `Concatenate` across **all 12 cores** (8–12 goroutine tasks via `workers.Parallelize`).
+  - As a result:
+    1. **Cross-Cluster L2 Cache Thrashing**: Half the chunks run on Cluster 0 (E-cores, separate 8 MB L2) and half on Cluster 1 (P-cores, 20 MB L2). Every op invalidates cache lines in the other cluster's L2 cache, forcing inter-cluster coherency traffic on the very next op (`400+` times per forward pass!).
+    2. **Goroutine Wakeup & Condvar Overhead**: Each `Mul` or `Add` takes **`38–52 µs` wall time** (`3.5` average cores), spending more time in `pthread_cond_wait` / `pthread_cond_signal` / `runtime.lock2` than in actual SIMD loads/stores (`1.24 MB` at `150 GB/s` takes only **`8 µs`**!).
+
+---
+
+## 5. Ranked Optimization Plan
+
+### Priority 1 (Critical — **39.0% of `28M` / 36.1% of `123M` Wall Time**): Unlock SME & 4-Row NEON Assembly in `FusedScaledDotProductAttention` with `booleanMask`
+
+#### Root Causes Identified in [`internal/gobackend/dot/matmul/neon/sdpa_arm64.go`](../internal/gobackend/dot/matmul/neon/sdpa_arm64.go) and [`internal/gobackend/fusedops/sdpa.go`](../internal/gobackend/fusedops/sdpa.go)
+
+1. **`len(booleanMask) == 0` Gate Completely Disables SME and 4-Row NEON Assembly**:
+   - In [`sdpa_arm64.go:51`](../internal/gobackend/dot/matmul/neon/sdpa_arm64.go#L51):
+     ```go
+     canBatchQueries := !causal && len(booleanMask) == 0 && kvLenUnmaskedBase > 0 && NEONUseAsm
+     ```
+   - Because Timestral passes boolean attention masks (`(Bool)[2, 378, 378]` in Encoder, `(Bool)[2, 27, 405]` in Decoder, `(Bool)[405, 2, 2]` in Variate), `len(booleanMask) > 0` is **always true**.
+   - Consequently:
+     - `useSME` is **always `false`** (`sdpaSME32RowsFloat32` is never called).
+     - `sdpaNEON4RowsFloat32` ($4 \times 4$ / $4 \times 16$ NEON assembly) is **never called**.
+     - Because `headDim == 64` (not `32`), it also skips `sdpaDotNEONDim32Single` and falls all the way back to the 1-row portable Go `archsimd` loop `sdpaSingleRowNEONGeneral`!
+2. **Decoder Attention (`qLen = 27`) Blocked by `qValidCount >= 32`**:
+   - Even if `canBatchQueries` were true, `sdpaSME32RowsFloat32` requires `qValidCount >= 32` (`sdpa_arm64.go:75`).
+   - In Timestral Decoder Self/Cross-Attention (`[2, 27, H, 64]` attending to `[2, 405, H, 64]`), `qLen = 27 < 32`.
+   - Yet `smeLargeKernelFloat32Asm_32x32` **already accepts arbitrary `lhsActiveRows` (`1..32`) and `rhsActiveCols` (`1..32`)**! Allowing `sdpaSME32RowsFloat32` to handle tail blocks (or `qLen >= 8`) with `activeRows = min(32, qValidCount)` enables the entire 27-row Decoder attention head to execute in **a single $32 \times 32$ SME pass**!
+3. **Redundant $K$ and $V$ Packing & Excessive Cluster Lock Churn**:
+   - Currently, `sdpaSME32RowsFloat32` packs the entire $K$ (`[kvLen, headDim]`) and $V$ (`[kvLen, headDim]`) matrices **inside the 32-query-row function**, repeating $K$ and $V$ packing **12 times per head** for `qLen = 378` (`378 / 32 = 12`).
+   - Furthermore, `sdpaMultiHeadGeneric` (`sdpa.go:975`) splits a single head (`seqLen = 378`) into `qBlockSize = 76` sub-chunks across workers, so each sub-chunk acquires/releases the SME cluster lock and re-packs $K$ and $V$.
+   - In addition, `sdpaSME32RowsFloat32` currently uses scalar/NEON `neonPackLHS` and `neonPackRHSNonTransposed` instead of our hardware in-SME $16 \times 16$ `ZA` transpose packer (`smePackLHS32Float32Asm`).
+
+#### Proposed Implementation for Priority 1
+1. **Support `booleanMask` and `causal` in `sdpaSME32RowsFloat32` and `sdpaNEON4RowsFloat32`**:
+   - Remove `!causal && len(booleanMask) == 0` from `canBatchQueries`.
+   - For each block of `blockRows` (`1..32` in SME, `4` in NEON) queries `[qBase .. qBase+blockRows)`:
+     - **Active Key Trimming (`activeKVLen`)**: Compute the maximum unmasked key index across the `blockRows` queries in the block. For Encoder causal/group masks (`[2, 378, 378]`), row `q` is lower-triangular (`k <= q`), so `activeKVLen = qBase + blockRows`. This **cuts $Q K^T$ and $\text{Probs} \times V$ FLOPs and $K/V$ packing in half ($0.5 \times 378^2$)**!
+     - **Masked Row Softmax**: In `sdpaScaleMaskSoftmaxRowNEON`, accept `boolMaskRow []bool` (and `causalLimit int`). Apply `scale`, set masked positions (`!boolMaskRow[k]` or `k >= causalLimit`) to `-Inf` in the SIMD `rowMax` pass, and zero out `scores[k]` in the `exp` pass (with all-masked row guard).
+2. **Support Partial Query Blocks (`activeRows = 1..32`) in `sdpaSME32RowsFloat32`**:
+   - Allow `sdpaSME32RowsFloat32` to process both full 32-row blocks and the tail block (`1..31` rows, including Decoder `qLen = 27` and Encoder tail `378 % 32 = 26` rows!) using `smeLargeKernelFloat32Asm_32x32`'s `lhsActiveRows` parameter.
+3. **Pack $K$ and $V$ Once Per Head (or KV-Head Group) Using `smePackLHS32Float32Asm`**:
+   - Process an entire query head (`qLen = 378` or `qLen = 27`, or GQA group) inside a single `DispatchSDPAARM64` call so the SME cluster lock is acquired **once per head** (not per 76-row sub-chunk) and $K$ / $V$ tiles are packed incrementally at most **once per head** as `activeKVLen` grows!
+- **Expected Impact**:
+  - `Timestral-28M` SDPA: **`25.4 ms` $\to$ `~3.5–5.0 ms`** (saving **`~20 ms/run`**).
+  - `Timestral-123M` SDPA: **`69.8 ms` $\to$ `~10.0–13.0 ms`** (saving **`~57 ms/run`**).
+
+---
+
+### Priority 2 (High — **4.3% of `28M` / 3.7% of `123M` Wall Time**): Handwritten ARM64 NEON / SME-Streaming Assembly for `SwiGLU` (`FusedActivation`)
+
+#### Root Cause in [`internal/gobackend/activations/`](../internal/gobackend/activations)
+- Look at [`internal/gobackend/activations/neon/neon_arm64.go`](../internal/gobackend/activations/neon/neon_arm64.go):
+  - `Silu`, `GeluExact`, `GeluApprox`, `Tanh`, and `Sigmoid` all have handwritten ARM64 NEON assembly kernels in `neon_arm64.s`.
+  - **`SwiGLU` has NO assembly kernel in `activations/neon/`!** It falls back to [`SwiGLUFloat32SIMD`](../internal/gobackend/activations/activations_simd.go#L418) using 128-bit Go `archsimd` (`Float32x4`), which processes only 4 floats per iteration and splits every row in two (`gate = x[:half]`, `up = x[half:]`) with Go loop/bounds overhead.
+- In `Timestral-123M`, `22× FusedActivation(SwiGLU, [2, 405, 3424] -> [2, 405, 1712])` takes **`7.1 ms` wall / `73.1 ms` CPU** (`2.8 ms` wall / `26.4 ms` CPU in `28M`).
+
+#### Proposed Implementation for Priority 2
+- Add a handwritten ARM64 assembly kernel `swigluFloat32NEONAsm(in, out unsafe.Pointer, outerDim, halfDim int)` in [`internal/gobackend/activations/neon/`](../internal/gobackend/activations/neon) (or an SME Streaming-SVE 512-bit kernel on Cluster 1):
+  - Process `16` floats (`4×` `V` registers of `gate` and `4×` `V` registers of `up`, or `1×` 512-bit `Z` register in SME streaming mode) per inner loop iteration with interleaved Cephes polynomial `exp(-gate)` + `FMLA`, operating across all `outerDim = 810` rows inside a single assembly call per worker chunk.
+- **Expected Impact**:
+  - `Timestral-28M`: **`2.8 ms` $\to$ `~0.8 ms`** (saving **`~2.0 ms/run`**).
+  - `Timestral-123M`: **`7.1 ms` $\to$ `~2.0 ms`** (saving **`~5.1 ms/run`**).
+
+---
+
+### Priority 3 (High — **~8.0 ms in `123M` / ~3.8 ms in `28M`**): Fix Single-Threaded `RMSNorm` Sub-Ops (`Mul` Trailing-1 Broadcast & `ReduceSum`) or Fuse `RMSNorm`
+
+#### Root Causes Identified
+In [`models/timestral/layers.go:23-45`](../../go-huggingface/models/timestral/layers.go#L23-L45), `RMSNorm` is executed **`28×` per run in `28M`** and **`46×` per run in `123M`** as 5 separate graph operations:
+1. `Mul(x, x)` (`[2, 405, D]`): `1.6 ms` (`28M`) / `3.5 ms` (`123M`)
+2. `ReduceSum([2, 405, D] -> [2, 405])`: **`0.47 ms` (`28M`) / `1.3 ms` (`123M`) — running on `1.0` core!**
+   - Why does `ReduceSum([2, 405, 640])` (`518,400` floats = `2.07 MB`) run on a single core?
+   - In [`internal/gobackend/ops/reduce_simd.go:539`](../internal/gobackend/ops/reduce_simd.go#L539), `registerTrailingReduction[float32]` checks `if fn := trailingArchFullFloat32[opType]; fn != nil { fn(operandFlat, outputFlat, outerSize, reduceSize); return }` **before** the parallelization logic! And `DispatchTrailingSumNEON` in [`internal/gobackend/ops/neon/reduce_arm64.go:22`](../internal/gobackend/ops/neon/reduce_arm64.go#L22) runs a single-threaded loop `for o := range outerSize`!
+3. `MulScalar` + `AddScalar` + `Rsqrt` (`[2, 405, 1]`): `~0.15 ms`
+4. `Mul([2, 405, D], [2, 405, 1])`: **`0.60 ms` (`28M`) / `1.7 ms` (`123M`) — running on `1.0` core!**
+   - Why does `Mul([2, 405, 640], [2, 405, 1])` (`518,400` floats) run on a single core (`Avg Cores = 1.0`)?
+   - Because shape `[2, 405, 640]` vs `[2, 405, 1]` has `BroadcastOther` (neither `BroadcastSameShape` nor `BroadcastPrefix` nor `BroadcastSuffix`, because the trailing dimension is `1`, making it a **prefix/outer broadcast** `[810, 640]` $\times$ `[810, 1]` where each row of `640` floats is multiplied by a scalar!).
+   - In [`internal/gobackend/ops/binary_ops_simd.go`](../internal/gobackend/ops/binary_ops_simd.go), `BroadcastOther` falls through to a **single-threaded** recursive stride walker (`execBinaryRecursiveSIMD`)!
+5. `Mul([2, 405, D], [1, 1, D])`: `1.1 ms` (`28M`) / `2.4 ms` (`123M`).
+
+#### Proposed Implementation for Priority 3
+1. **Add `BroadcastOuter` (`[Outer, Inner]` op `[Outer, 1]`) Fast Path in `binary_ops_simd.go`**:
+   - Detect when `lhs` can be collapsed to `[Outer, Inner]` and `rhs` to `[Outer, 1]` (or vice versa), where each `Inner` contiguous slice is multiplied/added by `rhs[o]` using `archsimd.BroadcastFloat32x4(rhs[o])` (or NEON assembly), and parallelize over `Outer` when `Outer * Inner >= minParallelElements` (or run on Cluster 1)!
+2. **Parallelize ` trailingArchFullFloat32` (`DispatchTrailingSumNEON` / `Max` / `Min`) Over `outerSize`**:
+   - In `reduce_simd.go`, instead of bypassing the parallelizer when `trailingArchFullFloat32[opType] != nil`, use `trailingArchFullFloat32` as the per-chunk range kernel (`fn(operandFlat[start*reduceSize:end*reduceSize], outputFlat[start:end], end-start, reduceSize)`) when `totalElements >= minReduceTrailingParallelElements`!
+3. **(Optional / Additional) Fused RMSNorm (`FusedLayerNorm` with `center=false` or `FusedRMSNorm`)**:
+   - A single fused pass over `x[o, 0..D)` computes `sum(x^2)` in registers (`x` stays hot in L1 cache) and immediately writes `x[o, i] * rsqrt(mean(x^2) + eps) * scale[i]`, eliminating **4 full-tensor reads/writes (`8.3 MB` per call $\times 46 = 380\text{ MB}$ per forward pass)** and **184 graph op dispatches**!
+- **Expected Impact**:
+  - Fixing `BroadcastOuter` + `ReduceSum` alone saves **`~0.8 ms` on `28M`** and **`~2.3 ms` on `123M`**.
+  - Fusing `RMSNorm` saves **`~3.0 ms` on `28M`** and **`~7.5 ms` on `123M`**.
+
+---
+
+### Priority 4 (Medium-High — **~10.8 ms in `123M` / ~4.5 ms in `28M`**): Optimize Rotary Position Embeddings (`applyRotary`) & Strided `Slice`/`Concatenate`
+
+#### Root Causes Identified
+In [`models/timestral/layers.go:110-125`](../../go-huggingface/models/timestral/layers.go#L110-L125), `applyRotary` is called **`24×` per run in `28M`** and **`40×` per run in `123M`** on `[2, 405, H, 64]`:
+```go
+x1 := Slice(x, AxisRange(), AxisRange(), AxisRange(), AxisRange(0, 32))
+x2 := Slice(x, AxisRange(), AxisRange(), AxisRange(), AxisRange(32, 64))
+rotX := Concatenate([]*Node{Neg(x2), x1}, -1)
+return Add(Mul(x, cos), Mul(rotX, sin))
+```
+Each call executes **6 separate graph operations** over `[2, 405, H, 64]`:
+- `2× Slice([2, 405, H, 64] -> [2, 405, H, 32])` (`1.7 ms` in `123M`)
+- `1× Neg([2, 405, H, 32])` (`1.5 ms` in `123M`)
+- `1× Concatenate([2, 405, H, 32], [2, 405, H, 32] -> [2, 405, H, 64])` (`1.3 ms` in `123M`)
+- `2× Mul([2, 405, H, 64], [2, 405, 1, 64])` (`4.2 ms` in `123M`) — note that `[2, 405, H, 64]` $\times$ `[2, 405, 1, 64]` is `BroadcastOther` (`[810, H, 64]` $\times$ `[810, 1, 64]`), which also hits the recursive stride walker `execBinaryRecursiveSIMD`!
+- `1× Add([2, 405, H, 64], [2, 405, H, 64])` (`2.1 ms` in `123M`)
+
+#### Proposed Implementation for Priority 4
+1. **Optimize 3D Broadcast `[Outer, Middle, Inner]` op `[Outer, 1, Inner]` in `binary_ops_simd.go`**:
+   - In `Mul([2, 405, H, 64], [2, 405, 1, 64])`, `Outer = 810`, `Middle = H` (`6` or `10`), `Inner = 64`.
+   - Instead of recursive per-axis function calls, load `rhs[o, 0..64)` once into SIMD registers (`4× Float32x4` for `Inner == 64`!) and multiply across all `H` heads in `lhs[o, h, 0..64)` in a tight register-cached loop!
+2. **Optimize Contiguous Inner-Block `Slice` and `Concatenate`**:
+   - `Slice([2, 405, 3, H, 64] -> [2, 405, 1, H, 64])` (`1.9 ms` in `123M`) and `Slice([2, 405, H, 64] -> [2, 405, H, 32])` (`1.7 ms` in `123M`) copy fixed-size contiguous inner blocks (`H*64` or `32` floats = `128–2560 bytes`) for `810` outer iterations. A specialized 2D strided-row copy loop (`outerCount`, `srcStride`, `copyBytes`) avoids recursive N-dimensional index calculation on every `32`-float slice.
+- **Expected Impact**:
+  - `Timestral-28M`: saves **`~2.0–2.5 ms/run`**.
+  - `Timestral-123M`: saves **`~5.0–6.5 ms/run`**.
+
+---
+
+### Priority 5 (Medium — **~3 ms in `28M` / ~6 ms in `123M`**): L2-Cache-Aware Parallelism Granularity on Asymmetric Apple Silicon
+
+#### Root Cause Identified in `pprof` and `GOMLX_OP_PROFILE`
+- Look at the elementwise ops in `Timestral-28M` (`311,040` floats = `1.24 MB`) and `Timestral-123M` (`518,400` floats = `2.07 MB`):
+  - `minParallelElements = 16,384` (`64 KB`) and `targetChunkElements = 65,536` (`256 KB`) splits a `1.24 MB` tensor into **6–8 tasks** and a `2.07 MB` tensor into **8–12 tasks**.
+  - Each task does only **1–2 µs of SIMD work**, while waking up 8–12 worker goroutines across **both Cluster 1 (P-cores, 20 MB L2) and Cluster 0 (E-cores, 8 MB L2)** takes **20–35 µs** of condvar/channel synchronization and pulls cache lines out of Cluster 1's 20 MB L2 into Cluster 0's 8 MB L2!
+  - Notice that in `Timestral-28M` and `Timestral-123M`, all elementwise `Mul`, `Add`, `Neg`, `Slice`, and `Concatenate` ops achieve only **`2.4–4.5` average cores** despite spawning 8–12 tasks, and `pprof` shows **`63%` of all CPU samples** in `pthread_cond_wait` + `usleep` + `pthread_cond_signal`!
+- Raising `targetChunkElements` (or capping the number of parallel chunks for memory-bound elementwise ops `< 4 MB` to at most `4–6` workers so they stay on Cluster 1's P-cores and inside Cluster 1's 20 MB L2 cache) dramatically reduces condvar wakeup overhead and cross-cluster L2 cache invalidations.
+
+---
+
+## 6. Summary of Optimization Roadmap & Target Performance
+
+| Priority | Optimization Target | Files Affected | `28M` Baseline | `28M` Target | `123M` Baseline | `123M` Target |
+| :---: | :--- | :--- | ---: | ---: | ---: | ---: |
+| **P1** | **`FusedScaledDotProductAttention`**: Enable SME (`1..32` active rows) & 4-Row NEON Asm with `booleanMask` + causal, lower-triangular `activeKVLen` trimming, once-per-head `ZA` $K/V$ packing | `internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/fusedops/sdpa.go` | 25.4 ms | **~4.5 ms** | 69.8 ms | **~12.0 ms** |
+| **P2** | **`FusedActivation` (`SwiGLU`)**: Handwritten ARM64 NEON / SME-Streaming assembly kernel | `internal/gobackend/activations/neon/` | 2.8 ms | **~0.8 ms** | 7.1 ms | **~2.0 ms** |
+| **P3** | **`RMSNorm` Sub-Ops**: Parallelize `ReduceSum` trailing reduction + fast path for `[Outer, Inner]` $\times$ `[Outer, 1]` `BroadcastOuter` | `internal/gobackend/ops/reduce_simd.go`, `internal/gobackend/ops/binary_ops_simd.go` | 3.8 ms | **~2.2 ms** | 8.9 ms | **~5.0 ms** |
+| **P4** | **RoPE & QKV Slicing**: Fast `[Outer, Middle, Inner]` $\times$ `[Outer, 1, Inner]` broadcast + 2D strided-block `Slice`/`Concatenate` | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/slice.go` | 5.3 ms | **~2.8 ms** | 12.7 ms | **~6.5 ms** |
+| **P5** | **L2-Cache-Aware Chunking**: Reduce cross-cluster E-core fan-out & condvar churn on `< 2 MB` bandwidth-bound ops | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/unary_ops_simd.go` | 5.2 ms | **~3.5 ms** | 11.2 ms | **~7.5 ms** |
+| — | `FusedDense` + Remaining Ops | — | 22.8 ms | ~22.0 ms | 83.5 ms | ~81.0 ms |
+| **Total** | **End-to-End Forward Pass (`gomlx-simd`)** | — | **58.0 ms** | **~32–36 ms (`~1.7×` faster)** | **179.4 ms** | **~105–115 ms (`~1.65×` faster)** |
