@@ -239,8 +239,39 @@ func smeCallerOnFastCluster() bool {
 	return !isEff
 }
 
+// smeShouldUseSingleWorker decides whether an SME MatMul should run inline on the calling goroutine
+// (Regime 2: small/medium ops without acquiring the whole-chip gate) rather than fanning out across
+// multiple workers.
+//   - On Cluster 1 (Super/Performance core), any matrix <= 16M MACs (<= 256^3, ~0.65-20 us on Tier A SME)
+//     completes faster on a single SME worker than waking background workers.
+//   - On Cluster 0 (Efficiency core), small matrices <= 2M MACs (<= 128^3) finish in <= 10 us on Tier B SME,
+//     and medium matrices (2M < flops <= 16M MACs) also run inline on Cluster 0 SME whenever Cluster 1's
+//     SME unit is already busy or a large op holds the whole-chip gate (so both physical SME units work
+//     in parallel). If Cluster 1's SME unit is idle, medium matrices fan out so Tier A SME (2.26 TFlops/s)
+//     executes the work.
+func smeShouldUseSingleWorker(flops int, wholeChipHeld bool) bool {
+	if flops > 16*1024*1024 {
+		return false
+	}
+	if smeCallerOnFastCluster() {
+		return true
+	}
+	// Caller is on an Efficiency core (Cluster 0):
+	// If the whole-chip gate is held by a large op or Cluster 1's fast SME unit is already busy,
+	// run this small/medium op inline on Cluster 0 SME rather than queuing behind the large op.
+	// Otherwise, fan out so a Cluster 1 worker (2.26 TFlops/s) executes it.
+	return wholeChipHeld || !simdarch.IsFastSMEIdle()
+}
+
 func smeAcquireCluster() (clusterIdx int, useSME bool, isEfficiencyCore bool) {
 	return smeAcquireClusterWithLimit(SMEWorkersPerCluster, SMEWorkersPerCluster)
+}
+
+func smeAcquireClusterSingleWorker() (clusterIdx int, useSME bool, isEfficiencyCore bool) {
+	if !SMEUseHybridNEON || !simdarch.SMEUseHybridNEON {
+		return -1, true, false
+	}
+	return simdarch.AcquireSMEWithSpin(SMEWorkersPerCluster, SMEWorkersPerCluster, 256)
 }
 
 func smeAcquireClusterForWork(numWorkItems int) (clusterIdx int, useSME bool, isEfficiencyCore bool) {

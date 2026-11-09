@@ -45,8 +45,13 @@ type Scheduler struct {
 	// an inter-op task submitted via SubmitInterOp.
 	activeInterOpWorkers atomic.Int32
 
-	initOnce     sync.Once
-	intraOpQueue chan func()
+	// wholeChipHeld tracks whether a large operation currently holds the whole-chip gate.
+	wholeChipHeld atomic.Int32
+
+	initOnce      sync.Once
+	intraOpQueue  chan func()
+	interOpQueue  chan func()
+	wholeChipGate chan struct{}
 }
 
 // New returns a new Scheduler with the default parallelism set to runtime.GOMAXPROCS(0).
@@ -60,9 +65,8 @@ func New() *Scheduler {
 func (s *Scheduler) ensureWorkersStarted() {
 	s.initOnce.Do(func() {
 		s.intraOpQueue = make(chan func(), defaultQueueSize)
-		// Start GOMAXPROCS persistent background workers.
-		// If SetMaxParallelism was called with a larger positive value before first use,
-		// start enough workers to cover it.
+		s.interOpQueue = make(chan func(), defaultQueueSize)
+		s.wholeChipGate = make(chan struct{}, 1)
 		numWorkers := max(runtime.GOMAXPROCS(0), s.maxParallelism, 1)
 		if numWorkers > 1 {
 			s.maxInterOpWorkers = int32(numWorkers - 1)
@@ -72,14 +76,26 @@ func (s *Scheduler) ensureWorkersStarted() {
 		for range numWorkers {
 			go s.workerLoop()
 		}
+		for range s.maxInterOpWorkers {
+			go s.interOpWorkerLoop()
+		}
 	})
 }
 
-// workerLoop is the main loop of each persistent worker goroutine.
+// workerLoop is the main loop of each persistent intra-op worker goroutine.
 // Using a single channel receive on intraOpQueue enables Go's direct channel handoff fast-path
 // and avoids runtime.selectgo / runtime.sellock contention on the critical intra-op path.
 func (s *Scheduler) workerLoop() {
 	for task := range s.intraOpQueue {
+		task()
+	}
+}
+
+// interOpWorkerLoop executes coarse-grained inter-op branch tasks on a separate pool so
+// parked inter-op branch executors (e.g., waiting on AcquireWholeChip or child barriers)
+// never deplete the intra-op worker pool.
+func (s *Scheduler) interOpWorkerLoop() {
+	for task := range s.interOpQueue {
 		task()
 	}
 }
@@ -122,17 +138,51 @@ func (s *Scheduler) EnterExecution() func() {
 //
 //	max(1, totalParallelism / numActiveCalls)
 func (s *Scheduler) EffectiveParallelism() int {
+	total := s.UnscaledParallelism()
+	activeCalls := max(int(s.numActiveCalls.Load()), 1)
+	return max(1, total/activeCalls)
+}
+
+// UnscaledParallelism returns the full target number of workers for the scheduler without
+// dividing by numActiveCalls. This is used by large operations that acquire the fair FIFO
+// whole-chip gate via AcquireWholeChip() so each large op utilizes all workers sequentially
+// rather than thrashing shared L2/L3 caches concurrently.
+func (s *Scheduler) UnscaledParallelism() int {
 	if s.maxParallelism == 0 {
 		return 1
 	}
-	var total int
 	if s.maxParallelism < 0 {
-		total = runtime.GOMAXPROCS(0)
-	} else {
-		total = min(max(s.maxParallelism, 1), runtime.GOMAXPROCS(0))
+		return runtime.GOMAXPROCS(0)
 	}
-	activeCalls := max(int(s.numActiveCalls.Load()), 1)
-	return max(1, total/activeCalls)
+	return min(max(s.maxParallelism, 1), runtime.GOMAXPROCS(0))
+}
+
+// AcquireWholeChip acquires the fair FIFO whole-chip gate for a large operation so that
+// concurrent large ops (across inter-op branches or concurrent Execute() calls) queue in
+// strict FIFO order without starving or thrashing shared L2/L3 caches and SME units.
+// The caller MUST call ReleaseWholeChip(acquired) when the operation finishes.
+func (s *Scheduler) AcquireWholeChip() bool {
+	if !s.IsEnabled() || s.UnscaledParallelism() <= 1 {
+		return false
+	}
+	s.ensureWorkersStarted()
+	s.wholeChipGate <- struct{}{}
+	s.wholeChipHeld.Add(1)
+	return true
+}
+
+// ReleaseWholeChip releases the whole-chip gate previously acquired via AcquireWholeChip.
+func (s *Scheduler) ReleaseWholeChip(acquired bool) {
+	if !acquired {
+		return
+	}
+	s.wholeChipHeld.Add(-1)
+	<-s.wholeChipGate
+}
+
+// IsWholeChipHeld reports whether a large operation currently holds the whole-chip gate.
+func (s *Scheduler) IsWholeChipHeld() bool {
+	return s.wholeChipHeld.Load() > 0
 }
 
 // AdjustedMaxParallelism returns the effective parallelism for the current execution.
@@ -380,8 +430,8 @@ func (s *Scheduler) SaturateUpTo(maxWorkers int, workerFn func()) {
 	}
 
 	limit := s.EffectiveParallelism()
-	if s.IsUnlimited() {
-		limit = runtime.GOMAXPROCS(0)
+	if s.IsUnlimited() || s.wholeChipHeld.Load() > 0 {
+		limit = s.UnscaledParallelism()
 	}
 	if maxWorkers > 0 && maxWorkers < limit {
 		limit = maxWorkers
@@ -476,7 +526,7 @@ func (s *Scheduler) SubmitInterOp(task func()) bool {
 		task()
 	}
 	select {
-	case s.intraOpQueue <- wrapped:
+	case s.interOpQueue <- wrapped:
 		return true
 	default:
 		s.activeInterOpWorkers.Add(-1)

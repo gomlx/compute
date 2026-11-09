@@ -172,6 +172,38 @@ func AcquireSMEWithLimit(maxFastPerCluster, maxSlowPerCluster int32) (clusterID 
 	return -1, false, isEfficiencyCore
 }
 
+// AcquireSMEWithSpin is like AcquireSMEWithLimit, but spins for up to maxSpins iterations
+// if the current L2 cluster's SME unit is momentarily busy (e.g., with another short op).
+func AcquireSMEWithSpin(maxFastPerCluster, maxSlowPerCluster int32, maxSpins int) (clusterID int, useSME bool, isEfficiencyCore bool) {
+	clusterID, useSME, isEfficiencyCore = AcquireSMEWithLimit(maxFastPerCluster, maxSlowPerCluster)
+	if useSME || maxSpins <= 0 {
+		return clusterID, useSME, isEfficiencyCore
+	}
+	for range maxSpins {
+		clusterID, useSME, isEfficiencyCore = AcquireSMEWithLimit(maxFastPerCluster, maxSlowPerCluster)
+		if useSME {
+			return clusterID, true, isEfficiencyCore
+		}
+	}
+	return -1, false, isEfficiencyCore
+}
+
+// IsFastSMEIdle reports whether at least one high-performance L2 cluster SME unit
+// (clusterID >= NumEfficiencySMEUnits) currently has zero active SME workers.
+func IsFastSMEIdle() bool {
+	if NumHighPerfSMEUnits <= 0 {
+		return false
+	}
+	start := max(0, NumEfficiencySMEUnits)
+	end := min(MaxSMEUnits, start+NumHighPerfSMEUnits)
+	for c := start; c < end; c++ {
+		if globalSMEClusterLocks[c].active.Load() == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ReleaseSME releases a previously acquired global SME cluster lock.
 func ReleaseSME(clusterID int) {
 	if clusterID >= 0 && clusterID < MaxSMEUnits {

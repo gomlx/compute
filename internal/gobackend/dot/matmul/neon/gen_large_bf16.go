@@ -112,7 +112,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 ) {
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
 	maxWorkers := min(
-		backend.Scheduler.AdjustedMaxParallelism(),
+		backend.Scheduler.UnscaledParallelism(),
 		max(1, (flops+matmul.MinLargeMatMulFlopsPerWorker-1)/matmul.MinLargeMatMulFlopsPerWorker),
 	)
 
@@ -123,9 +123,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
 	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16 //alt:f32|bf16|f16
 	//alt:f64  isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8
-	if isSMEKernel && maxWorkers > 1 && flops <= 16*1024*1024 && smeCallerOnFastCluster() {
-		// Below 16M MACs (<= 256x256x256, ~4-16 us on Tier A SME), a single high-performance
-		// Cluster 1 SME worker completes the entire MatMul faster than waking background workers.
+	if isSMEKernel && maxWorkers > 1 && smeShouldUseSingleWorker(flops, backend.Scheduler.IsWholeChipHeld()) {
 		maxWorkers = 1
 	}
 	// Note: fineNc must NOT depend on maxWorkers (which varies dynamically with smeCallerOnFastCluster()
@@ -176,7 +174,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 	}
 
 	if isSMEKernel && SMEUseHybridNEON && maxWorkers > 1 && batchSize > 1 &&
-		lhsCrossSize*rhsCrossSize*contractingSize >= 16*1024*1024 &&
+		lhsCrossSize*rhsCrossSize*contractingSize > 16*1024*1024 &&
 		len(cachedLHSPanels) == 0 && len(cachedRHSPanels) == 0 {
 		for b := range batchSize {
 			//alt:f32 neonLargeWithParamsFloat32(
@@ -239,7 +237,7 @@ func neonLargeWithParamsBFloat16( //alt:bf16
 	useSME := true
 	if isSMEKernel && SMEUseHybridNEON {
 		var smeCluster int
-		smeCluster, useSME, _ = smeAcquireCluster()
+		smeCluster, useSME, _ = smeAcquireClusterSingleWorker()
 		if useSME {
 			defer smeReleaseCluster(smeCluster)
 		}
@@ -417,6 +415,9 @@ func neonLargeParallelWithParamsBFloat16( //alt:bf16
 	//alt:f16  cachedLHSPanels, cachedRHSPanels [][]float16.Float16,
 	//alt:f64  cachedLHSPanels, cachedRHSPanels [][]float64,
 ) {
+	wholeChip := backend.Scheduler.AcquireWholeChip()
+	defer backend.Scheduler.ReleaseWholeChip(wholeChip)
+
 	lhsBatchStride := lhsCrossSize * contractingSize
 	rhsBatchStride := rhsCrossSize * contractingSize
 	outputBatchStride := lhsCrossSize * rhsCrossSize

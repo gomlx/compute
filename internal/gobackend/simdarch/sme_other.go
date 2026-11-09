@@ -24,6 +24,16 @@ func AcquireSMEWithLimit(_, _ int32) (clusterID int, useSME bool, isEfficiencyCo
 	return -1, IsSMEAllowed, false
 }
 
+// AcquireSMEWithSpin is a no-op stub on non-darwin/arm64 platforms.
+func AcquireSMEWithSpin(_, _ int32, _ int) (clusterID int, useSME bool, isEfficiencyCore bool) {
+	return -1, IsSMEAllowed, false
+}
+
+// IsFastSMEIdle returns false on non-darwin/arm64 platforms.
+func IsFastSMEIdle() bool {
+	return false
+}
+
 // ReleaseSME is a no-op stub on non-darwin/arm64 platforms.
 func ReleaseSME(_ int) {}
 

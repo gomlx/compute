@@ -151,8 +151,23 @@ func (s *Scheduler) EnterExecution() (exitExecution func())
 
 // EffectiveParallelism returns the target number of workers an op within the current Execute() call
 // should use, dynamically scaled by the number of concurrent active executions:
-//   max(1, AdjustedMaxParallelism() / numActiveCalls)
+//   max(1, UnscaledParallelism() / numActiveCalls)
 func (s *Scheduler) EffectiveParallelism() int
+
+// UnscaledParallelism returns the full target number of workers for the scheduler without
+// dividing by numActiveCalls. Used by large operations that acquire the fair FIFO whole-chip gate.
+func (s *Scheduler) UnscaledParallelism() int
+
+// AcquireWholeChip acquires the fair FIFO whole-chip gate for a large operation so that
+// concurrent large ops (across inter-op branches or concurrent Execute() calls) queue in
+// strict FIFO order without starving or thrashing shared L2/L3 caches and SME units.
+func (s *Scheduler) AcquireWholeChip() bool
+
+// ReleaseWholeChip releases the whole-chip gate previously acquired via AcquireWholeChip.
+func (s *Scheduler) ReleaseWholeChip(acquired bool)
+
+// IsWholeChipHeld reports whether a large operation currently holds the whole-chip gate.
+func (s *Scheduler) IsWholeChipHeld() bool
 
 // RunIntraOpTasks executes the given intra-op tasks for the current operation and waits for all
 // of them to finish.
