@@ -142,7 +142,7 @@ func newDefaultBackend() *Backend {
 // Backend implements the compute.Backend interface.
 type Backend struct {
 	// bufferPools are a map to pools of buffers that can be reused.
-	// The underlying type is map[bufferPoolKey]*sync.Pool.
+	// The underlying type is map[bufferPoolKey]*bufferPool.
 	bufferPools sync.Map
 	Scheduler   *scheduler.Scheduler
 

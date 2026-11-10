@@ -175,12 +175,14 @@ func registerNEON() {
 	activations.RegisterBiasTile[float32]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileNEON, PriorityNEON)
 	activations.RegisterKernel[float32]("neon:tanh", compute.ActivationTanh, TanhFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterVJPKernel[float32]("neon:vjp_silu", compute.ActivationSilu, SiluVJPFloat32NEON, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterSwiGLU[float32]("neon:swiglu", SwiGLUFloat32NEON, PriorityNEON, &NEONSimpleMetadata)
 
 	// Float64
 	activations.RegisterKernel[float64]("neon:silu", compute.ActivationSilu, SiluNEONFloat64, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterKernel[float64]("neon:gelu", compute.ActivationGelu, GeluExactNEONFloat64, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterKernel[float64]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxNEONFloat64, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterVJPKernel[float64]("neon:vjp_silu", compute.ActivationSilu, SiluVJPNEONFloat64, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterSwiGLU[float64]("neon:swiglu", SwiGLUNEONFloat64, PriorityNEON, &NEONTranscendentalMetadata)
 
 	// BFloat16
 	activations.Register[bfloat16.BFloat16]("neon:relu", compute.ActivationRelu, reluBF16NEON, PriorityNEON, &NEONSimpleMetadata)
@@ -191,6 +193,7 @@ func registerNEON() {
 	activations.RegisterKernel[bfloat16.BFloat16]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxNEONBF16, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.Register[bfloat16.BFloat16]("neon:tanh", compute.ActivationTanh, tanhBF16NEON, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterVJPKernel[bfloat16.BFloat16]("neon:vjp_silu", compute.ActivationSilu, SiluVJPNEONBF16, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterSwiGLU[bfloat16.BFloat16]("neon:swiglu", SwiGLUNEONBF16, PriorityNEON, &NEONSimpleMetadata)
 
 	// Float16
 	activations.Register[float16.Float16]("neon:relu", compute.ActivationRelu, reluF16NEON, PriorityNEON, &NEONSimpleMetadata)
@@ -201,6 +204,7 @@ func registerNEON() {
 	activations.RegisterKernel[float16.Float16]("neon:geluapprox", compute.ActivationGeluApproximate, GeluApproxNEONF16, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.Register[float16.Float16]("neon:tanh", compute.ActivationTanh, tanhF16NEON, PriorityNEON, &NEONTranscendentalMetadata)
 	activations.RegisterVJPKernel[float16.Float16]("neon:vjp_silu", compute.ActivationSilu, SiluVJPNEONF16, PriorityNEON, &NEONTranscendentalMetadata)
+	activations.RegisterSwiGLU[float16.Float16]("neon:swiglu", SwiGLUNEONF16, PriorityNEON, &NEONSimpleMetadata)
 }
 
 //go:noescape

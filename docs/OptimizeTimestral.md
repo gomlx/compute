@@ -376,15 +376,15 @@ Each call executes **6 separate graph operations** over `[2, 405, H, 64]`:
 
 ## 6. Summary of Optimization Roadmap & Target Performance
 
-| Priority | Optimization Target | Files Affected | `28M` Baseline | `28M` Target / Actual | `123M` Baseline | `123M` Target / Actual | Status |
+| Priority | Optimization Target | Files Affected | `28M` Baseline | `28M` Actual | `123M` Baseline | `123M` Actual | Status |
 | :---: | :--- | :--- | ---: | ---: | ---: | ---: | :---: |
-| **P1** | **`FusedScaledDotProductAttention`**: Enable SME (`4..32` active rows) & 4-Row NEON Asm (`1..4` rows) with `booleanMask` + `causal`, active-key trimming (`sdpaActiveKVLenForBlock`), lazy once-per-head `smePackLHS32Float32Asm` $K$ packing, fused single-`SMSTART` `smeDirectStridedFloat32Asm_32x32` ($\text{Probs} \times V$), and fine-grained SME lock release during NEON Softmax | `internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/dot/matmul/neon/sme_arm64.{go,s}`, `internal/gobackend/fusedops/sdpa.go` | 25.4 ms | **7.8 ms (`3.26×` faster)** | 69.8 ms | **23.1 ms (`3.02×` faster)** | **Done** |
-| **P2** | **`FusedActivation` (`SwiGLU`)**: Handwritten ARM64 NEON / SME-Streaming assembly kernel | `internal/gobackend/activations/neon/` | 2.8 ms | ~0.8 ms | 7.1 ms | ~2.0 ms | Planned |
-| **P3** | **`RMSNorm` Sub-Ops**: Parallelize `ReduceSum` trailing reduction + fast path for `[Outer, Inner]` $\times$ `[Outer, 1]` `BroadcastOuter` | `internal/gobackend/ops/reduce_simd.go`, `internal/gobackend/ops/binary_ops_simd.go` | 3.8 ms | ~2.2 ms | 8.9 ms | ~5.0 ms | Planned |
-| **P4** | **RoPE & QKV Slicing**: Fast `[Outer, Middle, Inner]` $\times$ `[Outer, 1, Inner]` broadcast + 2D strided-block `Slice`/`Concatenate` | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/slice.go` | 5.3 ms | ~2.8 ms | 12.7 ms | ~6.5 ms | Planned |
-| **P5** | **L2-Cache-Aware Chunking**: Reduce cross-cluster E-core fan-out & condvar churn on `< 2 MB` bandwidth-bound ops | `internal/gobackend/ops/binary_ops_simd.go`, `internal/gobackend/ops/unary_ops_simd.go` | 5.2 ms | ~3.5 ms | 11.2 ms | ~7.5 ms | Planned |
+| **P1** | **`FusedScaledDotProductAttention`**: Enable SME (`4..32` active rows) & 4-Row NEON Asm (`1..4` rows) with `booleanMask` + `causal`, active-key trimming (`sdpaActiveKVLenForBlock`), lazy once-per-head `smePackLHS32Float32Asm` $K$ packing, fused single-`SMSTART` `smeDirectStridedFloat32Asm_32x32` ($\text{Probs} \times V$), and fine-grained SME lock release during NEON Softmax | `internal/gobackend/dot/matmul/neon/sdpa_arm64.go`, `internal/gobackend/dot/matmul/neon/sme_arm64.{go,s}`, `internal/gobackend/fusedops/sdpa.go` | 25.4 ms | **7.5 ms (`3.39×` faster)** | 69.8 ms | **23.1 ms (`3.02×` faster)** | **Done** |
+| **P2** | **`FusedActivation` (`SwiGLU`)**: Handwritten ARM64 NEON assembly kernel (`swigluFloat32NEONAsm`, `4×` 128-bit `float32x4` unrolled per iteration with overlapped `FDIV` + `FRECPE`/`FRECPS` fast reciprocal) + `float64`/`bfloat16`/`float16` NEON dispatchers | `internal/gobackend/activations/neon/swiglu.{go,s}` | 2.8 ms (`6.6 ms` seq) | **1.2 ms (`5.5×` faster vs seq)** | 7.1 ms (`16.5 ms` seq) | **3.6 ms (`4.58×` faster vs seq)** | **Done** |
+| **P3** | **`RMSNorm` Sub-Ops & Buffer Pooling**: Parallelize `ReduceTrailing` (`dispatchReduceSumSIMD`) and `BroadcastTrailing` (`tryBinaryTrailingArch`) over outer rows `A`, plus LIFO `bufferPool` (`buffers.go`) eliminating per-`P` `sync.Pool` stranding & GC pool wipes | `internal/gobackend/ops/reduce_simd.go`, `internal/gobackend/ops/binaryops_simd.go`, `internal/gobackend/buffers.go` | 2.9 ms (`ReduceSum`+`Mul[..,1]`) | **0.96 ms (`3.0×` faster)** | 11.2 ms (`ReduceSum`+`Mul[..,1]`) | **4.1 ms (`2.73×` faster)** | **Done** |
+| **P4** | **RoPE & QKV Slicing**: Fast `[Outer, Middle, Inner]` $\times$ `[Outer, 1, Inner]` broadcast + 2D strided-block `Slice`/`Concatenate` | `internal/gobackend/ops/binaryops_simd.go`, `internal/gobackend/ops/slice.go` | 5.3 ms | ~2.8 ms | 12.7 ms | ~6.5 ms | Planned |
+| **P5** | **L2-Cache-Aware Chunking**: Reduce cross-cluster E-core fan-out & condvar churn on `< 2 MB` bandwidth-bound ops | `internal/gobackend/ops/binaryops_simd.go`, `internal/gobackend/ops/unaryops_simd.go` | 5.2 ms | ~3.5 ms | 11.2 ms | ~7.5 ms | Planned |
 | — | `FusedDense` + Remaining Ops | — | 22.8 ms | ~22.0 ms | 83.5 ms | ~81.0 ms | — |
-| **Total** | **End-to-End Forward Pass (`gomlx-simd`)** | — | **58.0 ms** | **41.5–42.4 ms (`1.37×–1.40×` faster after P1; target ~32–36 ms)** | **179.4 ms** | **128.4 ms (`1.40×` faster after P1; target ~105–115 ms)** | **In Progress** |
+| **Total** | **End-to-End Forward Pass (`gomlx-simd`)** | — | **58.0 ms (`558.8 ms` CPU)** | **39.1 ms (`268.0 ms` CPU, `1.48×` faster wall, `2.09×` less CPU)** | **179.4 ms (`1,860 ms` CPU)** | **122.2 ms (`1,100 ms` CPU, `1.47×` faster wall, `1.69×` less CPU)** | **P1–P3 Done** |
 
 ---
 
@@ -462,3 +462,49 @@ Each call executes **6 separate graph operations** over `[2, 405, H, 64]`:
 | **`123M` Encoder**: `SDPA([2, 378, 10, 64], ..., (Bool)[2, 378, 378])` | 20 | 59.8 ms | **15.7 ms** | **`3.81×`** | 652.1 ms | **113.0 ms** | **`5.77×`** |
 | **`123M` Decoder**: `SDPA([2, 27, 10, 64], [2, 405, 10, 64], ..., (Bool)[2, 27, 405])` | 20 | 9.1 ms | **5.8 ms** | **`1.57×`** | 93.1 ms | **46.6 ms** | **`2.00×`** |
 | **`123M` Total `FusedScaledDotProductAttention`** | **45** | **69.8 ms (`36.1%`)** | **23.1 ms (`17.6%`)** | **`3.02×`** | **753.1 ms** | **168.4 ms** | **`4.47×`** |
+
+---
+
+## 8. Priority 2 & Priority 3 Results: Handwritten ARM64 NEON `SwiGLU`, Parallel `RMSNorm` Sub-Ops, and LIFO Buffer Pooling
+
+### 8.1 What Was Implemented
+
+1. **Priority 2 — Handwritten ARM64 NEON Assembly for `SwiGLU` ([`internal/gobackend/activations/neon/swiglu.s`](../internal/gobackend/activations/neon/swiglu.s), [`swiglu.go`](../internal/gobackend/activations/neon/swiglu.go))**:
+   - Implemented `swigluFloat32NEONAsm(in, out unsafe.Pointer, numRows, hiddenDim, vecWidth int)` (`TEXT ·swigluFloat32NEONAsm(SB), NOSPLIT, $0-40`), registered via `activations.RegisterSwiGLU`.
+   - Hoists the 13 Cephes polynomial/range-reduction constants (`V19`–`V31`) outside the outer `numRows` loop and processes **16 `float32` elements (`4×` 128-bit NEON vectors) per inner-loop iteration**, issuing early hardware `FDIV` on the first vector pair overlapped with the second vector pair's Estrin polynomial evaluation, followed by concurrent FMA-pipe fast reciprocal (`FRECPE` + `FRECPS` Newton-Raphson refinement) and hardware `FDIV` on the second pair.
+   - Added NEON `SwiGLU` dispatchers for `float64`, `bfloat16`, and `float16` (`SwiGLUNEONFloat64`, `SwiGLUNEONBF16`, `SwiGLUNEONF16`), plus unit and microbenchmark coverage in [`internal/gobackend/activations/neon/neon_test.go`](../internal/gobackend/activations/neon/neon_test.go).
+   - **Microbenchmark Speedup (`BenchmarkNEONComparison/.../SwiGLU`)**: **`4.29×–4.46×` faster** than `PortableSIMD` (`80.4 ns` vs `358.5 ns` on `Small_512`; `10.3 µs` vs `44.2 µs` on `Large_65536`).
+
+2. **Priority 3 — Parallel `BroadcastTrailing` (`[A, B]` op `[A, 1]`) and `ReduceTrailing` (`[A, B]` $\to$ `[A]`) ([`internal/gobackend/ops/binaryops_simd.go`](../internal/gobackend/ops/binaryops_simd.go), [`internal/gobackend/ops/reduce_simd.go`](../internal/gobackend/ops/reduce_simd.go))**:
+   - In `tryBinaryTrailingArch` (`binaryops_simd.go`), parallelized `BroadcastTrailingRHS` and `BroadcastTrailingLHS` across outer rows `bcastCfg.A` via `backend.Scheduler.ParallelizeChunks` when `bcastCfg.A * bcastCfg.B >= minBinarySIMDParallelElements` (`65,536` elements).
+   - In `dispatchReduceSumSIMD` (`reduce_simd.go`), parallelized `ReduceTrailing` across outer rows `cfg.A` via `backend.Scheduler.ParallelizeChunks` when `cfg.A * cfg.B >= 65536`.
+
+3. **Backend Buffer Pool Fix (`bufferPool` in [`internal/gobackend/buffers.go`](../internal/gobackend/buffers.go))**:
+   - Replaced `sync.Pool` in `Backend.bufferPools` with a backend-owned LIFO `bufferPool` (released on `Backend.Finalize()`).
+   - **Why `sync.Pool` hurt multi-worker graph execution**: In Go's `sync.Pool`, each `P` has a `private` slot that **cannot be stolen by other `P`s**. Whenever the graph executor goroutine blocked at a parallel barrier (`wg.Wait()`) and resumed on a different `P`, buffers returned via `PutBuffer` on the previous `P` were stranded in that `P`'s `private` slot, causing up to $12\times$ duplicate intermediate buffer allocations (`Live Mem` reaching `1.35 GB` on `Timestral-123M`) and catastrophic `300+ MB` reallocation + page-zeroing storms whenever `runtime.GC` wiped `sync.Pool`.
+   - With `bufferPool`, any `P` immediately reuses the most recently released buffer (LIFO cache locality), cutting `Timestral-123M` `Live Mem` in half (**`1.35 GB` $\to$ `0.64 GB`**, saving **`~700 MB`**) and accelerating warm-up from `164.7 ms` to **`152.1 ms`**.
+
+### 8.2 Per-Op Speedups from Priority 2 & Priority 3 (`GOMLX_OP_PROFILE`, Sequential Mode)
+
+| Operation Signature | Model | Calls/run | Before P2/P3 Wall/run | **After P2/P3 Wall/run** | Wall Speedup |
+| :--- | :---: | ---: | ---: | ---: | ---: |
+| `FusedActivation((Float32)[2, 405, 2048]) -> (Float32)[2, 405, 1024]` (`SwiGLU`) | `28M` | 12 | 6.6 ms | **1.2 ms** | **`5.50×`** |
+| `FusedActivation((Float32)[2, 405, 3424]) -> (Float32)[2, 405, 1712]` (`SwiGLU`) | `123M` | 20 | 16.5 ms | **3.6 ms** | **`4.58×`** |
+| `ReduceSum((Float32)[2, 405, 384]) -> (Float32)[2, 405]` | `28M` | 28 | 1.5 ms | **0.40 ms** | **`3.75×`** |
+| `ReduceSum((Float32)[2, 405, 640]) -> (Float32)[2, 405]` | `123M` | 46 | 4.7 ms | **1.4 ms** | **`3.36×`** |
+| `Mul((Float32)[2, 405, 384], (Float32)[2, 405, 1]) -> (Float32)[2, 405, 384]` | `28M` | 28 | 1.4 ms | **0.56 ms** | **`2.50×`** |
+| `Mul((Float32)[2, 405, 640], (Float32)[2, 405, 1]) -> (Float32)[2, 405, 640]` | `123M` | 46 | 6.5 ms | **2.7 ms** | **`2.41×`** |
+
+### 8.3 Cumulative End-to-End Benchmark Progression (Baseline $\to$ Priority 1 $\to$ Priority 2 & 3)
+
+| Model | Stage | Best Wall Time | Best CPU Time | Avg Cores | Live Mem | Speedup vs Baseline | Speedup vs NEON-Only |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`Timestral-28M`** | NEON-Only (`GOMLX_GO_SIMD_SME=0`) | 82.7 ms | 832.1 ms | 10.1 | 0.40 GB | 0.70× | 1.00× |
+| **`Timestral-28M`** | Initial Baseline (`ecd18aa`) | 58.0 ms | 558.8 ms | 9.6 | 0.40 GB | 1.00× | 1.43× |
+| **`Timestral-28M`** | After Priority 1 (`ea8ff08`) | 42.4 ms | 309.2 ms | 7.3 | 0.41 GB | 1.37× | 1.95× |
+| **`Timestral-28M`** | **After Priority 2 & 3** | **39.1 ms** | **268.0 ms** | **6.9** | **0.26 GB** | **`1.48×` (`-32.6%` wall, `-52.0%` CPU)** | **`2.12×` wall, `3.10×` CPU** |
+| **`Timestral-123M`** | NEON-Only (`GOMLX_GO_SIMD_SME=0`) | 293.4 ms | 3,170.0 ms | 10.8 | 1.35 GB | 0.61× | 1.00× |
+| **`Timestral-123M`** | Initial Baseline (`ecd18aa`) | 179.4 ms | 1,860.0 ms | 10.4 | 1.35 GB | 1.00× | 1.64× |
+| **`Timestral-123M`** | After Priority 1 (`ea8ff08`) | 128.4 ms | 1,300.0 ms | 9.9 | 1.34 GB | 1.40× | 2.29× |
+| **`Timestral-123M`** | **After Priority 2 & 3** | **122.2 ms** | **1,100.0 ms** | **9.4** | **0.65 GB** | **`1.47×` (`-31.9%` wall, `-40.9%` CPU)** | **`2.40×` wall, `2.88×` CPU** |
+

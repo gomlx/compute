@@ -134,6 +134,13 @@ patterns (buffer management, dtype dispatch, parallelization, etc.). Reuse exist
 rather than writing ad-hoc implementations. When in doubt, match the style and approach of the
 closest existing operation.
 
+### Avoid Large Files (Split Per-Op Implementations > 100 Lines)
+
+Keep source and assembly files focused and easy to browse so it is immediately clear from directory
+listings which operations are implemented:
+- **Avoid monolithic files**: Do not keep appending new operations into a single large file (such as `neon_arm64.go` / `neon_arm64.s`).
+- **Per-op files for implementations > 100 lines**: Whenever an operation (or closely related op family) requires more than ~100 lines of Go or assembly implementation, place it in its own dedicated file (e.g., `swiglu.go` and `swiglu.s` in `internal/gobackend/activations/neon/`).
+
 ### Copyright Notes
 
 Normal code files are prefixed with the following copyright line:
@@ -294,6 +301,7 @@ When implementing or modifying assembly routines in `./internal/gobackend/...`, 
 
 All code specific to a SIMD architecture—including Go wrappers, assembly routines, and unit/benchmark tests (`*_test.go`)—must be placed in the corresponding architecture subdirectory, never in the parent generic package directory:
 - **Separate subdirectories**: `avx2/`, `avx512/`, `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512,neon}`, `internal/gobackend/activations/{avx2,avx512,neon}`, `internal/gobackend/dot/matmul/{avx2,avx512,neon}`, `internal/gobackend/fusedops/{avx2,avx512}`).
+- **Per-op files for > 100 lines**: Avoid letting architecture files grow into monoliths. Any operation whose Go wrapper + assembly implementation exceeds ~100 lines should live in its own dedicated `<op>.go` and `<op>.s` files (with explicit `//go:build <arch> && goexperiment.simd` tags, e.g., `swiglu.go` and `swiglu.s`), making the directory easy to browse.
 - **Registration & Default Imports**: Subpackages register their implementations in `init()` (using `gobackend.RegisterPriority`) and are blank-imported in `internal/gobackend/defaultpkgs/defaultpkgs_<arch>_simd.go`. Include an untagged `doc.go` in each subdirectory so the package remains valid across all build configurations.
 - **Tests in Architecture Subdirectories**:
   - Place architecture-specific unit tests and microbenchmarks inside the subdirectory (e.g. `avx2/avx2_test.go`, `avx512/avx512_test.go`, `neon/neon_test.go`).

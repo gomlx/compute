@@ -143,14 +143,43 @@ type bufferPoolKey struct {
 	bucketedSize int
 }
 
+// bufferPool is a LIFO free-list of reusable Buffers for a single bucketed byte size.
+// Unlike sync.Pool, it does not strand buffers in per-P private slots when the executor
+// goroutine migrates across Ps at parallel barriers, and it is not wiped by runtime.GC
+// between inference/training steps (it is released when Backend.Finalize is called).
+type bufferPool struct {
+	mu      sync.Mutex
+	buffers []*Buffer
+}
+
+func (p *bufferPool) Get() *Buffer {
+	p.mu.Lock()
+	n := len(p.buffers)
+	if n == 0 {
+		p.mu.Unlock()
+		return nil
+	}
+	buf := p.buffers[n-1]
+	p.buffers[n-1] = nil
+	p.buffers = p.buffers[:n-1]
+	p.mu.Unlock()
+	return buf
+}
+
+func (p *bufferPool) Put(buf *Buffer) {
+	p.mu.Lock()
+	p.buffers = append(p.buffers, buf)
+	p.mu.Unlock()
+}
+
 // getBufferPool for given bucketedSize.
-func (b *Backend) getBufferPool(bucketedSize int) *sync.Pool {
+func (b *Backend) getBufferPool(bucketedSize int) *bufferPool {
 	key := bufferPoolKey{bucketedSize: bucketedSize}
 	poolInterface, ok := b.bufferPools.Load(key)
 	if !ok {
-		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{})
+		poolInterface, _ = b.bufferPools.LoadOrStore(key, &bufferPool{})
 	}
-	return poolInterface.(*sync.Pool) //nolint:errcheck
+	return poolInterface.(*bufferPool) //nolint:errcheck
 }
 
 // recast re-sets the Flat field based on RawBytes, DType and length.
@@ -179,8 +208,7 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
 	pool := b.getBufferPool(bucketedSize)
 	var buf *Buffer
-	if item := pool.Get(); item != nil {
-		buf = item.(*Buffer) //nolint:errcheck
+	if buf = pool.Get(); buf != nil {
 		// fmt.Printf("> Reusing buffer: \t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
 	} else {
 		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}

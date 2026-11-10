@@ -4104,7 +4104,37 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			return nil
 		}
 		if archFn := gobackend.GetReduceTrailingSumArchDispatcher(); archFn != nil {
-			if archFn(operand, output, cfg.A, cfg.B, dtype) {
+			elemBytes := dtype.Size()
+			inRowBytes := cfg.B * elemBytes
+			outRowBytes := elemBytes
+			if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+				cfg.A*cfg.B >= 65536 && cfg.A > 1 &&
+				elemBytes > 0 &&
+				len(operand.RawBytes) >= cfg.A*inRowBytes &&
+				len(output.RawBytes) >= cfg.A*outRowBytes {
+				minA := max(1, 32768/max(1, cfg.B))
+				firstEnd := min(cfg.A, minA)
+				var firstIn, firstOut gobackend.Buffer
+				firstIn.Flat = operand.Flat
+				firstOut.Flat = output.Flat
+				firstIn.RawBytes = operand.RawBytes[:firstEnd*inRowBytes]
+				firstOut.RawBytes = output.RawBytes[:firstEnd*outRowBytes]
+				if archFn(&firstIn, &firstOut, firstEnd, cfg.B, dtype) {
+					if firstEnd < cfg.A {
+						backend.Scheduler.ParallelizeChunks(cfg.A-firstEnd, minA, func(start, end int) {
+							aStart := firstEnd + start
+							aEnd := firstEnd + end
+							var localIn, localOut gobackend.Buffer
+							localIn.Flat = operand.Flat
+							localOut.Flat = output.Flat
+							localIn.RawBytes = operand.RawBytes[aStart*inRowBytes : aEnd*inRowBytes]
+							localOut.RawBytes = output.RawBytes[aStart*outRowBytes : aEnd*outRowBytes]
+							archFn(&localIn, &localOut, aEnd-aStart, cfg.B, dtype)
+						})
+					}
+					return nil
+				}
+			} else if archFn(operand, output, cfg.A, cfg.B, dtype) {
 				return nil
 			}
 		}
