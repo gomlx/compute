@@ -993,6 +993,100 @@ func TestPad(t *testing.T) {
 			t.Errorf("expected F32[9, 3], got %s", output)
 		}
 	})
+
+	t.Run("NegativeStartAndEnd", func(t *testing.T) {
+		output, err := Pad(
+			S(F32, 5, 6),
+			PadAxis{Start: -1, End: -2, Interior: 0}, // 5 - 1 - 2 = 2
+			PadAxis{Start: 2, End: -3, Interior: 0},  // 6 + 2 - 3 = 5
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !(S(F32, 2, 5).Equal(output)) {
+			t.Errorf("expected F32[2, 5], got %s", output)
+		}
+	})
+
+	t.Run("NegativeWithInterior", func(t *testing.T) {
+		output, err := Pad(
+			S(I32, 3, 4),
+			PadAxis{Start: -1, End: -1, Interior: 1}, // 3 + (3-1)*1 - 1 - 1 = 3
+			PadAxis{Start: -2, End: 1, Interior: 2},  // 4 + (4-1)*2 - 2 + 1 = 9
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !(S(I32, 3, 9).Equal(output)) {
+			t.Errorf("expected I32[3, 9], got %s", output)
+		}
+	})
+
+	t.Run("CropAllOriginalElementsIntoOppositePadding", func(t *testing.T) {
+		output, err := Pad(
+			S(F32, 3),
+			PadAxis{Start: -4, End: 3, Interior: 0}, // 3 - 4 + 3 = 2
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !(S(F32, 2).Equal(output)) {
+			t.Errorf("expected F32[2], got %s", output)
+		}
+	})
+
+	t.Run("TruncateToZeroDim", func(t *testing.T) {
+		output, err := Pad(
+			S(F32, 3, 2),
+			PadAxis{Start: -1, End: -2, Interior: 0}, // 3 - 1 - 2 = 0
+		)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+		if !(S(F32, 0, 2).Equal(output)) {
+			t.Errorf("expected F32[0, 2], got %s", output)
+		}
+	})
+
+	t.Run("ErrorCases", func(t *testing.T) {
+		// Negative interior padding is not allowed.
+		if _, err := Pad(S(F32, 3), PadAxis{Start: 1, End: 1, Interior: -1}); err == nil {
+			t.Errorf("expected error for negative Interior, got nil")
+		}
+		// Resulting dimension < 0 is not allowed.
+		if _, err := Pad(S(F32, 3), PadAxis{Start: -2, End: -2, Interior: 0}); err == nil {
+			t.Errorf("expected error for negative resulting dimension, got nil")
+		}
+		// Too many PadAxis arguments.
+		if _, err := Pad(S(F32, 3), PadAxis{Start: 1}, PadAxis{End: 1}); err == nil {
+			t.Errorf("expected error for too many PadAxis arguments, got nil")
+		}
+		// Invalid operand shape.
+		if _, err := Pad(shapes.Invalid()); err == nil {
+			t.Errorf("expected error for invalid operand shape, got nil")
+		}
+	})
+}
+
+func ExamplePad() {
+	// Positive start, end, and interior padding on a 2D shape:
+	s1, _ := Pad(
+		shapes.Make(dtypes.Float32, 2, 3),
+		PadAxis{Start: 1, End: 1},
+		PadAxis{Start: 0, End: 2, Interior: 1},
+	)
+	fmt.Println("Positive and interior:", s1)
+
+	// Negative Start/End truncating (cropping) axes, with and without interior padding:
+	s2, _ := Pad(
+		shapes.Make(dtypes.Float32, 5, 3),
+		PadAxis{Start: -1, End: -2},              // 5 - 1 - 2 = 2
+		PadAxis{Start: -1, End: -1, Interior: 1}, // 3 + (3-1)*1 - 1 - 1 = 3
+	)
+	fmt.Println("Negative start/end:", s2)
+	// Output:
+	// Positive and interior: (Float32)[4, 7]
+	// Negative start/end: (Float32)[2, 3]
 }
 
 // --- Axis Name Propagation Tests ---

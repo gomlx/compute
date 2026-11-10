@@ -1639,6 +1639,75 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 				t.Errorf("Pad(crop all) mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("CropAllElementsFromEnd", func(t *testing.T) {
+			x := []float32{1, 2, 3}
+			fill := float32(7)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				// End = -4 crops all 3 elements of x and 1 of the Start=3 padding, leaving 2 fill elements.
+				return f.Pad(params[0], params[1], compute.PadAxis{Start: 3, End: -4})
+			})
+			if err != nil {
+				t.Fatalf("Pad(crop all from end) failed: %v", err)
+			}
+			want := []float32{7, 7}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(crop all from end) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("NegativeStartAndEnd2D", func(t *testing.T) {
+			x := [][]float32{
+				{1, 2, 3, 4},
+				{5, 6, 7, 8},
+				{9, 10, 11, 12},
+			}
+			fill := float32(0)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: -1, End: 1},
+					compute.PadAxis{Start: 1, End: -2},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(NegativeStartAndEnd2D) failed: %v", err)
+			}
+			want := [][]float32{
+				{0, 5, 6},
+				{0, 9, 10},
+				{0, 0, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(NegativeStartAndEnd2D) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("PartialAxesConfigWithNegative", func(t *testing.T) {
+			x := [][]int32{
+				{1, 2},
+				{3, 4},
+				{5, 6},
+			}
+			fill := int32(0)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				// Only provide PadAxis for axis 0; axis 1 defaults to zero padding.
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: -1, End: -1, Interior: 1},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(PartialAxesConfigWithNegative) failed: %v", err)
+			}
+			// Axis 0: [row0, 0, row1, 0, row2] (len 5) -> Start=-1, End=-1 -> [0, row1, 0] (len 3)
+			want := [][]int32{
+				{0, 0},
+				{3, 4},
+				{0, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(PartialAxesConfigWithNegative) mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Slice", func(t *testing.T) {
