@@ -143,7 +143,7 @@ func DispatchCopyStridedBytesAVX512(dst, src []byte, count, blockBytes, dstStrid
 
 // DispatchDupStridedBytesAVX512 duplicates each of count blocks of blockBytes bytes from src consecutively into dst.
 func DispatchDupStridedBytesAVX512(dst, src []byte, count, blockBytes int) bool {
-	if blockBytes < 64 || blockBytes > 4096 {
+	if blockBytes < 16 || blockBytes > 4096 {
 		return false
 	}
 
@@ -152,6 +152,56 @@ func DispatchDupStridedBytesAVX512(dst, src []byte, count, blockBytes int) bool 
 	outStride := 2 * blockBytes
 
 	switch {
+	case blockBytes == 16:
+		for range count {
+			v0 := archsimd.LoadUint8x16Array((*[16]byte)(srcPtr))
+			v0.StoreArray((*[16]byte)(dstPtr))
+			v0.StoreArray((*[16]byte)(unsafe.Add(dstPtr, 16)))
+			dstPtr = unsafe.Add(dstPtr, 32)
+			srcPtr = unsafe.Add(srcPtr, 16)
+		}
+		return true
+
+	case blockBytes < 32:
+		tailOff := blockBytes - 16
+		for range count {
+			v0 := archsimd.LoadUint8x16Array((*[16]byte)(srcPtr))
+			v1 := archsimd.LoadUint8x16Array((*[16]byte)(unsafe.Add(srcPtr, tailOff)))
+			v0.StoreArray((*[16]byte)(dstPtr))
+			v1.StoreArray((*[16]byte)(unsafe.Add(dstPtr, tailOff)))
+			dst1 := unsafe.Add(dstPtr, blockBytes)
+			v0.StoreArray((*[16]byte)(dst1))
+			v1.StoreArray((*[16]byte)(unsafe.Add(dst1, tailOff)))
+			dstPtr = unsafe.Add(dstPtr, outStride)
+			srcPtr = unsafe.Add(srcPtr, blockBytes)
+		}
+		return true
+
+	case blockBytes == 32:
+		for range count {
+			v0 := archsimd.LoadUint8x32Array((*[32]byte)(srcPtr))
+			v0.StoreArray((*[32]byte)(dstPtr))
+			v0.StoreArray((*[32]byte)(unsafe.Add(dstPtr, 32)))
+			dstPtr = unsafe.Add(dstPtr, 64)
+			srcPtr = unsafe.Add(srcPtr, 32)
+		}
+		return true
+
+	case blockBytes < 64:
+		tailOff := blockBytes - 32
+		for range count {
+			v0 := archsimd.LoadUint8x32Array((*[32]byte)(srcPtr))
+			v1 := archsimd.LoadUint8x32Array((*[32]byte)(unsafe.Add(srcPtr, tailOff)))
+			v0.StoreArray((*[32]byte)(dstPtr))
+			v1.StoreArray((*[32]byte)(unsafe.Add(dstPtr, tailOff)))
+			dst1 := unsafe.Add(dstPtr, blockBytes)
+			v0.StoreArray((*[32]byte)(dst1))
+			v1.StoreArray((*[32]byte)(unsafe.Add(dst1, tailOff)))
+			dstPtr = unsafe.Add(dstPtr, outStride)
+			srcPtr = unsafe.Add(srcPtr, blockBytes)
+		}
+		return true
+
 	case blockBytes == 64:
 		for range count {
 			v0 := archsimd.LoadUint8x64Array((*[64]byte)(srcPtr))
@@ -251,23 +301,36 @@ func DispatchDupStridedBytesAVX512(dst, src []byte, count, blockBytes int) bool 
 }
 
 func copyBlockUpTo256AVX512(dstPtr, srcPtr unsafe.Pointer, n int) {
-	v0 := archsimd.LoadUint8x64Array((*[64]byte)(srcPtr))
-	vLast := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, n-64)))
-	v0.StoreArray((*[64]byte)(dstPtr))
-	if n > 128 {
-		v1 := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, 64)))
-		v1.StoreArray((*[64]byte)(unsafe.Add(dstPtr, 64)))
-		if n > 192 {
-			v2 := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, 128)))
-			v2.StoreArray((*[64]byte)(unsafe.Add(dstPtr, 128)))
+	switch {
+	case n < 32:
+		v0 := archsimd.LoadUint8x16Array((*[16]byte)(srcPtr))
+		vLast := archsimd.LoadUint8x16Array((*[16]byte)(unsafe.Add(srcPtr, n-16)))
+		v0.StoreArray((*[16]byte)(dstPtr))
+		vLast.StoreArray((*[16]byte)(unsafe.Add(dstPtr, n-16)))
+	case n < 64:
+		v0 := archsimd.LoadUint8x32Array((*[32]byte)(srcPtr))
+		vLast := archsimd.LoadUint8x32Array((*[32]byte)(unsafe.Add(srcPtr, n-32)))
+		v0.StoreArray((*[32]byte)(dstPtr))
+		vLast.StoreArray((*[32]byte)(unsafe.Add(dstPtr, n-32)))
+	default:
+		v0 := archsimd.LoadUint8x64Array((*[64]byte)(srcPtr))
+		vLast := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, n-64)))
+		v0.StoreArray((*[64]byte)(dstPtr))
+		if n > 128 {
+			v1 := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, 64)))
+			v1.StoreArray((*[64]byte)(unsafe.Add(dstPtr, 64)))
+			if n > 192 {
+				v2 := archsimd.LoadUint8x64Array((*[64]byte)(unsafe.Add(srcPtr, 128)))
+				v2.StoreArray((*[64]byte)(unsafe.Add(dstPtr, 128)))
+			}
 		}
+		vLast.StoreArray((*[64]byte)(unsafe.Add(dstPtr, n-64)))
 	}
-	vLast.StoreArray((*[64]byte)(unsafe.Add(dstPtr, n-64)))
 }
 
 // DispatchConcat2StridedBytesAVX512 concatenates count blocks of size b0 from src0 and b1 from src1 into dst.
 func DispatchConcat2StridedBytesAVX512(dst, src0, src1 []byte, count, b0, b1 int) bool {
-	if b0 < 64 || b0 > 256 || b1 < 64 || b1 > 256 {
+	if b0 < 16 || b0 > 256 || b1 < 16 || b1 > 256 {
 		return false
 	}
 	outStride := b0 + b1

@@ -22,6 +22,18 @@ func whereSVFloat32AVX2Asm(cond, onTrueScalar, onFalse, out unsafe.Pointer, coun
 //go:noescape
 func whereSSFloat32AVX2Asm(cond, onTrueScalar, onFalseScalar, out unsafe.Pointer, count int)
 
+//go:noescape
+func whereVVFloat32AVX512Asm(cond, onTrue, onFalse, out unsafe.Pointer, count int)
+
+//go:noescape
+func whereVSFloat32AVX512Asm(cond, onTrue, onFalseScalar, out unsafe.Pointer, count int)
+
+//go:noescape
+func whereSVFloat32AVX512Asm(cond, onTrueScalar, onFalse, out unsafe.Pointer, count int)
+
+//go:noescape
+func whereSSFloat32AVX512Asm(cond, onTrueScalar, onFalseScalar, out unsafe.Pointer, count int)
+
 func whereFloat32Arch(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool {
 	if len(out) == 0 {
 		return true
@@ -36,7 +48,21 @@ func whereFloat32Arch(cond []bool, onTrue, onFalse, out []float32, onTrueIsScala
 		falsePtr = unsafe.Pointer(&onFalse[0])
 	}
 
-	if gobackend.IsAVX2Allowed || gobackend.IsAVX512Allowed {
+	if gobackend.IsAVX512Allowed {
+		switch {
+		case !onTrueIsScalar && !onFalseIsScalar:
+			whereVVFloat32AVX512Asm(condPtr, truePtr, falsePtr, outPtr, len(out))
+		case !onTrueIsScalar && onFalseIsScalar:
+			whereVSFloat32AVX512Asm(condPtr, truePtr, falsePtr, outPtr, len(out))
+		case onTrueIsScalar && !onFalseIsScalar:
+			whereSVFloat32AVX512Asm(condPtr, truePtr, falsePtr, outPtr, len(out))
+		case onTrueIsScalar && onFalseIsScalar:
+			whereSSFloat32AVX512Asm(condPtr, truePtr, falsePtr, outPtr, len(out))
+		}
+		return true
+	}
+
+	if gobackend.IsAVX2Allowed {
 		switch {
 		case !onTrueIsScalar && !onFalseIsScalar:
 			whereVVFloat32AVX2Asm(condPtr, truePtr, falsePtr, outPtr, len(out))

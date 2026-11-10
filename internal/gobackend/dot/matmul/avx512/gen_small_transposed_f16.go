@@ -58,12 +58,16 @@ func avx512SmallFloat16TransposedAsm( //alt:f16
 	outputBase := outputPtr + uintptr(batchStart)*outputByteStride
 
 	for range batchCount {
-		row := 0
-		for ; row+3 < lhsCrossSize; row += 4 {
-			lRow0 := unsafe.Pointer(lhsBase + uintptr((row+0)*contractingSize)*elemSize)
-			lRow1 := unsafe.Pointer(lhsBase + uintptr((row+1)*contractingSize)*elemSize)
-			lRow2 := unsafe.Pointer(lhsBase + uintptr((row+2)*contractingSize)*elemSize)
-			lRow3 := unsafe.Pointer(lhsBase + uintptr((row+3)*contractingSize)*elemSize)
+		for row := 0; row < lhsCrossSize; row += 4 {
+			r0 := row
+			r1 := min(row+1, lhsCrossSize-1)
+			r2 := min(row+2, lhsCrossSize-1)
+			r3 := min(row+3, lhsCrossSize-1)
+
+			lRow0 := unsafe.Pointer(lhsBase + uintptr(r0*contractingSize)*elemSize)
+			lRow1 := unsafe.Pointer(lhsBase + uintptr(r1*contractingSize)*elemSize)
+			lRow2 := unsafe.Pointer(lhsBase + uintptr(r2*contractingSize)*elemSize)
+			lRow3 := unsafe.Pointer(lhsBase + uintptr(r3*contractingSize)*elemSize)
 
 			col := 0
 			for ; col+3 < rhsCrossSize; col += 4 {
@@ -72,10 +76,10 @@ func avx512SmallFloat16TransposedAsm( //alt:f16
 				rCol2 := unsafe.Pointer(rhsBase + uintptr((col+2)*contractingSize)*elemSize)
 				rCol3 := unsafe.Pointer(rhsBase + uintptr((col+3)*contractingSize)*elemSize)
 
-				outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
-				outRow1 := unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
-				outRow2 := unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
-				outRow3 := unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
+				outRow0 := unsafe.Pointer(outputBase + uintptr(r0*rhsCrossSize+col)*outputElemSize)
+				outRow1 := unsafe.Pointer(outputBase + uintptr(r1*rhsCrossSize+col)*outputElemSize)
+				outRow2 := unsafe.Pointer(outputBase + uintptr(r2*rhsCrossSize+col)*outputElemSize)
+				outRow3 := unsafe.Pointer(outputBase + uintptr(r3*rhsCrossSize+col)*outputElemSize)
 
 				//alt:f32 avx512SmallTransposedTile4x4Float32Asm(
 				//alt:bf16  avx512SmallTransposedTile4x4BFloat16Asm(
@@ -87,74 +91,22 @@ func avx512SmallFloat16TransposedAsm( //alt:f16
 					outRow0, outRow1, outRow2, outRow3)
 			}
 
-			// Remainder columns for these 4 rows
+			// Remainder columns for these rows
 			for ; col < rhsCrossSize; col++ {
-				rCol := rhsBase + uintptr(col*contractingSize)*elemSize
-				var s0, s1, s2, s3 float32 //alt:f32|bf16|f16
-				//alt:f64  var s0, s1, s2, s3 float64
-				for k := range contractingSize {
-					kOffset := uintptr(k) * elemSize
-					//alt:f32 l0 := *(*float32)(unsafe.Pointer(uintptr(lRow0) + kOffset))
-					//alt:bf16  l0 := (*(*bfloat16.BFloat16)(unsafe.Pointer(uintptr(lRow0) + kOffset))).Float32()
-					l0 := (*(*float16.Float16)(unsafe.Pointer(uintptr(lRow0) + kOffset))).Float32() //alt:f16
-					//alt:f64  l0 := *(*float64)(unsafe.Pointer(uintptr(lRow0) + kOffset))
-					//alt:f32 l1 := *(*float32)(unsafe.Pointer(uintptr(lRow1) + kOffset))
-					//alt:bf16  l1 := (*(*bfloat16.BFloat16)(unsafe.Pointer(uintptr(lRow1) + kOffset))).Float32()
-					l1 := (*(*float16.Float16)(unsafe.Pointer(uintptr(lRow1) + kOffset))).Float32() //alt:f16
-					//alt:f64  l1 := *(*float64)(unsafe.Pointer(uintptr(lRow1) + kOffset))
-					//alt:f32 l2 := *(*float32)(unsafe.Pointer(uintptr(lRow2) + kOffset))
-					//alt:bf16  l2 := (*(*bfloat16.BFloat16)(unsafe.Pointer(uintptr(lRow2) + kOffset))).Float32()
-					l2 := (*(*float16.Float16)(unsafe.Pointer(uintptr(lRow2) + kOffset))).Float32() //alt:f16
-					//alt:f64  l2 := *(*float64)(unsafe.Pointer(uintptr(lRow2) + kOffset))
-					//alt:f32 l3 := *(*float32)(unsafe.Pointer(uintptr(lRow3) + kOffset))
-					//alt:bf16  l3 := (*(*bfloat16.BFloat16)(unsafe.Pointer(uintptr(lRow3) + kOffset))).Float32()
-					l3 := (*(*float16.Float16)(unsafe.Pointer(uintptr(lRow3) + kOffset))).Float32() //alt:f16
-					//alt:f64  l3 := *(*float64)(unsafe.Pointer(uintptr(lRow3) + kOffset))
+				rCol0 := unsafe.Pointer(rhsBase + uintptr(col*contractingSize)*elemSize)
+				outRow0 := unsafe.Pointer(outputBase + uintptr(r0*rhsCrossSize+col)*outputElemSize)
+				outRow1 := unsafe.Pointer(outputBase + uintptr(r1*rhsCrossSize+col)*outputElemSize)
+				outRow2 := unsafe.Pointer(outputBase + uintptr(r2*rhsCrossSize+col)*outputElemSize)
+				outRow3 := unsafe.Pointer(outputBase + uintptr(r3*rhsCrossSize+col)*outputElemSize)
 
-					//alt:f32 r0 := *(*float32)(unsafe.Pointer(rCol + kOffset))
-					//alt:bf16  r0 := (*(*bfloat16.BFloat16)(unsafe.Pointer(rCol + kOffset))).Float32()
-					r0 := (*(*float16.Float16)(unsafe.Pointer(rCol + kOffset))).Float32() //alt:f16
-					//alt:f64  r0 := *(*float64)(unsafe.Pointer(rCol + kOffset))
-
-					s0 += l0 * r0
-					s1 += l1 * r0
-					s2 += l2 * r0
-					s3 += l3 * r0
-				}
-				*(*float32)(unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)) = s0 //alt:f32|bf16|f16
-				//alt:f64  *(*float64)(unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)) = s0
-				*(*float32)(unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)) = s1 //alt:f32|bf16|f16
-				//alt:f64  *(*float64)(unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)) = s1
-				*(*float32)(unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)) = s2 //alt:f32|bf16|f16
-				//alt:f64  *(*float64)(unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)) = s2
-				*(*float32)(unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)) = s3 //alt:f32|bf16|f16
-				//alt:f64  *(*float64)(unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)) = s3
-			}
-		}
-
-		// Remainder rows
-		for ; row < lhsCrossSize; row++ {
-			lRow := lhsBase + uintptr(row*contractingSize)*elemSize
-			for col := range rhsCrossSize {
-				rCol := rhsBase + uintptr(col*contractingSize)*elemSize
-				var s float32 //alt:f32|bf16|f16
-				//alt:f64  var s float64
-				for k := range contractingSize {
-					kOffset := uintptr(k) * elemSize
-					//alt:f32 lVal := *(*float32)(unsafe.Pointer(lRow + kOffset))
-					//alt:bf16  lVal := (*(*bfloat16.BFloat16)(unsafe.Pointer(lRow + kOffset))).Float32()
-					lVal := (*(*float16.Float16)(unsafe.Pointer(lRow + kOffset))).Float32() //alt:f16
-					//alt:f64  lVal := *(*float64)(unsafe.Pointer(lRow + kOffset))
-
-					//alt:f32 rVal := *(*float32)(unsafe.Pointer(rCol + kOffset))
-					//alt:bf16  rVal := (*(*bfloat16.BFloat16)(unsafe.Pointer(rCol + kOffset))).Float32()
-					rVal := (*(*float16.Float16)(unsafe.Pointer(rCol + kOffset))).Float32() //alt:f16
-					//alt:f64  rVal := *(*float64)(unsafe.Pointer(rCol + kOffset))
-
-					s += lVal * rVal
-				}
-				*(*float32)(unsafe.Pointer(outputBase + uintptr(row*rhsCrossSize+col)*outputElemSize)) = s //alt:f32|bf16|f16
-				//alt:f64  *(*float64)(unsafe.Pointer(outputBase + uintptr(row*rhsCrossSize+col)*outputElemSize)) = s
+				//alt:f32 avx512SmallTransposedTile4x1Float32Asm(
+				//alt:bf16  avx512SmallTransposedTile4x1BFloat16Asm(
+				avx512SmallTransposedTile4x1Float16Asm( //alt:f16
+					//alt:f64  avx512SmallTransposedTile4x1Float64Asm(
+					lRow0, lRow1, lRow2, lRow3,
+					rCol0,
+					contractingSize,
+					outRow0, outRow1, outRow2, outRow3)
 			}
 		}
 

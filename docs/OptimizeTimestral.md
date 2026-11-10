@@ -623,4 +623,124 @@ Before AVX2-specific optimizations on this branch:
 | `gomlx-simd` | `Timestral-28M` | run 10 | 61.2ms | 899.6ms | 14.7 | 3.4e-05 | 0.30 GB | 0.39 GB |
 | **`gomlx-simd`** | **`Timestral-28M`** | **`best`** | **`60.3ms`** | **`887.1ms`** | **`14.7`** | **`3.4e-05`** | **`0.30 GB`** | **`0.39 GB`** |
 
+---
+
+## 10. AMD64 AVX-512 Optimization on AMD Ryzen 9 9950X3D (`Timestral-28M` & `Timestral-123M`)
+
+Following the ARM64 NEON/SME and AMD64 AVX2 optimizations, we profiled and optimized the `go` backend on an AMD Zen 5 workstation (`AMD Ryzen 9 9950X3D`, 16 physical cores / 32 logical CPUs across 2 CCDs, 1 MB L2 cache per core, 96 MB + 32 MB L3 cache, native 512-bit AVX-512 data paths with AVX-512F/BW/DQ/VL/BF16/FP16/VNNI).
+
+### 10.1 Baseline Profile & Root Causes Identified on AVX-512
+
+Before the AVX-512 optimizations in this pass, `Timestral-28M` ran in **`40.5 ms` best wall (`44.9–49.3 ms` typical, `454.2 ms` CPU)**, where several operations either fell back to AVX2 (`PriorityAVX2 = 10`) or generic Go SIMD (`PrioritySIMD = 6`), or lacked the multi-row / cache-blocking optimizations added earlier to AVX2:
+
+1. **`FusedScaledDotProductAttention` (`9.8 ms` wall / `129.4 ms` CPU in `28M`)**:
+   - `internal/gobackend/fusedops/avx512` only implemented a single-query-row loop (`sdpaSingleHeadFloat32AVX512`) and did not register with `fusedops.RegisterSDPAArchDispatcher`.
+   - Whenever `booleanMask` was present (every Encoder and Decoder attention call in `Timestral`) or `headDim == 64` used multi-query batching, `fusedops/avx512` fell back to either the 256-bit `avx2` 4-row kernel or the 1-row `avx512` path that reloaded every $K$ and $V$ vector $4\times$ more often than necessary and computed all masked trailing keys.
+2. **Missing AVX-512 `BinaryMidArch` Dispatcher, Unrolled `BinaryTrailing`, and Small-Block `StridedCopy` (`Mul` `5.4 ms`, `Add` `2.6 ms`, `Concatenate` `0.81 ms`, `BroadcastInDim` `0.55 ms`)**:
+   - `internal/gobackend/ops/avx512` did not register `SetBinaryMidArchDispatcher`, so all `[A, B, C]` op `[A, 1, C]` (such as RoPE `[810, H, 64] * [810, 1, 64]`), `[1, B, C]`, and contiguous `[N]` `Float32` binary ops fell back to 256-bit AVX2 (`DispatchBinaryMidAVX2`).
+   - `binary_trailing_amd64.s` in `ops/avx512` processed only 1 ZMM (16 floats) per loop iteration instead of 4× unrolled ZMMs (64 floats).
+   - `stridedcopy_amd64.go` in `ops/avx512` fell back to generic `copy()` when `blockBytes < 64` in `DispatchDupStridedBytesAVX512` or `b0 < 64 || b1 < 64` in `DispatchConcat2StridedBytesAVX512` (whereas `avx2` handled `>= 16` bytes).
+3. **`FusedActivation` (`SwiGLU`) Missing in `activations/avx512` (`0.72 ms` wall / `11.1 ms` CPU in `28M`, and `16.9 µs` vs `6.5 µs` on `Large_65536` microbenchmark)**:
+   - `internal/gobackend/activations/avx512` had no `SwiGLU` implementation (`swiglu.go` / `swiglu_amd64.s`), causing `FusedActivation(SwiGLU)` to fall back to `PrioritySIMD` (making `AVX512` `2.6×` slower than `AVX2` on `SwiGLU`!).
+   - `Sigmoid` and `Tanh` in `activations/avx512` used Go `archsimd` closures instead of handwritten 32-float (2× ZMM) Estrin assembly (`silu_amd64.s`).
+   - `AVX512SimpleMetadata` (`MinParallelChunk: 8192`) and `AVX512TranscendentalMetadata` (`MinParallelChunk: 4096`) over-partitioned medium tensors across 32 threads / 2 CCDs.
+4. **MatMul `dot/matmul/avx512` L2 Sub-Chunking, `PackLHSKernelRows8` Half/Double Assembly, and `small_transposed` `Tile4x1` Tail**:
+   - `internal/gobackend/dot/matmul/avx512/large.go` was missing the L2 cache sub-chunking (`maxMPanelsPerSubChunk`), `sharedRHSPanels` buffer-skip (`needPackedRHS = false`), and cooperative multi-worker `sharedRHSPanels` packing that were added to `matmul/avx2/large.go`.
+   - `matmul/avx512` only had `avx512PackLHSKernelRows8Float32Asm`, using scalar Go loops for `Float64`, `Float16`, and `BFloat16` 8-row LHS micro-panel packing.
+   - `matmul/avx512/small_transposed.go` fell back to scalar inner loops for remainder rows/cols when `M` or `N` was not a multiple of 4 (missing `avx512SmallTransposedTile4x1*Asm`).
+5. **`Where` (`ops/where_amd64.go`) and `LayerNorm` Pass 3 (`fusedops/avx512/layernorm_amd64.s`)**:
+   - `ops/where_amd64.go` only implemented 256-bit AVX2 assembly (`where*Float32AVX2Asm`) instead of 512-bit AVX-512 `K`-mask blend (`VPMOVZXBD` + `VPTESTMD` + `VMOVAPS Z, K1, Z`).
+   - `fusedops/avx512/layernorm_amd64.s` Pass 3 only unrolled 4× ZMM when both `gamma` and `beta` were non-nil (`Float32`), leaving the `gamma`-only (RMSNorm / LayerNorm without bias) and `Float64` paths at 1 ZMM per iteration.
+
+### 10.2 Optimizations Implemented (Priorities 1–5)
+
+1. **Priority 1 — Multi-Query 4-Row & 1-Row AVX-512 SDPA Assembly with Vectorized `K`-Mask Boolean Masking & Causal Active-KV Pruning ([`internal/gobackend/fusedops/avx512/sdpa_amd64.s`](../internal/gobackend/fusedops/avx512/sdpa_amd64.s), [`sdpa.go`](../internal/gobackend/fusedops/avx512/sdpa.go))**:
+   - Registered `DispatchSDPAAVX512` at `PriorityAVX512` via `fusedops.RegisterSDPAArchDispatcher`.
+   - Implemented 4-row batched AVX-512 microkernels (`sdpaDot4RowsFloat32AVX512`, `sdpaScaleExpSum4RowsFloat32AVX512`, `sdpaWeightedAccum4RowsFloat32AVX512`, `sdpaFinalize4RowsFloat32AVX512`) and 1-row kernels (`sdpaDot1RowFloat32AVX512`, `sdpaScaleExpSumFloat32AVX512`, `sdpaWeightedAccum1RowFloat32AVX512`):
+     - **`sdpaDot4RowsFloat32AVX512`**: Specializes `headDim == 64` (4 ZMM registers per row) by keeping all 4 query rows (`4 × 4 = 16` ZMM registers) in `Z16`–`Z31` across the entire key loop (`0..activeKVLen`), loading each key vector (`4` ZMMs) once and accumulating into 4 independent ZMM accumulators (`Z0`–`Z3`).
+     - **`sdpaScaleExpSum4RowsFloat32AVX512`**: Vectorizes boolean mask blending over 16 keys at once using 16-byte `VMOVDQU` + `VPMOVZXBD` + `VPTESTMD` into hardware mask register `K1` and `VMOVAPS Z_negInf, K1, Z_scores`, followed by 512-bit Estrin degree-5 `exp(x - max)` evaluation.
+     - **`sdpaWeightedAccum4RowsFloat32AVX512`**: Specializes `headDim == 64` by keeping all 4 output rows (`4 × 4 = 16` ZMM accumulators) pinned in `Z0`–`Z15` across the entire `activeKVLen` loop, loading each $V$ row (`4` ZMMs into `Z16`–`Z19`) once from L1/L2 cache and accumulating into all 4 query outputs via `VFMADD231PS`.
+   - **Microbenchmark Speedup (`BenchmarkSDPAAVX512`)**: **`198.5 µs`** vs `294.6 µs` on `BenchmarkSDPAAVX2` (**`1.48×` faster than AVX2** and **`~3.5×` faster** than previous AVX-512).
+
+2. **Priority 2 — Zero-Spill AVX-512 `BinaryMidArch` Assembly (`C == 64` & `C == 128` Register-Cached Fast Paths), 4× Unrolled `BinaryTrailing`, and `StridedCopy` ([`internal/gobackend/ops/avx512/binary_mid_amd64.s`](../internal/gobackend/ops/avx512/binary_mid_amd64.s), [`binary_trailing_amd64.s`](../internal/gobackend/ops/avx512/binary_trailing_amd64.s), [`stridedcopy_amd64.go`](../internal/gobackend/ops/avx512/stridedcopy_amd64.go))**:
+   - Implemented `binaryMid{Add,Sub,Mul,Div,RSub,RDiv}Float32AVX512` and registered `DispatchBinaryMidAVX512` at `PriorityAVX512`:
+     - **`C == 64` fast path**: Preloads all 64 broadcast floats (`[a, 0, :64]`) into `Z8`–`Z11` once per outer `a` and streams across `B` rows **2 rows at a time** (`128` floats per inner iteration).
+     - **`C == 128` fast path**: Leverages AVX-512's 32 ZMM registers to preload all 128 broadcast floats (`[a, 0, :128]`) into `Z8`–`Z15` once per outer `a` and stream across all `B` rows without reloading the broadcast operand.
+     - **General `C` path**: 64-float (`4×` ZMM) unrolled inner loop + 16-float ZMM + 8-float YMM + scalar tail.
+   - Unrolled `binaryTrailing{Add,Sub,Mul,Div,RSub,RDiv}Float32AVX512` in `binary_trailing_amd64.s` 4× (64 floats per iteration using `Z1`–`Z4`).
+   - Extended `DispatchDupStridedBytesAVX512` and `DispatchConcat2StridedBytesAVX512` to handle `16..63` byte blocks via XMM/YMM registers and `64..256` byte blocks via ZMM registers.
+
+3. **Priority 3 — Handwritten AVX-512 `SwiGLU`, `Sigmoid`, and `Tanh` Assembly ([`internal/gobackend/activations/avx512/swiglu_amd64.s`](../internal/gobackend/activations/avx512/swiglu_amd64.s), [`swiglu.go`](../internal/gobackend/activations/avx512/swiglu.go), [`silu_amd64.s`](../internal/gobackend/activations/avx512/silu_amd64.s))**:
+   - Implemented `swigluFloat32AVX512Asm` processing **32 `float32` elements (`2×` 512-bit ZMM vectors) per iteration** with all Cephes/Estrin constants hoisted into `Z16`–`Z29` (zero memory-operand reloads inside the loop) and overlapped `VDIVPS` + `VRCP14PS` Newton-Raphson refinement, plus `SwiGLUAVX512Float64`, `SwiGLUAVX512BF16`, and `SwiGLUAVX512F16`.
+   - Added handwritten 32-float (2× ZMM) `sigmoidFloat32AVX512Asm` and `tanhFloat32AVX512Asm` in `silu_amd64.s`, and tuned `AVX512SimpleMetadata` (`MinParallelChunk: 65536`) and `AVX512TranscendentalMetadata` (`MinParallelChunk: 32768`).
+   - **Microbenchmark Speedup (`Large_65536/SwiGLU`)**: **`3.25 µs`** on `AVX512` vs `16.87 µs` before (**`5.19×` faster**, and **`2.01×` faster** than `AVX2` at `6.55 µs`).
+
+4. **Priority 4 — AVX-512 MatMul L2 Sub-Chunking, Cooperative RHS Packing, `PackLHSKernelRows8` Half/Double Assembly, and `small_transposed` `Tile4x1` Assembly ([`internal/gobackend/dot/matmul/avx512/large.go`](../internal/gobackend/dot/matmul/avx512/large.go), [`pack_amd64_float64.s`](../internal/gobackend/dot/matmul/avx512/pack_amd64_float64.s), [`pack_amd64_float16.s`](../internal/gobackend/dot/matmul/avx512/pack_amd64_float16.s), [`small_transposed_amd64.s`](../internal/gobackend/dot/matmul/avx512/small_transposed_amd64.s))**:
+   - Ported L2 `maxMPanelsPerSubChunk` sub-chunking, `sharedRHSPanels` buffer-allocation skipping (`needPackedRHS = false`), and multi-worker cooperative `sharedRHSPanels` packing to `matmul/avx512/large.go` (and regenerated `gen_large_{bf16,f16,f64}.go`).
+   - Implemented `avx512PackLHSKernelRows8Float64Asm`, `avx512PackLHSKernelRows8Float16Asm`, and `avx512PackLHSKernelRows8BFloat16Asm` in assembly, plus `avx512SmallTransposedTile4x1{Float32,Float64,Float16,BFloat16}Asm` for remainder tiles in `small_transposed`.
+
+5. **Priority 5 — AVX-512 `Where` Assembly & `LayerNorm` Pass 3 4× ZMM Unrolling ([`internal/gobackend/ops/where_amd64.s`](../internal/gobackend/ops/where_amd64.s), [`internal/gobackend/fusedops/avx512/layernorm_amd64.s`](../internal/gobackend/fusedops/avx512/layernorm_amd64.s))**:
+   - Added `where{VV,VS,SV,SS}Float32AVX512Asm` using `VPMOVZXBD` + `VPTESTMD` into `K1`/`K2` + 512-bit masked `VMOVAPS` (32 floats per iteration).
+   - Unrolled `pass3_gamma_loop64` (`Float32` gamma-only) and `pass3_64_both_loop32` (`Float64` gamma+beta) 4× in `layernorm_amd64.s`.
+
+### 10.3 Per-Op Profile Comparison on AMD Ryzen 9 9950X3D (`GOMLX_OP_PROFILE=5`, `Timestral-28M`)
+
+| Operation Type | Calls/run | AVX-512 Before Wall (`CPU`) | **AVX-512 After Wall (`CPU`)** | Wall Speedup | CPU Reduction |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| **`FusedScaledDotProductAttention`** | 27 | 9.8 ms (`129.4 ms`) | **4.2 ms (`44.4 ms`)** | **`2.33×` (`2.85×` on Encoder)** | **`2.91×` (`-85.0 ms` CPU)** |
+| **`FusedDense`** | 93 | 17.5 ms (`273.3 ms`) | **16.6 ms (`258.5 ms`)** | **`1.05×`** | **`1.06×` (`-14.8 ms` CPU)** |
+| **`Mul`** | 179 | 5.4 ms (`29.8 ms`) | **5.1 ms (`28.4 ms`)** | **`1.06×`** | **`1.05×`** |
+| **`Add`** | 65 | 2.6 ms (`17.6 ms`) | **2.2 ms (`14.4 ms`)** | **`1.18×`** | **`1.22×`** |
+| **`FusedActivation` (`SwiGLU`)** | 15 | 0.72 ms (`11.1 ms`) | **0.41 ms (`2.1 ms`)** | **`1.76×`** | **`5.29×` (`-9.0 ms` CPU)** |
+| **`Concatenate`** | 58 | 0.81 ms (`1.5 ms`) | **0.69 ms (`1.3 ms`)** | **`1.17×`** | **`1.15×`** |
+| **`BroadcastInDim`** | 3 | 0.55 ms (`3.3 ms`) | **0.35 ms (`1.8 ms`)** | **`1.57×`** | **`1.83×`** |
+| **Total (`Sum of Ops`)** | **1,636** | **42.7 ms (`501.6 ms`)** | **34.7 ms (`382.7 ms`)** | **`1.23×`** | **`1.31×` (`-118.9 ms` CPU)** |
+
+### 10.4 End-to-End Benchmark Comparison on AMD Ryzen 9 9950X3D (`Timestral-28M` & `Timestral-123M`, 10 Runs)
+
+| Model | Backend / Configuration | Best Wall Time | Typical Wall Time | Best CPU Time | Avg Cores | Max Abs Diff vs PyTorch | Speedup vs `xla:cpu` | Speedup vs AVX2-Only |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`Timestral-28M`** | `xla:cpu` Reference (`-backend="xla:cpu"`) | 51.8 ms | 52.1–58.3 ms | 702.1 ms | 13.5 | 2.1e-05 | `1.00×` | `0.92×` |
+| **`Timestral-28M`** | `go` AVX2-Only (`GOMLX_GO_SIMD_AVX512=0`) | 47.8 ms | 48.5–52.7 ms | 712.9 ms | 14.9 | 3.4e-05 | `1.08×` | `1.00×` |
+| **`Timestral-28M`** | `go` AVX-512 Before This Pass | 40.5 ms | 44.9–49.3 ms | 454.2 ms | 11.2 | 3.4e-05 | `1.28×` | `1.18×` |
+| **`Timestral-28M`** | **`go` AVX-512 After Priorities 1–5** | **35.8 ms** | **39.0–42.7 ms** | **374.5 ms** | **10.5** | **3.4e-05** | **`1.45×` wall (`1.87×` less CPU)** | **`1.34×` wall (`1.90×` less CPU)** |
+| **`Timestral-123M`** | `xla:cpu` Reference (`-backend="xla:cpu"`) | 163.9 ms | 164.0–169.6 ms | 2,770.0 ms | 16.9 | 1.9e-05 | `1.00×` | `0.95×` |
+| **`Timestral-123M`** | `go` AVX2-Only (`GOMLX_GO_SIMD_AVX512=0`) | 155.6 ms | 156.8–164.7 ms | 3,080.0 ms | 19.8 | 1.9e-05 | `1.05×` | `1.00×` |
+| **`Timestral-123M`** | **`go` AVX-512 After Priorities 1–5** | **124.8 ms** | **125.1–128.5 ms** | **2,050.0 ms** | **16.4** | **1.9e-05** | **`1.31×` wall (`1.35×` less CPU)** | **`1.25×` wall (`1.50×` less CPU)** |
+
+#### Detailed Run-by-Run After AVX-512 Optimizations (`-backend="go"`, AMD Ryzen 9 9950X3D)
+
+##### `mistralai/Timestral-28M`
+| Obs | Model | Run | Wall | CPU Time | Cores | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-28M` | warm-up | 52.8ms | 601.5ms | 11.4 | 0.25 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 1 | 35.8ms | 374.5ms | 10.5 | 0.27 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 2 | 41.3ms | 440.1ms | 10.7 | 0.29 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 3 | 42.1ms | 446.6ms | 10.6 | 0.32 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 4 | 40.3ms | 419.6ms | 10.4 | 0.27 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 5 | 40.8ms | 414.4ms | 10.2 | 0.29 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 6 | 39.7ms | 407.7ms | 10.3 | 0.31 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 7 | 42.7ms | 453.3ms | 10.6 | 0.34 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 8 | 41.0ms | 426.2ms | 10.4 | 0.28 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 9 | 39.0ms | 413.2ms | 10.6 | 0.31 GB | 0.36 GB |
+| `gomlx-simd` | `Timestral-28M` | run 10 | 39.8ms | 409.5ms | 10.3 | 0.33 GB | 0.36 GB |
+| **`gomlx-simd`** | **`Timestral-28M`** | **`best`** | **`35.8ms`** | **`374.5ms`** | **`10.5`** | **`0.33 GB`** | **`0.36 GB`** |
+
+##### `mistralai/Timestral-123M`
+| Obs | Model | Run | Wall | CPU Time | Cores | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-123M` | warm-up | 169.3ms | 2.9s | 17.0 | 0.65 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 1 | 125.9ms | 2.1s | 16.5 | 0.71 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 2 | 127.0ms | 2.1s | 16.5 | 0.76 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 3 | 124.8ms | 2.1s | 16.4 | 0.59 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 4 | 128.5ms | 2.1s | 16.6 | 0.65 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 5 | 128.3ms | 2.1s | 16.4 | 0.70 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 6 | 126.9ms | 2.1s | 16.6 | 0.76 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 7 | 126.7ms | 2.1s | 16.4 | 0.61 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 8 | 125.1ms | 2.1s | 16.5 | 0.67 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 9 | 126.5ms | 2.1s | 16.5 | 0.72 GB | 0.87 GB |
+| `gomlx-simd` | `Timestral-123M` | run 10 | 126.7ms | 2.1s | 16.4 | 0.78 GB | 0.87 GB |
+| **`gomlx-simd`** | **`Timestral-123M`** | **`best`** | **`124.8ms`** | **`2.1s`** | **`16.4`** | **`0.78 GB`** | **`0.87 GB`** |
+
+
 

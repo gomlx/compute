@@ -200,10 +200,10 @@ func initAVX512Constants() {
 
 var (
 	// AVX512SimpleMetadata holds metadata for lightweight element-wise AVX-512 kernels.
-	AVX512SimpleMetadata = activations.KernelMetadata{MinParallelChunk: 32768}
+	AVX512SimpleMetadata = activations.KernelMetadata{MinParallelChunk: 65536}
 
 	// AVX512TranscendentalMetadata holds metadata for transcendental AVX-512 kernels.
-	AVX512TranscendentalMetadata = activations.KernelMetadata{MinParallelChunk: 16384}
+	AVX512TranscendentalMetadata = activations.KernelMetadata{MinParallelChunk: 32768}
 )
 
 func registerAVX512() {
@@ -221,13 +221,14 @@ func registerAVX512() {
 	activations.RegisterBiasTile[float32]("avx512:silu", compute.ActivationSilu, SiluBiasTileAVX512, PriorityAVX512)
 	activations.RegisterBiasTile[float32]("avx512:gelu", compute.ActivationGelu, GeluExactBiasTileAVX512, PriorityAVX512)
 	activations.RegisterBiasTile[float32]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileAVX512, PriorityAVX512)
-	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterSwiGLU[float32]("avx512:swiglu", SwiGLUAVX512, PriorityAVX512, &AVX512SimpleMetadata)
 	activations.RegisterVJPKernel[float32]("avx512:vjp_silu", compute.ActivationSilu, SiluVJPAVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// Float64
 	activations.RegisterKernel[float64]("avx512:silu", compute.ActivationSilu, SiluAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterSwiGLU[float64]("avx512:swiglu", SwiGLUAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterVJPKernel[float64]("avx512:vjp_silu", compute.ActivationSilu, SiluVJPAVX512Float64, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// BFloat16
@@ -242,6 +243,7 @@ func registerAVX512() {
 	activations.Register[bfloat16.BFloat16]("avx512:tanh", compute.ActivationTanh, tanhBF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[bfloat16.BFloat16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[bfloat16.BFloat16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterSwiGLU[bfloat16.BFloat16]("avx512:swiglu", SwiGLUAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterVJPKernel[bfloat16.BFloat16]("avx512:vjp_silu", compute.ActivationSilu, SiluVJPAVX512BF16, PriorityAVX512, &AVX512TranscendentalMetadata)
 
 	// Float16
@@ -256,6 +258,7 @@ func registerAVX512() {
 	activations.Register[float16.Float16]("avx512:tanh", compute.ActivationTanh, tanhF16AVX512, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float16.Float16]("avx512:gelu", compute.ActivationGelu, GeluExactAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterKernel[float16.Float16]("avx512:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
+	activations.RegisterSwiGLU[float16.Float16]("avx512:swiglu", SwiGLUAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
 	activations.RegisterVJPKernel[float16.Float16]("avx512:vjp_silu", compute.ActivationSilu, SiluVJPAVX512F16, PriorityAVX512, &AVX512TranscendentalMetadata)
 }
 
@@ -329,6 +332,12 @@ func siluBiasTileFloat32AVX512Asm(out, bias unsafe.Pointer, rowStrideBytes, numR
 
 //go:noescape
 func siluVJPFloat32AVX512Asm(x, dOut, dx unsafe.Pointer, n int)
+
+//go:noescape
+func sigmoidFloat32AVX512Asm(in, out unsafe.Pointer, n int)
+
+//go:noescape
+func tanhFloat32AVX512Asm(in, out unsafe.Pointer, n int)
 
 func SiluAVX512(data []float32) {
 	SiluKernelAVX512(data, data)
@@ -431,13 +440,21 @@ func TanhAVX512(data []float32) {
 }
 
 func TanhKernelAVX512(in, out []float32) {
-	i := 0
-	for ; i+16 <= len(in); i += 16 {
-		v := archsimd.LoadFloat32x16(in[i : i+16])
-		tanh512(v).Store(out[i : i+16])
+	n := len(in)
+	if n == 0 {
+		return
 	}
-	for ; i < len(in); i++ {
-		out[i] = float32(math.Tanh(float64(in[i])))
+	_ = out[n-1]
+	vecN := n &^ 15
+	if vecN > 0 {
+		tanhFloat32AVX512Asm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
+	}
+	if vecN < n {
+		rem := n - vecN
+		var bufIn, bufOut [16]float32
+		copy(bufIn[:rem], in[vecN:])
+		tanhFloat32AVX512Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 16)
+		copy(out[vecN:], bufOut[:rem])
 	}
 }
 
@@ -1318,16 +1335,21 @@ func SigmoidAVX512(data []float32) {
 }
 
 func SigmoidKernelAVX512(in, out []float32) {
-	vOne := archsimd.BroadcastFloat32x16(1.0)
-	i := 0
-	for ; i+16 <= len(in); i += 16 {
-		v := archsimd.LoadFloat32x16(in[i : i+16])
-		expNegV := exp512(v.Neg())
-		denom := vOne.Add(expNegV)
-		vOne.Div(denom).Store(out[i : i+16])
+	n := len(in)
+	if n == 0 {
+		return
 	}
-	for ; i < len(in); i++ {
-		out[i] = float32(1.0 / (1.0 + math.Exp(float64(-in[i]))))
+	_ = out[n-1]
+	vecN := n &^ 15
+	if vecN > 0 {
+		sigmoidFloat32AVX512Asm(unsafe.Pointer(&in[0]), unsafe.Pointer(&out[0]), vecN)
+	}
+	if vecN < n {
+		rem := n - vecN
+		var bufIn, bufOut [16]float32
+		copy(bufIn[:rem], in[vecN:])
+		sigmoidFloat32AVX512Asm(unsafe.Pointer(&bufIn[0]), unsafe.Pointer(&bufOut[0]), 16)
+		copy(out[vecN:], bufOut[:rem])
 	}
 }
 
@@ -1401,29 +1423,6 @@ func SeluKernelAVX512(in, out []float32) {
 			out[i] = float32(seluScaleAVX512 * float64(x))
 		} else {
 			out[i] = float32(seluScaleAlphaAVX512 * (math.Exp(float64(x)) - 1.0))
-		}
-	}
-}
-
-func SwiGLUAVX512(in, out []float32, numRows, hiddenDim int) {
-	vOne := archsimd.BroadcastFloat32x16(1.0)
-	for m := range numRows {
-		inOffset := m * 2 * hiddenDim
-		outOffset := m * hiddenDim
-		j := 0
-		for ; j+16 <= hiddenDim; j += 16 {
-			gate := archsimd.LoadFloat32x16(in[inOffset+j : inOffset+j+16])
-			val := archsimd.LoadFloat32x16(in[inOffset+hiddenDim+j : inOffset+hiddenDim+j+16])
-			expNegGate := exp512(gate.Neg())
-			denom := vOne.Add(expNegGate)
-			siluGate := gate.Div(denom)
-			siluGate.Mul(val).Store(out[outOffset+j : outOffset+j+16])
-		}
-		for ; j < hiddenDim; j++ {
-			gate := in[inOffset+j]
-			val := in[inOffset+hiddenDim+j]
-			siluGate := gate / (1.0 + float32(math.Exp(float64(-gate))))
-			out[outOffset+j] = siluGate * val
 		}
 	}
 }

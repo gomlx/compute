@@ -116,6 +116,33 @@ func avx512PackLHSKernelRows4Float64Asm(
 	copyRows, contractingCols int,
 )
 
+// avx512PackLHSKernelRows8Float16Asm packs 8 rows of float16 LHS matrix in strips of 8 into panel.
+//
+//go:noescape
+func avx512PackLHSKernelRows8Float16Asm(
+	lhs, panel []float16.Float16,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
+// avx512PackLHSKernelRows8BFloat16Asm packs 8 rows of bfloat16 LHS matrix in strips of 8 into panel.
+//
+//go:noescape
+func avx512PackLHSKernelRows8BFloat16Asm(
+	lhs, panel []bfloat16.BFloat16,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
+// avx512PackLHSKernelRows8Float64Asm packs 8 rows of float64 LHS matrix in strips of 8 into panel.
+//
+//go:noescape
+func avx512PackLHSKernelRows8Float64Asm(
+	lhs, panel []float64,
+	lhsRowStart, lhsColStart, lhsCols,
+	copyRows, contractingCols int,
+)
+
 // avx512PackRHSFullStripsAsm packs full strips of RHS matrix into panel using AVX-512.
 // kernelColsBytes must be 256, 128, or 64.
 // Defined in avx512_pack_rhs_amd64.s.

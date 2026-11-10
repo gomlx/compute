@@ -81,10 +81,10 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 		t.Skip("AVX-512 is not supported or allowed on this machine")
 	}
 
-	for _, headDim := range []int{24, 32, 64, 128} {
-		for _, kvLen := range []int{1, 3, 4, 5, 15, 16, 19, 31, 32, 53} {
+	for _, headDim := range []int{16, 24, 32, 64, 128} {
+		for _, kvLen := range []int{1, 3, 4, 5, 7, 8, 9, 15, 16, 19, 31, 32, 53} {
 			for _, causal := range []bool{false, true} {
-				for _, withAddMask := range []bool{false, true} {
+				for _, maskMode := range []int{0, 1, 2} { // 0=none, 1=addMask+bias, 2=boolMask+bias
 					seqLen := 7
 					qLimit := 5
 					kvLimit := max(1, kvLen-2)
@@ -110,7 +110,9 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 					}
 
 					var addMask []float32
-					if withAddMask {
+					var boolMask []bool
+					var addBias []float32
+					if maskMode == 1 {
 						addMask = make([]float32, kvLen)
 						for ki := range kvLen {
 							if ki%5 == 4 {
@@ -118,6 +120,19 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 							} else {
 								addMask[ki] = float32(ki%3) * -0.1
 							}
+						}
+					} else if maskMode == 2 {
+						boolMask = make([]bool, seqLen*kvLen)
+						for qi := range seqLen {
+							for ki := range kvLen {
+								boolMask[qi*kvLen+ki] = (ki <= qi+2) && (ki%6 != 5)
+							}
+						}
+					}
+					if maskMode > 0 {
+						addBias = make([]float32, kvLen)
+						for ki := range kvLen {
+							addBias[ki] = float32((ki%7)-3) * 0.05
 						}
 					}
 
@@ -132,8 +147,8 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 					DispatchSDPAAVX512(
 						q, k, v, got,
 						qOff, kvOff, qSeqStride, kvSeqStride, headDim,
-						addMask, nil, 0,
-						nil, 0,
+						addMask, boolMask, 0,
+						addBias, 0,
 						scratch,
 						1, 0, seqLen, kvLen, headDim,
 						scale, causal,
@@ -159,13 +174,20 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 						rowMax := math.Inf(-1)
 						qBase := qOff + qIdx*qSeqStride
 						for ki := range kvUnmasked {
+							if len(boolMask) > 0 && !boolMask[qIdx*kvLen+ki] {
+								scores[ki] = math.Inf(-1)
+								continue
+							}
 							kBase := kvOff + ki*kvSeqStride
 							var dot float64
 							for d := range headDim {
 								dot += float64(q[qBase+d]) * float64(k[kBase+d])
 							}
 							s := dot * float64(scale)
-							if withAddMask {
+							if len(addBias) > 0 {
+								s += float64(addBias[ki])
+							}
+							if len(addMask) > 0 {
 								s += float64(addMask[ki])
 							}
 							scores[ki] = s
@@ -196,14 +218,53 @@ func TestDispatchSDPAAVX512_VariousKVLengthsAndMasks(t *testing.T) {
 								acc += (scores[ki] / sum) * float64(v[kvOff+ki*kvSeqStride+d])
 							}
 							if math.Abs(float64(got[outBase+d])-acc) > 1e-3 {
-								t.Fatalf("headDim=%d kvLen=%d causal=%v mask=%v qIdx=%d d=%d: got %f, want %f",
-									headDim, kvLen, causal, withAddMask, qIdx, d, got[outBase+d], acc)
+								t.Fatalf("headDim=%d kvLen=%d causal=%v maskMode=%d qIdx=%d d=%d: got %f, want %f",
+									headDim, kvLen, causal, maskMode, qIdx, d, got[outBase+d], acc)
 							}
 						}
 					}
 				}
 			}
 		}
+	}
+}
+
+func BenchmarkSDPAAVX512(b *testing.B) {
+	if !gobackend.IsAVX512Allowed {
+		b.Skip("AVX-512 is not supported or allowed on this machine")
+	}
+	seqLen := 378
+	kvLen := 378
+	numHeads := 6
+	headDim := 64
+	qSeqStride := numHeads * headDim
+	kvSeqStride := numHeads * headDim
+	scale := float32(1.0 / math.Sqrt(float64(headDim)))
+
+	q := make([]float32, seqLen*qSeqStride)
+	k := make([]float32, kvLen*kvSeqStride)
+	v := make([]float32, kvLen*kvSeqStride)
+	out := make([]float32, seqLen*qSeqStride)
+	scratch := make([]float32, kvLen+16)
+
+	for i := range q {
+		q[i] = float32((i%17)-8) * 0.1
+		k[i] = float32((i%13)-6) * 0.1
+		v[i] = float32((i%19)-9) * 0.1
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		DispatchSDPAAVX512(
+			q, k, v, out,
+			0, 0, qSeqStride, kvSeqStride, headDim,
+			nil, nil, 0,
+			nil, 0,
+			scratch,
+			1, 0, seqLen, kvLen, headDim,
+			scale, false,
+			seqLen, kvLen,
+		)
 	}
 }
 

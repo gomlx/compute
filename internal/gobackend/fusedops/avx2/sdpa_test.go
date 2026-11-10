@@ -232,3 +232,43 @@ func TestDispatchSDPAAVX2_VariousKVLengthsAndMasks(t *testing.T) {
 	}
 }
 
+func BenchmarkSDPAAVX2(b *testing.B) {
+	if !gobackend.IsAVX2Allowed {
+		b.Skip("AVX-2 is not supported or allowed on this machine")
+	}
+	seqLen := 378
+	kvLen := 378
+	numHeads := 6
+	headDim := 64
+	qSeqStride := numHeads * headDim
+	kvSeqStride := numHeads * headDim
+	scale := float32(1.0 / math.Sqrt(float64(headDim)))
+
+	q := make([]float32, seqLen*qSeqStride)
+	k := make([]float32, kvLen*kvSeqStride)
+	v := make([]float32, kvLen*kvSeqStride)
+	out := make([]float32, seqLen*qSeqStride)
+	scratch := make([]float32, kvLen+16)
+
+	for i := range q {
+		q[i] = float32((i%17)-8) * 0.1
+		k[i] = float32((i%13)-6) * 0.1
+		v[i] = float32((i%19)-9) * 0.1
+	}
+
+	b.ResetTimer()
+	for b.Loop() {
+		DispatchSDPAAVX2(
+			q, k, v, out,
+			0, 0, qSeqStride, kvSeqStride, headDim,
+			nil, nil, 0,
+			nil, 0,
+			scratch,
+			1, 0, seqLen, kvLen, headDim,
+			scale, false,
+			seqLen, kvLen,
+		)
+	}
+}
+
+

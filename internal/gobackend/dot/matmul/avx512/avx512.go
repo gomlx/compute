@@ -521,11 +521,31 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 
 	if kernelRows == 8 {
 		if AVX512UseAsm {
-			if lhsTyped, ok := any(lhs).([]float32); ok {
-				fullRows := copyRows & ^7
+			fullRows := copyRows & ^7
+			handled := false
+			switch lhsTyped := any(lhs).(type) {
+			case []float32:
 				if fullRows > 0 {
 					avx512PackLHSKernelRows8Float32Asm(lhsTyped, any(panel).([]float32), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
 				}
+				handled = true
+			case []float64:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8Float64Asm(lhsTyped, any(panel).([]float64), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			case []float16.Float16:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8Float16Asm(lhsTyped, any(panel).([]float16.Float16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			case []bfloat16.BFloat16:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8BFloat16Asm(lhsTyped, any(panel).([]bfloat16.BFloat16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			}
+			if handled {
 				if fullRows == copyRows {
 					return
 				}
