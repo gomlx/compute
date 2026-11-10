@@ -6,6 +6,7 @@ package neon
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/gomlx/compute/internal/gobackend"
@@ -263,5 +264,210 @@ func TestDispatchSDPAARM64_AllPaths(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestDispatchSDPAARM64_BooleanMaskAndPartialBlocks(t *testing.T) {
+	if !gobackend.IsNEONAllowed {
+		t.Skip("ARM64 NEON is not supported or allowed on this host")
+	}
+
+	origSME := gobackend.IsSMEAllowed
+	defer func() {
+		gobackend.IsSMEAllowed = origSME
+	}()
+
+	smeModes := []bool{false}
+	if origSME {
+		smeModes = []bool{true, false}
+	}
+
+	type shapeCase struct {
+		name    string
+		seqLen  int
+		kvLen   int
+		headDim int
+	}
+	shapes := []shapeCase{
+		{"TimestralDecoder_27x69", 27, 69, 64},
+		{"TimestralEncoderBlock_42x48", 42, 48, 64},
+		{"TimestralCrossAttn_2x2", 2, 2, 64},
+		{"SmallHeadDim16_35x37", 35, 37, 16},
+		{"MediumHeadDim32_33x40", 33, 40, 32},
+		{"LargeHeadDim128_20x35", 20, 35, 128},
+	}
+
+	for _, useSME := range smeModes {
+		modeName := "NEON4Row"
+		if useSME {
+			modeName = "SME32x32"
+		}
+		t.Run(modeName, func(t *testing.T) {
+			gobackend.IsSMEAllowed = useSME
+			rng := rand.New(rand.NewSource(1337))
+
+			for _, sc := range shapes {
+				t.Run(sc.name, func(t *testing.T) {
+					seqLen := sc.seqLen
+					kvLen := sc.kvLen
+					headDim := sc.headDim
+					groupSize := 2
+					scale := float32(1.0 / math.Sqrt(float64(headDim)))
+
+					for _, bshd := range []bool{false, true} {
+						for _, causal := range []bool{false, true} {
+							var qSeqStride, kvSeqStride, qGroupStride int
+							if bshd {
+								qGroupStride = headDim
+								qSeqStride = groupSize * headDim
+								kvSeqStride = 2 * headDim
+							} else {
+								qSeqStride = headDim
+								qGroupStride = seqLen * headDim
+								kvSeqStride = headDim
+							}
+
+							qSize := (groupSize-1)*qGroupStride + (seqLen-1)*qSeqStride + headDim
+							kvSize := (kvLen-1)*kvSeqStride + headDim
+
+							q := make([]float32, qSize)
+							k := make([]float32, kvSize)
+							v := make([]float32, kvSize)
+							for i := range q {
+								q[i] = (rng.Float32() - 0.5) * 0.5
+							}
+							for i := range k {
+								k[i] = (rng.Float32() - 0.5) * 0.5
+								v[i] = (rng.Float32() - 0.5) * 0.5
+							}
+
+							maskGroupStride := seqLen * kvLen
+							booleanMask := make([]bool, groupSize*maskGroupStride)
+							for g := range groupSize {
+								for qi := range seqLen {
+									rowOff := g*maskGroupStride + qi*kvLen
+									switch {
+									case qi == seqLen-1 && seqLen > 4:
+										// All-masked row edge case.
+										for ki := range kvLen {
+											booleanMask[rowOff+ki] = false
+										}
+									case qi%3 == 0:
+										// Lower-triangular / prefix active keys with trailing masked keys.
+										active := min(kvLen, qi+5)
+										for ki := range active {
+											booleanMask[rowOff+ki] = true
+										}
+									case qi%3 == 1:
+										// Sparse boolean mask.
+										for ki := range kvLen {
+											booleanMask[rowOff+ki] = (ki+qi+g)%2 == 0
+										}
+									default:
+										// Fully unmasked row.
+										for ki := range kvLen {
+											booleanMask[rowOff+ki] = true
+										}
+									}
+								}
+							}
+
+							kvLenPadded := (kvLen + 31) &^ 31
+							headDimPadded := (headDim + 31) &^ 31
+							scratch := make([]float32, 32*kvLen+32*kvLenPadded+kvLenPadded*headDimPadded+32*headDimPadded)
+							got := make([]float32, qSize)
+							want := make([]float32, qSize)
+
+							ok := DispatchSDPAARM64(
+								q, k, v, got,
+								0, 0, qSeqStride, kvSeqStride, qGroupStride,
+								nil, booleanMask, maskGroupStride,
+								nil, 0,
+								scratch,
+								groupSize, 0, seqLen, kvLen, headDim,
+								scale, causal,
+								seqLen, kvLen,
+							)
+							if !ok {
+								t.Fatalf("DispatchSDPAARM64 returned false for %s", sc.name)
+							}
+
+							sdpaScalarReference(
+								q, k, v, want,
+								0, 0, qSeqStride, kvSeqStride, qGroupStride,
+								nil, booleanMask, maskGroupStride,
+								nil, 0,
+								groupSize, 0, seqLen, kvLen, headDim,
+								scale, causal,
+								seqLen, kvLen,
+							)
+
+							for i := range want {
+								diff := float32(math.Abs(float64(got[i] - want[i])))
+								if diff > 1e-4 {
+									t.Fatalf("mode=%s shape=%s bshd=%v causal=%v mismatch at index %d: got %f, want %f (diff=%g)",
+										modeName, sc.name, bshd, causal, i, got[i], want[i], diff)
+								}
+							}
+
+							// Test broadcast booleanMask (mSeqDim == 1, length == kvLen) and split query ranges [0..mid] + [mid..seqLen].
+							bcastBoolMask := make([]bool, kvLen)
+							for ki := range kvLen {
+								bcastBoolMask[ki] = ki < (kvLen*3)/4 || ki%2 == 0
+							}
+							clear(got)
+							clear(want)
+							mid := seqLen / 2
+							if mid == 0 {
+								mid = 1
+							}
+							scratch2 := make([]float32, len(scratch))
+							if !DispatchSDPAARM64(
+								q, k, v, got,
+								0, 0, qSeqStride, kvSeqStride, qGroupStride,
+								nil, bcastBoolMask, 0,
+								nil, 0,
+								scratch,
+								groupSize, 0, mid, kvLen, headDim,
+								scale, causal,
+								seqLen, kvLen,
+							) {
+								t.Fatalf("DispatchSDPAARM64 returned false for split [0..mid]")
+							}
+							if mid < seqLen {
+								if !DispatchSDPAARM64(
+									q, k, v, got,
+									0, 0, qSeqStride, kvSeqStride, qGroupStride,
+									nil, bcastBoolMask, 0,
+									nil, 0,
+									scratch2,
+									groupSize, mid, seqLen, kvLen, headDim,
+									scale, causal,
+									seqLen, kvLen,
+								) {
+									t.Fatalf("DispatchSDPAARM64 returned false for split [mid..seqLen]")
+								}
+							}
+							sdpaScalarReference(
+								q, k, v, want,
+								0, 0, qSeqStride, kvSeqStride, qGroupStride,
+								nil, bcastBoolMask, 0,
+								nil, 0,
+								groupSize, 0, seqLen, kvLen, headDim,
+								scale, causal,
+								seqLen, kvLen,
+							)
+							for i := range want {
+								diff := float32(math.Abs(float64(got[i] - want[i])))
+								if diff > 1e-4 {
+									t.Fatalf("split+bcastBoolMask mode=%s shape=%s bshd=%v causal=%v mismatch at index %d: got %f, want %f (diff=%g)",
+										modeName, sc.name, bshd, causal, i, got[i], want[i], diff)
+								}
+							}
+						}
+					}
+				})
+			}
+		})
 	}
 }

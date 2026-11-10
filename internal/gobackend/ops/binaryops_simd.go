@@ -3088,8 +3088,8 @@ func simdMinVSFloat16(lhs []float16.Float16, c float16.Float16, out []float16.Fl
 }
 
 const (
-	minBinarySIMDParallelElements = 65536
-	binarySIMDChunkElements       = 32768
+	minBinarySIMDParallelElements = 131072
+	binarySIMDChunkElements       = 65536
 )
 
 func dispatchBinarySIMD[T any](
@@ -3423,6 +3423,136 @@ func dispatchBinarySIMD[T any](
 				}
 			}
 		}
+	case bcastCfg.Pattern == gobackend.BroadcastRowColMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				if v1v2 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						bStart := ab % B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := a * C
+						rOff := bStart * C
+						oOff := ab * C
+						v1v2(lhs[lOff:lOff+C], rhs[rOff:rOff+bCount*C], output[oOff:oOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						b := ab % B
+						lOff := a * C
+						rOff := b * C
+						oOff := ab * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff:oOff+C])
+					}
+				}
+			})
+		} else {
+			for a := range A {
+				lOff := a * C
+				oOff := a * bc
+				if v1v2 != nil {
+					v1v2(lhs[lOff:lOff+C], rhs[:bc], output[oOff:oOff+bc], B, C)
+				} else {
+					for b := range B {
+						rOff := b * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff+rOff:oOff+rOff+C])
+					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastColRowMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				if v2v1 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						bStart := ab % B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := bStart * C
+						rOff := a * C
+						oOff := ab * C
+						v2v1(lhs[lOff:lOff+bCount*C], rhs[rOff:rOff+C], output[oOff:oOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						b := ab % B
+						lOff := b * C
+						rOff := a * C
+						oOff := ab * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff:oOff+C])
+					}
+				}
+			})
+		} else {
+			for a := range A {
+				rOff := a * C
+				oOff := a * bc
+				if v2v1 != nil {
+					v2v1(lhs[:bc], rhs[rOff:rOff+C], output[oOff:oOff+bc], B, C)
+				} else {
+					for b := range B {
+						lOff := b * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff+lOff:oOff+lOff+C])
+					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMatchRowCol:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					rOff := a * C
+					oOff := ab * C
+					sv(lhs[ab], rhs[rOff:rOff+C], output[oOff:oOff+C])
+				}
+			})
+		} else {
+			for ab := range abTotal {
+				a := ab / B
+				rOff := a * C
+				oOff := ab * C
+				sv(lhs[ab], rhs[rOff:rOff+C], output[oOff:oOff+C])
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMatchColRow:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					oOff := ab * C
+					vs(lhs[lOff:lOff+C], rhs[ab], output[oOff:oOff+C])
+				}
+			})
+		} else {
+			for ab := range abTotal {
+				a := ab / B
+				lOff := a * C
+				oOff := ab * C
+				vs(lhs[lOff:lOff+C], rhs[ab], output[oOff:oOff+C])
+			}
+		}
 	default:
 		return gobackend.ErrFallback
 	}
@@ -3445,13 +3575,194 @@ var supportedDivDTypes = []dtypes.DType{
 	dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16,
 }
 
-func tryBinaryTrailingArch(op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) bool {
+func tryBinaryTrailingArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) bool {
+	archFn := gobackend.GetBinaryTrailingArchDispatcher()
+	if archFn == nil {
+		return false
+	}
+	dtype := lhs.RawShape.DType
+	elemBytes := dtype.Size()
+	if elemBytes <= 0 {
+		return false
+	}
+
+	// Scalar RHS or Scalar LHS: equivalent to Trailing broadcast with A=1, B=totalElements.
+	total := output.RawShape.Size()
+	if total > 0 && (rhs.RawShape.Size() == 1 || lhs.RawShape.Size() == 1) {
+		isLHS := lhs.RawShape.Size() == 1 && rhs.RawShape.Size() != 1
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+			total >= minBinarySIMDParallelElements {
+			firstEnd := min(total, binarySIMDChunkElements)
+			var firstLhs, firstRhs, firstOut gobackend.Buffer
+			firstLhs.Flat = lhs.Flat
+			firstRhs.Flat = rhs.Flat
+			firstOut.Flat = output.Flat
+			if isLHS {
+				firstLhs.RawBytes = lhs.RawBytes[:elemBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:firstEnd*elemBytes]
+			} else {
+				firstLhs.RawBytes = lhs.RawBytes[:firstEnd*elemBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:elemBytes]
+			}
+			firstOut.RawBytes = output.RawBytes[:firstEnd*elemBytes]
+			if !archFn(op, isLHS, &firstLhs, &firstRhs, &firstOut, 1, firstEnd, dtype) {
+				return false
+			}
+			if firstEnd < total {
+				backend.Scheduler.ParallelizeChunks(total-firstEnd, binarySIMDChunkElements, func(start, end int) {
+					s := firstEnd + start
+					e := firstEnd + end
+					var localLhs, localRhs, localOut gobackend.Buffer
+					localLhs.Flat = lhs.Flat
+					localRhs.Flat = rhs.Flat
+					localOut.Flat = output.Flat
+					if isLHS {
+						localLhs.RawBytes = lhs.RawBytes[:elemBytes]
+						localRhs.RawBytes = rhs.RawBytes[s*elemBytes : e*elemBytes]
+					} else {
+						localLhs.RawBytes = lhs.RawBytes[s*elemBytes : e*elemBytes]
+						localRhs.RawBytes = rhs.RawBytes[:elemBytes]
+					}
+					localOut.RawBytes = output.RawBytes[s*elemBytes : e*elemBytes]
+					archFn(op, isLHS, &localLhs, &localRhs, &localOut, 1, e-s, dtype)
+				})
+			}
+			return true
+		}
+		return archFn(op, isLHS, lhs, rhs, output, 1, total, dtype)
+	}
+
 	if bcastCfg.Pattern != gobackend.BroadcastTrailingRHS && bcastCfg.Pattern != gobackend.BroadcastTrailingLHS {
 		return false
 	}
-	if archFn := gobackend.GetBinaryTrailingArchDispatcher(); archFn != nil {
-		isLHS := bcastCfg.Pattern == gobackend.BroadcastTrailingLHS
-		return archFn(op, isLHS, lhs, rhs, output, bcastCfg.A, bcastCfg.B, lhs.RawShape.DType)
+	isLHS := bcastCfg.Pattern == gobackend.BroadcastTrailingLHS
+	lhsRowBytes := bcastCfg.B * elemBytes
+	rhsRowBytes := elemBytes
+	if isLHS {
+		lhsRowBytes = elemBytes
+		rhsRowBytes = bcastCfg.B * elemBytes
+	}
+	outRowBytes := bcastCfg.B * elemBytes
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		bcastCfg.A*bcastCfg.B >= minBinarySIMDParallelElements && bcastCfg.A > 1 &&
+		len(lhs.RawBytes) >= bcastCfg.A*lhsRowBytes &&
+		len(rhs.RawBytes) >= bcastCfg.A*rhsRowBytes &&
+		len(output.RawBytes) >= bcastCfg.A*outRowBytes {
+		minA := max(1, binarySIMDChunkElements/max(1, bcastCfg.B))
+		firstEnd := min(bcastCfg.A, minA)
+		var firstLhs, firstRhs, firstOut gobackend.Buffer
+		firstLhs.Flat = lhs.Flat
+		firstRhs.Flat = rhs.Flat
+		firstOut.Flat = output.Flat
+		firstLhs.RawBytes = lhs.RawBytes[:firstEnd*lhsRowBytes]
+		firstRhs.RawBytes = rhs.RawBytes[:firstEnd*rhsRowBytes]
+		firstOut.RawBytes = output.RawBytes[:firstEnd*outRowBytes]
+		if !archFn(op, isLHS, &firstLhs, &firstRhs, &firstOut, firstEnd, bcastCfg.B, dtype) {
+			return false
+		}
+		if firstEnd < bcastCfg.A {
+			backend.Scheduler.ParallelizeChunks(bcastCfg.A-firstEnd, minA, func(start, end int) {
+				aStart := firstEnd + start
+				aEnd := firstEnd + end
+				var localLhs, localRhs, localOut gobackend.Buffer
+				localLhs.Flat = lhs.Flat
+				localRhs.Flat = rhs.Flat
+				localOut.Flat = output.Flat
+				localLhs.RawBytes = lhs.RawBytes[aStart*lhsRowBytes : aEnd*lhsRowBytes]
+				localRhs.RawBytes = rhs.RawBytes[aStart*rhsRowBytes : aEnd*rhsRowBytes]
+				localOut.RawBytes = output.RawBytes[aStart*outRowBytes : aEnd*outRowBytes]
+				archFn(op, isLHS, &localLhs, &localRhs, &localOut, aEnd-aStart, bcastCfg.B, dtype)
+			})
+		}
+		return true
+	}
+	return archFn(op, isLHS, lhs, rhs, output, bcastCfg.A, bcastCfg.B, dtype)
+}
+
+func tryBinaryMidArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) bool {
+	midFn := gobackend.GetBinaryMidArchDispatcher()
+	if midFn == nil {
+		return false
+	}
+	dtype := lhs.RawShape.DType
+	if dtype != dtypes.Float32 {
+		return false
+	}
+	const elemBytes = 4
+	total := output.RawShape.Size()
+	if total <= 0 {
+		return false
+	}
+	canParallelize := total >= minBinarySIMDParallelElements &&
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+
+	switch bcastCfg.Pattern {
+	case gobackend.BroadcastNone:
+		if canParallelize {
+			backend.Scheduler.ParallelizeChunks(total, binarySIMDChunkElements, func(start, end int) {
+				var localLhs, localRhs, localOut gobackend.Buffer
+				localLhs.Flat = lhs.Flat
+				localRhs.Flat = rhs.Flat
+				localOut.Flat = output.Flat
+				localLhs.RawBytes = lhs.RawBytes[start*elemBytes : end*elemBytes]
+				localRhs.RawBytes = rhs.RawBytes[start*elemBytes : end*elemBytes]
+				localOut.RawBytes = output.RawBytes[start*elemBytes : end*elemBytes]
+				midFn(op, false, &localLhs, &localRhs, &localOut, 1, 1, end-start, dtype)
+			})
+			return true
+		}
+		return midFn(op, false, lhs, rhs, output, 1, 1, total, dtype)
+
+	case gobackend.BroadcastLeadingRHS, gobackend.BroadcastLeadingLHS:
+		isLHS := bcastCfg.Pattern == gobackend.BroadcastLeadingLHS
+		A, B := bcastCfg.A, bcastCfg.B
+		rowBytes := B * elemBytes
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				var localLhs, localRhs, localOut gobackend.Buffer
+				localLhs.Flat = lhs.Flat
+				localRhs.Flat = rhs.Flat
+				localOut.Flat = output.Flat
+				if isLHS {
+					localLhs.RawBytes = lhs.RawBytes[:rowBytes]
+					localRhs.RawBytes = rhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+				} else {
+					localLhs.RawBytes = lhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+					localRhs.RawBytes = rhs.RawBytes[:rowBytes]
+				}
+				localOut.RawBytes = output.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+				midFn(op, isLHS, &localLhs, &localRhs, &localOut, 1, aEnd-aStart, B, dtype)
+			})
+			return true
+		}
+		return midFn(op, isLHS, lhs, rhs, output, 1, A, B, dtype)
+
+	case gobackend.BroadcastMidRHS, gobackend.BroadcastMidLHS:
+		isLHS := bcastCfg.Pattern == gobackend.BroadcastMidLHS
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bcBytes := B * C * elemBytes
+		cBytes := C * elemBytes
+		if canParallelize && A > 1 {
+			minA := max(1, binarySIMDChunkElements/max(1, B*C))
+			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
+				var localLhs, localRhs, localOut gobackend.Buffer
+				localLhs.Flat = lhs.Flat
+				localRhs.Flat = rhs.Flat
+				localOut.Flat = output.Flat
+				if isLHS {
+					localLhs.RawBytes = lhs.RawBytes[aStart*cBytes : aEnd*cBytes]
+					localRhs.RawBytes = rhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+				} else {
+					localLhs.RawBytes = lhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+					localRhs.RawBytes = rhs.RawBytes[aStart*cBytes : aEnd*cBytes]
+				}
+				localOut.RawBytes = output.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+				midFn(op, isLHS, &localLhs, &localRhs, &localOut, aEnd-aStart, B, C, dtype)
+			})
+			return true
+		}
+		return midFn(op, isLHS, lhs, rhs, output, A, B, C, dtype)
 	}
 	return false
 }
@@ -3468,7 +3779,8 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeAdd, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeAdd, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeAdd, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -3523,7 +3835,8 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeSub, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeSub, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeSub, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -3579,7 +3892,8 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeMul, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeMul, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeMul, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -3626,7 +3940,8 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeDiv, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeDiv, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeDiv, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -3666,7 +3981,7 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -3716,7 +4031,7 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 

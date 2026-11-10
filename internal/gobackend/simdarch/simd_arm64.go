@@ -2,7 +2,7 @@
 
 //go:build arm64 && goexperiment.simd
 
-package gobackend
+package simdarch
 
 import (
 	"github.com/gomlx/compute/support/envutil"

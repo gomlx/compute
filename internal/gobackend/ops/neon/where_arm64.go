@@ -2,13 +2,11 @@
 
 //go:build arm64 && goexperiment.simd
 
-package ops
+package neon
 
 import (
 	"simd/archsimd"
 	"unsafe"
-
-	"github.com/gomlx/compute/internal/gobackend"
 )
 
 func expandCond16NEON(condPtr unsafe.Pointer) (m0, m1, m2, m3 archsimd.Mask32x4) {
@@ -22,10 +20,8 @@ func expandCond16NEON(condPtr unsafe.Pointer) (m0, m1, m2, m3 archsimd.Mask32x4)
 	return
 }
 
-func whereFloat32Arch(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool {
-	if !gobackend.IsNEONAllowed {
-		return false
-	}
+// DispatchWhereFloat32NEON executes Where on contiguous float32 slices using ARM64 NEON SIMD.
+func DispatchWhereFloat32NEON(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool {
 	n := len(out)
 	if n == 0 {
 		return true

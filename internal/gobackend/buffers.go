@@ -6,10 +6,11 @@ import (
 	"bytes"
 	stderrors "errors"
 	"fmt"
+	"math/bits"
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/gomlx/compute"
@@ -54,13 +55,19 @@ type Buffer struct {
 	// to avoid unbounded pool growth when iterating over large datasets.
 	isUserFed bool
 
+	// poolSlot is the 1-based slot index of this Buffer in its size-bucket's bufferPool
+	// (0 if not yet registered in a bufferPool).
+	poolSlot uint32
+
 	// RawBytes is the underlying storage for the buffer.
 	// Its length is always >= requested size in bytes.
 	RawBytes []byte
 
 	// Flat is always a slice of the underlying data type (shape.DType).
 	// It is a re-casting of RawBytes.
-	Flat any
+	Flat      any
+	flatDType dtypes.DType
+	flatLen   int
 }
 
 // EqualNodeData implements nodeDataComparable for Buffer.
@@ -139,22 +146,133 @@ func compareFlatData(a, b any) bool {
 	return true
 }
 
-type bufferPoolKey struct {
-	bucketedSize int
+// numBufferPoolBuckets is the total number of distinct TwoBitBucketLen sizes
+// across the 64-bit integer range (2 * 64 = 128).
+const numBufferPoolBuckets = 128
+
+const (
+	poolChunkShift = 6
+	poolChunkSize  = 1 << poolChunkShift // 64 buffer slots per chunk
+	poolMaxChunks  = 256                 // Up to 16,384 pooled buffers per size bucket
+)
+
+type bufferSlot struct {
+	buf  atomic.Pointer[Buffer]
+	next atomic.Uint32
+}
+
+// bufferPool is a lock-free LIFO Treiber stack of reusable Buffers for a single bucketed byte size.
+//
+// Unlike sync.Pool, it does not strand buffers in per-P private slots when the executor
+// goroutine migrates across Ps at parallel barriers, and it is not wiped by runtime.GC
+// between inference/training steps (it is released when Backend.Finalize is called).
+//
+// To avoid both mutex contention (when many worker goroutines acquire/release scratch buffers
+// simultaneously) and the ABA problem (when a popped *Buffer is re-pushed while another goroutine
+// is mid-pop), the stack head is a 64-bit atomic value packing a 32-bit monotonic ABA generation
+// tag in the upper 32 bits and a 1-based slot index in the lower 32 bits.
+type bufferPool struct {
+	head     atomic.Uint64
+	nextSlot atomic.Uint32
+	chunks   [poolMaxChunks]atomic.Pointer[[poolChunkSize]bufferSlot]
+}
+
+func (p *bufferPool) slot(idx uint32) *bufferSlot {
+	z := idx - 1
+	chunk := p.chunks[z>>poolChunkShift].Load()
+	return &chunk[z&(poolChunkSize-1)]
+}
+
+func (p *bufferPool) registerSlot(buf *Buffer) uint32 {
+	idx := p.nextSlot.Add(1)
+	z := idx - 1
+	chunkIdx := z >> poolChunkShift
+	if int(chunkIdx) >= len(p.chunks) {
+		return 0
+	}
+	chunk := p.chunks[chunkIdx].Load()
+	if chunk == nil {
+		newChunk := new([poolChunkSize]bufferSlot)
+		if p.chunks[chunkIdx].CompareAndSwap(nil, newChunk) {
+			chunk = newChunk
+		} else {
+			chunk = p.chunks[chunkIdx].Load()
+		}
+	}
+	s := &chunk[z&(poolChunkSize-1)]
+	s.buf.Store(buf)
+	buf.poolSlot = idx
+	return idx
+}
+
+func (p *bufferPool) Get() *Buffer {
+	for {
+		oldHead := p.head.Load()
+		oldIdx := uint32(oldHead)
+		if oldIdx == 0 {
+			return nil
+		}
+		s := p.slot(oldIdx)
+		nextIdx := s.next.Load()
+		newTag := uint32(oldHead>>32) + 1
+		newHead := (uint64(newTag) << 32) | uint64(nextIdx)
+		if p.head.CompareAndSwap(oldHead, newHead) {
+			return s.buf.Load()
+		}
+	}
+}
+
+func (p *bufferPool) Put(buf *Buffer) {
+	slotIdx := buf.poolSlot
+	if slotIdx == 0 {
+		slotIdx = p.registerSlot(buf)
+		if slotIdx == 0 {
+			return
+		}
+	}
+	s := p.slot(slotIdx)
+	for {
+		oldHead := p.head.Load()
+		oldIdx := uint32(oldHead)
+		newTag := uint32(oldHead>>32) + 1
+		s.next.Store(oldIdx)
+		newHead := (uint64(newTag) << 32) | uint64(slotIdx)
+		if p.head.CompareAndSwap(oldHead, newHead) {
+			return
+		}
+	}
+}
+
+// bufferPoolBucketIndex maps a bucketedSize produced by support.TwoBitBucketLen
+// to a compact index in [0, numBufferPoolBuckets).
+func bufferPoolBucketIndex(bucketedSize int) int {
+	if bucketedSize <= 2 {
+		return max(bucketedSize, 0)
+	}
+	msbPos := bits.Len(uint(bucketedSize)) - 1
+	secondBit := (bucketedSize >> (msbPos - 1)) & 1
+	return (msbPos << 1) | secondBit
 }
 
 // getBufferPool for given bucketedSize.
-func (b *Backend) getBufferPool(bucketedSize int) *sync.Pool {
-	key := bufferPoolKey{bucketedSize: bucketedSize}
-	poolInterface, ok := b.bufferPools.Load(key)
-	if !ok {
-		poolInterface, _ = b.bufferPools.LoadOrStore(key, &sync.Pool{})
+func (b *Backend) getBufferPool(bucketedSize int) *bufferPool {
+	idx := bufferPoolBucketIndex(bucketedSize)
+	pool := b.bufferPools[idx].Load()
+	if pool == nil {
+		newPool := &bufferPool{}
+		if b.bufferPools[idx].CompareAndSwap(nil, newPool) {
+			pool = newPool
+		} else {
+			pool = b.bufferPools[idx].Load()
+		}
 	}
-	return poolInterface.(*sync.Pool) //nolint:errcheck
+	return pool
 }
 
 // recast re-sets the Flat field based on RawBytes, DType and length.
 func (b *Buffer) recast(dtype dtypes.DType, length int) {
+	b.flatDType = dtype
+	b.flatLen = length
 	if length == 0 {
 		b.Flat = dtypes.MakeAnySlice(dtype, 0)
 		return
@@ -177,12 +295,12 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	length := shape.Size()
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
-	pool := b.getBufferPool(bucketedSize)
 	var buf *Buffer
-	if item := pool.Get(); item != nil {
-		buf = item.(*Buffer) //nolint:errcheck
-		// fmt.Printf("> Reusing buffer: \t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
-	} else {
+	if bucketedSize > 0 {
+		pool := b.getBufferPool(bucketedSize)
+		buf = pool.Get()
+	}
+	if buf == nil {
 		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}
 		// fmt.Printf("> Creating buffer:\t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
 	}
@@ -197,7 +315,9 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 		buf.RawShape.Dimensions = make([]int, rank)
 	}
 	copy(buf.RawShape.Dimensions, shape.Dimensions)
-	buf.recast(dtype, length)
+	if buf.Flat == nil || buf.flatDType != dtype || buf.flatLen != length {
+		buf.recast(dtype, length)
+	}
 	// buf.randomize() // Useful to help finding where zero-initialized is needed but missing.
 	return buf, nil
 }
@@ -235,7 +355,6 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	if len(buffer.RawBytes) == 0 {
 		return
 	}
-	buffer.Flat = nil
 	buffer.RawShape = shapes.Invalid()
 	pool := b.getBufferPool(len(buffer.RawBytes))
 	pool.Put(buffer)
@@ -244,6 +363,7 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 // shallowClone returns a new Buffer struct pointing to the same data.
 func (buffer *Buffer) shallowClone() *Buffer {
 	newBuf := *buffer
+	newBuf.poolSlot = 0
 	rank := len(newBuf.RawShape.Dimensions)
 	if rank <= len(newBuf.ShapeDimensionsBuffer) {
 		newBuf.RawShape.Dimensions = newBuf.ShapeDimensionsBuffer[:rank]
@@ -453,6 +573,8 @@ func (buffer *Buffer) Finalize() error {
 	}
 	if buffer.RawBackend != nil && buffer.RawBackend.isFinalized {
 		buffer.Flat = nil // Accelerates GC.
+		buffer.flatDType = dtypes.InvalidDType
+		buffer.flatLen = 0
 		buffer.RawBytes = nil
 		buffer.RawShape = shapes.Invalid()
 		return errors.Errorf("Finalize(%p): backend is already finalized", buffer)
@@ -474,6 +596,8 @@ func (buffer *Buffer) Finalize() error {
 
 	buffer.InUse = false
 	buffer.Flat = nil
+	buffer.flatDType = dtypes.InvalidDType
+	buffer.flatLen = 0
 	buffer.RawBytes = nil
 	buffer.RawShape = shapes.Invalid()
 	return nil

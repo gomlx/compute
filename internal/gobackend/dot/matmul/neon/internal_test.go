@@ -1787,14 +1787,21 @@ func TestSMEHybridCoExecution(t *testing.T) {
 }
 
 // BenchmarkSMEHybrid compares Pure SME (SMEUseHybridNEON=false, all workers queuing on cluster SME units)
-// against Hybrid SME+NEON (SMEUseHybridNEON=true, 1 SME worker per cluster + remaining workers on per-core NEON).
+// against TwoSMEsOnly (Tier A + Tier B only), Hybrid_NoECoreNEON (Tier A + B + Super/P-core NEON, dropping Tier E),
+// and Hybrid_AllTiers (all 5 tiers A+B+C+D+E).
 func BenchmarkSMEHybrid(b *testing.B) {
 	if !gobackend.IsSMEAllowed {
 		b.Skip("ARM64 SME is not supported or allowed on this host")
 	}
 
 	origHybrid := SMEUseHybridNEON
-	defer func() { SMEUseHybridNEON = origHybrid }()
+	origDropE := SMEDropECoreNEON
+	origTwoSMEs := SMETwoSMEsOnly
+	defer func() {
+		SMEUseHybridNEON = origHybrid
+		SMEDropECoreNEON = origDropE
+		SMETwoSMEsOnly = origTwoSMEs
+	}()
 
 	backend, err := gobackend.NewBackend()
 	if err != nil {
@@ -1807,6 +1814,8 @@ func BenchmarkSMEHybrid(b *testing.B) {
 		B, M, N, K int
 		cachedRHS  bool
 	}{
+		{"Skinny_1x64x2048x2048", 1, 64, 2048, 2048, false},
+		{"CachedRHS_Skinny_1x64x2048x2048", 1, 64, 2048, 2048, true},
 		{"Dynamic_1x1024x1024x1024", 1, 1024, 1024, 1024, false},
 		{"CachedRHS_1x1024x1024x1024", 1, 1024, 1024, 1024, true},
 		{"Dynamic_1x1536x1920x384", 1, 1536, 1920, 384, false},
@@ -1835,14 +1844,20 @@ func BenchmarkSMEHybrid(b *testing.B) {
 		}
 
 		for _, mode := range []struct {
-			name   string
-			hybrid bool
+			name    string
+			hybrid  bool
+			twoSMEs bool
+			dropE   bool
 		}{
-			{"PureSME", false},
-			{"HybridSME_NEON", true},
+			{"PureSME", false, false, false},
+			{"TwoSMEsOnly", true, true, true},
+			{"Hybrid_NoECoreNEON", true, false, true},
+			{"Hybrid_AllTiers", true, false, false},
 		} {
 			b.Run("Float32/"+sh.name+"/"+mode.name, func(b *testing.B) {
 				SMEUseHybridNEON = mode.hybrid
+				SMETwoSMEsOnly = mode.twoSMEs
+				SMEDropECoreNEON = mode.dropE
 				for range 3 {
 					smeRouterFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, sh.B, sh.M, sh.N, sh.K, output, nodeData)
 				}
@@ -1856,3 +1871,62 @@ func BenchmarkSMEHybrid(b *testing.B) {
 		}
 	}
 }
+
+// TestSMECachedRHSWorkerTransition verifies that pre-packed RHSConstantData panels remain valid
+// when a DotGeneral node transitions between single-worker execution (e.g. caller on Cluster 1
+// with flops <= 16M or high inter-call parallelism) and multi-worker execution (e.g. caller on
+// Cluster 0 Efficiency core).
+func TestSMECachedRHSWorkerTransition(t *testing.T) {
+	if !gobackend.IsSMEAllowed {
+		t.Skip("ARM64 SME is not supported or allowed on this host")
+	}
+
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
+	const B, M, N, K = 1, 32, 384, 1024
+	lhs := make([]float32, B*M*K)
+	for i := range lhs {
+		lhs[i] = float32(i%13-6) * 0.01
+	}
+	rhs := make([]float32, B*K*N)
+	for i := range rhs {
+		rhs[i] = float32(i%17-8) * 0.01
+	}
+	want := make([]float32, B*M*N)
+	neonLargeWithParamsFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, B, M, N, K, want, nil, NEONParamsFloat32)
+
+	checkClose := func(name string, got []float32) {
+		for i := range want {
+			if diff := math.Abs(float64(got[i] - want[i])); diff > 1e-3 {
+				t.Fatalf("%s mismatch at %d: got %v, want %v (diff=%v)", name, i, got[i], want[i], diff)
+			}
+		}
+	}
+
+	// Case 1: Cache RHS when maxParallelism=1 (single worker), then execute with maxParallelism=12 (multi-worker).
+	nodeData1 := &dot.NodeData{RHSConstantData: &gobackend.ConstantData{}}
+	got1 := make([]float32, B*M*N)
+	backend.Scheduler.SetMaxParallelism(1)
+	smeLargeFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, B, M, N, K, got1, nodeData1)
+	checkClose("Case 1 (single-worker first call)", got1)
+	clear(got1)
+	backend.Scheduler.SetMaxParallelism(12)
+	smeLargeFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, B, M, N, K, got1, nodeData1)
+	checkClose("Case 1 (multi-worker second call)", got1)
+
+	// Case 2: Cache RHS when maxParallelism=12 (multi-worker), then execute with maxParallelism=1 (single worker).
+	nodeData2 := &dot.NodeData{RHSConstantData: &gobackend.ConstantData{}}
+	got2 := make([]float32, B*M*N)
+	backend.Scheduler.SetMaxParallelism(12)
+	smeLargeFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, B, M, N, K, got2, nodeData2)
+	checkClose("Case 2 (multi-worker first call)", got2)
+	clear(got2)
+	backend.Scheduler.SetMaxParallelism(1)
+	smeLargeFloat32(backend, dot.LayoutNonTransposed, lhs, rhs, B, M, N, K, got2, nodeData2)
+	checkClose("Case 2 (single-worker second call)", got2)
+}
+

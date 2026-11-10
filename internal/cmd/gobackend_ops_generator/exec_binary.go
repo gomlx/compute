@@ -137,7 +137,7 @@ func exec{{.Name}}(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](backend *gobackend.Backend, lhs, rhs []T, output []{{if $is_comparison}}bool{{else}}T{{end}},
 	lhsShape, rhsShape, outputShape shapes.Shape, bcastCfg gobackend.BroadcastConfig) {
 	totalElements := len(output)
-	canParallelize := totalElements >= 65536 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+	canParallelize := totalElements >= 524288 && backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
 
 	switch {
 	case len(rhs) == 1:
@@ -333,8 +333,11 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 					a := ab / B
 					lOff := ab * C
 					rOff := a * C
+					lSlice := lhs[lOff : lOff+C]
+					rSlice := rhs[rOff : rOff+C]
+					outSlice := output[lOff : lOff+C]
 					for c := range C {
-						output[lOff+c] = {{ CallOp .Format "lhs[lOff+c]" "rhs[rOff+c]" }}
+						outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
 					}
 				}
 			})
@@ -344,8 +347,11 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 			a := ab / B
 			lOff := ab * C
 			rOff := a * C
+			lSlice := lhs[lOff : lOff+C]
+			rSlice := rhs[rOff : rOff+C]
+			outSlice := output[lOff : lOff+C]
 			for c := range C {
-				output[lOff+c] = {{ CallOp .Format "lhs[lOff+c]" "rhs[rOff+c]" }}
+				outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
 			}
 		}
 		return
@@ -359,8 +365,11 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 					a := ab / B
 					lOff := a * C
 					rOff := ab * C
+					lSlice := lhs[lOff : lOff+C]
+					rSlice := rhs[rOff : rOff+C]
+					outSlice := output[rOff : rOff+C]
 					for c := range C {
-						output[rOff+c] = {{ CallOp .Format "lhs[lOff+c]" "rhs[rOff+c]" }}
+						outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
 					}
 				}
 			})
@@ -370,8 +379,149 @@ func exec{{$name}}{{$version}}Generic[T gobackend.POD{{$version}}Constraints](ba
 			a := ab / B
 			lOff := a * C
 			rOff := ab * C
+			lSlice := lhs[lOff : lOff+C]
+			rSlice := rhs[rOff : rOff+C]
+			outSlice := output[rOff : rOff+C]
 			for c := range C {
-				output[rOff+c] = {{ CallOp .Format "lhs[lOff+c]" "rhs[rOff+c]" }}
+				outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowColMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 32768/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					b := ab % B
+					lOff := a * C
+					rOff := b * C
+					oOff := ab * C
+					lSlice := lhs[lOff : lOff+C]
+					rSlice := rhs[rOff : rOff+C]
+					outSlice := output[oOff : oOff+C]
+					for c := range C {
+						outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
+					}
+				}
+			})
+			return
+		}
+		for a := range A {
+			lOff := a * C
+			lSlice := lhs[lOff : lOff+C]
+			aOff := a * B * C
+			for b := range B {
+				rOff := b * C
+				oOff := aOff + rOff
+				rSlice := rhs[rOff : rOff+C]
+				outSlice := output[oOff : oOff+C]
+				for c := range C {
+					outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
+				}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRowMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 32768/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					b := ab % B
+					lOff := b * C
+					rOff := a * C
+					oOff := ab * C
+					lSlice := lhs[lOff : lOff+C]
+					rSlice := rhs[rOff : rOff+C]
+					outSlice := output[oOff : oOff+C]
+					for c := range C {
+						outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
+					}
+				}
+			})
+			return
+		}
+		for a := range A {
+			rOff := a * C
+			rSlice := rhs[rOff : rOff+C]
+			aOff := a * B * C
+			for b := range B {
+				lOff := b * C
+				oOff := aOff + lOff
+				lSlice := lhs[lOff : lOff+C]
+				outSlice := output[oOff : oOff+C]
+				for c := range C {
+					outSlice[c] = {{ CallOp .Format "lSlice[c]" "rSlice[c]" }}
+				}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMatchRowCol:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 32768/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					cVal := lhs[ab]
+					rOff := a * C
+					oOff := ab * C
+					rSlice := rhs[rOff : rOff+C]
+					outSlice := output[oOff : oOff+C]
+					for c := range C {
+						outSlice[c] = {{ CallOp .Format "cVal" "rSlice[c]" }}
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			cVal := lhs[ab]
+			rOff := a * C
+			oOff := ab * C
+			rSlice := rhs[rOff : rOff+C]
+			outSlice := output[oOff : oOff+C]
+			for c := range C {
+				outSlice[c] = {{ CallOp .Format "cVal" "rSlice[c]" }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMatchColRow:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, 32768/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					cVal := rhs[ab]
+					oOff := ab * C
+					lSlice := lhs[lOff : lOff+C]
+					outSlice := output[oOff : oOff+C]
+					for c := range C {
+						outSlice[c] = {{ CallOp .Format "lSlice[c]" "cVal" }}
+					}
+				}
+			})
+			return
+		}
+		for ab := range abTotal {
+			a := ab / B
+			lOff := a * C
+			cVal := rhs[ab]
+			oOff := ab * C
+			lSlice := lhs[lOff : lOff+C]
+			outSlice := output[oOff : oOff+C]
+			for c := range C {
+				outSlice[c] = {{ CallOp .Format "lSlice[c]" "cVal" }}
 			}
 		}
 		return
@@ -556,6 +706,78 @@ func exec{{$name}}{{$version}}{{$half.DType}}(backend *gobackend.Backend, lhs, r
 				output[rOff+c] = {{CallOp $outer.Format "aF32" "bF32"}}
 			{{- else }}
 				output[rOff+c] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastRowColMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			b := ab % B
+			lOff := a * C
+			rOff := b * C
+			oOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+			{{- if $is_comparison }}
+				output[oOff+c] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[oOff+c] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastColRowMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			b := ab % B
+			lOff := b * C
+			rOff := a * C
+			oOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+				bF32 := rhs[rOff+c].Float32()
+			{{- if $is_comparison }}
+				output[oOff+c] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[oOff+c] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMatchRowCol:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			aF32 := lhs[ab].Float32()
+			rOff := a * C
+			oOff := ab * C
+			for c := range C {
+				bF32 := rhs[rOff+c].Float32()
+			{{- if $is_comparison }}
+				output[oOff+c] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[oOff+c] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
+			{{- end }}
+			}
+		}
+		return
+	case bcastCfg.Pattern == gobackend.BroadcastMatchColRow:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		for ab := range A * B {
+			a := ab / B
+			lOff := a * C
+			bF32 := rhs[ab].Float32()
+			oOff := ab * C
+			for c := range C {
+				aF32 := lhs[lOff+c].Float32()
+			{{- if $is_comparison }}
+				output[oOff+c] = {{CallOp $outer.Format "aF32" "bF32"}}
+			{{- else }}
+				output[oOff+c] = {{$half.Converter}}({{ CallOp $outer.Format "aF32" "bF32" }})
 			{{- end }}
 			}
 		}

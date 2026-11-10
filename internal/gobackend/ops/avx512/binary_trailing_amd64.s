@@ -10,406 +10,191 @@
 // Signature: func(lhs, rhs, out unsafe.Pointer, A, B int)
 
 // ----------------------------------------------------------------------------
-// FLOAT32 (VLEN = 16)
+// FLOAT32 (VLEN = 16, 4x unrolled = 64 floats/iter)
 // ----------------------------------------------------------------------------
 
-TEXT ·binaryTrailingAddFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_add_f32
-	TESTQ R9, R9
-	JLE done_add_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_add_f32:
-	CMPQ R10, R8
-	JGE done_add_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_add_f32
-loop_add_f32:
-	VMOVUPS (SI), Z1
-	VADDPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_add_f32
-tail_add_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_add_f32
-scalar_add_f32:
-	VMOVSS (SI), X1
-	VADDSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_add_f32
-next_add_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_add_f32
-done_add_f32:
-	VZEROUPPER
+#define BINARY_TRAILING_RHS_BODY_F32_AVX512(VOP, SOP) \
+	MOVQ lhs+0(FP), SI \
+	MOVQ rhs+8(FP), DX \
+	MOVQ out+16(FP), DI \
+	MOVQ A+24(FP), R8 \
+	MOVQ B+32(FP), R9 \
+	TESTQ R8, R8 \
+	JLE done \
+	TESTQ R9, R9 \
+	JLE done \
+	MOVQ R9, R11 \
+	SHRQ $6, R11 \
+	MOVQ R9, R12 \
+	SHRQ $4, R12 \
+	ANDQ $3, R12 \
+	XORQ R10, R10 \
+row_loop: \
+	CMPQ R10, R8 \
+	JGE done \
+	VBROADCASTSS (DX), Z0 \
+	MOVQ R11, CX \
+	TESTQ CX, CX \
+	JZ tail16 \
+loop64: \
+	VMOVUPS (SI), Z1 \
+	VMOVUPS 64(SI), Z2 \
+	VMOVUPS 128(SI), Z3 \
+	VMOVUPS 192(SI), Z4 \
+	VOP Z0, Z1, Z1 \
+	VOP Z0, Z2, Z2 \
+	VOP Z0, Z3, Z3 \
+	VOP Z0, Z4, Z4 \
+	VMOVUPS Z1, (DI) \
+	VMOVUPS Z2, 64(DI) \
+	VMOVUPS Z3, 128(DI) \
+	VMOVUPS Z4, 192(DI) \
+	ADDQ $256, SI \
+	ADDQ $256, DI \
+	DECQ CX \
+	JNZ loop64 \
+tail16: \
+	MOVQ R12, CX \
+	TESTQ CX, CX \
+	JZ tail8 \
+loop16: \
+	VMOVUPS (SI), Z1 \
+	VOP Z0, Z1, Z2 \
+	VMOVUPS Z2, (DI) \
+	ADDQ $64, SI \
+	ADDQ $64, DI \
+	DECQ CX \
+	JNZ loop16 \
+tail8: \
+	TESTQ $8, R9 \
+	JZ tail1 \
+	VMOVUPS (SI), Y1 \
+	VOP Y0, Y1, Y2 \
+	VMOVUPS Y2, (DI) \
+	ADDQ $32, SI \
+	ADDQ $32, DI \
+tail1: \
+	MOVQ R9, CX \
+	ANDQ $7, CX \
+	JZ next_row \
+scalar_loop: \
+	VMOVSS (SI), X1 \
+	SOP X0, X1, X1 \
+	VMOVSS X1, (DI) \
+	ADDQ $4, SI \
+	ADDQ $4, DI \
+	DECQ CX \
+	JNZ scalar_loop \
+next_row: \
+	ADDQ $4, DX \
+	INCQ R10 \
+	JMP row_loop \
+done: \
+	VZEROUPPER \
 	RET
+
+#define BINARY_TRAILING_LHS_BODY_F32_AVX512(VOP, SOP) \
+	MOVQ lhs+0(FP), SI \
+	MOVQ rhs+8(FP), DX \
+	MOVQ out+16(FP), DI \
+	MOVQ A+24(FP), R8 \
+	MOVQ B+32(FP), R9 \
+	TESTQ R8, R8 \
+	JLE done \
+	TESTQ R9, R9 \
+	JLE done \
+	MOVQ R9, R11 \
+	SHRQ $6, R11 \
+	MOVQ R9, R12 \
+	SHRQ $4, R12 \
+	ANDQ $3, R12 \
+	XORQ R10, R10 \
+row_loop: \
+	CMPQ R10, R8 \
+	JGE done \
+	VBROADCASTSS (DX), Z0 \
+	MOVQ R11, CX \
+	TESTQ CX, CX \
+	JZ tail16 \
+loop64: \
+	VMOVUPS (SI), Z1 \
+	VMOVUPS 64(SI), Z2 \
+	VMOVUPS 128(SI), Z3 \
+	VMOVUPS 192(SI), Z4 \
+	VOP Z1, Z0, Z1 \
+	VOP Z2, Z0, Z2 \
+	VOP Z3, Z0, Z3 \
+	VOP Z4, Z0, Z4 \
+	VMOVUPS Z1, (DI) \
+	VMOVUPS Z2, 64(DI) \
+	VMOVUPS Z3, 128(DI) \
+	VMOVUPS Z4, 192(DI) \
+	ADDQ $256, SI \
+	ADDQ $256, DI \
+	DECQ CX \
+	JNZ loop64 \
+tail16: \
+	MOVQ R12, CX \
+	TESTQ CX, CX \
+	JZ tail8 \
+loop16: \
+	VMOVUPS (SI), Z1 \
+	VOP Z1, Z0, Z2 \
+	VMOVUPS Z2, (DI) \
+	ADDQ $64, SI \
+	ADDQ $64, DI \
+	DECQ CX \
+	JNZ loop16 \
+tail8: \
+	TESTQ $8, R9 \
+	JZ tail1 \
+	VMOVUPS (SI), Y1 \
+	VOP Y1, Y0, Y2 \
+	VMOVUPS Y2, (DI) \
+	ADDQ $32, SI \
+	ADDQ $32, DI \
+tail1: \
+	MOVQ R9, CX \
+	ANDQ $7, CX \
+	JZ next_row \
+scalar_loop: \
+	SOP (SI), X0, X1 \
+	VMOVSS X1, (DI) \
+	ADDQ $4, SI \
+	ADDQ $4, DI \
+	DECQ CX \
+	JNZ scalar_loop \
+next_row: \
+	ADDQ $4, DX \
+	INCQ R10 \
+	JMP row_loop \
+done: \
+	VZEROUPPER \
+	RET
+
+TEXT ·binaryTrailingAddFloat32AVX512(SB), NOSPLIT, $0-40
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VADDPS, VADDSS)
 
 TEXT ·binaryTrailingSubRHSFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_subrhs_f32
-	TESTQ R9, R9
-	JLE done_subrhs_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_subrhs_f32:
-	CMPQ R10, R8
-	JGE done_subrhs_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_subrhs_f32
-loop_subrhs_f32:
-	VMOVUPS (SI), Z1
-	VSUBPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_subrhs_f32
-tail_subrhs_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_subrhs_f32
-scalar_subrhs_f32:
-	VMOVSS (SI), X1
-	VSUBSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_subrhs_f32
-next_subrhs_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_subrhs_f32
-done_subrhs_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VSUBPS, VSUBSS)
 
 TEXT ·binaryTrailingSubLHSFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_sublhs_f32
-	TESTQ R9, R9
-	JLE done_sublhs_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_sublhs_f32:
-	CMPQ R10, R8
-	JGE done_sublhs_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_sublhs_f32
-loop_sublhs_f32:
-	VMOVUPS (SI), Z1
-	VSUBPS Z1, Z0, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_sublhs_f32
-tail_sublhs_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_sublhs_f32
-scalar_sublhs_f32:
-	VSUBSS (SI), X0, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_sublhs_f32
-next_sublhs_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_sublhs_f32
-done_sublhs_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_LHS_BODY_F32_AVX512(VSUBPS, VSUBSS)
 
 TEXT ·binaryTrailingMulFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_mul_f32
-	TESTQ R9, R9
-	JLE done_mul_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_mul_f32:
-	CMPQ R10, R8
-	JGE done_mul_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_mul_f32
-loop_mul_f32:
-	VMOVUPS (SI), Z1
-	VMULPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_mul_f32
-tail_mul_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_mul_f32
-scalar_mul_f32:
-	VMOVSS (SI), X1
-	VMULSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_mul_f32
-next_mul_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_mul_f32
-done_mul_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VMULPS, VMULSS)
 
 TEXT ·binaryTrailingDivRHSFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_divrhs_f32
-	TESTQ R9, R9
-	JLE done_divrhs_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_divrhs_f32:
-	CMPQ R10, R8
-	JGE done_divrhs_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_divrhs_f32
-loop_divrhs_f32:
-	VMOVUPS (SI), Z1
-	VDIVPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_divrhs_f32
-tail_divrhs_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_divrhs_f32
-scalar_divrhs_f32:
-	VMOVSS (SI), X1
-	VDIVSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_divrhs_f32
-next_divrhs_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_divrhs_f32
-done_divrhs_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VDIVPS, VDIVSS)
 
 TEXT ·binaryTrailingDivLHSFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_divlhs_f32
-	TESTQ R9, R9
-	JLE done_divlhs_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_divlhs_f32:
-	CMPQ R10, R8
-	JGE done_divlhs_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_divlhs_f32
-loop_divlhs_f32:
-	VMOVUPS (SI), Z1
-	VDIVPS Z1, Z0, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_divlhs_f32
-tail_divlhs_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_divlhs_f32
-scalar_divlhs_f32:
-	VDIVSS (SI), X0, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_divlhs_f32
-next_divlhs_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_divlhs_f32
-done_divlhs_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_LHS_BODY_F32_AVX512(VDIVPS, VDIVSS)
 
 TEXT ·binaryTrailingMaxFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_max_f32
-	TESTQ R9, R9
-	JLE done_max_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_max_f32:
-	CMPQ R10, R8
-	JGE done_max_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_max_f32
-loop_max_f32:
-	VMOVUPS (SI), Z1
-	VMAXPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_max_f32
-tail_max_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_max_f32
-scalar_max_f32:
-	VMOVSS (SI), X1
-	VMAXSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_max_f32
-next_max_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_max_f32
-done_max_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VMAXPS, VMAXSS)
 
 TEXT ·binaryTrailingMinFloat32AVX512(SB), NOSPLIT, $0-40
-	MOVQ lhs+0(FP), SI
-	MOVQ rhs+8(FP), DX
-	MOVQ out+16(FP), DI
-	MOVQ A+24(FP), R8
-	MOVQ B+32(FP), R9
-	TESTQ R8, R8
-	JLE done_min_f32
-	TESTQ R9, R9
-	JLE done_min_f32
-	MOVQ R9, R11
-	SHRQ $4, R11
-	MOVQ R9, R12
-	ANDQ $15, R12
-	XORQ R10, R10
-row_min_f32:
-	CMPQ R10, R8
-	JGE done_min_f32
-	VBROADCASTSS (DX), Z0
-	MOVQ R11, CX
-	TESTQ CX, CX
-	JZ tail_min_f32
-loop_min_f32:
-	VMOVUPS (SI), Z1
-	VMINPS Z0, Z1, Z2
-	VMOVUPS Z2, (DI)
-	ADDQ $64, SI
-	ADDQ $64, DI
-	DECQ CX
-	JNZ loop_min_f32
-tail_min_f32:
-	MOVQ R12, CX
-	TESTQ CX, CX
-	JZ next_min_f32
-scalar_min_f32:
-	VMOVSS (SI), X1
-	VMINSS X0, X1, X1
-	VMOVSS X1, (DI)
-	ADDQ $4, SI
-	ADDQ $4, DI
-	DECQ CX
-	JNZ scalar_min_f32
-next_min_f32:
-	ADDQ $4, DX
-	INCQ R10
-	JMP row_min_f32
-done_min_f32:
-	VZEROUPPER
-	RET
+	BINARY_TRAILING_RHS_BODY_F32_AVX512(VMINPS, VMINSS)
 
 // ----------------------------------------------------------------------------
 // FLOAT64 (VLEN = 8)

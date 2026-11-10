@@ -398,3 +398,85 @@ func TestAVX2BinaryTrailingCorrectness(t *testing.T) {
 		}
 	})
 }
+
+func TestBinaryMidAVX2(t *testing.T) {
+	if !gobackend.IsAVX2Allowed {
+		t.Skip("AVX2 is not supported or allowed on this host")
+	}
+
+	testCases := []struct{ A, B, C int }{
+		{1, 1, 1},
+		{1, 1, 7},
+		{1, 1, 35},
+		{1, 1, 100},
+		{1, 6, 64},
+		{4, 6, 64},
+		{3, 5, 19},
+		{2, 4, 45},
+	}
+	opsList := []compute.OpType{
+		compute.OpTypeAdd,
+		compute.OpTypeSub,
+		compute.OpTypeMul,
+		compute.OpTypeDiv,
+	}
+
+	for _, op := range opsList {
+		for _, isLHS := range []bool{false, true} {
+			for _, tc := range testCases {
+				A, B, C := tc.A, tc.B, tc.C
+				lhs := make([]float32, A*B*C)
+				rhs := make([]float32, A*C)
+				if isLHS {
+					lhs = make([]float32, A*C)
+					rhs = make([]float32, A*B*C)
+				}
+				out := make([]float32, A*B*C)
+
+				for i := range lhs {
+					lhs[i] = float32((i%53)+1) * 0.25
+				}
+				for i := range rhs {
+					rhs[i] = float32((i%19)+1) * 0.5
+				}
+
+				ok := DispatchBinaryMidAVX2(op, isLHS, unsafe.Pointer(&lhs[0]), unsafe.Pointer(&rhs[0]), unsafe.Pointer(&out[0]), A, B, C, dtypes.Float32)
+				if !ok {
+					t.Fatalf("DispatchBinaryMidAVX2 returned false for %s float32", op)
+				}
+
+				for a := range A {
+					for b := range B {
+						for c := range C {
+							abc := (a*B+b)*C + c
+							ac := a*C + c
+							var lVal, rVal float32
+							if !isLHS {
+								lVal = lhs[abc]
+								rVal = rhs[ac]
+							} else {
+								lVal = lhs[ac]
+								rVal = rhs[abc]
+							}
+							var want float32
+							switch op {
+							case compute.OpTypeAdd:
+								want = lVal + rVal
+							case compute.OpTypeSub:
+								want = lVal - rVal
+							case compute.OpTypeMul:
+								want = lVal * rVal
+							case compute.OpTypeDiv:
+								want = lVal / rVal
+							}
+							if math.Abs(float64(out[abc]-want)) > 1e-5 {
+								t.Fatalf("Mismatch for %s (isLHS=%v, A=%d, B=%d, C=%d) at idx %d: got %v, want %v",
+									op, isLHS, A, B, C, abc, out[abc], want)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

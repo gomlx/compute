@@ -9,13 +9,13 @@ import (
 
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
-	"github.com/gomlx/compute/support/envutil"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 )
 
 var (
 	// AVX2UseAsm enables the assembly microkernel for large matrices (4 rows x 16 cols for F32/F16/BF16, 4 rows x 8 cols for F64).
 	// Set GOMLX_GO_AVX2_ASM=false to disable and use the Go SIMD kernel.
-	AVX2UseAsm = envutil.MustReadBool(envutil.GoBackendAVX2_ASM, true)
+	AVX2UseAsm = simdarch.AVX2UseAsm
 )
 
 // avx2LargeKernelFloat32Asm is the assembly implementation of the 4 rows x 16 cols GEMM microkernel for Float32.

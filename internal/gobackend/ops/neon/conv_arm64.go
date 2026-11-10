@@ -12,8 +12,8 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	matmulneon "github.com/gomlx/compute/internal/gobackend/dot/matmul/neon"
 	"github.com/gomlx/compute/internal/gobackend/ops"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/shapes"
 )
 
@@ -1035,20 +1035,20 @@ func execConvStandardSME(
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		clusterID, useSME, isSlowECore := matmulneon.SMEAcquireClusterWithLimit(2, 1)
+		clusterID, useSME, isEfficiencyCore := simdarch.AcquireSMEWithLimit(2, 1)
 		if useSME {
 			activeSME.Add(1)
-			if clusterID == 0 || clusterID == 1 {
+			if !isEfficiencyCore {
 				activeFastSME.Add(1)
 			}
 			defer func() {
-				if clusterID == 0 || clusterID == 1 {
+				if !isEfficiencyCore {
 					activeFastSME.Add(-1)
 				}
 				activeSME.Add(-1)
-				matmulneon.SMEReleaseCluster(clusterID)
+				simdarch.ReleaseSME(clusterID)
 			}()
-		} else if isSlowECore {
+		} else if isEfficiencyCore {
 			// Efficiency cluster SME is already saturated; avoid slow E-core NEON tail stalls.
 			return
 		}
@@ -1075,7 +1075,7 @@ func execConvStandardSME(
 
 		for {
 			if useSME {
-				if clusterID == 2 {
+				if isEfficiencyCore {
 					rem := numMTiles - int(nextTile.Load())
 					fastSME := int(activeFastSME.Load())
 					if fastSME > 0 && rem <= 2*fastSME {
@@ -1555,12 +1555,12 @@ func execConvKernelGradSME(
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		clusterID, useSME, _ := matmulneon.SMEAcquireCluster()
+		clusterID, useSME, isEfficiencyCore := simdarch.AcquireSME()
 		if useSME {
 			activeSME.Add(1)
 			defer func() {
 				activeSME.Add(-1)
-				matmulneon.SMEReleaseCluster(clusterID)
+				simdarch.ReleaseSME(clusterID)
 				remainingWorkers.Add(-1)
 			}()
 		} else {
@@ -1570,9 +1570,9 @@ func execConvKernelGradSME(
 		}
 
 		for {
-			// Avoid letting the slower Efficiency cluster SME unit (clusterID == 2) grab one
+			// Avoid letting the slower Efficiency cluster SME unit grab one
 			// of the final 2 tasks when faster Super/Performance SME units are active.
-			if useSME && clusterID == 2 && activeSME.Load() > 1 && totalTasks-int(nextTask.Load()) <= 2 {
+			if useSME && isEfficiencyCore && activeSME.Load() > 1 && totalTasks-int(nextTask.Load()) <= 2 {
 				break
 			}
 			taskIdx := int(nextTask.Add(1) - 1)

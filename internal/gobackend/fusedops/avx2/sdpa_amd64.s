@@ -149,6 +149,1069 @@ DATA ·sdpaAVX2Consts+444(SB)/4, $0x3F800000
 
 GLOBL ·sdpaAVX2Consts(SB), RODATA|NOPTR, $448
 
+// ============================================================================
+// STAGE 1 (4 Query Rows): Q[4, headDim] @ K[blockKVLen, headDim]^T
+// ============================================================================
+// func sdpaQKT4RowsAVX2Asm(
+//     qRow0, qRow1, qRow2, qRow3 unsafe.Pointer,
+//     kPtr unsafe.Pointer,
+//     kvByteStride, blockKVLen, headDim int,
+//     sRow0, sRow1, sRow2, sRow3 unsafe.Pointer,
+// )
+TEXT ·sdpaQKT4RowsAVX2Asm(SB), NOSPLIT, $0-96
+	MOVQ qRow0+0(FP), R8
+	MOVQ qRow1+8(FP), R9
+	MOVQ qRow2+16(FP), R10
+	MOVQ qRow3+24(FP), R11
+	MOVQ kPtr+32(FP), R12
+	MOVQ kvByteStride+40(FP), R13
+	MOVQ blockKVLen+48(FP), CX
+	MOVQ headDim+56(FP), BX
+	MOVQ sRow0+64(FP), R14
+	MOVQ sRow1+72(FP), R15
+	MOVQ sRow2+80(FP), DI
+	MOVQ sRow3+88(FP), BP
+
+	TESTQ CX, CX
+	JLE qkt4_done
+
+qkt4_key2_loop:
+	CMPQ CX, $2
+	JL qkt4_key1_rem
+
+	// kCol0 = R12, kCol1 = R12 + R13 (DX)
+	LEAQ (R12)(R13*1), DX
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	XORQ SI, SI
+	MOVQ BX, AX
+
+qkt4_d16_loop:
+	CMPQ AX, $16
+	JL qkt4_d8_check
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VMOVUPS 0(R9)(SI*1), Y9
+	VMOVUPS 0(R10)(SI*1), Y10
+	VMOVUPS 0(R11)(SI*1), Y11
+	VMOVUPS 0(R12)(SI*1), Y12
+	VMOVUPS 0(DX)(SI*1), Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	VMOVUPS 32(R8)(SI*1), Y8
+	VMOVUPS 32(R9)(SI*1), Y9
+	VMOVUPS 32(R10)(SI*1), Y10
+	VMOVUPS 32(R11)(SI*1), Y11
+	VMOVUPS 32(R12)(SI*1), Y12
+	VMOVUPS 32(DX)(SI*1), Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	ADDQ $64, SI
+	SUBQ $16, AX
+	JMP qkt4_d16_loop
+
+qkt4_d8_check:
+	CMPQ AX, $8
+	JL qkt4_reduce_pairs
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VMOVUPS 0(R9)(SI*1), Y9
+	VMOVUPS 0(R10)(SI*1), Y10
+	VMOVUPS 0(R11)(SI*1), Y11
+	VMOVUPS 0(R12)(SI*1), Y12
+	VMOVUPS 0(DX)(SI*1), Y13
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y13, Y8, Y1
+	VFMADD231PS Y12, Y9, Y2
+	VFMADD231PS Y13, Y9, Y3
+	VFMADD231PS Y12, Y10, Y4
+	VFMADD231PS Y13, Y10, Y5
+	VFMADD231PS Y12, Y11, Y6
+	VFMADD231PS Y13, Y11, Y7
+
+	ADDQ $32, SI
+	SUBQ $8, AX
+
+qkt4_reduce_pairs:
+	// Reduce (Y0, Y1) -> X0[0..1], (Y2, Y3) -> X2[0..1], (Y4, Y5) -> X4[0..1], (Y6, Y7) -> X6[0..1]
+	VEXTRACTF128 $1, Y0, X8
+	VEXTRACTF128 $1, Y1, X9
+	VADDPS X8, X0, X0
+	VADDPS X9, X1, X1
+	VUNPCKLPS X1, X0, X8
+	VUNPCKHPS X1, X0, X0
+	VADDPS X0, X8, X0
+	VPERMILPS $0xEE, X0, X8
+	VADDPS X8, X0, X0
+
+	VEXTRACTF128 $1, Y2, X8
+	VEXTRACTF128 $1, Y3, X9
+	VADDPS X8, X2, X2
+	VADDPS X9, X3, X3
+	VUNPCKLPS X3, X2, X8
+	VUNPCKHPS X3, X2, X2
+	VADDPS X2, X8, X2
+	VPERMILPS $0xEE, X2, X8
+	VADDPS X8, X2, X2
+
+	VEXTRACTF128 $1, Y4, X8
+	VEXTRACTF128 $1, Y5, X9
+	VADDPS X8, X4, X4
+	VADDPS X9, X5, X5
+	VUNPCKLPS X5, X4, X8
+	VUNPCKHPS X5, X4, X4
+	VADDPS X4, X8, X4
+	VPERMILPS $0xEE, X4, X8
+	VADDPS X8, X4, X4
+
+	VEXTRACTF128 $1, Y6, X8
+	VEXTRACTF128 $1, Y7, X9
+	VADDPS X8, X6, X6
+	VADDPS X9, X7, X7
+	VUNPCKLPS X7, X6, X8
+	VUNPCKHPS X7, X6, X6
+	VADDPS X6, X8, X6
+	VPERMILPS $0xEE, X6, X8
+	VADDPS X8, X6, X6
+
+	TESTQ AX, AX
+	JLE qkt4_store_pairs
+
+qkt4_d1_loop:
+	VBROADCASTSS 0(R8)(SI*1), X8
+	VBROADCASTSS 0(R9)(SI*1), X9
+	VBROADCASTSS 0(R10)(SI*1), X10
+	VBROADCASTSS 0(R11)(SI*1), X11
+
+	VMOVSS 0(R12)(SI*1), X12
+	VINSERTPS $0x10, 0(DX)(SI*1), X12, X12
+
+	VFMADD231PS X12, X8, X0
+	VFMADD231PS X12, X9, X2
+	VFMADD231PS X12, X10, X4
+	VFMADD231PS X12, X11, X6
+
+	ADDQ $4, SI
+	DECQ AX
+	JNZ qkt4_d1_loop
+
+qkt4_store_pairs:
+	VMOVSD X0, (R14)
+	VMOVSD X2, (R15)
+	VMOVSD X4, (DI)
+	VMOVSD X6, (BP)
+
+	LEAQ (R12)(R13*2), R12
+	ADDQ $8, R14
+	ADDQ $8, R15
+	ADDQ $8, DI
+	ADDQ $8, BP
+	SUBQ $2, CX
+	JMP qkt4_key2_loop
+
+qkt4_key1_rem:
+	TESTQ CX, CX
+	JLE qkt4_done
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	XORQ SI, SI
+	MOVQ BX, AX
+
+qkt4_k1_d8_loop:
+	CMPQ AX, $8
+	JL qkt4_k1_reduce
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VMOVUPS 0(R9)(SI*1), Y9
+	VMOVUPS 0(R10)(SI*1), Y10
+	VMOVUPS 0(R11)(SI*1), Y11
+	VMOVUPS 0(R12)(SI*1), Y12
+
+	VFMADD231PS Y12, Y8, Y0
+	VFMADD231PS Y12, Y9, Y1
+	VFMADD231PS Y12, Y10, Y2
+	VFMADD231PS Y12, Y11, Y3
+
+	ADDQ $32, SI
+	SUBQ $8, AX
+	JMP qkt4_k1_d8_loop
+
+qkt4_k1_reduce:
+	// Fold Y0..Y3 -> X0..X3 and 4x4 transpose-add -> X0 = [dot0, dot1, dot2, dot3]
+	VEXTRACTF128 $1, Y0, X8
+	VEXTRACTF128 $1, Y1, X9
+	VEXTRACTF128 $1, Y2, X10
+	VEXTRACTF128 $1, Y3, X11
+	VADDPS X8, X0, X0
+	VADDPS X9, X1, X1
+	VADDPS X10, X2, X2
+	VADDPS X11, X3, X3
+
+	VUNPCKLPS X1, X0, X8
+	VUNPCKHPS X1, X0, X0
+	VUNPCKLPS X3, X2, X9
+	VUNPCKHPS X3, X2, X2
+	VADDPS X0, X8, X0
+	VADDPS X2, X9, X2
+	VSHUFPS $0x44, X2, X0, X8
+	VSHUFPS $0xEE, X2, X0, X0
+	VADDPS X0, X8, X0
+
+	VPERMILPS $0x01, X0, X1
+	VPERMILPS $0x02, X0, X2
+	VPERMILPS $0x03, X0, X3
+
+	TESTQ AX, AX
+	JLE qkt4_k1_store
+
+qkt4_k1_d1_loop:
+	VMOVSS 0(R8)(SI*1), X8
+	VMOVSS 0(R9)(SI*1), X9
+	VMOVSS 0(R10)(SI*1), X10
+	VMOVSS 0(R11)(SI*1), X11
+	VMOVSS 0(R12)(SI*1), X12
+
+	VFMADD231SS X12, X8, X0
+	VFMADD231SS X12, X9, X1
+	VFMADD231SS X12, X10, X2
+	VFMADD231SS X12, X11, X3
+
+	ADDQ $4, SI
+	DECQ AX
+	JNZ qkt4_k1_d1_loop
+
+qkt4_k1_store:
+	VMOVSS X0, (R14)
+	VMOVSS X1, (R15)
+	VMOVSS X2, (DI)
+	VMOVSS X3, (BP)
+
+qkt4_done:
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// STAGE 1 (1 Query Row): Q[1, headDim] @ K[blockKVLen, headDim]^T
+// ============================================================================
+// func sdpaQKT1RowAVX2Asm(
+//     qRow0, kPtr unsafe.Pointer,
+//     kvByteStride, blockKVLen, headDim int,
+//     sRow0 unsafe.Pointer,
+// )
+TEXT ·sdpaQKT1RowAVX2Asm(SB), NOSPLIT, $0-48
+	MOVQ qRow0+0(FP), R8
+	MOVQ kPtr+8(FP), R12
+	MOVQ kvByteStride+16(FP), R13
+	MOVQ blockKVLen+24(FP), CX
+	MOVQ headDim+32(FP), BX
+	MOVQ sRow0+40(FP), R14
+
+	TESTQ CX, CX
+	JLE qkt1_done
+
+	LEAQ (R13)(R13*2), R15 // R15 = 3 * kvByteStride
+
+qkt1_key4_loop:
+	CMPQ CX, $4
+	JL qkt1_key1_loop
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	MOVQ R12, R9
+	LEAQ (R12)(R13*1), R10
+	LEAQ (R12)(R13*2), R11
+	LEAQ (R12)(R15*1), DX
+
+	XORQ SI, SI
+	MOVQ BX, AX
+
+qkt1_d16_loop:
+	CMPQ AX, $16
+	JL qkt1_d8_check
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VMOVUPS 32(R8)(SI*1), Y9
+
+	VFMADD231PS 0(R9)(SI*1), Y8, Y0
+	VFMADD231PS 0(R10)(SI*1), Y8, Y1
+	VFMADD231PS 0(R11)(SI*1), Y8, Y2
+	VFMADD231PS 0(DX)(SI*1), Y8, Y3
+
+	VFMADD231PS 32(R9)(SI*1), Y9, Y0
+	VFMADD231PS 32(R10)(SI*1), Y9, Y1
+	VFMADD231PS 32(R11)(SI*1), Y9, Y2
+	VFMADD231PS 32(DX)(SI*1), Y9, Y3
+
+	ADDQ $64, SI
+	SUBQ $16, AX
+	JMP qkt1_d16_loop
+
+qkt1_d8_check:
+	CMPQ AX, $8
+	JL qkt1_reduce4
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VFMADD231PS 0(R9)(SI*1), Y8, Y0
+	VFMADD231PS 0(R10)(SI*1), Y8, Y1
+	VFMADD231PS 0(R11)(SI*1), Y8, Y2
+	VFMADD231PS 0(DX)(SI*1), Y8, Y3
+
+	ADDQ $32, SI
+	SUBQ $8, AX
+
+qkt1_reduce4:
+	VEXTRACTF128 $1, Y0, X8
+	VEXTRACTF128 $1, Y1, X9
+	VEXTRACTF128 $1, Y2, X10
+	VEXTRACTF128 $1, Y3, X11
+	VADDPS X8, X0, X0
+	VADDPS X9, X1, X1
+	VADDPS X10, X2, X2
+	VADDPS X11, X3, X3
+
+	VUNPCKLPS X1, X0, X8
+	VUNPCKHPS X1, X0, X0
+	VUNPCKLPS X3, X2, X9
+	VUNPCKHPS X3, X2, X2
+	VADDPS X0, X8, X0
+	VADDPS X2, X9, X2
+	VSHUFPS $0x44, X2, X0, X8
+	VSHUFPS $0xEE, X2, X0, X0
+	VADDPS X0, X8, X0
+
+	TESTQ AX, AX
+	JLE qkt1_store4
+
+	VPERMILPS $0x01, X0, X1
+	VPERMILPS $0x02, X0, X2
+	VPERMILPS $0x03, X0, X3
+
+qkt1_d1_loop4:
+	VMOVSS 0(R8)(SI*1), X8
+	VFMADD231SS 0(R9)(SI*1), X8, X0
+	VFMADD231SS 0(R10)(SI*1), X8, X1
+	VFMADD231SS 0(R11)(SI*1), X8, X2
+	VFMADD231SS 0(DX)(SI*1), X8, X3
+	ADDQ $4, SI
+	DECQ AX
+	JNZ qkt1_d1_loop4
+
+	VINSERTPS $0x10, X1, X0, X0
+	VINSERTPS $0x20, X2, X0, X0
+	VINSERTPS $0x30, X3, X0, X0
+
+qkt1_store4:
+	VMOVUPS X0, (R14)
+	LEAQ (R12)(R13*4), R12
+	ADDQ $16, R14
+	SUBQ $4, CX
+	JMP qkt1_key4_loop
+
+qkt1_key1_loop:
+	TESTQ CX, CX
+	JLE qkt1_done
+
+	VXORPS Y0, Y0, Y0
+	XORQ SI, SI
+	MOVQ BX, AX
+
+qkt1_k1_d8_loop:
+	CMPQ AX, $8
+	JL qkt1_k1_reduce
+
+	VMOVUPS 0(R8)(SI*1), Y8
+	VFMADD231PS 0(R12)(SI*1), Y8, Y0
+	ADDQ $32, SI
+	SUBQ $8, AX
+	JMP qkt1_k1_d8_loop
+
+qkt1_k1_reduce:
+	VEXTRACTF128 $1, Y0, X8
+	VADDPS X8, X0, X0
+	VPERMILPS $0xEE, X0, X8
+	VADDPS X8, X0, X0
+	VPERMILPS $0x01, X0, X8
+	VADDSS X8, X0, X0
+
+	TESTQ AX, AX
+	JLE qkt1_k1_store
+
+qkt1_k1_d1_loop:
+	VMOVSS 0(R8)(SI*1), X8
+	VFMADD231SS 0(R12)(SI*1), X8, X0
+	ADDQ $4, SI
+	DECQ AX
+	JNZ qkt1_k1_d1_loop
+
+qkt1_k1_store:
+	VMOVSS X0, (R14)
+	ADDQ R13, R12
+	ADDQ $4, R14
+	DECQ CX
+	JMP qkt1_key1_loop
+
+qkt1_done:
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// STAGE 2: Fused Scale + Mask/Bias + Softmax Row
+// ============================================================================
+// func sdpaScaleMaskSoftmaxRowAVX2Asm(
+//     scoresPtr, addMaskPtr, addBiasPtr, boolMaskPtr unsafe.Pointer,
+//     rowKVLen int,
+//     scale float32,
+// ) int
+TEXT ·sdpaScaleMaskSoftmaxRowAVX2Asm(SB), NOSPLIT, $0-56
+	MOVQ scoresPtr+0(FP), R10
+	MOVQ addMaskPtr+8(FP), R8
+	MOVQ addBiasPtr+16(FP), R9
+	MOVQ boolMaskPtr+24(FP), R11
+	MOVQ rowKVLen+32(FP), R15
+
+	TESTQ R15, R15
+	JLE softmax_zero_ret
+
+	LEAQ ·sdpaAVX2Consts(SB), DX
+	VMOVUPS 0(DX), Y12   // Y12 = vNegInf (0xFF800000)
+	VMOVAPS Y12, Y10     // Y10 = vRowMax = -Inf
+	VBROADCASTSS scale+40(FP), Y13
+	VPXOR Y14, Y14, Y14  // Y14 = 0 for VPCMPGTD
+
+	MOVQ R10, BX
+	MOVQ R15, CX
+
+softmax_pass1_loop8:
+	CMPQ CX, $8
+	JL softmax_pass1_reduce_max
+
+	VMOVUPS (BX), Y0
+	VMULPS Y13, Y0, Y0
+
+	TESTQ R9, R9
+	JZ softmax_pass1_nobias8
+	VADDPS (R9), Y0, Y0
+	ADDQ $32, R9
+softmax_pass1_nobias8:
+
+	TESTQ R8, R8
+	JZ softmax_pass1_nomask8
+	VADDPS (R8), Y0, Y0
+	ADDQ $32, R8
+softmax_pass1_nomask8:
+
+	TESTQ R11, R11
+	JZ softmax_pass1_nobool8
+	VMOVQ (R11), X1
+	VPMOVSXBD X1, Y1
+	VPCMPGTD Y14, Y1, Y1
+	VANDPS Y1, Y0, Y0
+	VANDNPS Y12, Y1, Y2
+	VORPS Y2, Y0, Y0
+	ADDQ $8, R11
+softmax_pass1_nobool8:
+
+	VMOVUPS Y0, (BX)
+	VMAXPS Y0, Y10, Y10
+
+	ADDQ $32, BX
+	SUBQ $8, CX
+	JMP softmax_pass1_loop8
+
+softmax_pass1_reduce_max:
+	VEXTRACTF128 $1, Y10, X1
+	VMAXPS X1, X10, X10
+	VPERMILPS $0xEE, X10, X1
+	VMAXPS X1, X10, X10
+	VPERMILPS $0x01, X10, X1
+	VMAXSS X1, X10, X10
+
+softmax_pass1_tail:
+	TESTQ CX, CX
+	JLE softmax_check_valid
+
+	TESTQ R11, R11
+	JZ softmax_tail_unmasked
+	MOVB (R11), AL
+	INCQ R11
+	TESTB AL, AL
+	JNZ softmax_tail_unmasked
+
+	// Masked out element
+	VMOVSS X12, (BX)
+	TESTQ R9, R9
+	JZ softmax_tail_masked_nobias
+	ADDQ $4, R9
+softmax_tail_masked_nobias:
+	TESTQ R8, R8
+	JZ softmax_tail_next
+	ADDQ $4, R8
+	JMP softmax_tail_next
+
+softmax_tail_unmasked:
+	VMOVSS (BX), X0
+	VMULSS X13, X0, X0
+	TESTQ R9, R9
+	JZ softmax_tail_nobias
+	VADDSS (R9), X0, X0
+	ADDQ $4, R9
+softmax_tail_nobias:
+	TESTQ R8, R8
+	JZ softmax_tail_nomask
+	VADDSS (R8), X0, X0
+	ADDQ $4, R8
+softmax_tail_nomask:
+	VMOVSS X0, (BX)
+	VMAXSS X0, X10, X10
+
+softmax_tail_next:
+	ADDQ $4, BX
+	DECQ CX
+	JMP softmax_pass1_tail
+
+softmax_check_valid:
+	// Check if rowMax (X10[0]) <= -Inf or NaN
+	VUCOMISS 0(DX), X10
+	JBE softmax_all_masked
+	JP softmax_all_masked
+
+	// Pad 8 float32s at scores[rowKVLen] with -Inf
+	VMOVUPS Y12, (BX)
+
+	// --- Pass 2: exp256(scores - rowMax) and sum ---
+	VBROADCASTSS X10, Y10 // Y10 = vRowMax
+	VXORPS Y11, Y11, Y11  // Y11 = vSum
+	VMOVUPS 128(DX), Y14  // Y14 = vMagic
+	VMOVUPS 416(DX), Y15  // Y15 = vOne / vBias127
+
+	MOVQ R10, BX
+	MOVQ R15, CX
+
+softmax_pass2_loop8:
+	VMOVUPS (BX), Y2
+	VSUBPS Y10, Y2, Y2
+	VMAXPS 32(DX), Y2, Y2
+	VMINPS 64(DX), Y2, Y2
+
+	VMOVAPS Y14, Y3
+	VFMADD231PS 96(DX), Y2, Y3
+	VSUBPS Y14, Y3, Y4
+	VPSLLD $23, Y3, Y3
+	VPADDD Y15, Y3, Y3
+
+	VFNMADD231PS 160(DX), Y4, Y2
+	VFNMADD231PS 192(DX), Y4, Y2
+
+	VMULPS Y2, Y2, Y4
+	VMOVUPS 256(DX), Y5
+	VFMADD231PS 224(DX), Y2, Y5
+	VMOVUPS 320(DX), Y6
+	VFMADD231PS 288(DX), Y2, Y6
+	VMOVUPS 384(DX), Y7
+	VFMADD231PS 352(DX), Y2, Y7
+	VADDPS Y15, Y2, Y8
+	VMULPS Y4, Y4, Y9
+	VFMADD213PS Y6, Y4, Y5
+	VFMADD213PS Y8, Y4, Y7
+	VFMADD213PS Y7, Y9, Y5
+	VMULPS Y3, Y5, Y2
+
+	VMOVUPS Y2, (BX)
+	VADDPS Y2, Y11, Y11
+
+	ADDQ $32, BX
+	SUBQ $8, CX
+	JG softmax_pass2_loop8
+
+	// Horizontal sum of Y11 -> scalar X11[0]
+	VEXTRACTF128 $1, Y11, X12
+	VADDPS X12, X11, X11
+	VPERMILPS $0xEE, X11, X12
+	VADDPS X12, X11, X11
+	VPERMILPS $0x01, X11, X12
+	VADDSS X12, X11, X11
+
+	VDIVSS X11, X15, X11
+	VBROADCASTSS X11, Y11 // Y11 = invSum
+
+	// --- Pass 3: Normalize scores in-place by invSum ---
+	MOVQ R10, BX
+	MOVQ R15, CX
+
+softmax_pass3_loop8:
+	VMULPS (BX), Y11, Y0
+	VMOVUPS Y0, (BX)
+	ADDQ $32, BX
+	SUBQ $8, CX
+	JG softmax_pass3_loop8
+
+	MOVQ $1, ret+48(FP)
+	VZEROUPPER
+	RET
+
+softmax_all_masked:
+	VXORPS Y0, Y0, Y0
+	MOVQ R10, BX
+	MOVQ R15, CX
+softmax_zero_loop8:
+	CMPQ CX, $8
+	JL softmax_zero_tail
+	VMOVUPS Y0, (BX)
+	ADDQ $32, BX
+	SUBQ $8, CX
+	JMP softmax_zero_loop8
+softmax_zero_tail:
+	TESTQ CX, CX
+	JLE softmax_zero_ret
+softmax_zero_tail_loop:
+	VMOVSS X0, (BX)
+	ADDQ $4, BX
+	DECQ CX
+	JNZ softmax_zero_tail_loop
+
+softmax_zero_ret:
+	MOVQ $0, ret+48(FP)
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// STAGE 3 (4 Query Rows): Probs[4, blockKVLen] @ V[blockKVLen, headDim]
+// ============================================================================
+// func sdpaValueAccum4RowsAVX2Asm(
+//     sRow0, sRow1, sRow2, sRow3 unsafe.Pointer,
+//     vPtr unsafe.Pointer,
+//     blockKVLen, kvByteStride, headDim int,
+//     outRow0, outRow1, outRow2, outRow3 unsafe.Pointer,
+// )
+TEXT ·sdpaValueAccum4RowsAVX2Asm(SB), NOSPLIT, $0-96
+	MOVQ blockKVLen+40(FP), BX
+	MOVQ kvByteStride+48(FP), R13
+	MOVQ headDim+56(FP), AX
+	MOVQ outRow0+64(FP), R14
+	MOVQ outRow1+72(FP), R15
+	MOVQ outRow2+80(FP), DI
+	MOVQ outRow3+88(FP), BP
+
+	TESTQ BX, BX
+	JLE val4_done
+	TESTQ AX, AX
+	JLE val4_done
+
+	XORQ DX, DX // DX = d byte offset (0 .. headDim*4)
+
+val4_d16_loop:
+	CMPQ AX, $16
+	JL val4_d8_check
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ sRow1+8(FP), R9
+	MOVQ sRow2+16(FP), R10
+	MOVQ sRow3+24(FP), R11
+	MOVQ vPtr+32(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val4_d16_k_loop:
+	VBROADCASTSS (R8), Y10
+	VBROADCASTSS (R9), Y11
+	VBROADCASTSS (R10), Y12
+	VBROADCASTSS (R11), Y13
+
+	VMOVUPS 0(R12), Y8
+	VMOVUPS 32(R12), Y9
+
+	VFMADD231PS Y8, Y10, Y0
+	VFMADD231PS Y9, Y10, Y1
+	VFMADD231PS Y8, Y11, Y2
+	VFMADD231PS Y9, Y11, Y3
+	VFMADD231PS Y8, Y12, Y4
+	VFMADD231PS Y9, Y12, Y5
+	VFMADD231PS Y8, Y13, Y6
+	VFMADD231PS Y9, Y13, Y7
+
+	ADDQ $4, R8
+	ADDQ $4, R9
+	ADDQ $4, R10
+	ADDQ $4, R11
+	ADDQ R13, R12
+	DECQ CX
+	JNZ val4_d16_k_loop
+
+	VMOVUPS Y0, 0(R14)(DX*1)
+	VMOVUPS Y1, 32(R14)(DX*1)
+	VMOVUPS Y2, 0(R15)(DX*1)
+	VMOVUPS Y3, 32(R15)(DX*1)
+	VMOVUPS Y4, 0(DI)(DX*1)
+	VMOVUPS Y5, 32(DI)(DX*1)
+	VMOVUPS Y6, 0(BP)(DX*1)
+	VMOVUPS Y7, 32(BP)(DX*1)
+
+	ADDQ $64, DX
+	SUBQ $16, AX
+	JMP val4_d16_loop
+
+val4_d8_check:
+	CMPQ AX, $8
+	JL val4_d1_loop
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ sRow1+8(FP), R9
+	MOVQ sRow2+16(FP), R10
+	MOVQ sRow3+24(FP), R11
+	MOVQ vPtr+32(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val4_d8_k_loop:
+	VBROADCASTSS (R8), Y10
+	VBROADCASTSS (R9), Y11
+	VBROADCASTSS (R10), Y12
+	VBROADCASTSS (R11), Y13
+
+	VMOVUPS 0(R12), Y8
+
+	VFMADD231PS Y8, Y10, Y0
+	VFMADD231PS Y8, Y11, Y1
+	VFMADD231PS Y8, Y12, Y2
+	VFMADD231PS Y8, Y13, Y3
+
+	ADDQ $4, R8
+	ADDQ $4, R9
+	ADDQ $4, R10
+	ADDQ $4, R11
+	ADDQ R13, R12
+	DECQ CX
+	JNZ val4_d8_k_loop
+
+	VMOVUPS Y0, 0(R14)(DX*1)
+	VMOVUPS Y1, 0(R15)(DX*1)
+	VMOVUPS Y2, 0(DI)(DX*1)
+	VMOVUPS Y3, 0(BP)(DX*1)
+
+	ADDQ $32, DX
+	SUBQ $8, AX
+
+val4_d1_loop:
+	TESTQ AX, AX
+	JLE val4_done
+
+	VXORPS X0, X0, X0
+	VXORPS X1, X1, X1
+	VXORPS X2, X2, X2
+	VXORPS X3, X3, X3
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ sRow1+8(FP), R9
+	MOVQ sRow2+16(FP), R10
+	MOVQ sRow3+24(FP), R11
+	MOVQ vPtr+32(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val4_d1_k_loop:
+	VMOVSS (R12), X8
+	VFMADD231SS (R8), X8, X0
+	VFMADD231SS (R9), X8, X1
+	VFMADD231SS (R10), X8, X2
+	VFMADD231SS (R11), X8, X3
+
+	ADDQ $4, R8
+	ADDQ $4, R9
+	ADDQ $4, R10
+	ADDQ $4, R11
+	ADDQ R13, R12
+	DECQ CX
+	JNZ val4_d1_k_loop
+
+	VMOVSS X0, 0(R14)(DX*1)
+	VMOVSS X1, 0(R15)(DX*1)
+	VMOVSS X2, 0(DI)(DX*1)
+	VMOVSS X3, 0(BP)(DX*1)
+
+	ADDQ $4, DX
+	DECQ AX
+	JMP val4_d1_loop
+
+val4_done:
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// STAGE 3 (1 Query Row): Probs[1, blockKVLen] @ V[blockKVLen, headDim]
+// ============================================================================
+// func sdpaValueAccum1RowAVX2Asm(
+//     sRow0, vPtr unsafe.Pointer,
+//     blockKVLen, kvByteStride, headDim int,
+//     outRow0 unsafe.Pointer,
+// )
+TEXT ·sdpaValueAccum1RowAVX2Asm(SB), NOSPLIT, $0-48
+	MOVQ blockKVLen+16(FP), BX
+	MOVQ kvByteStride+24(FP), R13
+	MOVQ headDim+32(FP), AX
+	MOVQ outRow0+40(FP), R14
+
+	TESTQ BX, BX
+	JLE val1_done
+	TESTQ AX, AX
+	JLE val1_done
+
+	XORQ DX, DX // DX = d byte offset
+
+val1_d64_loop:
+	CMPQ AX, $64
+	JL val1_d32_check
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ vPtr+8(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val1_d64_k2_loop:
+	CMPQ CX, $2
+	JL val1_d64_k1_rem
+
+	VBROADCASTSS 0(R8), Y8
+	VBROADCASTSS 4(R8), Y9
+
+	VFMADD231PS 0(R12), Y8, Y0
+	VFMADD231PS 32(R12), Y8, Y1
+	VFMADD231PS 64(R12), Y8, Y2
+	VFMADD231PS 96(R12), Y8, Y3
+	VFMADD231PS 128(R12), Y8, Y4
+	VFMADD231PS 160(R12), Y8, Y5
+	VFMADD231PS 192(R12), Y8, Y6
+	VFMADD231PS 224(R12), Y8, Y7
+
+	VFMADD231PS 0(R12)(R13*1), Y9, Y0
+	VFMADD231PS 32(R12)(R13*1), Y9, Y1
+	VFMADD231PS 64(R12)(R13*1), Y9, Y2
+	VFMADD231PS 96(R12)(R13*1), Y9, Y3
+	VFMADD231PS 128(R12)(R13*1), Y9, Y4
+	VFMADD231PS 160(R12)(R13*1), Y9, Y5
+	VFMADD231PS 192(R12)(R13*1), Y9, Y6
+	VFMADD231PS 224(R12)(R13*1), Y9, Y7
+
+	ADDQ $8, R8
+	LEAQ (R12)(R13*2), R12
+	SUBQ $2, CX
+	JMP val1_d64_k2_loop
+
+val1_d64_k1_rem:
+	TESTQ CX, CX
+	JLE val1_d64_store
+
+	VBROADCASTSS 0(R8), Y8
+	VFMADD231PS 0(R12), Y8, Y0
+	VFMADD231PS 32(R12), Y8, Y1
+	VFMADD231PS 64(R12), Y8, Y2
+	VFMADD231PS 96(R12), Y8, Y3
+	VFMADD231PS 128(R12), Y8, Y4
+	VFMADD231PS 160(R12), Y8, Y5
+	VFMADD231PS 192(R12), Y8, Y6
+	VFMADD231PS 224(R12), Y8, Y7
+
+val1_d64_store:
+	VMOVUPS Y0, 0(R14)(DX*1)
+	VMOVUPS Y1, 32(R14)(DX*1)
+	VMOVUPS Y2, 64(R14)(DX*1)
+	VMOVUPS Y3, 96(R14)(DX*1)
+	VMOVUPS Y4, 128(R14)(DX*1)
+	VMOVUPS Y5, 160(R14)(DX*1)
+	VMOVUPS Y6, 192(R14)(DX*1)
+	VMOVUPS Y7, 224(R14)(DX*1)
+
+	ADDQ $256, DX
+	SUBQ $64, AX
+	JMP val1_d64_loop
+
+val1_d32_check:
+	CMPQ AX, $32
+	JL val1_d8_loop
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+	VXORPS Y2, Y2, Y2
+	VXORPS Y3, Y3, Y3
+	VXORPS Y4, Y4, Y4
+	VXORPS Y5, Y5, Y5
+	VXORPS Y6, Y6, Y6
+	VXORPS Y7, Y7, Y7
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ vPtr+8(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val1_d32_k2_loop:
+	CMPQ CX, $2
+	JL val1_d32_reduce
+
+	VBROADCASTSS 0(R8), Y8
+	VBROADCASTSS 4(R8), Y9
+
+	VFMADD231PS 0(R12), Y8, Y0
+	VFMADD231PS 32(R12), Y8, Y1
+	VFMADD231PS 64(R12), Y8, Y2
+	VFMADD231PS 96(R12), Y8, Y3
+
+	VFMADD231PS 0(R12)(R13*1), Y9, Y4
+	VFMADD231PS 32(R12)(R13*1), Y9, Y5
+	VFMADD231PS 64(R12)(R13*1), Y9, Y6
+	VFMADD231PS 96(R12)(R13*1), Y9, Y7
+
+	ADDQ $8, R8
+	LEAQ (R12)(R13*2), R12
+	SUBQ $2, CX
+	JMP val1_d32_k2_loop
+
+val1_d32_reduce:
+	VADDPS Y4, Y0, Y0
+	VADDPS Y5, Y1, Y1
+	VADDPS Y6, Y2, Y2
+	VADDPS Y7, Y3, Y3
+
+	TESTQ CX, CX
+	JLE val1_d32_store
+
+	VBROADCASTSS 0(R8), Y8
+	VFMADD231PS 0(R12), Y8, Y0
+	VFMADD231PS 32(R12), Y8, Y1
+	VFMADD231PS 64(R12), Y8, Y2
+	VFMADD231PS 96(R12), Y8, Y3
+
+val1_d32_store:
+	VMOVUPS Y0, 0(R14)(DX*1)
+	VMOVUPS Y1, 32(R14)(DX*1)
+	VMOVUPS Y2, 64(R14)(DX*1)
+	VMOVUPS Y3, 96(R14)(DX*1)
+
+	ADDQ $128, DX
+	SUBQ $32, AX
+
+val1_d8_loop:
+	CMPQ AX, $8
+	JL val1_d1_loop
+
+	VXORPS Y0, Y0, Y0
+	VXORPS Y1, Y1, Y1
+
+	MOVQ sRow0+0(FP), R8
+	MOVQ vPtr+8(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val1_d8_k2_loop:
+	CMPQ CX, $2
+	JL val1_d8_reduce
+
+	VBROADCASTSS 0(R8), Y8
+	VBROADCASTSS 4(R8), Y9
+	VFMADD231PS 0(R12), Y8, Y0
+	VFMADD231PS 0(R12)(R13*1), Y9, Y1
+	ADDQ $8, R8
+	LEAQ (R12)(R13*2), R12
+	SUBQ $2, CX
+	JMP val1_d8_k2_loop
+
+val1_d8_reduce:
+	VADDPS Y1, Y0, Y0
+	TESTQ CX, CX
+	JLE val1_d8_store
+
+	VBROADCASTSS 0(R8), Y8
+	VFMADD231PS 0(R12), Y8, Y0
+
+val1_d8_store:
+	VMOVUPS Y0, 0(R14)(DX*1)
+	ADDQ $32, DX
+	SUBQ $8, AX
+	JMP val1_d8_loop
+
+val1_d1_loop:
+	TESTQ AX, AX
+	JLE val1_done
+
+	VXORPS X0, X0, X0
+	MOVQ sRow0+0(FP), R8
+	MOVQ vPtr+8(FP), R12
+	ADDQ DX, R12
+	MOVQ BX, CX
+
+val1_d1_k_loop:
+	VMOVSS (R12), X8
+	VFMADD231SS (R8), X8, X0
+	ADDQ $4, R8
+	ADDQ R13, R12
+	DECQ CX
+	JNZ val1_d1_k_loop
+
+	VMOVSS X0, 0(R14)(DX*1)
+	ADDQ $4, DX
+	DECQ AX
+	JMP val1_d1_loop
+
+val1_done:
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// Specialized Single/Multi-Row Fused Dim32 No-Mask Kernel (kept for qLen < 4)
+// ============================================================================
 // func sdpaQueriesDim32NoMaskAVX2Asm(
 //     qPtr, kPtr, vPtr, outPtr, scoresPtr unsafe.Pointer,
 //     qByteStride, kvByteStride, numQueries, kvLen, qStart, causalInt int,
@@ -215,7 +1278,6 @@ stage1_256_loop4:
 	CMPQ CX, $4
 	JL stage1_256_reduce_max4
 
-	// Interleave Key 0..3 across Y4..Y7 to hide 4-cycle FMA latency
 	VMULPS 0(AX), Y0, Y4
 	VMULPS 0(AX)(R11*1), Y0, Y5
 	VMULPS 0(AX)(R11*2), Y0, Y6
@@ -236,7 +1298,6 @@ stage1_256_loop4:
 	VFMADD231PS 96(AX)(R11*2), Y3, Y6
 	VFMADD231PS 96(AX)(R12*1), Y3, Y7
 
-	// Fold 256-bit Y4..Y7 -> 128-bit X4..X7
 	VEXTRACTF128 $1, Y4, X8
 	VEXTRACTF128 $1, Y5, X9
 	VEXTRACTF128 $1, Y6, X11
@@ -246,7 +1307,6 @@ stage1_256_loop4:
 	VADDPS X11, X6, X6
 	VADDPS X12, X7, X7
 
-	// Transpose-and-add 4x4 X4..X7 -> X4 = [dot0, dot1, dot2, dot3]
 	VUNPCKLPS X5, X4, X8
 	VUNPCKHPS X5, X4, X4
 	VUNPCKLPS X7, X6, X9
@@ -300,13 +1360,11 @@ stage1_256_pad:
 	JBE zero256_query_out
 	JP zero256_query_out
 
-	// Pad 8 float32s at scoresScratch[kvLenUnmasked] with -Inf
 	VMOVUPS 0(DX), Y4
 	VMOVUPS Y4, (BX)
 
-	// --- STAGE 2: SOFTMAX exp256(scores - rowMax) ---
-	VBROADCASTSS X10, Y10 // Y10 = vRowMax
-	VXORPS Y11, Y11, Y11  // Y11 = vSum
+	VBROADCASTSS X10, Y10
+	VXORPS Y11, Y11, Y11
 	MOVQ R10, BX
 	MOVQ R15, CX
 
@@ -346,7 +1404,6 @@ stage2_256_loop8:
 	SUBQ $8, CX
 	JG stage2_256_loop8
 
-	// Horizontal sum of Y11 -> scalar X11[0]
 	VEXTRACTF128 $1, Y11, X12
 	VADDPS X12, X11, X11
 	VPERMILPS $0xEE, X11, X12
@@ -356,7 +1413,6 @@ stage2_256_loop8:
 
 	VDIVSS X11, X15, X11
 
-	// --- STAGE 3: VALUE ACCUMULATION (4x unrolled, 8 YMM accumulators Y0..Y7) ---
 	VXORPS Y0, Y0, Y0
 	VXORPS Y1, Y1, Y1
 	VXORPS Y2, Y2, Y2
@@ -467,185 +1523,5 @@ next256_query:
 	JG query256_loop
 
 sdpa256_done:
-	VZEROUPPER
-	RET
-
-// func sdpaSoftmaxAndValueAccumDim32AVX2Asm(
-//     vPtr, outPtr, scoresPtr unsafe.Pointer,
-//     kvByteStride, kvLenUnmasked int,
-//     rowMax float32,
-// )
-TEXT ·sdpaSoftmaxAndValueAccumDim32AVX2Asm(SB), NOSPLIT, $0-44
-	MOVQ vPtr+0(FP), R9
-	MOVQ outPtr+8(FP), DI
-	MOVQ scoresPtr+16(FP), R10
-	MOVQ kvByteStride+24(FP), R11
-	MOVQ kvLenUnmasked+32(FP), R15
-	VBROADCASTSS rowMax+40(FP), Y10
-
-	TESTQ R15, R15
-	JLE accum256_done
-
-	LEAQ ·sdpaAVX2Consts(SB), DX
-	VMOVUPS 128(DX), Y14
-	VMOVUPS 416(DX), Y15
-
-	// Pad 8 float32s at scoresScratch[kvLenUnmasked] with -Inf
-	LEAQ (R10)(R15*4), BX
-	VMOVUPS 0(DX), Y4
-	VMOVUPS Y4, (BX)
-
-	VXORPS Y11, Y11, Y11
-	MOVQ R10, BX
-	MOVQ R15, CX
-
-accum256_stage2_loop8:
-	VMOVUPS (BX), Y2
-	VSUBPS Y10, Y2, Y2
-	VMAXPS 32(DX), Y2, Y2
-	VMINPS 64(DX), Y2, Y2
-
-	VMOVAPS Y14, Y3
-	VFMADD231PS 96(DX), Y2, Y3
-	VSUBPS Y14, Y3, Y4
-	VPSLLD $23, Y3, Y3
-	VPADDD Y15, Y3, Y3
-
-	VFNMADD231PS 160(DX), Y4, Y2
-	VFNMADD231PS 192(DX), Y4, Y2
-
-	VMULPS Y2, Y2, Y4
-	VMOVUPS 256(DX), Y5
-	VFMADD231PS 224(DX), Y2, Y5
-	VMOVUPS 320(DX), Y6
-	VFMADD231PS 288(DX), Y2, Y6
-	VMOVUPS 384(DX), Y7
-	VFMADD231PS 352(DX), Y2, Y7
-	VADDPS Y15, Y2, Y8
-	VMULPS Y4, Y4, Y9
-	VFMADD213PS Y6, Y4, Y5
-	VFMADD213PS Y8, Y4, Y7
-	VFMADD213PS Y7, Y9, Y5
-	VMULPS Y3, Y5, Y2
-
-	VMOVUPS Y2, (BX)
-	VADDPS Y2, Y11, Y11
-
-	ADDQ $32, BX
-	SUBQ $8, CX
-	JG accum256_stage2_loop8
-
-	VEXTRACTF128 $1, Y11, X12
-	VADDPS X12, X11, X11
-	VPERMILPS $0xEE, X11, X12
-	VADDPS X12, X11, X11
-	VPERMILPS $0x01, X11, X12
-	VADDSS X12, X11, X11
-
-	VDIVSS X11, X15, X11
-
-	VXORPS Y0, Y0, Y0
-	VXORPS Y1, Y1, Y1
-	VXORPS Y2, Y2, Y2
-	VXORPS Y3, Y3, Y3
-	VXORPS Y4, Y4, Y4
-	VXORPS Y5, Y5, Y5
-	VXORPS Y6, Y6, Y6
-	VXORPS Y7, Y7, Y7
-
-	LEAQ (R11)(R11*2), R12
-	MOVQ R9, AX
-	MOVQ R10, BX
-	MOVQ R15, CX
-
-accum256_stage3_loop4:
-	CMPQ CX, $4
-	JL accum256_stage3_loop2
-
-	VBROADCASTSS 0(BX), Y8
-	VBROADCASTSS 4(BX), Y9
-	VBROADCASTSS 8(BX), Y10
-	VBROADCASTSS 12(BX), Y12
-
-	VFMADD231PS 0(AX), Y8, Y0
-	VFMADD231PS 32(AX), Y8, Y1
-	VFMADD231PS 64(AX), Y8, Y2
-	VFMADD231PS 96(AX), Y8, Y3
-
-	VFMADD231PS 0(AX)(R11*1), Y9, Y4
-	VFMADD231PS 32(AX)(R11*1), Y9, Y5
-	VFMADD231PS 64(AX)(R11*1), Y9, Y6
-	VFMADD231PS 96(AX)(R11*1), Y9, Y7
-
-	VFMADD231PS 0(AX)(R11*2), Y10, Y0
-	VFMADD231PS 32(AX)(R11*2), Y10, Y1
-	VFMADD231PS 64(AX)(R11*2), Y10, Y2
-	VFMADD231PS 96(AX)(R11*2), Y10, Y3
-
-	VFMADD231PS 0(AX)(R12*1), Y12, Y4
-	VFMADD231PS 32(AX)(R12*1), Y12, Y5
-	VFMADD231PS 64(AX)(R12*1), Y12, Y6
-	VFMADD231PS 96(AX)(R12*1), Y12, Y7
-
-	LEAQ (AX)(R11*4), AX
-	ADDQ $16, BX
-	SUBQ $4, CX
-	JMP accum256_stage3_loop4
-
-accum256_stage3_loop2:
-	CMPQ CX, $2
-	JL accum256_stage3_reduce
-
-	VBROADCASTSS 0(BX), Y8
-	VBROADCASTSS 4(BX), Y9
-
-	VFMADD231PS 0(AX), Y8, Y0
-	VFMADD231PS 32(AX), Y8, Y1
-	VFMADD231PS 64(AX), Y8, Y2
-	VFMADD231PS 96(AX), Y8, Y3
-
-	VFMADD231PS 0(AX)(R11*1), Y9, Y4
-	VFMADD231PS 32(AX)(R11*1), Y9, Y5
-	VFMADD231PS 64(AX)(R11*1), Y9, Y6
-	VFMADD231PS 96(AX)(R11*1), Y9, Y7
-
-	LEAQ (AX)(R11*2), AX
-	ADDQ $8, BX
-	SUBQ $2, CX
-	JMP accum256_stage3_loop2
-
-accum256_stage3_reduce:
-	VADDPS Y4, Y0, Y0
-	VADDPS Y5, Y1, Y1
-	VADDPS Y6, Y2, Y2
-	VADDPS Y7, Y3, Y3
-
-accum256_stage3_rem:
-	TESTQ CX, CX
-	JLE accum256_stage3_store
-
-	VBROADCASTSS 0(BX), Y8
-	VFMADD231PS 0(AX), Y8, Y0
-	VFMADD231PS 32(AX), Y8, Y1
-	VFMADD231PS 64(AX), Y8, Y2
-	VFMADD231PS 96(AX), Y8, Y3
-
-	ADDQ R11, AX
-	ADDQ $4, BX
-	DECQ CX
-	JMP accum256_stage3_rem
-
-accum256_stage3_store:
-	VBROADCASTSS X11, Y11
-	VMULPS Y11, Y0, Y0
-	VMULPS Y11, Y1, Y1
-	VMULPS Y11, Y2, Y2
-	VMULPS Y11, Y3, Y3
-	VMOVUPS Y0, 0(DI)
-	VMOVUPS Y1, 32(DI)
-	VMOVUPS Y2, 64(DI)
-	VMOVUPS Y3, 96(DI)
-
-accum256_done:
 	VZEROUPPER
 	RET

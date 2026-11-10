@@ -44,6 +44,55 @@ func simdUnaryFloat32(in, out []float32, fn func(simd.Float32s) simd.Float32s) {
 	}
 }
 
+func simdNegFloat32(in, out []float32) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(in[i:]).Neg().Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v.Neg().StorePart(out[i:])
+	}
+}
+
+func simdAbsFloat32(in, out []float32) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(in[i:]).Abs().Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v.Abs().StorePart(out[i:])
+	}
+}
+
+func simdSqrtFloat32(in, out []float32) {
+	vLen := simd.BroadcastFloat32s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat32s(in[i:]).Sqrt().Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
+		v.Sqrt().StorePart(out[i:])
+	}
+}
+
+func simdRsqrtFloat32(in, out []float32) {
+	vOne := simd.BroadcastFloat32s(1)
+	vLen := vOne.Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		vOne.Div(simd.LoadFloat32s(in[i:]).Sqrt()).Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat32sPart(in[i:])
+		vOne.Div(v.Sqrt()).StorePart(out[i:])
+	}
+}
+
 func simdSignFloat32(in, out []float32) {
 	vZero := simd.BroadcastFloat32s(0)
 	vPosOne := simd.BroadcastFloat32s(1)
@@ -76,6 +125,30 @@ func simdUnaryFloat64(in, out []float64, fn func(simd.Float64s) simd.Float64s) {
 	if i < len(out) {
 		v, _ := simdmath.LoadFloat64sPart(in[i:])
 		fn(v).StorePart(out[i:])
+	}
+}
+
+func simdNegFloat64(in, out []float64) {
+	vLen := simd.BroadcastFloat64s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(in[i:]).Neg().Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat64sPart(in[i:])
+		v.Neg().StorePart(out[i:])
+	}
+}
+
+func simdAbsFloat64(in, out []float64) {
+	vLen := simd.BroadcastFloat64s(0).Len()
+	i := 0
+	for ; i+vLen <= len(out); i += vLen {
+		simd.LoadFloat64s(in[i:]).Abs().Store(out[i:])
+	}
+	if i < len(out) {
+		v, _ := simdmath.LoadFloat64sPart(in[i:])
+		v.Abs().StorePart(out[i:])
 	}
 }
 
@@ -229,6 +302,14 @@ func parallelizeSIMDUnary(backend *gobackend.Backend, n int, fn func(start, end 
 	}
 }
 
+func parallelizeSimpleSIMDUnary(backend *gobackend.Backend, n int, fn func(start, end int)) {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 131072 {
+		backend.Scheduler.ParallelizeChunks(n, 65536, fn)
+	} else {
+		fn(0, n)
+	}
+}
+
 func execExpSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	switch inputs[0].RawShape.DType {
 	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
@@ -275,7 +356,7 @@ func execSqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 	parallelizeSIMDUnary(backend, n, func(start, end int) {
 		switch input.RawShape.DType {
 		case dtypes.Float32:
-			simdUnaryFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end], simdmath.SqrtFloat32)
+			simdSqrtFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end])
 		case dtypes.Float64:
 			simdUnaryFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end], simdmath.SqrtFloat64)
 		case dtypes.BFloat16:
@@ -304,7 +385,7 @@ func execRsqrtSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	parallelizeSIMDUnary(backend, n, func(start, end int) {
 		switch input.RawShape.DType {
 		case dtypes.Float32:
-			simdUnaryFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end], simdmath.RsqrtFloat32)
+			simdRsqrtFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end])
 		case dtypes.Float64:
 			simdUnaryFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end], simdmath.RsqrtFloat64)
 		case dtypes.BFloat16:
@@ -417,12 +498,12 @@ func execAbsSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	n := input.RawShape.Size()
-	parallelizeSIMDUnary(backend, n, func(start, end int) {
+	parallelizeSimpleSIMDUnary(backend, n, func(start, end int) {
 		switch input.RawShape.DType {
 		case dtypes.Float32:
-			simdUnaryFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end], func(v simd.Float32s) simd.Float32s { return v.Abs() })
+			simdAbsFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end])
 		case dtypes.Float64:
-			simdUnaryFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end], func(v simd.Float64s) simd.Float64s { return v.Abs() })
+			simdAbsFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end])
 		case dtypes.BFloat16:
 			simdUnaryBFloat16(input.Flat.([]bfloat16.BFloat16)[start:end], output.Flat.([]bfloat16.BFloat16)[start:end], func(v simd.Float32s) simd.Float32s { return v.Abs() })
 		case dtypes.Float16:
@@ -448,12 +529,12 @@ func execNegSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	n := input.RawShape.Size()
-	parallelizeSIMDUnary(backend, n, func(start, end int) {
+	parallelizeSimpleSIMDUnary(backend, n, func(start, end int) {
 		switch input.RawShape.DType {
 		case dtypes.Float32:
-			simdUnaryFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end], func(v simd.Float32s) simd.Float32s { return v.Neg() })
+			simdNegFloat32(input.Flat.([]float32)[start:end], output.Flat.([]float32)[start:end])
 		case dtypes.Float64:
-			simdUnaryFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end], func(v simd.Float64s) simd.Float64s { return v.Neg() })
+			simdNegFloat64(input.Flat.([]float64)[start:end], output.Flat.([]float64)[start:end])
 		case dtypes.BFloat16:
 			simdUnaryBFloat16(input.Flat.([]bfloat16.BFloat16)[start:end], output.Flat.([]bfloat16.BFloat16)[start:end], func(v simd.Float32s) simd.Float32s { return v.Neg() })
 		case dtypes.Float16:

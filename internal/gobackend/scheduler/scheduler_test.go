@@ -180,3 +180,75 @@ func TestScheduler_NestedInterOpAndIntraOp_NoDeadlock(t *testing.T) {
 		}
 	}
 }
+
+func TestScheduler_WholeChipGate(t *testing.T) {
+	sched := New()
+	targetP := min(4, runtime.GOMAXPROCS(0))
+	if targetP < 2 {
+		t.Skip("requires GOMAXPROCS >= 2")
+	}
+	sched.SetMaxParallelism(targetP)
+
+	// Simulate 4 concurrent active Execute() calls so EffectiveParallelism() == 1,
+	// while UnscaledParallelism() remains targetP.
+	const numCalls = 4
+	exits := make([]func(), numCalls)
+	for i := range numCalls {
+		exits[i] = sched.EnterExecution()
+	}
+	defer func() {
+		for _, exit := range exits {
+			exit()
+		}
+	}()
+
+	if got := sched.EffectiveParallelism(); got != 1 {
+		t.Fatalf("EffectiveParallelism() = %d, want 1", got)
+	}
+	if got := sched.UnscaledParallelism(); got != targetP {
+		t.Fatalf("UnscaledParallelism() = %d, want %d", got, targetP)
+	}
+
+	var activeHolders atomic.Int32
+	var maxHolders atomic.Int32
+	var wg sync.WaitGroup
+	for range numCalls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 5 {
+				acquired := sched.AcquireWholeChip()
+				if !acquired {
+					t.Errorf("expected AcquireWholeChip() == true")
+				}
+				cur := activeHolders.Add(1)
+				for {
+					prev := maxHolders.Load()
+					if cur <= prev || maxHolders.CompareAndSwap(prev, cur) {
+						break
+					}
+				}
+				if !sched.IsWholeChipHeld() {
+					t.Errorf("expected IsWholeChipHeld() == true while holding gate")
+				}
+				var workersRan atomic.Int32
+				sched.SaturateUpTo(targetP, func() {
+					workersRan.Add(1)
+				})
+				if workersRan.Load() < 1 {
+					t.Errorf("expected SaturateUpTo to run at least 1 worker, got %d", workersRan.Load())
+				}
+				activeHolders.Add(-1)
+				sched.ReleaseWholeChip(acquired)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := maxHolders.Load(); got != 1 {
+		t.Fatalf("max concurrent whole-chip holders = %d, want 1", got)
+	}
+	if sched.IsWholeChipHeld() {
+		t.Fatalf("expected IsWholeChipHeld() == false after all callers released gate")
+	}
+}

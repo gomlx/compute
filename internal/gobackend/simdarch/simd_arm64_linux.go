@@ -2,7 +2,7 @@
 
 //go:build linux && arm64 && goexperiment.simd
 
-package gobackend
+package simdarch
 
 import (
 	"encoding/binary"

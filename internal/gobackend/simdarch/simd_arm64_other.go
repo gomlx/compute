@@ -2,7 +2,7 @@
 
 //go:build !darwin && !linux && arm64 && goexperiment.simd
 
-package gobackend
+package simdarch
 
 func detectARM64Features() arm64Features {
 	return arm64Features{

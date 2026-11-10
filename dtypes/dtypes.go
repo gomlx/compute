@@ -229,7 +229,7 @@ func (dtype DType) SizeForDimensions(dimensions ...int) int {
 		numElements = 1
 		for _, dim := range dimensions {
 			if dim < 0 {
-				panicf("dim cannot be negative for SizeForDimensions, got %v", dimensions)
+				panicf("dim cannot be negative for SizeForDimensions, got %d", dim)
 			}
 			numElements *= dim
 		}

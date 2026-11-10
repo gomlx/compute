@@ -1610,57 +1610,6 @@ sme_f64_16x16_done:
 #define SHLL_4S_4H_16(Vd, Vn)  WORD $(0x2E613800 | ((Vn)<<5) | (Vd))
 #define SHLL2_4S_8H_16(Vd, Vn) WORD $(0x6E613800 | ((Vn)<<5) | (Vd))
 
-// func smeProbeCoreClockTicks() uint64
-// Executes 256 iterations of 16 independent per-core NEON VFMLA instructions
-// timed against the hardware virtual counter CNTVCT_EL0 (1 GHz = 1 ns/tick on Apple Silicon).
-// Because NEON execution pipelines are private to each core (4x 128-bit FMA pipes on
-// Super/Performance cores vs. 2x on Efficiency cores), this ~250-460ns probe cleanly
-// identifies which physical core cluster (Super, Performance, or Efficiency) the thread is on.
-TEXT ·smeProbeCoreClockTicks(SB), NOSPLIT, $0-8
-	VEOR V0.B16, V0.B16, V0.B16
-	VEOR V1.B16, V1.B16, V1.B16
-	VEOR V2.B16, V2.B16, V2.B16
-	VEOR V3.B16, V3.B16, V3.B16
-	VEOR V4.B16, V4.B16, V4.B16
-	VEOR V5.B16, V5.B16, V5.B16
-	VEOR V6.B16, V6.B16, V6.B16
-	VEOR V7.B16, V7.B16, V7.B16
-	VEOR V8.B16, V8.B16, V8.B16
-	VEOR V9.B16, V9.B16, V9.B16
-	VEOR V10.B16, V10.B16, V10.B16
-	VEOR V11.B16, V11.B16, V11.B16
-	VEOR V12.B16, V12.B16, V12.B16
-	VEOR V13.B16, V13.B16, V13.B16
-	VEOR V14.B16, V14.B16, V14.B16
-	VEOR V15.B16, V15.B16, V15.B16
-	WORD $0xD5033FDF // ISB
-	WORD $0xD53BE041 // MRS X1, CNTVCT_EL0
-	MOVD $256, R0
-sme_probe_loop:
-	VFMLA V16.S4, V17.S4, V0.S4
-	VFMLA V16.S4, V18.S4, V1.S4
-	VFMLA V16.S4, V19.S4, V2.S4
-	VFMLA V16.S4, V20.S4, V3.S4
-	VFMLA V21.S4, V17.S4, V4.S4
-	VFMLA V21.S4, V18.S4, V5.S4
-	VFMLA V21.S4, V19.S4, V6.S4
-	VFMLA V21.S4, V20.S4, V7.S4
-	VFMLA V22.S4, V17.S4, V8.S4
-	VFMLA V22.S4, V18.S4, V9.S4
-	VFMLA V22.S4, V19.S4, V10.S4
-	VFMLA V22.S4, V20.S4, V11.S4
-	VFMLA V23.S4, V17.S4, V12.S4
-	VFMLA V23.S4, V18.S4, V13.S4
-	VFMLA V23.S4, V19.S4, V14.S4
-	VFMLA V23.S4, V20.S4, V15.S4
-	SUB $1, R0, R0
-	CBNZ R0, sme_probe_loop
-	WORD $0xD5033FDF // ISB
-	WORD $0xD53BE042 // MRS X2, CNTVCT_EL0
-	SUB R1, R2, R0
-	MOVD R0, ret+0(FP)
-	RET
-
 // func neonSubTile4x16StridedFloat32Asm(lhsPtr, rhsPtr, outPtr unsafe.Pointer, contractingLen, lhsStepBytes, rhsStepBytes, outRowStrideBytes int, accumulate bool)
 TEXT ·neonSubTile4x16StridedFloat32Asm(SB), NOSPLIT, $0-57
 	MOVD lhsPtr+0(FP), R0
@@ -2042,4 +1991,769 @@ store_f64:
 	ADD R6, R2, R2
 	VST1 [V14.D2, V15.D2], (R2)
 	RET
+
+// ---------------------------------------------------------------------------
+// 10. smePackLHS32Float32Asm:
+//     Packs [copyRows, contractingCols] of float32 into [ceil(copyRows/32), contractingCols, 32]
+//     using SME ZA0..ZA3 hardware horizontal-load (LD1W ZA*H) and vertical-store (ST1W ZA*V).
+//     Caller must hold the cluster SME lock (useSME == true).
+// ---------------------------------------------------------------------------
+// Stack frame (40 bytes):
+//   lhsPtr:           0(FP)
+//   panelPtr:         8(FP)
+//   lhsStrideBytes:  16(FP)
+//   copyRows:        24(FP)
+//   contractingCols: 32(FP)
+TEXT ·smePackLHS32Float32Asm(SB), NOSPLIT, $0-40
+	MOVD lhsPtr+0(FP), R0
+	MOVD panelPtr+8(FP), R1
+	MOVD lhsStrideBytes+16(FP), R2
+	MOVD copyRows+24(FP), R3
+	MOVD contractingCols+32(FP), R4
+
+	MOVD $0, R19
+	LSL $7, R4, R20 // stripPanelBytes = contractingCols * 32 * 4
+	LSL $4, R2, R21 // 16 * lhsStrideBytes
+
+	WORD $0xD503477F // SMSTART
+
+sme_pack_row_strip_loop:
+	CMP R3, R19
+	BGE sme_pack_lhs32_done
+
+sme_pack_strip_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	WORD $0x2598E3E0 // PTRUE P0.S
+	MOVD $16, R14
+
+	MUL R19, R2, R8
+	ADD R0, R8, R8 // R8 = lhsPtr + stripRowIdx * lhsStrideBytes
+
+	LSR $5, R19, R10
+	MUL R10, R20, R10
+	ADD R1, R10, R10 // R10 = panelPtr + (stripRowIdx / 32) * stripPanelBytes
+
+	MOVD $0, R9 // kColIdx = 0
+	ADD $32, R19, R13
+	CMP R3, R13
+	BGT sme_pack_tail_col_check
+
+sme_pack_full32_col_loop:
+	ADD $32, R9, R13
+	CMP R4, R13
+	BGT sme_pack_tail_col_check
+
+	ADD R9<<2, R8, R16
+	ADD R21, R16, R17
+	MOVD $0, R12
+
+sme_pack_load_32x32:
+	WORD $0xE09F0200 // LD1W {ZA0H.S[W12, 0]}, P0/Z, [X16]
+	WORD $0xE09F0224 // LD1W {ZA1H.S[W12, 0]}, P0/Z, [X17]
+	WORD $0xE08E0208 // LD1W {ZA2H.S[W12, 0]}, P0/Z, [X16, X14, LSL #2]
+	WORD $0xE08E022C // LD1W {ZA3H.S[W12, 0]}, P0/Z, [X17, X14, LSL #2]
+	ADD R2, R16, R16
+	ADD R2, R17, R17
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT sme_pack_load_32x32
+
+	ADD $2048, R10, R11
+	MOVD $0, R12
+
+sme_pack_store_32x32:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	WORD $0xE0BF8168 // ST1W {ZA2V.S[W12, 0]}, P0, [X11]
+	WORD $0xE0AE816C // ST1W {ZA3V.S[W12, 0]}, P0, [X11, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $128, R11, R11
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT sme_pack_store_32x32
+
+	MOVD R11, R10
+	ADD $32, R9, R9
+	B sme_pack_full32_col_loop
+
+sme_pack_tail_col_check:
+	CMP R4, R9
+	BGE sme_pack_strip_verify
+
+	WORD $0xC00800FF // ZERO {ZA}
+	WORD $0x25A41521 // WHILELT P1.S, X9, X4
+	ADD R9<<2, R8, R16
+	ADD R21, R16, R17
+	MOVD $0, R12
+	MOVD R19, R13
+	ADD $16, R19, R15
+
+sme_pack_load_tail:
+	CMP R3, R13
+	BGE sme_pack_load_tail_done
+	WORD $0xE09F0600 // LD1W {ZA0H.S[W12, 0]}, P1/Z, [X16]
+	CMP R3, R15
+	BGE sme_pack_load_tail_skip_bot
+	WORD $0xE09F0624 // LD1W {ZA1H.S[W12, 0]}, P1/Z, [X17]
+
+sme_pack_load_tail_skip_bot:
+	ADD R2, R16, R16
+	ADD R2, R17, R17
+	ADD $1, R12, R12
+	ADD $1, R13, R13
+	ADD $1, R15, R15
+	CMP $16, R12
+	BLT sme_pack_load_tail
+
+sme_pack_load_tail_done:
+	SUB R9, R4, R13
+	CMP $16, R13
+	BLE sme_pack_store_tail_init
+	MOVD $16, R13
+
+sme_pack_store_tail_init:
+	MOVD $0, R12
+
+sme_pack_store_tail:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $1, R12, R12
+	CMP R13, R12
+	BLT sme_pack_store_tail
+
+	ADD $16, R9, R9
+	B sme_pack_tail_col_check
+
+sme_pack_strip_verify:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, sme_pack_strip_retry
+
+	ADD $32, R19, R19
+	B sme_pack_row_strip_loop
+
+sme_pack_lhs32_done:
+	WORD $0xD503467F // SMSTOP
+	RET
+
+// ---------------------------------------------------------------------------
+// 11. smeDirectNonTransposedFloat32Asm_32x32:
+//     Fused single-SMSTART 32x32 SME GEMM for LayoutNonTransposed (C = A @ B).
+//     For each 32-row strip of LHS:
+//       Phase A: Transposes 32 rows of LHS [min(32, M-row), K] into L1-resident
+//                packedLHSStrip [K, 32] using ZA0..ZA3 horizontal-load (LD1W ZA*H)
+//                and vertical-store (ST1W ZA*V).
+//       Phase B: Sweeps across all 32-col strips of RHS [K, N], reading RHS directly
+//                from rhsMatrix with row byte stride N*4 (zero PackRHS overhead) and
+//                accumulating 32x32 outer products in ZA0..ZA3.
+// ---------------------------------------------------------------------------
+// Stack frame (120 bytes):
+//   lhs_base:             0(FP)
+//   rhs_base:            24(FP)
+//   output_base:         48(FP)
+//   packedLHSStrip_base: 72(FP)
+//   lhsActiveRows:       96(FP)
+//   rhsActiveCols:      104(FP)
+//   contractingLen:     112(FP)
+TEXT ·smeDirectNonTransposedFloat32Asm_32x32(SB), NOSPLIT, $0-120
+	MOVD lhs_base+0(FP), R0
+	MOVD rhs_base+24(FP), R1
+	MOVD output_base+48(FP), R2
+	MOVD packedLHSStrip_base+72(FP), R7
+	MOVD lhsActiveRows+96(FP), R5
+	MOVD rhsActiveCols+104(FP), R6
+	MOVD contractingLen+112(FP), R4
+
+	LSL $2, R6, R3  // rhsRowByteStride = outputRowByteStride = rhsActiveCols * 4
+	LSL $1, R3, R22 // 2 * rhsRowByteStride
+	LSL $2, R4, R21 // lhsRowByteStride = contractingLen * 4
+	MOVD $0, R19    // lhsRowIdx = 0
+
+	WORD $0xD503477F // SMSTART
+
+d_row_strip_loop:
+	CMP R5, R19
+	BGE sme_direct_f32_done
+
+	// Phase A: Transpose 32 rows of LHS [R19 : min(R19+32, R5), 0 : R4] into packedLHSStrip (R7)
+d_pack_strip_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	WORD $0x2598E3E0 // PTRUE P0.S
+	MOVD $16, R14
+
+	MUL R19, R21, R8
+	ADD R0, R8, R8  // R8 = &lhs[R19, 0]
+	MOVD R7, R10    // R10 = &packedLHSStrip[0]
+	MOVD $0, R9     // kColIdx = 0
+
+	ADD $32, R19, R13
+	CMP R5, R13
+	BGT d_pack_tail_col_check
+
+d_pack_full32_col_loop:
+	ADD $32, R9, R13
+	CMP R4, R13
+	BGT d_pack_tail_col_check
+
+	ADD R9<<2, R8, R16
+	ADD R21<<4, R16, R17
+	MOVD $0, R12
+
+d_pack_load_32x32:
+	WORD $0xE09F0200 // LD1W {ZA0H.S[W12, 0]}, P0/Z, [X16]
+	WORD $0xE09F0224 // LD1W {ZA1H.S[W12, 0]}, P0/Z, [X17]
+	WORD $0xE08E0208 // LD1W {ZA2H.S[W12, 0]}, P0/Z, [X16, X14, LSL #2]
+	WORD $0xE08E022C // LD1W {ZA3H.S[W12, 0]}, P0/Z, [X17, X14, LSL #2]
+	ADD R21, R16, R16
+	ADD R21, R17, R17
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT d_pack_load_32x32
+
+	ADD $2048, R10, R11
+	MOVD $0, R12
+
+d_pack_store_32x32:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	WORD $0xE0BF8168 // ST1W {ZA2V.S[W12, 0]}, P0, [X11]
+	WORD $0xE0AE816C // ST1W {ZA3V.S[W12, 0]}, P0, [X11, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $128, R11, R11
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT d_pack_store_32x32
+
+	MOVD R11, R10
+	ADD $32, R9, R9
+	B d_pack_full32_col_loop
+
+d_pack_tail_col_check:
+	CMP R4, R9
+	BGE d_pack_strip_verify
+
+	WORD $0xC00800FF // ZERO {ZA}
+	WORD $0x25A41521 // WHILELT P1.S, X9, X4
+	ADD R9<<2, R8, R16
+	ADD R21<<4, R16, R17
+	MOVD $0, R12
+	MOVD R19, R13
+	ADD $16, R19, R15
+
+d_pack_load_tail:
+	CMP R5, R13
+	BGE d_pack_load_tail_done
+	WORD $0xE09F0600 // LD1W {ZA0H.S[W12, 0]}, P1/Z, [X16]
+	CMP R5, R15
+	BGE d_pack_load_tail_skip_bot
+	WORD $0xE09F0624 // LD1W {ZA1H.S[W12, 0]}, P1/Z, [X17]
+
+d_pack_load_tail_skip_bot:
+	ADD R21, R16, R16
+	ADD R21, R17, R17
+	ADD $1, R12, R12
+	ADD $1, R13, R13
+	ADD $1, R15, R15
+	CMP $16, R12
+	BLT d_pack_load_tail
+
+d_pack_load_tail_done:
+	SUB R9, R4, R13
+	CMP $16, R13
+	BLE d_pack_store_tail_init
+	MOVD $16, R13
+
+d_pack_store_tail_init:
+	MOVD $0, R12
+
+d_pack_store_tail:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $1, R12, R12
+	CMP R13, R12
+	BLT d_pack_store_tail
+
+	ADD $16, R9, R9
+	B d_pack_tail_col_check
+
+d_pack_strip_verify:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, d_pack_strip_retry
+
+	// Phase B: Sweep across 32-col strips of RHS [0..K, R20..R20+32]
+	MOVD $0, R20 // rhsColIdx = 0
+
+d_col_strip_loop:
+	CMP R6, R20
+	BGE d_next_row_strip
+
+d_tile_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	WORD $0x2598E3E0 // PTRUE P0.S
+	WORD $0xC00800FF // ZERO {ZA}
+
+	MOVD R20, R14
+	WORD $0x25A615C1 // WHILELT P1.S, X14, X6
+	ADD $16, R20, R14
+	WORD $0x25A615C2 // WHILELT P2.S, X14, X6
+
+	MOVD R7, R8     // R8 = &packedLHSStrip[0]
+	LSL $2, R20, R9
+	ADD R1, R9, R9  // R9 = &rhs[0, rhsColIdx]
+
+	MOVD R4, R11
+	CMP $4, R11
+	BLT d_k_rem_check
+
+d_k_loop_4:
+	ADD R3, R9, R15
+	// Step 0
+	WORD $0xA540A100 // LD1W {Z0.S}, P0/Z, [X8, #0, MUL VL]
+	WORD $0xA541A101 // LD1W {Z1.S}, P0/Z, [X8, #1, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+
+	// Step 1
+	WORD $0xA542A104 // LD1W {Z4.S}, P0/Z, [X8, #2, MUL VL]
+	WORD $0xA543A105 // LD1W {Z5.S}, P0/Z, [X8, #3, MUL VL]
+	WORD $0xA540A5E6 // LD1W {Z6.S}, P1/Z, [X15, #0, MUL VL]
+	WORD $0xA541A9E7 // LD1W {Z7.S}, P2/Z, [X15, #1, MUL VL]
+	WORD $0x80860080 // FMOPA ZA0.S, P0/M, P0/M, Z4.S, Z6.S
+	WORD $0x80870081 // FMOPA ZA1.S, P0/M, P0/M, Z4.S, Z7.S
+	WORD $0x808600A2 // FMOPA ZA2.S, P0/M, P0/M, Z5.S, Z6.S
+	WORD $0x808700A3 // FMOPA ZA3.S, P0/M, P0/M, Z5.S, Z7.S
+
+	ADD R22, R9, R9
+	ADD R3, R9, R15
+
+	// Step 2
+	WORD $0xA544A100 // LD1W {Z0.S}, P0/Z, [X8, #4, MUL VL]
+	WORD $0xA545A101 // LD1W {Z1.S}, P0/Z, [X8, #5, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+
+	// Step 3
+	WORD $0xA546A104 // LD1W {Z4.S}, P0/Z, [X8, #6, MUL VL]
+	WORD $0xA547A105 // LD1W {Z5.S}, P0/Z, [X8, #7, MUL VL]
+	WORD $0xA540A5E6 // LD1W {Z6.S}, P1/Z, [X15, #0, MUL VL]
+	WORD $0xA541A9E7 // LD1W {Z7.S}, P2/Z, [X15, #1, MUL VL]
+	WORD $0x80860080 // FMOPA ZA0.S, P0/M, P0/M, Z4.S, Z6.S
+	WORD $0x80870081 // FMOPA ZA1.S, P0/M, P0/M, Z4.S, Z7.S
+	WORD $0x808600A2 // FMOPA ZA2.S, P0/M, P0/M, Z5.S, Z6.S
+	WORD $0x808700A3 // FMOPA ZA3.S, P0/M, P0/M, Z5.S, Z7.S
+
+	ADD R22, R9, R9
+	ADD $512, R8, R8
+	SUB $4, R11, R11
+	CMP $4, R11
+	BGE d_k_loop_4
+
+d_k_rem_check:
+	CBZ R11, d_k_done
+
+d_k_loop_1:
+	WORD $0xA540A100 // LD1W {Z0.S}, P0/Z, [X8, #0, MUL VL]
+	WORD $0xA541A101 // LD1W {Z1.S}, P0/Z, [X8, #1, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+	ADD $128, R8, R8
+	ADD R3, R9, R9
+	SUB $1, R11, R11
+	CBNZ R11, d_k_loop_1
+
+d_k_done:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, d_tile_retry
+
+d_store_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	MOVD R20, R14
+	WORD $0x25A615C0 // WHILELT P0.S, X14, X6
+	ADD $16, R20, R14
+	WORD $0x25A615C1 // WHILELT P1.S, X14, X6
+
+	MUL R19, R3, R10
+	ADD R2, R10, R10
+	ADD R20<<2, R10, R10
+
+	MOVD R10, R16
+	LSL $4, R3, R15
+	ADD R10, R15, R17
+
+	MOVD $0, R12
+	MOVD R19, R13
+	ADD $16, R19, R15
+
+d_store_row_loop:
+	CMP R5, R13
+	BGE d_store_done
+
+	WORD $0xC0820000 // MOVA Z0.S, P0/M, ZA0H.S[W12, 0]
+	WORD $0xC0820481 // MOVA Z1.S, P1/M, ZA1H.S[W12, 0]
+	WORD $0xE540E200 // ST1W {Z0.S}, P0, [X16, #0, MUL VL]
+	WORD $0xE541E601 // ST1W {Z1.S}, P1, [X16, #1, MUL VL]
+
+	CMP R5, R15
+	BGE d_store_skip_bot
+
+	WORD $0xC0820102 // MOVA Z2.S, P0/M, ZA2H.S[W12, 0]
+	WORD $0xC0820583 // MOVA Z3.S, P1/M, ZA3H.S[W12, 0]
+	WORD $0xE540E222 // ST1W {Z2.S}, P0, [X17, #0, MUL VL]
+	WORD $0xE541E623 // ST1W {Z3.S}, P1, [X17, #1, MUL VL]
+
+d_store_skip_bot:
+	ADD $1, R12, R12
+	ADD $1, R13, R13
+	ADD $1, R15, R15
+	ADD R3, R16, R16
+	ADD R3, R17, R17
+	CMP $16, R12
+	BLT d_store_row_loop
+
+d_store_done:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, d_store_retry
+
+	ADD $32, R20, R20
+	B d_col_strip_loop
+
+d_next_row_strip:
+	ADD $32, R19, R19
+	B d_row_strip_loop
+
+sme_direct_f32_done:
+	WORD $0xD503467F // SMSTOP
+	RET
+
+// ---------------------------------------------------------------------------
+// 12. smeDirectStridedFloat32Asm_32x32:
+//     Fused single-SMSTART 32x32 SME GEMM for C = A @ B with explicit row byte strides
+//     for A (lhsStrideBytes), B (rhsStrideBytes), and C (outStrideBytes).
+//     Used by SDPA for Output[activeRows, headDim] = Probs[activeRows, blockKVLen] @ V[blockKVLen, headDim],
+//     transposing Probs in-SME via ZA0..ZA3 and reading V directly with zero RHS packing.
+// ---------------------------------------------------------------------------
+// Stack frame (80 bytes):
+//   lhsPtr:            0(FP)
+//   rhsPtr:            8(FP)
+//   outPtr:           16(FP)
+//   packedLHSStrip:   24(FP)
+//   lhsActiveRows:    32(FP)
+//   rhsActiveCols:    40(FP)
+//   contractingLen:   48(FP)
+//   lhsStrideBytes:   56(FP)
+//   rhsStrideBytes:   64(FP)
+//   outStrideBytes:   72(FP)
+TEXT ·smeDirectStridedFloat32Asm_32x32(SB), NOSPLIT, $0-80
+	MOVD lhsPtr+0(FP), R0
+	MOVD rhsPtr+8(FP), R1
+	MOVD outPtr+16(FP), R2
+	MOVD packedLHSStrip+24(FP), R7
+	MOVD lhsActiveRows+32(FP), R5
+	MOVD rhsActiveCols+40(FP), R6
+	MOVD contractingLen+48(FP), R4
+	MOVD lhsStrideBytes+56(FP), R21
+	MOVD rhsStrideBytes+64(FP), R3
+	MOVD outStrideBytes+72(FP), R23
+
+	LSL $1, R3, R22  // 2 * rhsStrideBytes
+	LSL $4, R21, R24 // 16 * lhsStrideBytes
+	MOVD $0, R19     // lhsRowIdx = 0
+
+	WORD $0xD503477F // SMSTART
+
+ds_row_strip_loop:
+	CMP R5, R19
+	BGE sme_direct_strided_f32_done
+
+	// Phase A: Transpose 32 rows of LHS [R19 : min(R19+32, R5), 0 : R4] into packedLHSStrip (R7)
+ds_pack_strip_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	WORD $0x2598E3E0 // PTRUE P0.S
+	MOVD $16, R14
+
+	MUL R19, R21, R8
+	ADD R0, R8, R8 // R8 = &lhs[R19, 0]
+	MOVD R7, R10   // R10 = &packedLHSStrip[0]
+	MOVD $0, R9    // kColIdx = 0
+
+	ADD $32, R19, R13
+	CMP R5, R13
+	BGT ds_pack_tail_col_check
+
+ds_pack_full32_col_loop:
+	ADD $32, R9, R13
+	CMP R4, R13
+	BGT ds_pack_tail_col_check
+
+	ADD R9<<2, R8, R16
+	ADD R24, R16, R17
+	MOVD $0, R12
+
+ds_pack_load_32x32:
+	WORD $0xE09F0200 // LD1W {ZA0H.S[W12, 0]}, P0/Z, [X16]
+	WORD $0xE09F0224 // LD1W {ZA1H.S[W12, 0]}, P0/Z, [X17]
+	WORD $0xE08E0208 // LD1W {ZA2H.S[W12, 0]}, P0/Z, [X16, X14, LSL #2]
+	WORD $0xE08E022C // LD1W {ZA3H.S[W12, 0]}, P0/Z, [X17, X14, LSL #2]
+	ADD R21, R16, R16
+	ADD R21, R17, R17
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT ds_pack_load_32x32
+
+	ADD $2048, R10, R11
+	MOVD $0, R12
+
+ds_pack_store_32x32:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	WORD $0xE0BF8168 // ST1W {ZA2V.S[W12, 0]}, P0, [X11]
+	WORD $0xE0AE816C // ST1W {ZA3V.S[W12, 0]}, P0, [X11, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $128, R11, R11
+	ADD $1, R12, R12
+	CMP $16, R12
+	BLT ds_pack_store_32x32
+
+	MOVD R11, R10
+	ADD $32, R9, R9
+	B ds_pack_full32_col_loop
+
+ds_pack_tail_col_check:
+	CMP R4, R9
+	BGE ds_pack_strip_verify
+
+	WORD $0xC00800FF // ZERO {ZA}
+	WORD $0x25A41521 // WHILELT P1.S, X9, X4
+	ADD R9<<2, R8, R16
+	ADD R24, R16, R17
+	MOVD $0, R12
+	MOVD R19, R13
+	ADD $16, R19, R15
+
+ds_pack_load_tail:
+	CMP R5, R13
+	BGE ds_pack_load_tail_done
+	WORD $0xE09F0600 // LD1W {ZA0H.S[W12, 0]}, P1/Z, [X16]
+	CMP R5, R15
+	BGE ds_pack_load_tail_skip_bot
+	WORD $0xE09F0624 // LD1W {ZA1H.S[W12, 0]}, P1/Z, [X17]
+
+ds_pack_load_tail_skip_bot:
+	ADD R21, R16, R16
+	ADD R21, R17, R17
+	ADD $1, R12, R12
+	ADD $1, R13, R13
+	ADD $1, R15, R15
+	CMP $16, R12
+	BLT ds_pack_load_tail
+
+ds_pack_load_tail_done:
+	SUB R9, R4, R13
+	CMP $16, R13
+	BLE ds_pack_store_tail_init
+	MOVD $16, R13
+
+ds_pack_store_tail_init:
+	MOVD $0, R12
+
+ds_pack_store_tail:
+	WORD $0xE0BF8140 // ST1W {ZA0V.S[W12, 0]}, P0, [X10]
+	WORD $0xE0AE8144 // ST1W {ZA1V.S[W12, 0]}, P0, [X10, X14, LSL #2]
+	ADD $128, R10, R10
+	ADD $1, R12, R12
+	CMP R13, R12
+	BLT ds_pack_store_tail
+
+	ADD $16, R9, R9
+	B ds_pack_tail_col_check
+
+ds_pack_strip_verify:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, ds_pack_strip_retry
+
+	// Phase B: Sweep across 32-col strips of RHS [0..K, R20..R20+32]
+	MOVD $0, R20 // rhsColIdx = 0
+
+ds_col_strip_loop:
+	CMP R6, R20
+	BGE ds_next_row_strip
+
+ds_tile_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	WORD $0x2598E3E0 // PTRUE P0.S
+	WORD $0xC00800FF // ZERO {ZA}
+
+	MOVD R20, R14
+	WORD $0x25A615C1 // WHILELT P1.S, X14, X6
+	ADD $16, R20, R14
+	WORD $0x25A615C2 // WHILELT P2.S, X14, X6
+
+	MOVD R7, R8    // R8 = &packedLHSStrip[0]
+	LSL $2, R20, R9
+	ADD R1, R9, R9 // R9 = &rhs[0, rhsColIdx]
+
+	MOVD R4, R11
+	CMP $4, R11
+	BLT ds_k_rem_check
+
+ds_k_loop_4:
+	ADD R3, R9, R15
+	// Step 0
+	WORD $0xA540A100 // LD1W {Z0.S}, P0/Z, [X8, #0, MUL VL]
+	WORD $0xA541A101 // LD1W {Z1.S}, P0/Z, [X8, #1, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+
+	// Step 1
+	WORD $0xA542A104 // LD1W {Z4.S}, P0/Z, [X8, #2, MUL VL]
+	WORD $0xA543A105 // LD1W {Z5.S}, P0/Z, [X8, #3, MUL VL]
+	WORD $0xA540A5E6 // LD1W {Z6.S}, P1/Z, [X15, #0, MUL VL]
+	WORD $0xA541A9E7 // LD1W {Z7.S}, P2/Z, [X15, #1, MUL VL]
+	WORD $0x80860080 // FMOPA ZA0.S, P0/M, P0/M, Z4.S, Z6.S
+	WORD $0x80870081 // FMOPA ZA1.S, P0/M, P0/M, Z4.S, Z7.S
+	WORD $0x808600A2 // FMOPA ZA2.S, P0/M, P0/M, Z5.S, Z6.S
+	WORD $0x808700A3 // FMOPA ZA3.S, P0/M, P0/M, Z5.S, Z7.S
+
+	ADD R22, R9, R9
+	ADD R3, R9, R15
+
+	// Step 2
+	WORD $0xA544A100 // LD1W {Z0.S}, P0/Z, [X8, #4, MUL VL]
+	WORD $0xA545A101 // LD1W {Z1.S}, P0/Z, [X8, #5, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+
+	// Step 3
+	WORD $0xA546A104 // LD1W {Z4.S}, P0/Z, [X8, #6, MUL VL]
+	WORD $0xA547A105 // LD1W {Z5.S}, P0/Z, [X8, #7, MUL VL]
+	WORD $0xA540A5E6 // LD1W {Z6.S}, P1/Z, [X15, #0, MUL VL]
+	WORD $0xA541A9E7 // LD1W {Z7.S}, P2/Z, [X15, #1, MUL VL]
+	WORD $0x80860080 // FMOPA ZA0.S, P0/M, P0/M, Z4.S, Z6.S
+	WORD $0x80870081 // FMOPA ZA1.S, P0/M, P0/M, Z4.S, Z7.S
+	WORD $0x808600A2 // FMOPA ZA2.S, P0/M, P0/M, Z5.S, Z6.S
+	WORD $0x808700A3 // FMOPA ZA3.S, P0/M, P0/M, Z5.S, Z7.S
+
+	ADD R22, R9, R9
+	ADD $512, R8, R8
+	SUB $4, R11, R11
+	CMP $4, R11
+	BGE ds_k_loop_4
+
+ds_k_rem_check:
+	CBZ R11, ds_k_done
+
+ds_k_loop_1:
+	WORD $0xA540A100 // LD1W {Z0.S}, P0/Z, [X8, #0, MUL VL]
+	WORD $0xA541A101 // LD1W {Z1.S}, P0/Z, [X8, #1, MUL VL]
+	WORD $0xA540A522 // LD1W {Z2.S}, P1/Z, [X9, #0, MUL VL]
+	WORD $0xA541A923 // LD1W {Z3.S}, P2/Z, [X9, #1, MUL VL]
+	WORD $0x80820000 // FMOPA ZA0.S, P0/M, P0/M, Z0.S, Z2.S
+	WORD $0x80830001 // FMOPA ZA1.S, P0/M, P0/M, Z0.S, Z3.S
+	WORD $0x80820022 // FMOPA ZA2.S, P0/M, P0/M, Z1.S, Z2.S
+	WORD $0x80830023 // FMOPA ZA3.S, P0/M, P0/M, Z1.S, Z3.S
+	ADD $128, R8, R8
+	ADD R3, R9, R9
+	SUB $1, R11, R11
+	CBNZ R11, ds_k_loop_1
+
+ds_k_done:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, ds_tile_retry
+
+ds_store_retry:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x25B8C03F // MOV Z31.S, #1
+	MOVD R20, R14
+	WORD $0x25A615C0 // WHILELT P0.S, X14, X6
+	ADD $16, R20, R14
+	WORD $0x25A615C1 // WHILELT P1.S, X14, X6
+
+	MUL R19, R23, R10
+	ADD R2, R10, R10
+	ADD R20<<2, R10, R10
+
+	MOVD R10, R16
+	LSL $4, R23, R15
+	ADD R10, R15, R17
+
+	MOVD $0, R12
+	MOVD R19, R13
+	ADD $16, R19, R15
+
+ds_store_row_loop:
+	CMP R5, R13
+	BGE ds_store_done
+
+	WORD $0xC0820000 // MOVA Z0.S, P0/M, ZA0H.S[W12, 0]
+	WORD $0xC0820481 // MOVA Z1.S, P1/M, ZA1H.S[W12, 0]
+	WORD $0xE540E200 // ST1W {Z0.S}, P0, [X16, #0, MUL VL]
+	WORD $0xE541E601 // ST1W {Z1.S}, P1, [X16, #1, MUL VL]
+
+	CMP R5, R15
+	BGE ds_store_skip_bot
+
+	WORD $0xC0820102 // MOVA Z2.S, P0/M, ZA2H.S[W12, 0]
+	WORD $0xC0820583 // MOVA Z3.S, P1/M, ZA3H.S[W12, 0]
+	WORD $0xE540E222 // ST1W {Z2.S}, P0, [X17, #0, MUL VL]
+	WORD $0xE541E623 // ST1W {Z3.S}, P1, [X17, #1, MUL VL]
+
+ds_store_skip_bot:
+	ADD $1, R12, R12
+	ADD $1, R13, R13
+	ADD $1, R15, R15
+	ADD R23, R16, R16
+	ADD R23, R17, R17
+	CMP $16, R12
+	BLT ds_store_row_loop
+
+ds_store_done:
+	WORD $0x2598E3E7 // PTRUE P7.S
+	WORD $0x05A1BFEB // LASTB W11, P7, Z31.S
+	CBZ R11, ds_store_retry
+
+	ADD $32, R20, R20
+	B ds_col_strip_loop
+
+ds_next_row_strip:
+	ADD $32, R19, R19
+	B ds_row_strip_loop
+
+sme_direct_strided_f32_done:
+	WORD $0xD503467F // SMSTOP
+	RET
+
+
 

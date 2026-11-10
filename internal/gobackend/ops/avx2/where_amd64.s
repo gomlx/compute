@@ -1,12 +1,8 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-//go:build amd64
+//go:build amd64 && goexperiment.simd
 
 #include "textflag.h"
-
-// ----------------------------------------------------------------------------
-// AVX2 FLOAT32
-// ----------------------------------------------------------------------------
 
 // func whereVVFloat32AVX2Asm(cond, onTrue, onFalse, out unsafe.Pointer, count int)
 TEXT ·whereVVFloat32AVX2Asm(SB), NOSPLIT, $0-40

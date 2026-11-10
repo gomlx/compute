@@ -166,51 +166,90 @@ var iotaDTypeMap = gobackend.NewDTypeMap("Iota")
 func execIotaGeneric[T gobackend.PODNumericConstraints](
 	output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]T)
-	flatIdx := 0
-	var value T
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = T(0)
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = value
-				flatIdx++
+	if len(outputFlat) == 0 || batchSize <= 0 || iotaSize <= 0 || repeatsSize <= 0 {
+		return
+	}
+	blockSize := iotaSize * repeatsSize
+	firstBlock := outputFlat[:blockSize]
+	if repeatsSize == 1 {
+		for i := range iotaSize {
+			firstBlock[i] = T(i)
+		}
+	} else {
+		flatIdx := 0
+		for i := range iotaSize {
+			val := T(i)
+			row := firstBlock[flatIdx : flatIdx+repeatsSize]
+			for j := range row {
+				row[j] = val
 			}
-			value++
+			flatIdx += repeatsSize
+		}
+	}
+	if batchSize > 1 {
+		totalLen := batchSize * blockSize
+		for filled := blockSize; filled < totalLen; filled *= 2 {
+			copy(outputFlat[filled:min(totalLen, 2*filled)], outputFlat[:filled])
 		}
 	}
 }
 
 func execIotaBFloat16(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]bfloat16.BFloat16)
-	flatIdx := 0
-	var value float32
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = 0
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = bfloat16.FromFloat32(value)
-				flatIdx++
+	if len(outputFlat) == 0 || batchSize <= 0 || iotaSize <= 0 || repeatsSize <= 0 {
+		return
+	}
+	blockSize := iotaSize * repeatsSize
+	firstBlock := outputFlat[:blockSize]
+	if repeatsSize == 1 {
+		for i := range iotaSize {
+			firstBlock[i] = bfloat16.FromFloat32(float32(i))
+		}
+	} else {
+		flatIdx := 0
+		for i := range iotaSize {
+			val := bfloat16.FromFloat32(float32(i))
+			row := firstBlock[flatIdx : flatIdx+repeatsSize]
+			for j := range row {
+				row[j] = val
 			}
-			value++
+			flatIdx += repeatsSize
+		}
+	}
+	if batchSize > 1 {
+		totalLen := batchSize * blockSize
+		for filled := blockSize; filled < totalLen; filled *= 2 {
+			copy(outputFlat[filled:min(totalLen, 2*filled)], outputFlat[:filled])
 		}
 	}
 }
 
 func execIotaFloat16(output *gobackend.Buffer, batchSize, iotaSize, repeatsSize int) {
 	outputFlat := output.Flat.([]float16.Float16)
-	flatIdx := 0
-	var value float32
-	for range batchSize {
-		// Repeat starting from 0 for each "batch dimension".
-		value = 0
-		for range iotaSize {
-			for range repeatsSize {
-				outputFlat[flatIdx] = float16.FromFloat32(value)
-				flatIdx++
+	if len(outputFlat) == 0 || batchSize <= 0 || iotaSize <= 0 || repeatsSize <= 0 {
+		return
+	}
+	blockSize := iotaSize * repeatsSize
+	firstBlock := outputFlat[:blockSize]
+	if repeatsSize == 1 {
+		for i := range iotaSize {
+			firstBlock[i] = float16.FromFloat32(float32(i))
+		}
+	} else {
+		flatIdx := 0
+		for i := range iotaSize {
+			val := float16.FromFloat32(float32(i))
+			row := firstBlock[flatIdx : flatIdx+repeatsSize]
+			for j := range row {
+				row[j] = val
 			}
-			value++
+			flatIdx += repeatsSize
+		}
+	}
+	if batchSize > 1 {
+		totalLen := batchSize * blockSize
+		for filled := blockSize; filled < totalLen; filled *= 2 {
+			copy(outputFlat[filled:min(totalLen, 2*filled)], outputFlat[:filled])
 		}
 	}
 }

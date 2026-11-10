@@ -6,11 +6,11 @@ package neon
 
 import (
 	"math"
-	"runtime"
 	"simd/archsimd"
 	"unsafe"
 
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 )
 
 func init() {
@@ -20,13 +20,14 @@ func init() {
 }
 
 // DispatchSDPAARM64 executes scaled dot-product attention on ARM64 using:
-//  1. 32x32 SME outer-product (FMOPA) microkernels (smeLargeKernelFloat32Asm_32x32) when SME is
-//     available, the worker acquires a cluster SME lock, and the unmasked block is >= 32x32.
+//  1. 32x32 SME outer-product (FMOPA) microkernels (smePackLHS32Float32Asm +
+//     smeLargeKernelFloat32Asm_32x32 for Q @ K^T, and smeDirectStridedFloat32Asm_32x32
+//     for Probs @ V) supporting full and partial query blocks (activeRows in 4..32),
+//     boolean masks, causal masks, and additive masks/biases.
 //  2. 4-query-row handwritten ARM64 NEON assembly microkernels (neonSmallTransposedTile4x4Float32Asm
 //     for Q @ K^T and neonSmallNonTransposedTile4x16Float32Asm for Probs @ V) with vectorized NEON
 //     Softmax for 4 query rows at a time.
-//  3. Register-pinned NEON SIMD (archsimd.Float32x4) for remainder rows (1..3 rows), causal masks,
-//     or boolean masks.
+//  3. Register-pinned NEON SIMD (archsimd.Float32x4) for remainder rows (1..3 rows).
 func DispatchSDPAARM64(
 	q, k, v, output []float32,
 	qOff, kvOff, qSeqStride, kvSeqStride, qGroupStride int,
@@ -48,20 +49,31 @@ func DispatchSDPAARM64(
 	qValidEnd := min(qEnd, qLimit)
 	qValidCount := max(0, qValidEnd-qStart)
 
-	canBatchQueries := !causal && len(booleanMask) == 0 && kvLenUnmaskedBase > 0 && NEONUseAsm
+	canBatchQueries := kvLenUnmaskedBase > 0 && NEONUseAsm
 
-	// Try acquiring a cluster SME unit when the problem size has at least one 32x32 tile.
-	useSME := false
-	clusterIdx := -1
-	if canBatchQueries && gobackend.IsSMEAllowed &&
-		qValidCount >= 32 && kvLenUnmaskedBase >= 32 &&
-		(headDim == 32 || headDim == 64 || headDim == 128) &&
-		len(scoresScratch) >= 32*kvLen {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		clusterIdx, useSME, _ = smeAcquireCluster()
-		if useSME {
-			defer smeReleaseCluster(clusterIdx)
+	// Enable SME when problem size has at least 4 query rows and >= 16 keys.
+	wantSME := canBatchQueries && gobackend.IsSMEAllowed &&
+		qValidCount >= 4 && kvLenUnmaskedBase >= 16 &&
+		headDim >= 16 && headDim <= 256 &&
+		len(scoresScratch) >= 32*kvLen
+
+	var packedQ, packedS, packedK []float32
+	if wantSME {
+		kvPadded := (kvLenUnmaskedBase + 31) &^ 31
+		scoresNeed := 32 * kvLen
+		sNeed := 32 * kvPadded
+		kNeed := kvPadded * headDim
+		qNeed := 32 * headDim
+		if len(scoresScratch) >= scoresNeed+sNeed+kNeed+qNeed {
+			packedS = scoresScratch[scoresNeed : scoresNeed+sNeed]
+			packedK = scoresScratch[scoresNeed+sNeed : scoresNeed+sNeed+kNeed]
+			packedQ = scoresScratch[scoresNeed+sNeed+kNeed : scoresNeed+sNeed+kNeed+qNeed]
+			scoresScratch = scoresScratch[:scoresNeed]
+		} else {
+			buf := make([]float32, sNeed+kNeed+qNeed)
+			packedS = buf[:sNeed]
+			packedK = buf[sNeed : sNeed+kNeed]
+			packedQ = buf[sNeed+kNeed:]
 		}
 	}
 
@@ -74,6 +86,10 @@ func DispatchSDPAARM64(
 		biasSeqStride = 0
 	}
 
+	// packedKUpTo tracks how many key rows [0, packedKUpTo) have been transposed into packedK
+	// across query blocks and GQA heads sharing the same KV head.
+	packedKUpTo := 0
+
 	for gIdx := range groupSize {
 		gQOff := qOff + gIdx*qGroupStride
 		gMaskOff := gIdx * maskGroupStride
@@ -81,36 +97,48 @@ func DispatchSDPAARM64(
 
 		qIdx := qStart
 
-		// 1. 32-Query-Row SME 32x32 Outer-Product Path:
-		if useSME && kvLenUnmaskedBase >= 32 {
-			for ; qIdx+32 <= qValidEnd; qIdx += 32 {
-				sdpaSME32RowsFloat32(
+		// 1. SME 32x32 Outer-Product Path (handles full 32-row blocks and partial tail blocks >= 4 rows):
+		if wantSME {
+			for qIdx < qValidEnd {
+				remQ := qValidEnd - qIdx
+				if remQ < 4 {
+					break
+				}
+				activeRows := min(32, remQ)
+				if !sdpaSMEBlockFloat32(
 					q, k, v, output,
+					qIdx, activeRows,
 					gQOff+qIdx*qSeqStride, kvOff, qSeqStride, kvSeqStride,
-					additiveMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
+					additiveMask, booleanMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
 					additiveBias, gBiasOff+qIdx*biasSeqStride, biasSeqStride,
-					scoresScratch,
-					kvLen, kvLenUnmaskedBase, headDim, scale,
-				)
+					scoresScratch, packedQ, packedS, packedK, &packedKUpTo,
+					kvLen, kvLenUnmaskedBase, headDim, scale, causal,
+				) {
+					break
+				}
+				qIdx += activeRows
 			}
 		}
 
-		// 2. 4-Query-Row NEON Assembly Path (Tile4x4 Q@K^T + NEON Softmax + Tile4x16 P@V):
+		// 2. 4-Query-Row NEON Assembly Path (Tile4x4 Q@K^T + NEON Softmax + Tile4x16 P@V, handles 1..4 rows):
 		if canBatchQueries && headDim >= 4 && len(scoresScratch) >= 4*kvLen {
-			for ; qIdx+4 <= qValidEnd; qIdx += 4 {
-				sdpaNEON4RowsFloat32(
+			for qIdx < qValidEnd {
+				activeRows := min(4, qValidEnd-qIdx)
+				sdpaNEONBlockFloat32(
 					q, k, v, output,
+					qIdx, activeRows,
 					gQOff+qIdx*qSeqStride, kvOff, qSeqStride, kvSeqStride,
-					additiveMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
+					additiveMask, booleanMask, gMaskOff+qIdx*maskSeqStride, maskSeqStride,
 					additiveBias, gBiasOff+qIdx*biasSeqStride, biasSeqStride,
 					scoresScratch,
-					kvLen, kvLenUnmaskedBase, headDim, scale,
+					kvLen, kvLenUnmaskedBase, headDim, scale, causal,
 				)
+				qIdx += activeRows
 			}
 		}
 
-		// 3. Remainder / Causal / BooleanMask Path (2-row and 1-row NEON archsimd):
-		if canBatchQueries && headDim == 32 && len(scoresScratch) >= 2*kvLen {
+		// 3. Remainder Path (2-row and 1-row NEON archsimd):
+		if canBatchQueries && !causal && len(booleanMask) == 0 && headDim == 32 && len(scoresScratch) >= 2*kvLen {
 			for ; qIdx+2 <= qValidEnd; qIdx += 2 {
 				qBase0 := gQOff + qIdx*qSeqStride
 				qBase1 := qBase0 + qSeqStride
@@ -200,147 +228,351 @@ func DispatchSDPAARM64(
 	return true
 }
 
-// sdpaSME32RowsFloat32 computes 32 query rows of SDPA using SME 32x32 FMOPA microkernels for
-// Q @ K^T and Probs @ V, with NEON Tile4x4/Tile4x1 handling any kvLenUnmasked % 32 remainder columns.
-func sdpaSME32RowsFloat32(
-	q, k, v, output []float32,
-	qBase, kvOff, qSeqStride, kvSeqStride int,
-	additiveMask []float32, maskIdxBase, maskSeqStride int,
-	additiveBias []float32, biasIdxBase, biasSeqStride int,
-	scoresScratch []float32,
-	kvLen, kvLenUnmasked, headDim int,
-	scale float32,
-) {
-	// Stack buffers for 32xheadDim (up to headDim=128 -> 4096 floats = 16 KB).
-	var packedQBuf [32 * 128]float32
-	var packedKBuf [32 * 128]float32
-	packedQ := packedQBuf[:32*headDim]
-	packedK := packedKBuf[:32*headDim]
-
-	// 1. Pack Q[32, headDim] -> packedQ[headDim, 32]:
-	neonPackLHS(q[qBase:], packedQ, 0, 0, qSeqStride, 32, headDim, 32)
-
-	// 2. Compute S[32, kvLenUnmasked] = Q[32, headDim] @ K[kvLenUnmasked, headDim]^T:
-	kvSMEEnd := (kvLenUnmasked / 32) * 32
-	for ki := 0; ki < kvSMEEnd; ki += 32 {
-		// Since K is transposed, packing 32 rows of K[ki:ki+32, headDim] with neonPackLHS produces
-		// the exact [headDim, 32] strip layout expected as the RHS of smeLargeKernelFloat32Asm_32x32.
-		neonPackLHS(k[kvOff+ki*kvSeqStride:], packedK, 0, 0, kvSeqStride, 32, headDim, 32)
-		smeLargeKernelFloat32Asm_32x32(
-			packedQ,
-			packedK,
-			scoresScratch[ki:],
-			32,
-			kvLen,
-			headDim,
-			32,
-			32,
-			false,
-		)
+// sdpaActiveKVLenForBlock returns the highest unmasked key index + 1 across activeRows query rows
+// starting at qIdx, accounting for both causal masking and booleanMask.
+func sdpaActiveKVLenForBlock(
+	qIdx, activeRows, kvLenUnmaskedBase int,
+	causal bool,
+	booleanMask []bool,
+	maskIdxBase, maskSeqStride int,
+) int {
+	limit := kvLenUnmaskedBase
+	if causal && qIdx+activeRows < limit {
+		limit = qIdx + activeRows
 	}
-
-	// Remainder key columns [kvSMEEnd, kvLenUnmasked) using NEON Tile4x4 / Tile4x1 assembly:
-	if kvSMEEnd < kvLenUnmasked {
-		scoresStrideBytes := kvLen * 4
-		for r := 0; r < 32; r += 4 {
-			qRow0 := unsafe.Pointer(&q[qBase+(r+0)*qSeqStride])
-			qRow1 := unsafe.Pointer(&q[qBase+(r+1)*qSeqStride])
-			qRow2 := unsafe.Pointer(&q[qBase+(r+2)*qSeqStride])
-			qRow3 := unsafe.Pointer(&q[qBase+(r+3)*qSeqStride])
-			ki := kvSMEEnd
-			for ; ki+3 < kvLenUnmasked; ki += 4 {
-				kCol0 := unsafe.Pointer(&k[kvOff+(ki+0)*kvSeqStride])
-				kCol1 := unsafe.Pointer(&k[kvOff+(ki+1)*kvSeqStride])
-				kCol2 := unsafe.Pointer(&k[kvOff+(ki+2)*kvSeqStride])
-				kCol3 := unsafe.Pointer(&k[kvOff+(ki+3)*kvSeqStride])
-				outPtr := unsafe.Pointer(&scoresScratch[r*kvLen+ki])
-				neonSmallTransposedTile4x4Float32Asm(
-					qRow0, qRow1, qRow2, qRow3,
-					kCol0, kCol1, kCol2, kCol3,
-					headDim,
-					outPtr,
-					scoresStrideBytes,
-				)
+	if limit <= 0 {
+		return 0
+	}
+	if len(booleanMask) == 0 {
+		return limit
+	}
+	if maskSeqStride == 0 {
+		for ki := limit - 1; ki >= 0; ki-- {
+			if booleanMask[maskIdxBase+ki] {
+				return ki + 1
 			}
-			for ; ki < kvLenUnmasked; ki++ {
-				kCol0 := unsafe.Pointer(&k[kvOff+ki*kvSeqStride])
-				outPtr := unsafe.Pointer(&scoresScratch[r*kvLen+ki])
-				neonSmallTransposedTile4x1Float32Asm(
-					qRow0, qRow1, qRow2, qRow3,
-					kCol0,
-					headDim,
-					outPtr,
-					scoresStrideBytes,
-				)
+		}
+		return 0
+	}
+	maxActive := 0
+	for r := activeRows - 1; r >= 0; r-- {
+		rowLim := limit
+		if causal && qIdx+r+1 < rowLim {
+			rowLim = qIdx + r + 1
+		}
+		mStart := maskIdxBase + r*maskSeqStride
+		for ki := rowLim - 1; ki >= maxActive; ki-- {
+			if booleanMask[mStart+ki] {
+				maxActive = ki + 1
+				break
 			}
 		}
 	}
+	return maxActive
+}
 
-	// 3. Fused Scale + Bias/Mask + Softmax on each of the 32 score rows:
-	for r := range 32 {
-		rowScores := scoresScratch[r*kvLen : r*kvLen+kvLenUnmasked]
+// sdpaSMEBlockFloat32 computes activeRows (1..32) query rows of SDPA using SME 32x32 FMOPA microkernels
+// for Q @ K^T and Probs @ V, releasing the cluster SME lock during the NEON Softmax phase so multiple
+// cores on the same L2 cluster can pipeline SME matrix operations with private-core NEON Softmax.
+func sdpaSMEBlockFloat32(
+	q, k, v, output []float32,
+	qIdx, activeRows int,
+	qBase, kvOff, qSeqStride, kvSeqStride int,
+	additiveMask []float32, booleanMask []bool, maskIdxBase, maskSeqStride int,
+	additiveBias []float32, biasIdxBase, biasSeqStride int,
+	scoresScratch, packedQ, packedS, packedK []float32,
+	packedKUpTo *int,
+	kvLen, kvLenUnmaskedBase, headDim int,
+	scale float32, causal bool,
+) bool {
+	blockKVLen := sdpaActiveKVLenForBlock(qIdx, activeRows, kvLenUnmaskedBase, causal, booleanMask, maskIdxBase, maskSeqStride)
+	if blockKVLen <= 0 {
+		for r := range activeRows {
+			clear(output[qBase+r*qSeqStride : qBase+r*qSeqStride+headDim])
+		}
+		return true
+	}
+
+	_, isEff := smeCurrentCluster()
+	maxSpins := 4096
+	if isEff {
+		maxSpins = 256
+	}
+	clusterIdx, gotSME, _ := simdarch.AcquireSMEWithSpin(SMEWorkersPerCluster, SMEWorkersPerCluster, maxSpins)
+	if !gotSME {
+		return false
+	}
+
+	// Phase 1 (SME): Lazily transpose newly needed K strips into packedK, transpose Q[activeRows, headDim]
+	// into packedQ, and compute S[activeRows, blockKVLen] = Q @ K^T.
+	neededKRows := min(kvLenUnmaskedBase, ((blockKVLen+31)/32)*32)
+	if neededKRows > *packedKUpTo {
+		startK := (*packedKUpTo / 32) * 32
+		smePackLHS32Float32Asm(
+			unsafe.Pointer(&k[kvOff+startK*kvSeqStride]),
+			unsafe.Pointer(&packedK[startK*headDim]),
+			uintptr(kvSeqStride*4),
+			neededKRows-startK,
+			headDim,
+		)
+		*packedKUpTo = neededKRows
+	}
+
+	smePackLHS32Float32Asm(
+		unsafe.Pointer(&q[qBase]),
+		unsafe.Pointer(&packedQ[0]),
+		uintptr(qSeqStride*4),
+		activeRows,
+		headDim,
+	)
+	smeLargeKernelFloat32Asm_32x32(
+		packedQ,
+		packedK,
+		scoresScratch,
+		32,
+		kvLen,
+		headDim,
+		activeRows,
+		blockKVLen,
+		false,
+	)
+	simdarch.ReleaseSME(clusterIdx)
+
+	// Phase 2 (Core NEON): Fused Scale + Bias/Mask + Softmax on each of the activeRows score rows.
+	anyActiveRow := false
+	for r := range activeRows {
+		rowKVLen := blockKVLen
+		if causal && qIdx+r+1 < rowKVLen {
+			rowKVLen = qIdx + r + 1
+		}
+		var boolMaskRow []bool
+		if len(booleanMask) > 0 && rowKVLen > 0 {
+			mStart := maskIdxBase + r*maskSeqStride
+			boolMaskRow = booleanMask[mStart : mStart+rowKVLen]
+			for rowKVLen > 0 && !boolMaskRow[rowKVLen-1] {
+				rowKVLen--
+			}
+			boolMaskRow = boolMaskRow[:rowKVLen]
+		}
+		if rowKVLen < blockKVLen {
+			clear(scoresScratch[r*kvLen+rowKVLen : r*kvLen+blockKVLen])
+		}
+		if rowKVLen <= 0 {
+			clear(scoresScratch[r*kvLen : r*kvLen+blockKVLen])
+			continue
+		}
+		rowScores := scoresScratch[r*kvLen : r*kvLen+rowKVLen]
 		var maskRow, biasRow []float32
 		if len(additiveMask) > 0 {
 			mStart := maskIdxBase + r*maskSeqStride
-			maskRow = additiveMask[mStart : mStart+kvLenUnmasked]
+			maskRow = additiveMask[mStart : mStart+rowKVLen]
 		}
 		if len(additiveBias) > 0 {
 			bStart := biasIdxBase + r*biasSeqStride
-			biasRow = additiveBias[bStart : bStart+kvLenUnmasked]
+			biasRow = additiveBias[bStart : bStart+rowKVLen]
 		}
-		sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, biasRow, kvLenUnmasked, scale)
+		if sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, boolMaskRow, biasRow, rowKVLen, scale) {
+			anyActiveRow = true
+		}
+	}
+	if !anyActiveRow {
+		for r := range activeRows {
+			clear(output[qBase+r*qSeqStride : qBase+r*qSeqStride+headDim])
+		}
+		return true
 	}
 
-	// 4. Compute Output[32, headDim] = Probs[32, kvLenUnmasked] @ V[kvLenUnmasked, headDim]:
-	var stackPackedS [32 * 256]float32
-	var stackPackedV [32 * 256]float32
-	var packedS, packedV []float32
-	if kvLenUnmasked <= 256 {
-		packedS = stackPackedS[:32*kvLenUnmasked]
-		packedV = stackPackedV[:32*kvLenUnmasked]
-	} else {
-		packedS = make([]float32, 32*kvLenUnmasked)
-		packedV = make([]float32, 32*kvLenUnmasked)
-	}
-
-	neonPackLHS(scoresScratch, packedS, 0, 0, kvLen, 32, kvLenUnmasked, 32)
-	for d := 0; d < headDim; d += 32 {
-		neonPackRHSNonTransposed(v[kvOff+d:], packedV, 0, 0, kvSeqStride, kvLenUnmasked, 32, 32)
-		smeLargeKernelFloat32Asm_32x32(
-			packedS,
-			packedV,
-			output[qBase+d:],
-			32,
-			qSeqStride,
-			kvLenUnmasked,
-			32,
-			32,
-			false,
+	// Phase 3 (SME): Transpose Probs[activeRows, blockKVLen] in-SME and compute
+	// Output[activeRows, headDim] = Probs @ V[blockKVLen, headDim] directly from V without packing V.
+	clusterIdx, gotSME, _ = simdarch.AcquireSMEWithSpin(SMEWorkersPerCluster, SMEWorkersPerCluster, maxSpins)
+	if gotSME {
+		smeDirectStridedFloat32Asm_32x32(
+			unsafe.Pointer(&scoresScratch[0]),
+			unsafe.Pointer(&v[kvOff]),
+			unsafe.Pointer(&output[qBase]),
+			unsafe.Pointer(&packedS[0]),
+			activeRows,
+			headDim,
+			blockKVLen,
+			uintptr(kvLen*4),
+			uintptr(kvSeqStride*4),
+			uintptr(qSeqStride*4),
 		)
+		simdarch.ReleaseSME(clusterIdx)
+		return true
+	}
+
+	sdpaValueAccumBlockNEON(v, output, qBase, kvOff, qSeqStride, kvSeqStride, scoresScratch, activeRows, kvLen, blockKVLen, headDim)
+	return true
+}
+
+func sdpaValueAccumBlockNEON(
+	v, output []float32,
+	qBase, kvOff, qSeqStride, kvSeqStride int,
+	scoresScratch []float32,
+	activeRows, kvLen, blockKVLen, headDim int,
+) {
+	vStrideBytes := kvSeqStride * 4
+	r := 0
+	for ; r+4 <= activeRows; r += 4 {
+		sRow0 := unsafe.Pointer(&scoresScratch[(r+0)*kvLen])
+		sRow1 := unsafe.Pointer(&scoresScratch[(r+1)*kvLen])
+		sRow2 := unsafe.Pointer(&scoresScratch[(r+2)*kvLen])
+		sRow3 := unsafe.Pointer(&scoresScratch[(r+3)*kvLen])
+		rBase := qBase + r*qSeqStride
+		d := 0
+		for ; d+15 < headDim; d += 16 {
+			rhsCol := unsafe.Pointer(&v[kvOff+d])
+			outRow0 := unsafe.Pointer(&output[rBase+0*qSeqStride+d])
+			outRow1 := unsafe.Pointer(&output[rBase+1*qSeqStride+d])
+			outRow2 := unsafe.Pointer(&output[rBase+2*qSeqStride+d])
+			outRow3 := unsafe.Pointer(&output[rBase+3*qSeqStride+d])
+			neonSmallNonTransposedTile4x16Float32Asm(
+				sRow0, sRow1, sRow2, sRow3,
+				rhsCol,
+				blockKVLen,
+				vStrideBytes,
+				outRow0, outRow1, outRow2, outRow3,
+			)
+		}
+		for ; d+3 < headDim; d += 4 {
+			rhsCol := unsafe.Pointer(&v[kvOff+d])
+			outRow0 := unsafe.Pointer(&output[rBase+0*qSeqStride+d])
+			outRow1 := unsafe.Pointer(&output[rBase+1*qSeqStride+d])
+			outRow2 := unsafe.Pointer(&output[rBase+2*qSeqStride+d])
+			outRow3 := unsafe.Pointer(&output[rBase+3*qSeqStride+d])
+			neonSmallNonTransposedTile4x4Float32Asm(
+				sRow0, sRow1, sRow2, sRow3,
+				rhsCol,
+				blockKVLen,
+				vStrideBytes,
+				outRow0, outRow1, outRow2, outRow3,
+			)
+		}
+		for ; d < headDim; d++ {
+			var acc0, acc1, acc2, acc3 float32
+			for kIdx := range blockKVLen {
+				vVal := v[kvOff+kIdx*kvSeqStride+d]
+				acc0 += scoresScratch[(r+0)*kvLen+kIdx] * vVal
+				acc1 += scoresScratch[(r+1)*kvLen+kIdx] * vVal
+				acc2 += scoresScratch[(r+2)*kvLen+kIdx] * vVal
+				acc3 += scoresScratch[(r+3)*kvLen+kIdx] * vVal
+			}
+			output[rBase+0*qSeqStride+d] = acc0
+			output[rBase+1*qSeqStride+d] = acc1
+			output[rBase+2*qSeqStride+d] = acc2
+			output[rBase+3*qSeqStride+d] = acc3
+		}
+	}
+	for ; r < activeRows; r += 4 {
+		rem := activeRows - r
+		if rem < 4 {
+			var dummyOut [16]float32
+			sRow0 := unsafe.Pointer(&scoresScratch[(r+0)*kvLen])
+			sRow1 := sRow0
+			sRow2 := sRow0
+			sRow3 := sRow0
+			if rem >= 2 {
+				sRow1 = unsafe.Pointer(&scoresScratch[(r+1)*kvLen])
+			}
+			if rem >= 3 {
+				sRow2 = unsafe.Pointer(&scoresScratch[(r+2)*kvLen])
+			}
+			rBase := qBase + r*qSeqStride
+			d := 0
+			for ; d+15 < headDim; d += 16 {
+				rhsCol := unsafe.Pointer(&v[kvOff+d])
+				outRow0 := unsafe.Pointer(&output[rBase+0*qSeqStride+d])
+				outRow1 := unsafe.Pointer(&dummyOut[0])
+				outRow2 := unsafe.Pointer(&dummyOut[0])
+				outRow3 := unsafe.Pointer(&dummyOut[0])
+				if rem >= 2 {
+					outRow1 = unsafe.Pointer(&output[rBase+1*qSeqStride+d])
+				}
+				if rem >= 3 {
+					outRow2 = unsafe.Pointer(&output[rBase+2*qSeqStride+d])
+				}
+				neonSmallNonTransposedTile4x16Float32Asm(
+					sRow0, sRow1, sRow2, sRow3,
+					rhsCol,
+					blockKVLen,
+					vStrideBytes,
+					outRow0, outRow1, outRow2, outRow3,
+				)
+			}
+			for ; d+3 < headDim; d += 4 {
+				rhsCol := unsafe.Pointer(&v[kvOff+d])
+				outRow0 := unsafe.Pointer(&output[rBase+0*qSeqStride+d])
+				outRow1 := unsafe.Pointer(&dummyOut[0])
+				outRow2 := unsafe.Pointer(&dummyOut[0])
+				outRow3 := unsafe.Pointer(&dummyOut[0])
+				if rem >= 2 {
+					outRow1 = unsafe.Pointer(&output[rBase+1*qSeqStride+d])
+				}
+				if rem >= 3 {
+					outRow2 = unsafe.Pointer(&output[rBase+2*qSeqStride+d])
+				}
+				neonSmallNonTransposedTile4x4Float32Asm(
+					sRow0, sRow1, sRow2, sRow3,
+					rhsCol,
+					blockKVLen,
+					vStrideBytes,
+					outRow0, outRow1, outRow2, outRow3,
+				)
+			}
+			for ; d < headDim; d++ {
+				for rr := range rem {
+					var acc float32
+					for kIdx := range blockKVLen {
+						acc += scoresScratch[(r+rr)*kvLen+kIdx] * v[kvOff+kIdx*kvSeqStride+d]
+					}
+					output[rBase+rr*qSeqStride+d] = acc
+				}
+			}
+			break
+		}
 	}
 }
 
-// sdpaNEON4RowsFloat32 computes 4 query rows of SDPA using handwritten ARM64 NEON assembly
-// microkernels (neonSmallTransposedTile4x4Float32Asm for Q @ K^T and
+// sdpaNEONBlockFloat32 computes activeRows (1..4) query rows of SDPA using handwritten ARM64 NEON
+// assembly microkernels (neonSmallTransposedTile4x4Float32Asm for Q @ K^T and
 // neonSmallNonTransposedTile4x16Float32Asm for Probs @ V) with zero packing.
-func sdpaNEON4RowsFloat32(
+func sdpaNEONBlockFloat32(
 	q, k, v, output []float32,
+	qIdx, activeRows int,
 	qBase, kvOff, qSeqStride, kvSeqStride int,
-	additiveMask []float32, maskIdxBase, maskSeqStride int,
+	additiveMask []float32, booleanMask []bool, maskIdxBase, maskSeqStride int,
 	additiveBias []float32, biasIdxBase, biasSeqStride int,
 	scoresScratch []float32,
-	kvLen, kvLenUnmasked, headDim int,
-	scale float32,
+	kvLen, kvLenUnmaskedBase, headDim int,
+	scale float32, causal bool,
 ) {
+	blockKVLen := sdpaActiveKVLenForBlock(qIdx, activeRows, kvLenUnmaskedBase, causal, booleanMask, maskIdxBase, maskSeqStride)
+	if blockKVLen <= 0 {
+		for r := range activeRows {
+			clear(output[qBase+r*qSeqStride : qBase+r*qSeqStride+headDim])
+		}
+		return
+	}
+
 	qRow0 := unsafe.Pointer(&q[qBase+0*qSeqStride])
-	qRow1 := unsafe.Pointer(&q[qBase+1*qSeqStride])
-	qRow2 := unsafe.Pointer(&q[qBase+2*qSeqStride])
-	qRow3 := unsafe.Pointer(&q[qBase+3*qSeqStride])
+	qRow1 := qRow0
+	qRow2 := qRow0
+	qRow3 := qRow0
+	if activeRows >= 2 {
+		qRow1 = unsafe.Pointer(&q[qBase+1*qSeqStride])
+	}
+	if activeRows >= 3 {
+		qRow2 = unsafe.Pointer(&q[qBase+2*qSeqStride])
+	}
+	if activeRows >= 4 {
+		qRow3 = unsafe.Pointer(&q[qBase+3*qSeqStride])
+	}
 	scoresStrideBytes := kvLen * 4
 
-	// 1. Q[4, headDim] @ K[kvLenUnmasked, headDim]^T -> scoresScratch[4, kvLen]:
+	// 1. Q[activeRows, headDim] @ K[blockKVLen, headDim]^T -> scoresScratch[activeRows, kvLen]:
 	ki := 0
-	for ; ki+3 < kvLenUnmasked; ki += 4 {
+	for ; ki+3 < blockKVLen; ki += 4 {
 		kCol0 := unsafe.Pointer(&k[kvOff+(ki+0)*kvSeqStride])
 		kCol1 := unsafe.Pointer(&k[kvOff+(ki+1)*kvSeqStride])
 		kCol2 := unsafe.Pointer(&k[kvOff+(ki+2)*kvSeqStride])
@@ -354,7 +586,7 @@ func sdpaNEON4RowsFloat32(
 			scoresStrideBytes,
 		)
 	}
-	for ; ki < kvLenUnmasked; ki++ {
+	for ; ki < blockKVLen; ki++ {
 		kCol0 := unsafe.Pointer(&k[kvOff+ki*kvSeqStride])
 		outPtr := unsafe.Pointer(&scoresScratch[ki])
 		neonSmallTransposedTile4x1Float32Asm(
@@ -366,115 +598,162 @@ func sdpaNEON4RowsFloat32(
 		)
 	}
 
-	// 2. Scale + Bias/Mask + Softmax on each of the 4 score rows:
-	for r := range 4 {
-		rowScores := scoresScratch[r*kvLen : r*kvLen+kvLenUnmasked]
+	// 2. Scale + Bias/Mask + Softmax on each of the activeRows score rows:
+	anyActiveRow := false
+	for r := range activeRows {
+		rowKVLen := blockKVLen
+		if causal && qIdx+r+1 < rowKVLen {
+			rowKVLen = qIdx + r + 1
+		}
+		var boolMaskRow []bool
+		if len(booleanMask) > 0 && rowKVLen > 0 {
+			mStart := maskIdxBase + r*maskSeqStride
+			boolMaskRow = booleanMask[mStart : mStart+rowKVLen]
+			for rowKVLen > 0 && !boolMaskRow[rowKVLen-1] {
+				rowKVLen--
+			}
+			boolMaskRow = boolMaskRow[:rowKVLen]
+		}
+		if rowKVLen < blockKVLen {
+			clear(scoresScratch[r*kvLen+rowKVLen : r*kvLen+blockKVLen])
+		}
+		if rowKVLen <= 0 {
+			clear(scoresScratch[r*kvLen : r*kvLen+blockKVLen])
+			continue
+		}
+		rowScores := scoresScratch[r*kvLen : r*kvLen+rowKVLen]
 		var maskRow, biasRow []float32
 		if len(additiveMask) > 0 {
 			mStart := maskIdxBase + r*maskSeqStride
-			maskRow = additiveMask[mStart : mStart+kvLenUnmasked]
+			maskRow = additiveMask[mStart : mStart+rowKVLen]
 		}
 		if len(additiveBias) > 0 {
 			bStart := biasIdxBase + r*biasSeqStride
-			biasRow = additiveBias[bStart : bStart+kvLenUnmasked]
+			biasRow = additiveBias[bStart : bStart+rowKVLen]
 		}
-		sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, biasRow, kvLenUnmasked, scale)
+		if sdpaScaleMaskSoftmaxRowNEON(rowScores, maskRow, boolMaskRow, biasRow, rowKVLen, scale) {
+			anyActiveRow = true
+		}
+	}
+	if !anyActiveRow {
+		for r := range activeRows {
+			clear(output[qBase+r*qSeqStride : qBase+r*qSeqStride+headDim])
+		}
+		return
 	}
 
-	// 3. Probs[4, kvLenUnmasked] @ V[kvLenUnmasked, headDim] -> output[4, headDim]:
-	sRow0 := unsafe.Pointer(&scoresScratch[0*kvLen])
-	sRow1 := unsafe.Pointer(&scoresScratch[1*kvLen])
-	sRow2 := unsafe.Pointer(&scoresScratch[2*kvLen])
-	sRow3 := unsafe.Pointer(&scoresScratch[3*kvLen])
-	vStrideBytes := kvSeqStride * 4
-
-	d := 0
-	for ; d+15 < headDim; d += 16 {
-		rhsCol := unsafe.Pointer(&v[kvOff+d])
-		outRow0 := unsafe.Pointer(&output[qBase+0*qSeqStride+d])
-		outRow1 := unsafe.Pointer(&output[qBase+1*qSeqStride+d])
-		outRow2 := unsafe.Pointer(&output[qBase+2*qSeqStride+d])
-		outRow3 := unsafe.Pointer(&output[qBase+3*qSeqStride+d])
-		neonSmallNonTransposedTile4x16Float32Asm(
-			sRow0, sRow1, sRow2, sRow3,
-			rhsCol,
-			kvLenUnmasked,
-			vStrideBytes,
-			outRow0, outRow1, outRow2, outRow3,
-		)
-	}
-	for ; d+3 < headDim; d += 4 {
-		rhsCol := unsafe.Pointer(&v[kvOff+d])
-		outRow0 := unsafe.Pointer(&output[qBase+0*qSeqStride+d])
-		outRow1 := unsafe.Pointer(&output[qBase+1*qSeqStride+d])
-		outRow2 := unsafe.Pointer(&output[qBase+2*qSeqStride+d])
-		outRow3 := unsafe.Pointer(&output[qBase+3*qSeqStride+d])
-		neonSmallNonTransposedTile4x4Float32Asm(
-			sRow0, sRow1, sRow2, sRow3,
-			rhsCol,
-			kvLenUnmasked,
-			vStrideBytes,
-			outRow0, outRow1, outRow2, outRow3,
-		)
-	}
-	for ; d < headDim; d++ {
-		var acc0, acc1, acc2, acc3 float32
-		for kIdx := range kvLenUnmasked {
-			vVal := v[kvOff+kIdx*kvSeqStride+d]
-			acc0 += scoresScratch[0*kvLen+kIdx] * vVal
-			acc1 += scoresScratch[1*kvLen+kIdx] * vVal
-			acc2 += scoresScratch[2*kvLen+kIdx] * vVal
-			acc3 += scoresScratch[3*kvLen+kIdx] * vVal
-		}
-		output[qBase+0*qSeqStride+d] = acc0
-		output[qBase+1*qSeqStride+d] = acc1
-		output[qBase+2*qSeqStride+d] = acc2
-		output[qBase+3*qSeqStride+d] = acc3
-	}
+	// 3. Probs[activeRows, blockKVLen] @ V[blockKVLen, headDim] -> output[activeRows, headDim]:
+	sdpaValueAccumBlockNEON(v, output, qBase, kvOff, qSeqStride, kvSeqStride, scoresScratch, activeRows, kvLen, blockKVLen, headDim)
 }
 
-// sdpaScaleMaskSoftmaxRowNEON applies s = s * scale + bias + mask and computes in-place Softmax.
-func sdpaScaleMaskSoftmaxRowNEON(scores, maskRow, biasRow []float32, kvLenUnmasked int, scale float32) {
+// sdpaScaleMaskSoftmaxRowNEON applies s = s * scale + bias + mask (including booleanMask)
+// and computes in-place Softmax. Returns false if all keys in the row are masked out.
+func sdpaScaleMaskSoftmaxRowNEON(scores, maskRow []float32, boolMaskRow []bool, biasRow []float32, kvLenUnmasked int, scale float32) bool {
 	vScale := archsimd.BroadcastFloat32x4(scale)
 	hasBias := len(biasRow) > 0
 	hasMask := len(maskRow) > 0
-	rowMax := float32(math.Inf(-1))
+	hasBoolMask := len(boolMaskRow) > 0
+	negInf := float32(math.Inf(-1))
+	rowMax := negInf
 
 	k := 0
-	if kvLenUnmasked >= 4 {
-		vMax := archsimd.BroadcastFloat32x4(float32(math.Inf(-1)))
-		for ; k+4 <= kvLenUnmasked; k += 4 {
-			vS := archsimd.LoadFloat32x4(scores[k : k+4]).Mul(vScale)
+	if !hasBoolMask {
+		if kvLenUnmasked >= 4 {
+			vMax := archsimd.BroadcastFloat32x4(negInf)
+			for ; k+4 <= kvLenUnmasked; k += 4 {
+				vS := archsimd.LoadFloat32x4(scores[k : k+4]).Mul(vScale)
+				if hasBias {
+					vS = vS.Add(archsimd.LoadFloat32x4(biasRow[k : k+4]))
+				}
+				if hasMask {
+					vS = vS.Add(archsimd.LoadFloat32x4(maskRow[k : k+4]))
+				}
+				vS.Store(scores[k : k+4])
+				vMax = vMax.Max(vS)
+			}
+			rowMax = vMax.ReduceMax()
+		}
+		for ; k < kvLenUnmasked; k++ {
+			s := scores[k] * scale
 			if hasBias {
-				vS = vS.Add(archsimd.LoadFloat32x4(biasRow[k : k+4]))
+				s += biasRow[k]
 			}
 			if hasMask {
-				vS = vS.Add(archsimd.LoadFloat32x4(maskRow[k : k+4]))
+				s += maskRow[k]
 			}
-			vS.Store(scores[k : k+4])
-			vMax = vMax.Max(vS)
+			scores[k] = s
+			if s > rowMax {
+				rowMax = s
+			}
 		}
-		rowMax = vMax.ReduceMax()
-	}
-	for ; k < kvLenUnmasked; k++ {
-		s := scores[k] * scale
-		if hasBias {
-			s += biasRow[k]
+	} else {
+		if kvLenUnmasked >= 4 {
+			vMax := archsimd.BroadcastFloat32x4(negInf)
+			vNegInf := archsimd.BroadcastFloat32x4(negInf)
+			for ; k+4 <= kvLenUnmasked; k += 4 {
+				m4 := *(*uint32)(unsafe.Pointer(&boolMaskRow[k]))
+				if m4 == 0x01010101 {
+					vS := archsimd.LoadFloat32x4(scores[k : k+4]).Mul(vScale)
+					if hasBias {
+						vS = vS.Add(archsimd.LoadFloat32x4(biasRow[k : k+4]))
+					}
+					if hasMask {
+						vS = vS.Add(archsimd.LoadFloat32x4(maskRow[k : k+4]))
+					}
+					vS.Store(scores[k : k+4])
+					vMax = vMax.Max(vS)
+				} else if m4 == 0 {
+					vNegInf.Store(scores[k : k+4])
+				} else {
+					for i := range 4 {
+						idx := k + i
+						if !boolMaskRow[idx] {
+							scores[idx] = negInf
+							continue
+						}
+						s := scores[idx] * scale
+						if hasBias {
+							s += biasRow[idx]
+						}
+						if hasMask {
+							s += maskRow[idx]
+						}
+						scores[idx] = s
+						if s > rowMax {
+							rowMax = s
+						}
+					}
+				}
+			}
+			if vmaxScalar := vMax.ReduceMax(); vmaxScalar > rowMax {
+				rowMax = vmaxScalar
+			}
 		}
-		if hasMask {
-			s += maskRow[k]
-		}
-		scores[k] = s
-		if s > rowMax {
-			rowMax = s
+		for ; k < kvLenUnmasked; k++ {
+			if !boolMaskRow[k] {
+				scores[k] = negInf
+				continue
+			}
+			s := scores[k] * scale
+			if hasBias {
+				s += biasRow[k]
+			}
+			if hasMask {
+				s += maskRow[k]
+			}
+			scores[k] = s
+			if s > rowMax {
+				rowMax = s
+			}
 		}
 	}
 
-	if rowMax == float32(math.Inf(-1)) {
+	if rowMax == negInf {
 		clear(scores[:kvLenUnmasked])
-		return
+		return false
 	}
 	sdpaSoftmaxRowNEON(scores, kvLenUnmasked, rowMax)
+	return true
 }
 
 func sdpaSoftmaxRowNEON(scores []float32, kvLenUnmasked int, rowMax float32) {

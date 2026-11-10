@@ -48,6 +48,9 @@ type FunctionExecutable struct {
 
 	// ExecutionBuffersPool allows reuse of execution buffers.
 	ExecutionBuffersPool sync.Pool
+
+	// profileRuns counts top-level executions of this FunctionExecutable when GOMLX_OP_PROFILE is enabled.
+	profileRuns atomic.Int64
 }
 
 // newFunctionExecutable creates a FunctionExecutable for the given function.
@@ -408,6 +411,9 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 		fe.ExecutionBuffersPool.Put(execBuf)
 		return nil, err
 	}
+	if isOpProfileEnabled {
+		fe.recordOpProfileRun(executionMode)
+	}
 
 	// Collect outputs
 	outputs := make([]*Buffer, len(fe.OutputNodes))
@@ -754,6 +760,11 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	// set up in Execute() and should never reach executeNode.
 	// We don't check for them here for performance (this is the inner execution loop).
 
+	var profTimer opProfileTimer
+	if isOpProfileEnabled {
+		profTimer = startOpProfile(execBuf.opsExecutionType)
+	}
+
 	// Prepare inputs
 	numInputs := len(node.Inputs)
 	var (
@@ -996,6 +1007,9 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		// to save an allocation for these slices the next time it is executed.
 		execBuf.opInputBuffers = inputBuffers
 		execBuf.opInputsOwned = inputsOwned
+	}
+	if isOpProfileEnabled {
+		fe.recordOpProfileNode(node, execBuf.opsExecutionType, profTimer)
 	}
 	return nil
 }

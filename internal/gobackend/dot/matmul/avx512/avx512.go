@@ -22,6 +22,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/support/envutil"
 )
 
@@ -35,7 +36,7 @@ import (
 var (
 	// AVX512UseAsm enables the assembly microkernel for large matrices (8 rows x 32 cols for F32/F16/BF16, 8 rows x 16 cols for F64).
 	// Set GOMLX_GO_AVX512_ASM=false to disable and use the Go SIMD kernel (4 rows x 32 cols).
-	AVX512UseAsm = envutil.MustReadBool(envutil.GoBackendAVX512_ASM, true)
+	AVX512UseAsm = simdarch.AVX512UseAsm
 
 	// AVX512ParamsFloat32 are the parameters to use for Float32, tuned for the 16 registers implementations.
 	AVX512ParamsFloat32 = matmul.CacheParams{
@@ -520,11 +521,31 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 
 	if kernelRows == 8 {
 		if AVX512UseAsm {
-			if lhsTyped, ok := any(lhs).([]float32); ok {
-				fullRows := copyRows & ^7
+			fullRows := copyRows & ^7
+			handled := false
+			switch lhsTyped := any(lhs).(type) {
+			case []float32:
 				if fullRows > 0 {
 					avx512PackLHSKernelRows8Float32Asm(lhsTyped, any(panel).([]float32), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
 				}
+				handled = true
+			case []float64:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8Float64Asm(lhsTyped, any(panel).([]float64), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			case []float16.Float16:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8Float16Asm(lhsTyped, any(panel).([]float16.Float16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			case []bfloat16.BFloat16:
+				if fullRows > 0 {
+					avx512PackLHSKernelRows8BFloat16Asm(lhsTyped, any(panel).([]bfloat16.BFloat16), lhsRowStart, lhsColStart, lhsCols, fullRows, contractingCols)
+				}
+				handled = true
+			}
+			if handled {
 				if fullRows == copyRows {
 					return
 				}

@@ -134,7 +134,7 @@ func runGenericBinary(op compute.OpType, lhs, rhs, output *gobackend.Buffer, bca
 }
 
 func runSIMDBinary(op compute.OpType, lhs, rhs, output *gobackend.Buffer, bcastCfg gobackend.BroadcastConfig) error {
-	if tryBinaryTrailingArch(op, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(nil, op, lhs, rhs, output, bcastCfg) {
 		return nil
 	}
 	dt := lhs.RawShape.DType

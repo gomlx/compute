@@ -2,7 +2,7 @@
 
 //go:build (!amd64 && !arm64) || !goexperiment.simd
 
-package gobackend
+package simdarch
 
 var (
 	// IsAVX512Allowed returns false on non-amd64 architectures or when SIMD is disabled.

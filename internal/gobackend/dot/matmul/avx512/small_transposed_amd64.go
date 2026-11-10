@@ -43,3 +43,39 @@ func avx512SmallTransposedTile4x4BFloat16Asm(
 	rCol0, rCol1, rCol2, rCol3 unsafe.Pointer,
 	contractingSize int,
 	outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+
+// avx512SmallTransposedTile4x1Float32Asm computes a single 4x1 tile for Float32.
+//
+//go:noescape
+func avx512SmallTransposedTile4x1Float32Asm(
+	lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+	rCol0 unsafe.Pointer,
+	contractingSize int,
+	outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+
+// avx512SmallTransposedTile4x1Float64Asm computes a single 4x1 tile for Float64.
+//
+//go:noescape
+func avx512SmallTransposedTile4x1Float64Asm(
+	lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+	rCol0 unsafe.Pointer,
+	contractingSize int,
+	outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+
+// avx512SmallTransposedTile4x1Float16Asm computes a single 4x1 tile for Float16 (output Float32).
+//
+//go:noescape
+func avx512SmallTransposedTile4x1Float16Asm(
+	lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+	rCol0 unsafe.Pointer,
+	contractingSize int,
+	outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
+
+// avx512SmallTransposedTile4x1BFloat16Asm computes a single 4x1 tile for BFloat16 (output Float32).
+//
+//go:noescape
+func avx512SmallTransposedTile4x1BFloat16Asm(
+	lRow0, lRow1, lRow2, lRow3 unsafe.Pointer,
+	rCol0 unsafe.Pointer,
+	contractingSize int,
+	outRow0, outRow1, outRow2, outRow3 unsafe.Pointer)
