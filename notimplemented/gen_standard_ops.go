@@ -308,7 +308,16 @@ func (f Function) DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...co
 }
 
 // DynamicPad injects padding on the start, end, or interior of the given operand using static
-// and/or dynamic scalar padding amounts.
+// and/or dynamic scalar padding amounts, with the value given in fillValue (which must be a scalar
+// of the same DType as x).
+//
+// For each axis, interior padding is applied first (inserting Interior/InteriorValue copies of fillValue
+// between adjacent elements, adding max(0, dim-1)*interior elements), followed by Start/StartValue and
+// End/EndValue padding at the boundaries.
+//
+// Start and End (and StartValue, EndValue) can be negative, in which case they truncate (crop) elements
+// from the start or end of the axis (after interior padding is applied).
+// Interior (and InteriorValue) must be non-negative (>= 0). The resulting dimension size for every axis must be >= 0.
 //
 // There must be at most operand.Rank() axesConfig values. Missing axes are assumed to have no padding.
 //

@@ -22,11 +22,18 @@ type DynamicDimensionSpec struct {
 // DynamicPadAxis defines the amount of padding preceding one axis (Start), at the end of axis (End),
 // or in between the inputs (Interior).
 // Each field can be static (when Value is nil) or dynamic (when Value is set).
+//
+// Start and End (as well as StartValue and EndValue) can be negative, in which case they truncate (crop)
+// elements from the start or end of the axis respectively (applied after interior padding).
+// Interior (as well as InteriorValue) must be non-negative (>= 0).
 type DynamicPadAxis struct {
 	// Static padding amounts (used when corresponding Value is nil).
+	// Start and End may be negative to truncate the axis; Interior must be >= 0.
 	Start, End, Interior int
 
 	// Dynamic scalar integer values for runtime padding (nil if static).
+	// StartValue and EndValue may evaluate to negative integers to truncate the axis;
+	// InteriorValue must evaluate to a non-negative integer (>= 0).
 	StartValue, EndValue, InteriorValue Value
 
 	// TargetAxisName is the optional name for the resulting dynamic axis if padding a dynamic dimension
@@ -80,7 +87,16 @@ type DynamicOps interface {
 	DynamicIota(dtype dtypes.DType, iotaAxis int, dimensions ...DynamicDimensionSpec) (Value, error)
 
 	// DynamicPad injects padding on the start, end, or interior of the given operand using static
-	// and/or dynamic scalar padding amounts.
+	// and/or dynamic scalar padding amounts, with the value given in fillValue (which must be a scalar
+	// of the same DType as x).
+	//
+	// For each axis, interior padding is applied first (inserting Interior/InteriorValue copies of fillValue
+	// between adjacent elements, adding max(0, dim-1)*interior elements), followed by Start/StartValue and
+	// End/EndValue padding at the boundaries.
+	//
+	// Start and End (and StartValue, EndValue) can be negative, in which case they truncate (crop) elements
+	// from the start or end of the axis (after interior padding is applied).
+	// Interior (and InteriorValue) must be non-negative (>= 0). The resulting dimension size for every axis must be >= 0.
 	//
 	// There must be at most operand.Rank() axesConfig values. Missing axes are assumed to have no padding.
 	//

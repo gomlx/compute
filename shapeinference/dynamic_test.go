@@ -3,6 +3,7 @@
 package shapeinference
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -283,6 +284,114 @@ func TestDynamicPad(t *testing.T) {
 			t.Fatalf("expected %s, got %s", expected, got)
 		}
 	})
+
+	t.Run("NegativeStartAndEnd", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 5, 4)
+		configs := []compute.DynamicPadAxis{
+			{Start: -1, End: -2},
+			{Start: 1, End: -1},
+		}
+		got, err := DynamicPad(operand, configs...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := shapes.Make(dtypes.Float32, 2, 4)
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("NegativeWithInterior", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Int32, 3, 2)
+		configs := []compute.DynamicPadAxis{
+			// dim=3, Interior=1 -> +2 -> 5; Start=-1, End=-1 -> 3
+			{Start: -1, End: -1, Interior: 1},
+			// dim=2, Interior=2 -> +2 -> 4; Start=-2, End=1 -> 3
+			{Start: -2, End: 1, Interior: 2},
+		}
+		got, err := DynamicPad(operand, configs...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := shapes.Make(dtypes.Int32, 3, 3)
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("TruncateToZeroDim", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 3, 2)
+		got, err := DynamicPad(operand, compute.DynamicPadAxis{Start: -2, End: -1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := shapes.Make(dtypes.Float32, 0, 2)
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+	})
+
+	t.Run("DynamicAxisAndNegativeStaticAxis", func(t *testing.T) {
+		operand := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 5}, []string{"batch", "seq"})
+		configs := []compute.DynamicPadAxis{
+			{Start: -1, End: 1}, // dynamic axis stays dynamic and preserves "batch"
+			{Start: -1, End: -1}, // static axis changes from 5 to 3, clearing "seq"
+		}
+		got, err := DynamicPad(operand, configs...)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+		if !got.Equal(expected) {
+			t.Fatalf("expected %s, got %s", expected, got)
+		}
+		if got.AxisName(0) != "batch" || got.AxisName(1) != "" {
+			t.Fatalf("expected axis names [\"batch\", \"\"], got %q", got.AxisNames)
+		}
+	})
+
+	t.Run("Errors", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 3, 4)
+
+		// Invalid operand shape.
+		if _, err := DynamicPad(shapes.Invalid()); err == nil {
+			t.Errorf("expected error for invalid operand shape")
+		}
+
+		// Too many DynamicPadAxis.
+		if _, err := DynamicPad(operand, compute.DynamicPadAxis{}, compute.DynamicPadAxis{}, compute.DynamicPadAxis{}); err == nil {
+			t.Errorf("expected error when len(axesConfig) > rank")
+		}
+
+		// Negative Interior padding.
+		if _, err := DynamicPad(operand, compute.DynamicPadAxis{Interior: -1}); err == nil {
+			t.Errorf("expected error for negative Interior padding")
+		}
+
+		// Resulting dimension < 0.
+		if _, err := DynamicPad(operand, compute.DynamicPadAxis{Start: -2, End: -2}); err == nil {
+			t.Errorf("expected error when resulting dimension is negative")
+		}
+
+		// Resulting dimension < 0 even with interior padding.
+		// dim=3, Interior=1 -> 5; Start=-3, End=-3 -> -1
+		if _, err := DynamicPad(operand, compute.DynamicPadAxis{Start: -3, End: -3, Interior: 1}); err == nil {
+			t.Errorf("expected error when resulting dimension with interior padding is negative")
+		}
+	})
 }
+
+func ExampleDynamicPad() {
+	operand := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 5, 3}, []string{"batch", "", ""})
+	out1, _ := DynamicPad(operand,
+		compute.DynamicPadAxis{Start: 0, End: 0},                   // preserves dynamic "batch"
+		compute.DynamicPadAxis{Start: -1, End: -1},                 // crops axis 1 from 5 to 3
+		compute.DynamicPadAxis{Start: -1, End: -1, Interior: 1},    // interior: 3 + 2 = 5, crop: 5 - 2 = 3
+	)
+	fmt.Println(out1)
+	// Output:
+	// (Float32)[batch=?, 3, 3]
+}
+
 
 
