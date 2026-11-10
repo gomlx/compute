@@ -141,9 +141,9 @@ func newDefaultBackend() *Backend {
 
 // Backend implements the compute.Backend interface.
 type Backend struct {
-	// bufferPools are a map to pools of buffers that can be reused.
-	// The underlying type is map[bufferPoolKey]*bufferPool.
-	bufferPools sync.Map
+	// bufferPools holds lock-free Treiber stack pools of reusable buffers indexed by
+	// bufferPoolBucketIndex(bucketedSize).
+	bufferPools [numBufferPoolBuckets]atomic.Pointer[bufferPool]
 	Scheduler   *scheduler.Scheduler
 
 	NumLiveExecutions atomic.Int32
@@ -229,7 +229,9 @@ func notImplementedError(opType compute.OpType) error {
 // Finalize releases all the associated resources immediately, and makes the backend invalid.
 func (b *Backend) Finalize() {
 	b.isFinalized = true
-	b.bufferPools.Clear()
+	for i := range b.bufferPools {
+		b.bufferPools[i].Store(nil)
+	}
 }
 
 // IsFinalized returns true if the backend has been isFinalized.
