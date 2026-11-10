@@ -1682,6 +1682,17 @@ func Bitcast(operand shapes.Shape, targetDType dtypes.DType) (output shapes.Shap
 }
 
 // Pad returns the expected output shape for the Pad operation.
+//
+// There must be at most `operand.Rank()` axesConfig values; missing trailing axes default to zero padding.
+// For each configured axis i:
+//   - `config.Interior` must be non-negative (`>= 0`).
+//   - `config.Start` and `config.End` can be positive, zero, or negative (negative values truncate/crop the axis).
+//   - The output dimension is `dim + max(dim-1, 0)*config.Interior + config.Start + config.End`, which must be `>= 0`.
+//
+// Examples:
+//   - `Pad(shapes.Make(F32, 3), PadAxis{Start: 1, End: 2})` -> `(Float32)[6]`
+//   - `Pad(shapes.Make(F32, 3), PadAxis{Start: -1, End: -1})` -> `(Float32)[1]`
+//   - `Pad(shapes.Make(F32, 3), PadAxis{Start: -1, End: -1, Interior: 1})` -> `(Float32)[3]`
 func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Shape, err error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("PadOp: invalid operand shape %s", operand)
@@ -1689,6 +1700,11 @@ func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Sha
 	rank := operand.Rank()
 	if len(axesConfig) > rank {
 		return shapes.Invalid(), errors.Errorf("PadOp: too many PadAxis given (%d) for operand rank %d", len(axesConfig), rank)
+	}
+	for axis, dim := range operand.Dimensions {
+		if dim < 0 && dim != shapes.DynamicDim {
+			return shapes.Invalid(), errors.Errorf("PadOp: invalid operand dimension %d for axis %d in shape %s", dim, axis, operand)
+		}
 	}
 
 	output = operand.Clone()
@@ -1714,9 +1730,16 @@ func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Sha
 
 		outDim := dim + config.Start + config.End + interiorPadding
 		if outDim < 0 {
-			return shapes.Invalid(), errors.Errorf("PadOp: resulting dimension for axis %d is negative (%d)", axis, outDim)
+			return shapes.Invalid(), errors.Errorf("PadOp: resulting dimension for axis %d is negative (%d, with dim=%d, start=%d, end=%d, interior=%d)",
+				axis, outDim, dim, config.Start, config.End, config.Interior)
 		}
 		output.Dimensions[axis] = outDim
+		if outDim != dim && output.AxisNames != nil {
+			output.AxisNames[axis] = ""
+		}
+	}
+	if !output.Ok() {
+		return shapes.Invalid(), errors.Errorf("PadOp: resulting shape %s is invalid", output)
 	}
 	return output, nil
 }

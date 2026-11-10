@@ -268,9 +268,42 @@ func DynamicIota(dtype dtypes.DType, iotaAxis int, specs []compute.DynamicDimens
 }
 
 // DynamicPad calculates the output shape resulting from a DynamicPad operation.
+//
+// For each axis i in axesConfig:
+//   - If any of StartValue, EndValue, or InteriorValue is non-nil, or if the operand dimension at axis i is already dynamic (shapes.DynamicDim),
+//     the output dimension at axis i is shapes.DynamicDim.
+//   - Otherwise, the output dimension is calculated statically:
+//     interiorPadding = max(0, operand.Dimensions[i] - 1) * config.Interior
+//     output.Dimensions[i] = operand.Dimensions[i] + config.Start + config.End + interiorPadding
+//
+// Start and End (and StartValue, EndValue) can be negative to truncate/crop elements along that axis (applied after interior padding),
+// as long as the resulting dimension is >= 0.
+// Interior (and InteriorValue) must be non-negative (>= 0).
+//
+// Examples:
+//
+//	// Static negative padding (cropping) on axis 0 and dynamic padding on axis 1:
+//	operand := shapes.Make(dtypes.Float32, 5, 4)
+//	out, err := shapeinference.DynamicPad(operand,
+//		compute.DynamicPadAxis{Start: -1, End: -1},
+//		compute.DynamicPadAxis{StartValue: dynStart, End: 1, TargetAxisName: "width"},
+//	)
+//	// out has shape (Float32)[3, width=?]
+//
+//	// Combined interior padding and negative edge padding (cropping):
+//	operand2 := shapes.Make(dtypes.Float32, 3)
+//	out2, err := shapeinference.DynamicPad(operand2,
+//		compute.DynamicPadAxis{Start: -1, End: -1, Interior: 1},
+//	)
+//	// Interior adds (3-1)*1 = 2 elements (size 5), then Start=-1, End=-1 crops 2 elements -> (Float32)[3]
 func DynamicPad(operand shapes.Shape, axesConfig ...compute.DynamicPadAxis) (output shapes.Shape, err error) {
 	if !operand.Ok() {
 		return shapes.Invalid(), errors.Errorf("DynamicPad: invalid operand shape %s", operand)
+	}
+	for axis, dim := range operand.Dimensions {
+		if dim < 0 && dim != shapes.DynamicDim {
+			return shapes.Invalid(), errors.Errorf("DynamicPad: operand shape %s has invalid negative dimension %d at axis %d", operand, dim, axis)
+		}
 	}
 	rank := operand.Rank()
 	if len(axesConfig) > rank {
@@ -313,6 +346,8 @@ func DynamicPad(operand shapes.Shape, axesConfig ...compute.DynamicPadAxis) (out
 		output.Dimensions[axis] = outDim
 		if targetAxisName != "" {
 			output.AxisNames[axis] = targetAxisName
+		} else if outDim != dim {
+			output.AxisNames[axis] = ""
 		}
 	}
 

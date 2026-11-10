@@ -642,6 +642,363 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 				t.Errorf("DynamicPad(interior) mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("NegativePadding", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_pad_negative")
+			mainFn := builder.Main()
+			xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 5), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter x: %v", err)
+			}
+			padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_start: %v", err)
+			}
+			padEndParam, err := mainFn.Parameter("pad_end", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_end: %v", err)
+			}
+			fillVal, err := mainFn.Constant([]float32{0})
+			if err != nil {
+				t.Fatalf("Failed to create constant fillVal: %v", err)
+			}
+
+			out, err := mainFn.DynamicPad(xParam, fillVal,
+				compute.DynamicPadAxis{StartValue: padStartParam, EndValue: padEndParam},
+			)
+			if err != nil {
+				t.Fatalf("DynamicPad(negative) failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			inputX := []float32{10, 20, 30, 40, 50}
+			testCases := []struct {
+				padStart, padEnd int32
+				want             []float32
+			}{
+				{
+					padStart: -1,
+					padEnd:   -1,
+					want:     []float32{20, 30, 40},
+				},
+				{
+					padStart: -2,
+					padEnd:   1,
+					want:     []float32{30, 40, 50, 0},
+				},
+				{
+					padStart: 1,
+					padEnd:   -3,
+					want:     []float32{0, 10, 20},
+				},
+			}
+
+			for _, tc := range testCases {
+				inXBuf, err := testutil.ToBuffer(b, inputX)
+				if err != nil {
+					t.Fatalf("ToBuffer x failed: %v", err)
+				}
+				inStartBuf, err := testutil.ToBuffer(b, tc.padStart)
+				if err != nil {
+					t.Fatalf("ToBuffer pad_start failed: %v", err)
+				}
+				inEndBuf, err := testutil.ToBuffer(b, tc.padEnd)
+				if err != nil {
+					t.Fatalf("ToBuffer pad_end failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inStartBuf, inEndBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute(start=%d, end=%d) failed: %v", tc.padStart, tc.padEnd, err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicPad(start=%d, end=%d) mismatch:\n%s", tc.padStart, tc.padEnd, diff)
+				}
+			}
+		})
+
+		t.Run("NegativeAndInteriorPadding", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_pad_neg_interior")
+			mainFn := builder.Main()
+			xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 3), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter x: %v", err)
+			}
+			padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_start: %v", err)
+			}
+			padEndParam, err := mainFn.Parameter("pad_end", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_end: %v", err)
+			}
+			padIntParam, err := mainFn.Parameter("pad_interior", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_interior: %v", err)
+			}
+			fillVal, err := mainFn.Constant([]float32{-1})
+			if err != nil {
+				t.Fatalf("Failed to create constant fillVal: %v", err)
+			}
+
+			// Interior=1 -> [10, -1, 20, -1, 30] (len 5)
+			// Start=-1, End=-1 -> [-1, 20, -1] (len 3)
+			out, err := mainFn.DynamicPad(xParam, fillVal,
+				compute.DynamicPadAxis{
+					StartValue:    padStartParam,
+					EndValue:      padEndParam,
+					InteriorValue: padIntParam,
+				},
+			)
+			if err != nil {
+				t.Fatalf("DynamicPad(negative+interior) failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			inXBuf, err := testutil.ToBuffer(b, []float32{10, 20, 30})
+			if err != nil {
+				t.Fatalf("ToBuffer x failed: %v", err)
+			}
+			inStartBuf, err := testutil.ToBuffer(b, int32(-1))
+			if err != nil {
+				t.Fatalf("ToBuffer pad_start failed: %v", err)
+			}
+			inEndBuf, err := testutil.ToBuffer(b, int32(-1))
+			if err != nil {
+				t.Fatalf("ToBuffer pad_end failed: %v", err)
+			}
+			inIntBuf, err := testutil.ToBuffer(b, int32(1))
+			if err != nil {
+				t.Fatalf("ToBuffer pad_interior failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inStartBuf, inEndBuf, inIntBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			want := []float32{-1, 20, -1}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("DynamicPad(negative+interior) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("InteriorAndNegative2D", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_pad_2d_interior_neg")
+			mainFn := builder.Main()
+			xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Int32, 2, 3), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter x: %v", err)
+			}
+			endAxis0Param, err := mainFn.Parameter("end0", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter end0: %v", err)
+			}
+			startAxis1Param, err := mainFn.Parameter("start1", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter start1: %v", err)
+			}
+			intAxis1Param, err := mainFn.Parameter("int1", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter int1: %v", err)
+			}
+			fillVal, err := mainFn.Constant([]int32{9})
+			if err != nil {
+				t.Fatalf("Failed to create constant fillVal: %v", err)
+			}
+
+			out, err := mainFn.DynamicPad(xParam, fillVal,
+				compute.DynamicPadAxis{Start: 1, EndValue: endAxis0Param, Interior: 1},
+				compute.DynamicPadAxis{StartValue: startAxis1Param, End: 1, InteriorValue: intAxis1Param},
+			)
+			if err != nil {
+				t.Fatalf("DynamicPad(2D interior+negative) failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			inXBuf, err := testutil.ToBuffer(b, [][]int32{{1, 2, 3}, {4, 5, 6}})
+			if err != nil {
+				t.Fatalf("ToBuffer x failed: %v", err)
+			}
+			inEnd0Buf, err := testutil.ToBuffer(b, int32(-1))
+			if err != nil {
+				t.Fatalf("ToBuffer end0 failed: %v", err)
+			}
+			inStart1Buf, err := testutil.ToBuffer(b, int32(-1))
+			if err != nil {
+				t.Fatalf("ToBuffer start1 failed: %v", err)
+			}
+			inInt1Buf, err := testutil.ToBuffer(b, int32(1))
+			if err != nil {
+				t.Fatalf("ToBuffer int1 failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inEnd0Buf, inStart1Buf, inInt1Buf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			want := [][]int32{
+				{9, 9, 9, 9, 9},
+				{9, 2, 9, 3, 9},
+				{9, 9, 9, 9, 9},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("DynamicPad(2D interior+negative) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("CropAllElements", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_pad_crop_all")
+			mainFn := builder.Main()
+			xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Float32, 3), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter x: %v", err)
+			}
+			padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_start: %v", err)
+			}
+			padEndParam, err := mainFn.Parameter("pad_end", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_end: %v", err)
+			}
+			fillVal, err := mainFn.Constant([]float32{7})
+			if err != nil {
+				t.Fatalf("Failed to create constant fillVal: %v", err)
+			}
+
+			out, err := mainFn.DynamicPad(xParam, fillVal,
+				compute.DynamicPadAxis{StartValue: padStartParam, EndValue: padEndParam},
+			)
+			if err != nil {
+				t.Fatalf("DynamicPad(crop all) failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			inputX := []float32{1, 2, 3}
+			for _, tc := range []struct {
+				start, end int32
+				want       []float32
+			}{
+				// Start = -4 crops all 3 elements of x and 1 of the End=3 padding, leaving 2 fill elements.
+				{start: -4, end: 3, want: []float32{7, 7}},
+				// End = -4 crops all 3 elements of x and 1 of the Start=3 padding, leaving 2 fill elements.
+				{start: 3, end: -4, want: []float32{7, 7}},
+			} {
+				inXBuf, err := testutil.ToBuffer(b, inputX)
+				if err != nil {
+					t.Fatalf("ToBuffer x failed: %v", err)
+				}
+				inStartBuf, err := testutil.ToBuffer(b, tc.start)
+				if err != nil {
+					t.Fatalf("ToBuffer start failed: %v", err)
+				}
+				inEndBuf, err := testutil.ToBuffer(b, tc.end)
+				if err != nil {
+					t.Fatalf("ToBuffer end failed: %v", err)
+				}
+				outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inStartBuf, inEndBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute(start=%d, end=%d) failed: %v", tc.start, tc.end, err)
+				}
+				got, err := testutil.FromBuffer(b, outBufs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Errorf("DynamicPad(crop all start=%d, end=%d) mismatch:\n%s", tc.start, tc.end, diff)
+				}
+			}
+		})
+
+		t.Run("PartialAxesConfigWithNegative", func(t *testing.T) {
+			builder := b.Builder("test_dynamic_pad_partial_axes_neg")
+			mainFn := builder.Main()
+			xParam, err := mainFn.Parameter("x", shapes.Make(dtypes.Int32, 3, 2), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter x: %v", err)
+			}
+			padStartParam, err := mainFn.Parameter("pad_start", shapes.Make(dtypes.Int32), nil)
+			if err != nil {
+				t.Fatalf("Failed to create parameter pad_start: %v", err)
+			}
+			fillVal, err := mainFn.Constant([]int32{0})
+			if err != nil {
+				t.Fatalf("Failed to create constant fillVal: %v", err)
+			}
+
+			// Only provide DynamicPadAxis for axis 0; axis 1 defaults to zero padding.
+			out, err := mainFn.DynamicPad(xParam, fillVal,
+				compute.DynamicPadAxis{StartValue: padStartParam, End: -1, Interior: 1},
+			)
+			if err != nil {
+				t.Fatalf("DynamicPad(PartialAxesConfigWithNegative) failed: %v", err)
+			}
+			if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatalf("Return failed: %v", err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				t.Fatalf("Compile failed: %v", err)
+			}
+
+			inXBuf, err := testutil.ToBuffer(b, [][]int32{{1, 2}, {3, 4}, {5, 6}})
+			if err != nil {
+				t.Fatalf("ToBuffer x failed: %v", err)
+			}
+			inStartBuf, err := testutil.ToBuffer(b, int32(-1))
+			if err != nil {
+				t.Fatalf("ToBuffer pad_start failed: %v", err)
+			}
+			outBufs, err := exec.Execute([]compute.Buffer{inXBuf, inStartBuf}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outBufs[0])
+			if err != nil {
+				t.Fatalf("FromBuffer failed: %v", err)
+			}
+			want := [][]int32{
+				{0, 0},
+				{3, 4},
+				{0, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("DynamicPad(PartialAxesConfigWithNegative) mismatch:\n%s", diff)
+			}
+		})
 	})
 
 	t.Run("Reverse", func(t *testing.T) {
@@ -1637,6 +1994,75 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 			want := []float32{7, 7}
 			if ok, diff := testutil.IsEqual(want, got); !ok {
 				t.Errorf("Pad(crop all) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("CropAllElementsFromEnd", func(t *testing.T) {
+			x := []float32{1, 2, 3}
+			fill := float32(7)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				// End = -4 crops all 3 elements of x and 1 of the Start=3 padding, leaving 2 fill elements.
+				return f.Pad(params[0], params[1], compute.PadAxis{Start: 3, End: -4})
+			})
+			if err != nil {
+				t.Fatalf("Pad(crop all from end) failed: %v", err)
+			}
+			want := []float32{7, 7}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(crop all from end) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("NegativeStartAndEnd2D", func(t *testing.T) {
+			x := [][]float32{
+				{1, 2, 3, 4},
+				{5, 6, 7, 8},
+				{9, 10, 11, 12},
+			}
+			fill := float32(0)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: -1, End: 1},
+					compute.PadAxis{Start: 1, End: -2},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(NegativeStartAndEnd2D) failed: %v", err)
+			}
+			want := [][]float32{
+				{0, 5, 6},
+				{0, 9, 10},
+				{0, 0, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(NegativeStartAndEnd2D) mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("PartialAxesConfigWithNegative", func(t *testing.T) {
+			x := [][]int32{
+				{1, 2},
+				{3, 4},
+				{5, 6},
+			}
+			fill := int32(0)
+			got, err := testutil.Exec1(b, []any{x, fill}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				// Only provide PadAxis for axis 0; axis 1 defaults to zero padding.
+				return f.Pad(params[0], params[1],
+					compute.PadAxis{Start: -1, End: -1, Interior: 1},
+				)
+			})
+			if err != nil {
+				t.Fatalf("Pad(PartialAxesConfigWithNegative) failed: %v", err)
+			}
+			// Axis 0: [row0, 0, row1, 0, row2] (len 5) -> Start=-1, End=-1 -> [0, row1, 0] (len 3)
+			want := [][]int32{
+				{0, 0},
+				{3, 4},
+				{0, 0},
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("Pad(PartialAxesConfigWithNegative) mismatch:\n%s", diff)
 			}
 		})
 	})
