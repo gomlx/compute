@@ -218,12 +218,14 @@ func registerAVX2() {
 	activations.RegisterBiasTile[float32]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxBiasTileAVX2, PriorityAVX2)
 	activations.RegisterKernel[float32]("avx2:tanh", compute.ActivationTanh, TanhKernelAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterVJPKernel[float32]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterSwiGLU[float32]("avx2:swiglu", SwiGLUFloat32AVX2, PriorityAVX2, &AVX2SimpleMetadata)
 
 	// Float64
 	activations.RegisterKernel[float64]("avx2:silu", compute.ActivationSilu, SiluAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx2:gelu", compute.ActivationGelu, GeluExactAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterKernel[float64]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterVJPKernel[float64]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterSwiGLU[float64]("avx2:swiglu", SwiGLUAVX2Float64, PriorityAVX2, &AVX2TranscendentalMetadata)
 
 	// BFloat16
 	activations.Register[bfloat16.BFloat16]("avx2:relu", compute.ActivationRelu, reluBF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
@@ -234,6 +236,7 @@ func registerAVX2() {
 	activations.RegisterKernel[bfloat16.BFloat16]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.Register[bfloat16.BFloat16]("avx2:tanh", compute.ActivationTanh, tanhBF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterVJPKernel[bfloat16.BFloat16]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2BF16, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterSwiGLU[bfloat16.BFloat16]("avx2:swiglu", SwiGLUAVX2BF16, PriorityAVX2, &AVX2SimpleMetadata)
 
 	// Float16
 	activations.Register[float16.Float16]("avx2:relu", compute.ActivationRelu, reluF16AVX2, PriorityAVX2, &AVX2SimpleMetadata)
@@ -244,6 +247,7 @@ func registerAVX2() {
 	activations.RegisterKernel[float16.Float16]("avx2:geluapprox", compute.ActivationGeluApproximate, GeluApproxAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.Register[float16.Float16]("avx2:tanh", compute.ActivationTanh, tanhF16AVX2, PriorityAVX2, &AVX2TranscendentalMetadata)
 	activations.RegisterVJPKernel[float16.Float16]("avx2:vjp_silu", compute.ActivationSilu, SiluVJPAVX2F16, PriorityAVX2, &AVX2TranscendentalMetadata)
+	activations.RegisterSwiGLU[float16.Float16]("avx2:swiglu", SwiGLUAVX2F16, PriorityAVX2, &AVX2SimpleMetadata)
 }
 
 func ReluAVX2(data []float32) {

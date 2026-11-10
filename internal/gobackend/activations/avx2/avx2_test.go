@@ -271,6 +271,87 @@ func BenchmarkAVX2Comparison(b *testing.B) {
 					}
 				})
 			}
+
+			halfDim := sz.n / 2
+			for _, tc := range []struct {
+				name string
+				fn   func(in, out []float32, numRows, hiddenDim int)
+			}{
+				{"SwiGLU/PortableSIMD", activations.SwiGLUFloat32SIMD},
+				{"SwiGLU/AVX2", avx2.SwiGLUFloat32AVX2},
+			} {
+				b.Run(tc.name, func(b *testing.B) {
+					for b.Loop() {
+						tc.fn(inF32, outF32[:halfDim], 1, halfDim)
+					}
+				})
+			}
 		})
+	}
+}
+
+func TestSwiGLUAVX2AllDTypes(t *testing.T) {
+	if !gobackend.IsAVX2Allowed {
+		t.Skip("AVX2 is not supported or allowed on this host")
+	}
+
+	for _, tc := range []struct {
+		numRows   int
+		hiddenDim int
+	}{
+		{1, 1},
+		{2, 3},
+		{3, 4},
+		{4, 7},
+		{2, 8},
+		{3, 15},
+		{4, 16},
+		{5, 33},
+		{8, 128},
+		{5, 1024},
+	} {
+		inLen := tc.numRows * 2 * tc.hiddenDim
+		outLen := tc.numRows * tc.hiddenDim
+
+		inF32 := make([]float32, inLen)
+		inF64 := make([]float64, inLen)
+		inBF16 := make([]bfloat16.BFloat16, inLen)
+		inF16 := make([]float16.Float16, inLen)
+		for i := range inLen {
+			x := float32((i%41)-20) * 0.25
+			inF32[i] = x
+			inF64[i] = float64(x)
+			inBF16[i] = bfloat16.FromFloat32(x)
+			inF16[i] = float16.FromFloat32(x)
+		}
+
+		wantF32 := make([]float32, outLen)
+		wantF64 := make([]float64, outLen)
+		activations.SwiGLUFloat32SIMD(inF32, wantF32, tc.numRows, tc.hiddenDim)
+		activations.SwiGLUFloat64SIMD(inF64, wantF64, tc.numRows, tc.hiddenDim)
+
+		gotF32 := make([]float32, outLen)
+		gotF64 := make([]float64, outLen)
+		gotBF16 := make([]bfloat16.BFloat16, outLen)
+		gotF16 := make([]float16.Float16, outLen)
+		avx2.SwiGLUFloat32AVX2(inF32, gotF32, tc.numRows, tc.hiddenDim)
+		avx2.SwiGLUAVX2Float64(inF64, gotF64, tc.numRows, tc.hiddenDim)
+		avx2.SwiGLUAVX2BF16(inBF16, gotBF16, tc.numRows, tc.hiddenDim)
+		avx2.SwiGLUAVX2F16(inF16, gotF16, tc.numRows, tc.hiddenDim)
+
+		for i := range outLen {
+			if ok, diff := testutil.IsInDelta(wantF32[i], gotF32[i], 1e-4); !ok {
+				t.Fatalf("rows=%d hidden=%d SwiGLUFloat32AVX2[%d] mismatch: %s", tc.numRows, tc.hiddenDim, i, diff)
+			}
+			if ok, diff := testutil.IsInDelta(wantF64[i], gotF64[i], 1e-6); !ok {
+				t.Fatalf("rows=%d hidden=%d SwiGLUAVX2Float64[%d] mismatch: %s", tc.numRows, tc.hiddenDim, i, diff)
+			}
+			if ok, diff := testutil.IsInDelta(bfloat16.FromFloat32(wantF32[i]).Float32(), gotBF16[i].Float32(), 0.15); !ok {
+				t.Fatalf("rows=%d hidden=%d SwiGLUAVX2BF16[%d] mismatch: %s", tc.numRows, tc.hiddenDim, i, diff)
+			}
+			if ok, diff := testutil.IsInDelta(float16.FromFloat32(wantF32[i]).Float32(), gotF16[i].Float32(), 2e-2); !ok {
+				t.Fatalf("rows=%d hidden=%d SwiGLUAVX2F16[%d] mismatch: %s", tc.numRows, tc.hiddenDim, i, diff)
+			}
+		}
 	}
 }
