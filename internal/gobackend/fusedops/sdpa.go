@@ -971,12 +971,19 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 
 	headTasks := batchSize * numKVHeads
 	totalMACs := batchSize * numHeads * seqLen * kvLen * headDim * 2
+	useSMEPath := gobackend.IsSMEAllowed && query.RawShape.DType == dtypes.Float32 && seqLen >= 4 && kvLen >= 16 && headDim >= 16 && headDim <= 256
 	qBlockSize := max(seqLen, 1)
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
-		if numWorkers > 1 && seqLen > 64 && totalMACs >= 1024*1024 && headTasks < numWorkers {
-			neededQBlocks := (numWorkers + headTasks - 1) / headTasks
-			qBlockSize = max(32, ((seqLen+neededQBlocks-1)/neededQBlocks+31)&^31)
+		if useSMEPath {
+			if numWorkers > 1 && seqLen > 64 && totalMACs >= 1024*1024 && headTasks < numWorkers {
+				neededQBlocks := (numWorkers + headTasks - 1) / headTasks
+				qBlockSize = max(32, ((seqLen+neededQBlocks-1)/neededQBlocks+31)&^31)
+			}
+		} else if numWorkers > 1 && seqLen >= 8 && totalMACs >= 512*1024 && headTasks < 4*numWorkers {
+			targetTasks := 4 * numWorkers
+			neededQBlocks := (targetTasks + headTasks - 1) / headTasks
+			qBlockSize = max(8, ((seqLen+neededQBlocks-1)/neededQBlocks+3)&^3)
 		}
 	}
 	numQBlocks := 1
@@ -984,8 +991,7 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
 	}
 	totalTasks := headTasks * numQBlocks
-	scratchSize := max(32*kvLen+16, 64)
-	useSMEPath := gobackend.IsSMEAllowed && query.RawShape.DType == dtypes.Float32 && seqLen >= 4 && kvLen >= 16 && headDim >= 16 && headDim <= 256
+	scratchSize := max(32*kvLen+64, 128)
 	if useSMEPath {
 		kvPadded := (kvLen + 31) &^ 31
 		scratchSize = max(scratchSize, 32*kvLen+(32+headDim)*kvPadded+32*headDim+16)
