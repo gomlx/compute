@@ -1,6 +1,6 @@
-# Optimizing Timestral (`28M` & `123M`) on Go Backend (ARM64 NEON & SME)
+# Optimizing Timestral (`28M` & `123M`) on Go Backend (ARM64 NEON/SME & AMD64 AVX2)
 
-This document records the baseline benchmarks, CPU and per-op profiles, architectural analysis, and optimization plan for running [`mistralai/Timestral-28M`](https://huggingface.co/mistralai/Timestral-28M) and [`mistralai/Timestral-123M`](https://huggingface.co/mistralai/Timestral-123M) on the pure-Go backend (`internal/gobackend`) on Apple Silicon with ARM64 NEON and SME.
+This document records the baseline benchmarks, CPU and per-op profiles, architectural analysis, and optimization plan for running [`mistralai/Timestral-28M`](https://huggingface.co/mistralai/Timestral-28M) and [`mistralai/Timestral-123M`](https://huggingface.co/mistralai/Timestral-123M) on the pure-Go backend (`internal/gobackend`) on both Apple Silicon (ARM64 NEON and SME, Sections 1–8) and x86-64 (Intel Core i9-12900K AVX2, Section 9).
 
 It follows the evolution of our ARM64 NEON/SME architecture documented in [`internal/gobackend/simdarch/Neon.md`](../internal/gobackend/simdarch/Neon.md), extending our focus from `DotGeneral`/`FusedDense` to **non-MatMul operations** (`FusedScaledDotProductAttention`, `FusedActivation`/`SwiGLU`, `ReduceSum`, `Mul`/`Add` broadcasting, `Slice`/`Concatenate`, and scheduler/cache-locality interactions).
 
@@ -509,4 +509,118 @@ Each call executes **6 separate graph operations** over `[2, 405, H, 64]`:
 | **`Timestral-123M`** | Initial Baseline (`ecd18aa`) | 179.4 ms | 1,860.0 ms | 10.4 | 1.35 GB | 1.00× | 1.64× |
 | **`Timestral-123M`** | After Priority 1 (`ea8ff08`) | 128.4 ms | 1,300.0 ms | 9.9 | 1.34 GB | 1.40× | 2.29× |
 | **`Timestral-123M`** | **After Priority 2 & 3** | **122.2 ms** | **1,100.0 ms** | **9.4** | **0.65 GB** | **`1.47×` (`-31.9%` wall, `-40.9%` CPU)** | **`2.40×` wall, `2.88×` CPU** |
+
+---
+
+## 9. AMD64 AVX2 Optimization on Intel Core i9-12900K (`Timestral-28M`)
+
+Following the ARM64 NEON/SME optimizations on Apple M6, we profiled and optimized the `go` backend on an x86-64 AVX2 workstation (`12th Gen Intel Core i9-12900K`, 24 logical CPUs: 8 Golden Cove P-cores / 16 threads with 1.25 MB L2 per core + 8 Gracemont E-cores / 8 threads with 2 MB L2 per 4-core cluster, 30 MB shared L3, AVX2 + FMA + F16C, no AVX-512).
+
+### 9.1 Baseline Profile & Root Causes Identified on AVX2
+
+Before AVX2-specific optimizations on this branch:
+- **`go` backend (`-backend="go"`, 10 runs)**: **134.4 ms best wall** (`1,899.6 ms` CPU, `14.1` cores), vs `xla:cpu` at **73.7 ms best wall** (`1,089.3 ms` CPU).
+- **`go:ops_sequential` (`GOMLX_OP_PROFILE=5`)**: **168.4 ms Sum of Ops** (`173.4 ms` best wall, `1,996.4 ms` CPU), dominated by:
+  1. **`FusedScaledDotProductAttention` (`95.1 ms` wall / `56.5%` of total runtime, `1,059.1 ms` CPU)**:
+     - `sdpaAVX2BlockFloat32` in [`internal/gobackend/fusedops/avx2/sdpa.go`](../internal/gobackend/fusedops/avx2/sdpa.go) processed only **1 query row at a time** (`sdpaDotProductRowAVX2Asm` + `sdpaValueAccumRowAVX2Asm`), reloading every `K` and `V` vector from L2/L3 cache for every single query row without register-blocking across queries, and computed all `kvLen = 378` keys even when the causal mask zeroed out trailing keys (`50%` wasted FLOPs).
+     - `sdpaScaleMaskSoftmaxRowAVX2Asm` lacked a boolean mask (`maskStride != 0`) path, forcing a pure-Go scalar loop (`scores[j] *= scale; if !maskRow[j] { scores[j] = -Inf }`) before calling assembly softmax.
+     - Work partitioning in [`internal/gobackend/fusedops/sdpa.go`](../internal/gobackend/fusedops/sdpa.go) hardcoded `qBlockSize = 32`, yielding only $\lceil 378 / 32 \rceil = 12$ tasks per head for `12 × 12 = 144` total tasks across 24 logical CPUs, and `12 × 1 = 12` tasks for Decoder SDPA (`seqLen = 27`, leaving half the 24 logical CPUs completely idle).
+  2. **`FusedActivation` / `SwiGLU` (`1.9 ms` wall, `26.8 ms` CPU)**:
+     - `internal/gobackend/activations/avx2/` had handwritten AVX2 assembly for `GeluExact`, `GeluApprox`, and `Silu`, **but no AVX2 implementation for `SwiGLU`**, falling back to the generic `archsimd` closure path (`swigluSIMDFloat32`).
+  3. **`Iota` (`2.2 ms` wall) & 3-Segment Broadcasts (`LogicalAnd` `791.2 µs` wall)**:
+     - `execIotaGeneric` in [`internal/gobackend/ops/iota.go`](../internal/gobackend/ops/iota.go) computed every element inside a 3-level nested loop without `repeatsSize == 1` specialization or doubling `copy()` across `batchSize > 1`.
+     - 3D broadcasts of the form `[A, 1, C]` op `[1, B, C]` $\to$ `[A, B, C]` (such as `LogicalAnd([378, 1, 378], [1, 378, 378])` in causal group-mask construction) and `[A, B, 1]` op `[A, 1, C]` $\to$ `[A, B, C]` fell through `ClassifyBroadcast` to `BroadcastGeneric`, executing scalar `NewZippedBroadcastIterator` coordinate div/mod indexing for `285,768` elements per call.
+  4. **Go 1.27 `simd` Slice-Header Stack Spills on `amd64`, Indirect Unary Closures, and L2 Cache Thrashing (`Mul` `12.6 ms`, `Add` `4.1 ms`, `Neg` `994 µs`, `ReduceSum` `2.3 ms`, `Concatenate` `2.1 ms`)**:
+     - Disassembling `simdV2V1MulFloat32@simd256` and `simdAddVVFloat32@simd256` on `amd64` revealed that because `amd64` has only 14 allocatable general-purpose registers, calling `simd.LoadFloat32s(lhs[i+vLen:])` inside a 4× unrolled loop constructs 12 3-word Go slice headers per iteration with bounds checks and Spectre mitigation masks (`NEGQ; SARQ $63; ANDQ`), spilling **24 64-bit values to the stack** and emitting **893 bytes of machine code** per 32-float inner loop!
+     - `simdUnaryFloat32` was not inlined by the Go compiler, so `Neg`, `Abs`, `Sqrt`, and `Rsqrt` performed an indirect function call (`CALL DX`) on every 8-float vector.
+     - Splitting a `311,040`-float (`1.24 MB`) tensor into 10 chunks of `32,768` floats (`128 KB`) woke 9 OS threads via `futex_wake` (`~25–30 µs` overhead per op), whereas running single-threaded spilled a `2.48–3.73 MB` working set outside a single P-core's `1.25 MB` L2 cache.
+
+### 9.2 Optimizations Implemented (Priorities 1–4)
+
+1. **Priority 1 — 4-Row Register-Blocked AVX2 SDPA Microkernels, Vectorized Boolean Masking, Active Causal KV Pruning & Dynamic Query Block Sizing**:
+   - **4-Row $Q K^T$ & $P V$ AVX2 Assembly ([`internal/gobackend/fusedops/avx2/sdpa_amd64.s`](../internal/gobackend/fusedops/avx2/sdpa_amd64.s))**:
+     - `sdpaQKT4RowsAVX2Asm`: Computes 4 query rows $\times$ `activeKVLen` keys simultaneously, keeping 4 query rows cached in L1D while loading each key vector once and accumulating into 4 independent YMM accumulators (`Y0`–`Y3`), cutting `K` memory traffic by $4\times$. Includes a dedicated `headDim == 64` unrolled fast path (8 `VMOVUPS` per key row, zero inner loop branch overhead).
+     - `sdpaValueAccum4RowsAVX2Asm`: Accumulates $\sum_j P_{i,j} V_j$ for 4 query rows simultaneously. For `headDim == 64`, pins all 4 output rows in **16 YMM registers (`Y0`–`Y7` for rows 0–1, `Y8`–`Y15` for rows 2–3)** across the `activeKVLen` loop, loading each `V` row (`64` floats = 8 YMM vectors) once from L1/L2 cache and updating all 4 query outputs in registers before writing back once at the end.
+     - `sdpaQKT1RowAVX2Asm` & `sdpaValueAccum1RowAVX2Asm`: Single-row tail kernels with a dedicated `headDim == 64` 8-YMM in-register accumulator path (`Y0`–`Y7`) and 2-way unrolled `V` accumulation.
+   - **Fused Scale + Boolean Mask + Softmax AVX2 Assembly (`sdpaScaleMaskSoftmaxRowAVX2Asm`)**:
+     - Vectorizes boolean mask application (`maskStride != 0`) directly inside the max-finding pass using 8-byte `VMOVQ` + `VPMOVSXBD` (sign-extend 8 bytes to 8 `int32` lanes in YMM) + `VPCMPGTD` + `VBLENDVPS` to blend `-Inf` (`0xFF800000`) where `maskByte == 0`, followed by fused 2-pass Estrin polynomial `exp(x - max)` and reciprocal normalization.
+   - **Causal Mask Active-KV Pruning & All-True Fast Path ([`internal/gobackend/fusedops/avx2/sdpa.go`](../internal/gobackend/fusedops/avx2/sdpa.go))**:
+     - Added `sdpaActiveKVLenForBlock` to scan backwards from `kvLen - 1` across the 4 query rows in a block to find the last unmasked key index, skipping trailing masked keys entirely in both $Q K^T$ and $P V$ (halving FLOPs on causal encoder masks) and bulk-filling skipped tail positions only when absent from the fused softmax loop.
+     - Added `isAllTrueBoolMask` using unaligned 64-bit word loads (`0x0101010101010101`) to detect all-true mask blocks in $O(\text{kvLen}/8)$ and bypass per-element mask blending.
+   - **Dynamic Query Block Sizing ([`internal/gobackend/fusedops/sdpa.go`](../internal/gobackend/fusedops/sdpa.go))**:
+     - Replaced fixed `qBlockSize = 32` with dynamic sizing targeting `4 * numWorkers` tasks, rounded to multiples of 4 rows (`qBlockSize = max(4, ((totalWork / targetTasks) &^ 3))` capped at `32`), so Decoder SDPA (`seqLen = 27`, `numHeads = 6`) uses `qBlockSize = 4` (`84` tasks across 24 workers instead of `12`).
+
+2. **Priority 2 — Handwritten AVX2 Assembly for `SwiGLU` ([`internal/gobackend/activations/avx2/swiglu_amd64.s`](../internal/gobackend/activations/avx2/swiglu_amd64.s), [`swiglu.go`](../internal/gobackend/activations/avx2/swiglu.go))**:
+   - Implemented `swigluFloat32AVX2Asm(in, out unsafe.Pointer, numRows, hiddenDim, vecWidth int)` (`TEXT ·swigluFloat32AVX2Asm(SB), NOSPLIT, $0-40`) and registered `SwiGLUFloat32AVX2`, `SwiGLUAVX2Float64`, `SwiGLUAVX2BF16`, and `SwiGLUAVX2F16` in [`internal/gobackend/activations/avx2/avx2.go`](../internal/gobackend/activations/avx2/avx2.go).
+   - Processes **16 `float32` elements (`2×` 256-bit YMM vectors) per inner-loop iteration** with zero stack spills:
+     - Evaluates range reduction and degree-5 Estrin polynomial for $e^{-x_0}$ and $e^{-x_1}$ interleaved across both 8-float vectors (`Y0`–`Y9`), keeping constants in `Y10`–`Y15` and loading Cephes `C2..C5` directly as memory operands into `VFMADD213PS` / `VFMADD231PS`.
+     - Overlaps hardware `VDIVPS` on the first 8-float vector (`x0 / (1 + exp(-x0))`) with fast Newton-Raphson reciprocal (`VRCPPS` + `VFNMADD213PS` + `VFMADD213PS`) on the second 8-float vector, then multiplies by the `up` projection `u0, u1` from `in[row + hiddenDim + col]`.
+   - **Microbenchmark Speedup (`BenchmarkAVX2Comparison/Float32/Large_65536/SwiGLU`)**: **`4.51×` faster** than `PortableSIMD` (`7.33 µs` vs `33.09 µs`).
+
+3. **Priority 3 — `Iota` Doubling Copy & 3-Segment Broadcast Fast Paths**:
+   - **Vectorized `Iota` with Doubling Copy ([`internal/gobackend/ops/iota.go`](../internal/gobackend/ops/iota.go))**:
+     - Specialized `repeatsSize == 1` (`firstBatch[i] = T(i)`) and `repeatsSize > 1` (`slice[j] = val` on pre-sliced `firstBatch[start:end]`) on the first batch slice (`iotaDimSize * repeatsSize`), then replicated across `batchSize > 1` via exponential doubling `copy(flat[filled:filled+toCopy], flat[:toCopy])`.
+   - **3-Segment Broadcast Fast Paths ([`internal/gobackend/broadcast.go`](../internal/gobackend/broadcast.go), [`internal/cmd/gobackend_ops_generator/exec_binary.go`](../internal/gobackend/ops/gen_exec_binary.go), [`internal/gobackend/ops/binaryops_simd.go`](../internal/gobackend/ops/binaryops_simd.go))**:
+     - Extended `ClassifyBroadcast` with 4 new 3-segment patterns where 2 adjacent dimensions collapse:
+       - `BroadcastRowColMatch`: `[A, 1, C]` op `[1, B, C]` $\to$ `[A, B, C]`
+       - `BroadcastColRowMatch`: `[1, B, C]` op `[A, 1, C]` $\to$ `[A, B, C]`
+       - `BroadcastMatchRowCol`: `[A, B, 1]` op `[A, 1, C]` $\to$ `[A, B, C]`
+       - `BroadcastMatchColRow`: `[A, 1, C]` op `[A, B, 1]` $\to$ `[A, B, C]`
+     - Generated typed inner-slice loops in `gen_exec_binary.go` and SIMD dispatchers in `binaryops_simd.go`, eliminating `NewZippedBroadcastIterator` overhead completely.
+
+4. **Priority 4 — Zero-Spill AVX2 Binary Mid/Leading/Contiguous Assembly Kernels, Direct Unary SIMD Loops & L2-Cache-Aware Parallelism**:
+   - **Zero-Spill AVX2 Binary Mid/Leading/Contiguous Assembly ([`internal/gobackend/ops/avx2/binary_mid_amd64.s`](../internal/gobackend/ops/avx2/binary_mid_amd64.s), [`internal/gobackend/binary_arch_trailing.go`](../internal/gobackend/binary_arch_trailing.go))**:
+     - Added `BinaryMidArchFn` (`DispatchBinaryMidAVX2`) handling `[A, B, C]` op `[A, 1, C]` (`BroadcastMidRHS`/`BroadcastMidLHS`), `[1, B, C]` (`BroadcastLeadingRHS`/`BroadcastLeadingLHS`, with `A = 1`), and contiguous `[N]` (`BroadcastNone`, with `A = 1, B = 1`) for `Float32` `Add`, `Sub`, `Mul`, and `Div`.
+     - Eliminates Go 1.27 `simd` slice-header stack spills and bounds checks on `amd64`. Includes a dedicated **`C == 64` register-cached fast path** that loads all 64 floats of the broadcast `[a, 0, :64]` slice into **`Y8`–`Y15` once per outer `a`** and streams across all `B` rows in L1/L2 cache (`8 × VFMADD`/`VMULPS`/`VADDPS` per row without reloading the broadcast operand), plus a 32-float (`4×` YMM) unrolled general loop.
+     - Extended `tryBinaryTrailingArch` in [`internal/gobackend/ops/binaryops_simd.go`](../internal/gobackend/ops/binaryops_simd.go) to also route `BroadcastScalarRHS` and `BroadcastScalarLHS` (`A = 1, B = totalElements`) through the zero-spill AVX2 trailing assembly kernel.
+   - **Direct Inlined Unary Loops ([`internal/gobackend/ops/unaryops_simd.go`](../internal/gobackend/ops/unaryops_simd.go))**:
+     - Replaced `simdUnaryFloat32` / `simdUnaryFloat64` closure calls for `Neg`, `Abs`, `Sqrt`, and `Rsqrt` with direct 4× unrolled functions (`simdNegFloat32`, `simdAbsFloat32`, `simdSqrtFloat32`, `simdRsqrtFloat32`, etc.), eliminating the per-vector indirect `CALL DX`.
+   - **L2-Cache-Aware Parallel Chunking ([`binaryops_simd.go`](../internal/gobackend/ops/binaryops_simd.go), [`unaryops_simd.go`](../internal/gobackend/ops/unaryops_simd.go), [`stridedcopy.go`](../internal/gobackend/ops/stridedcopy.go), [`reduce_simd.go`](../internal/gobackend/ops/reduce_simd.go))**:
+     - Tuned `minBinarySIMDParallelElements = 131072` and `binarySIMDChunkElements = 65536` (`256 KB` per tensor = `512–768 KB` working set per chunk), recruiting 3–5 P-cores for `311,040`-float (`1.24 MB`) tensors so each chunk fits inside a P-core's `1.25 MB` L2 cache while avoiding 10-way `futex_wake` overhead.
+
+### 9.3 Per-Op Profile Comparison on AVX2 (`GOMLX_OP_PROFILE=5`, `-backend="go:ops_sequential"`)
+
+| Operation Type | Calls/run | Baseline Wall/run | **Optimized Wall/run** | Wall Speedup | Baseline CPU/run | **Optimized CPU/run** | CPU Reduction |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **`FusedScaledDotProductAttention`** | 27 | 95.1 ms (`56.5%`) | **8.1 ms (`10.9%`)** | **`11.74×`** | 1,059.1 ms | **94.7 ms** | **`11.18×`** |
+| **`FusedDense`** | 93 | 40.3 ms (`23.9%`) | **41.8 ms (`56.2%`)** | `0.96×` | 538.9 ms | **552.7 ms** | `0.98×` |
+| **`Mul`** | 179 | 12.6 ms (`7.5%`) | **8.2 ms (`11.0%`)** | **`1.54×`** | 183.7 ms | **73.6 ms** | **`2.50×`** |
+| **`Add`** | 65 | 4.1 ms (`2.4%`) | **3.0 ms (`4.0%`)** | **`1.37×`** | 56.1 ms | **30.6 ms** | **`1.83×`** |
+| **`DotGeneral`** | 27 | 2.6 ms (`1.5%`) | **2.7 ms (`3.6%`)** | `0.96×` | 20.6 ms | **21.6 ms** | `0.95×` |
+| **`ReduceSum`** | 28 | 2.3 ms (`1.4%`) | **1.3 ms (`1.8%`)** | **`1.77×`** | 33.9 ms | **13.5 ms** | **`2.51×`** |
+| **`Iota`** | 60 | 2.2 ms (`1.3%`) | **0.28 ms (`0.4%`)** | **`7.92×`** | 3.5 ms | **0.56 ms** | **`6.25×`** |
+| **`Concatenate`** | 58 | 2.1 ms (`1.3%`) | **1.7 ms (`2.2%`)** | **`1.24×`** | 30.8 ms | **8.8 ms** | **`3.50×`** |
+| **`FusedActivation` (`SwiGLU`)** | 15 | 1.9 ms (`1.1%`) | **1.2 ms (`1.6%`)** | **`1.58×`** | 26.8 ms | **10.0 ms** | **`2.68×`** |
+| **`Neg`** | 29 | 0.99 ms (`0.6%`) | **0.65 ms (`0.9%`)** | **`1.53×`** | 14.4 ms | **2.2 ms** | **`6.55×`** |
+| **`LogicalAnd`** | 15 | 0.79 ms (`0.5%`) | **0.15 ms (`0.2%`)** | **`5.21×`** | 1.3 ms | **0.35 ms** | **`3.71×`** |
+| **Total (`Sum of Ops`)** | **1,636** | **168.4 ms (`100%`)** | **74.3 ms (`100%`)** | **`2.27×`** | **1,996.4 ms** | **871.0 ms** | **`2.29×`** |
+
+### 9.4 End-to-End Benchmark Progression on Intel Core i9-12900K (AVX2, `-backend="go"`, 10 Runs)
+
+| Stage | Best Wall Time | Best CPU Time | Avg Cores | Max Abs Diff vs PyTorch | Speedup vs Baseline | Comparison vs `xla:cpu` (`73.7 ms`) |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `xla:cpu` Reference (`-backend="xla:cpu"`) | 73.7 ms | 1,089.3 ms | 14.8 | 2.1e-05 | 1.82× | `1.00×` |
+| **Initial `go` Backend Baseline** | 134.4 ms | 1,899.6 ms | 14.1 | 3.4e-05 | 1.00× | `0.55×` (`1.82×` slower) |
+| **After Priority 1 (4-Row AVX2 SDPA + Dynamic `qBlockSize`)** | 71.1 ms | 1,015.4 ms | 14.3 | 3.4e-05 | **`1.89×`** | **`1.04×` faster than XLA** |
+| **After Priority 2 (Handwritten AVX2 `SwiGLU` Assembly)** | 70.6 ms | 1,001.2 ms | 14.2 | 3.4e-05 | **`1.90×`** | **`1.04×` faster than XLA** |
+| **After Priority 3 (`Iota` Doubling Copy + 3-Segment Broadcasts)** | 69.5 ms | 1,004.8 ms | 14.5 | 3.4e-05 | **`1.93×`** | **`1.06×` faster than XLA** |
+| **After Priority 4 (Zero-Spill AVX2 Binary Mid Asm + Direct Unary + L2 Chunking)** | **60.3 ms** | **887.1 ms** | **14.7** | **3.4e-05** | **`2.23×` (`-55.1%` wall, `-53.3%` CPU)** | **`1.22×` faster than XLA (`-18.6%` CPU)** |
+
+#### Detailed Run-by-Run After Priorities 1–4 (`-backend="go"`, Intel Core i9-12900K)
+
+| Obs | Model | Run | Wall | CPU Time | Cores | Max Abs Diff vs PyTorch | Live Mem | Max RSS |
+| --- | --- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gomlx-simd` | `Timestral-28M` | warm-up | 82.0ms | 1.1s | 13.7 | 3.4e-05 | 0.30 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 1 | 62.6ms | 917.2ms | 14.7 | 3.4e-05 | 0.25 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 2 | 64.9ms | 945.4ms | 14.6 | 3.4e-05 | 0.27 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 3 | 61.9ms | 909.6ms | 14.7 | 3.4e-05 | 0.29 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 4 | 61.5ms | 902.2ms | 14.7 | 3.4e-05 | 0.24 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 5 | 60.5ms | 886.9ms | 14.6 | 3.4e-05 | 0.26 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 6 | 62.4ms | 914.5ms | 14.7 | 3.4e-05 | 0.29 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 7 | 60.3ms | 887.1ms | 14.7 | 3.4e-05 | 0.31 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 8 | 62.9ms | 923.3ms | 14.7 | 3.4e-05 | 0.26 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 9 | 61.5ms | 903.4ms | 14.7 | 3.4e-05 | 0.28 GB | 0.39 GB |
+| `gomlx-simd` | `Timestral-28M` | run 10 | 61.2ms | 899.6ms | 14.7 | 3.4e-05 | 0.30 GB | 0.39 GB |
+| **`gomlx-simd`** | **`Timestral-28M`** | **`best`** | **`60.3ms`** | **`887.1ms`** | **`14.7`** | **`3.4e-05`** | **`0.30 GB`** | **`0.39 GB`** |
+
 

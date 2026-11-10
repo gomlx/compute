@@ -426,7 +426,7 @@ ARM64 SIMD acceleration follows the same multi-tier architecture as AMD64:
 
 ### 1. Registration Priority Ladder & Sub-Dispatcher Chaining
 
-Operations and sub-dispatchers (`SetBinaryTrailingArchDispatcher`, `SetReduceTrailingSumArchDispatcher`, `SetReduceLeadingSumArchDispatcher`, `SetLayerNormTrailingArchDispatcher`, `SetSDPAArchDispatcher`) use the following priority ladder in `internal/gobackend/exec.go`:
+Operations and sub-dispatchers (`SetBinaryTrailingArchDispatcher`, `SetBinaryMidArchDispatcher`, `SetReduceTrailingSumArchDispatcher`, `SetReduceLeadingSumArchDispatcher`, `SetLayerNormTrailingArchDispatcher`, `SetSDPAArchDispatcher`) use the following priority ladder in `internal/gobackend/exec.go`:
 - `PriorityGeneric = 0` (scalar fallback)
 - `PriorityTyped = 1` (typed Go loops)
 - `PrioritySIMD = 6` (portable Go `simd` / `archsimd` implementation)

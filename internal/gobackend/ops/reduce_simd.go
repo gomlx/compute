@@ -4108,11 +4108,11 @@ func dispatchReduceSumSIMD(operand, output *gobackend.Buffer, cfg ReduceConfig, 
 			inRowBytes := cfg.B * elemBytes
 			outRowBytes := elemBytes
 			if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
-				cfg.A*cfg.B >= 65536 && cfg.A > 1 &&
+				cfg.A*cfg.B >= 524288 && cfg.A > 1 &&
 				elemBytes > 0 &&
 				len(operand.RawBytes) >= cfg.A*inRowBytes &&
 				len(output.RawBytes) >= cfg.A*outRowBytes {
-				minA := max(1, 32768/max(1, cfg.B))
+				minA := max(1, 262144/max(1, cfg.B))
 				firstEnd := min(cfg.A, minA)
 				var firstIn, firstOut gobackend.Buffer
 				firstIn.Flat = operand.Flat

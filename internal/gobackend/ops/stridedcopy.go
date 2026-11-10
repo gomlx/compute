@@ -10,9 +10,9 @@ import (
 
 const (
 	// minParallelCopyBytes is the minimum total byte size to parallelize Slice and Concatenate.
-	minParallelCopyBytes = 64 * 1024
-	// minParallelCopyChunkBytes is the minimum per-worker byte chunk size (matching 32 KB L1D cache).
-	minParallelCopyChunkBytes = 32 * 1024
+	minParallelCopyBytes = 256 * 1024
+	// minParallelCopyChunkBytes is the minimum per-worker byte chunk size (256 KB, fits in L2 cache).
+	minParallelCopyChunkBytes = 256 * 1024
 )
 
 // copyStridedBytes copies count blocks of blockBytes bytes from src (stepping by srcStride bytes)

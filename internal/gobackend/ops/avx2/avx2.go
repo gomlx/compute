@@ -44,6 +44,15 @@ func registerAVX2() {
 		}
 		return DispatchBinaryTrailingAVX2(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetBinaryMidArchDispatcher(gobackend.PriorityArch, func(op compute.OpType, isLHS bool, lhs, rhs, output *gobackend.Buffer, A, B, C int, dtype dtypes.DType) bool {
+		lhsPtr := lhs.UnsafePointer()
+		rhsPtr := rhs.UnsafePointer()
+		outPtr := output.UnsafePointer()
+		if lhsPtr == nil || rhsPtr == nil || outPtr == nil {
+			return false
+		}
+		return DispatchBinaryMidAVX2(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, C, dtype)
+	})
 	gobackend.SetStridedCopyArchDispatcher(
 		gobackend.PriorityAVX2,
 		DispatchCopyStridedBytesAVX2,
@@ -398,6 +407,65 @@ func DispatchBinaryTrailingAVX2(op compute.OpType, isLHS bool, lhs, rhs, out uns
 			binaryTrailingMinUint32AVX2(vec, scalar, out, A, B)
 			return true
 		}
+	}
+	return false
+}
+
+// ----------------------------------------------------------------------------
+// Binary Mid / Leading / Contiguous Kernels Declarations
+// ----------------------------------------------------------------------------
+
+//go:noescape
+func binaryMidAddFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+//go:noescape
+func binaryMidSubRHSFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+//go:noescape
+func binaryMidSubLHSFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+//go:noescape
+func binaryMidMulFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+//go:noescape
+func binaryMidDivRHSFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+//go:noescape
+func binaryMidDivLHSFloat32AVX2(vec, bcast, out unsafe.Pointer, A, B, C int)
+
+// DispatchBinaryMidAVX2 dispatches binary mid/leading/none broadcast operations to AVX2 assembly kernels.
+func DispatchBinaryMidAVX2(op compute.OpType, isLHS bool, lhs, rhs, out unsafe.Pointer, A, B, C int, dtype dtypes.DType) bool {
+	if dtype != dtypes.Float32 {
+		return false
+	}
+	vec := lhs
+	bcast := rhs
+	if isLHS {
+		vec = rhs
+		bcast = lhs
+	}
+
+	switch op {
+	case compute.OpTypeAdd:
+		binaryMidAddFloat32AVX2(vec, bcast, out, A, B, C)
+		return true
+	case compute.OpTypeSub:
+		if !isLHS {
+			binaryMidSubRHSFloat32AVX2(vec, bcast, out, A, B, C)
+		} else {
+			binaryMidSubLHSFloat32AVX2(vec, bcast, out, A, B, C)
+		}
+		return true
+	case compute.OpTypeMul:
+		binaryMidMulFloat32AVX2(vec, bcast, out, A, B, C)
+		return true
+	case compute.OpTypeDiv:
+		if !isLHS {
+			binaryMidDivRHSFloat32AVX2(vec, bcast, out, A, B, C)
+		} else {
+			binaryMidDivLHSFloat32AVX2(vec, bcast, out, A, B, C)
+		}
+		return true
 	}
 	return false
 }
