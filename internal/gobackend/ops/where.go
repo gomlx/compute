@@ -14,6 +14,62 @@ func init() {
 	gobackend.SetNodeExecutor(compute.OpTypeWhere, gobackend.PriorityGeneric, execWhere)
 }
 
+// WhereFloat32ArchFn executes Where on contiguous float32 slices.
+// Returns true if handled, false to fall back to generic.
+type WhereFloat32ArchFn func(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool
+
+type whereArchEntry struct {
+	priority gobackend.RegisterPriority
+	fn       WhereFloat32ArchFn
+}
+
+var (
+	whereArchEntries   []whereArchEntry
+	whereFloat32ArchFn WhereFloat32ArchFn
+)
+
+// SetWhereFloat32ArchDispatcher registers an architecture-specific float32 Where dispatcher with a priority.
+// Dispatchers are tried in descending order of priority; if a higher-priority dispatcher returns false,
+// the next one is tried before falling back to the generic implementation.
+func SetWhereFloat32ArchDispatcher(priority gobackend.RegisterPriority, fn WhereFloat32ArchFn) {
+	if priority < 0 || fn == nil {
+		return
+	}
+	entry := whereArchEntry{priority: priority, fn: fn}
+	idx := 0
+	for idx < len(whereArchEntries) && whereArchEntries[idx].priority > priority {
+		idx++
+	}
+	if idx < len(whereArchEntries) && whereArchEntries[idx].priority == priority {
+		whereArchEntries[idx] = entry
+	} else {
+		whereArchEntries = slices.Insert(whereArchEntries, idx, entry)
+	}
+	switch len(whereArchEntries) {
+	case 0:
+		whereFloat32ArchFn = nil
+	case 1:
+		whereFloat32ArchFn = whereArchEntries[0].fn
+	default:
+		entries := slices.Clone(whereArchEntries)
+		whereFloat32ArchFn = func(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool {
+			for _, e := range entries {
+				if e.fn(cond, onTrue, onFalse, out, onTrueIsScalar, onFalseIsScalar) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+}
+
+func whereFloat32Arch(cond []bool, onTrue, onFalse, out []float32, onTrueIsScalar, onFalseIsScalar bool) bool {
+	if whereFloat32ArchFn != nil {
+		return whereFloat32ArchFn(cond, onTrue, onFalse, out, onTrueIsScalar, onFalseIsScalar)
+	}
+	return false
+}
+
 // Where implements the compute.Builder interface.
 func Where(f *gobackend.Function, conditionOp, onTrueOp, onFalseOp compute.Value) (compute.Value, error) {
 	inputs, err := f.VerifyAndCastValues("Where", conditionOp, onTrueOp, onFalseOp)

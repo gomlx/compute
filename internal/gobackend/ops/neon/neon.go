@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/internal/gobackend/simdarch"
 )
 
@@ -56,6 +57,7 @@ func registerNEON() {
 		DispatchDupStridedBytesNEON,
 		DispatchConcat2StridedBytesNEON,
 	)
+	ops.SetWhereFloat32ArchDispatcher(gobackend.PriorityNEON, DispatchWhereFloat32NEON)
 	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityNEON, execConvGeneralNEON)
 }
 

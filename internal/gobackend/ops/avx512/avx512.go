@@ -10,6 +10,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/ops"
 )
 
 func init() {
@@ -59,6 +60,7 @@ func registerAVX512() {
 		DispatchDupStridedBytesAVX512,
 		DispatchConcat2StridedBytesAVX512,
 	)
+	ops.SetWhereFloat32ArchDispatcher(gobackend.PriorityAVX512, DispatchWhereFloat32AVX512)
 	gobackend.SetNodeExecutor(compute.OpTypeConvGeneral, gobackend.PriorityAVX512, execConvGeneralAVX512)
 }
 

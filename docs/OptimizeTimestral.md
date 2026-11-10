@@ -679,7 +679,7 @@ Before the AVX-512 optimizations in this pass, `Timestral-28M` ran in **`40.5 ms
    - Ported L2 `maxMPanelsPerSubChunk` sub-chunking, `sharedRHSPanels` buffer-allocation skipping (`needPackedRHS = false`), and multi-worker cooperative `sharedRHSPanels` packing to `matmul/avx512/large.go` (and regenerated `gen_large_{bf16,f16,f64}.go`).
    - Implemented `avx512PackLHSKernelRows8Float64Asm`, `avx512PackLHSKernelRows8Float16Asm`, and `avx512PackLHSKernelRows8BFloat16Asm` in assembly, plus `avx512SmallTransposedTile4x1{Float32,Float64,Float16,BFloat16}Asm` for remainder tiles in `small_transposed`.
 
-5. **Priority 5 — AVX-512 `Where` Assembly & `LayerNorm` Pass 3 4× ZMM Unrolling ([`internal/gobackend/ops/where_amd64.s`](../internal/gobackend/ops/where_amd64.s), [`internal/gobackend/fusedops/avx512/layernorm_amd64.s`](../internal/gobackend/fusedops/avx512/layernorm_amd64.s))**:
+5. **Priority 5 — AVX-512 `Where` Assembly & `LayerNorm` Pass 3 4× ZMM Unrolling ([`internal/gobackend/ops/avx512/where_amd64.s`](../internal/gobackend/ops/avx512/where_amd64.s), [`internal/gobackend/fusedops/avx512/layernorm_amd64.s`](../internal/gobackend/fusedops/avx512/layernorm_amd64.s))**:
    - Added `where{VV,VS,SV,SS}Float32AVX512Asm` using `VPMOVZXBD` + `VPTESTMD` into `K1`/`K2` + 512-bit masked `VMOVAPS` (32 floats per iteration).
    - Unrolled `pass3_gamma_loop64` (`Float32` gamma-only) and `pass3_64_both_loop32` (`Float64` gamma+beta) 4× in `layernorm_amd64.s`.
 
