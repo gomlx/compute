@@ -3423,6 +3423,136 @@ func dispatchBinarySIMD[T any](
 				}
 			}
 		}
+	case bcastCfg.Pattern == gobackend.BroadcastRowColMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				if v1v2 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						bStart := ab % B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := a * C
+						rOff := bStart * C
+						oOff := ab * C
+						v1v2(lhs[lOff:lOff+C], rhs[rOff:rOff+bCount*C], output[oOff:oOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						b := ab % B
+						lOff := a * C
+						rOff := b * C
+						oOff := ab * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff:oOff+C])
+					}
+				}
+			})
+		} else {
+			for a := range A {
+				lOff := a * C
+				oOff := a * bc
+				if v1v2 != nil {
+					v1v2(lhs[lOff:lOff+C], rhs[:bc], output[oOff:oOff+bc], B, C)
+				} else {
+					for b := range B {
+						rOff := b * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff+rOff:oOff+rOff+C])
+					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastColRowMatch:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		bc := B * C
+		if canParallelize && A*B > 1 {
+			abTotal := A * B
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				if v2v1 != nil {
+					for ab := abStart; ab < abEnd; {
+						a := ab / B
+						bStart := ab % B
+						aEnd := min(abEnd, (a+1)*B)
+						bCount := aEnd - ab
+						lOff := bStart * C
+						rOff := a * C
+						oOff := ab * C
+						v2v1(lhs[lOff:lOff+bCount*C], rhs[rOff:rOff+C], output[oOff:oOff+bCount*C], bCount, C)
+						ab = aEnd
+					}
+				} else {
+					for ab := abStart; ab < abEnd; ab++ {
+						a := ab / B
+						b := ab % B
+						lOff := b * C
+						rOff := a * C
+						oOff := ab * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff:oOff+C])
+					}
+				}
+			})
+		} else {
+			for a := range A {
+				rOff := a * C
+				oOff := a * bc
+				if v2v1 != nil {
+					v2v1(lhs[:bc], rhs[rOff:rOff+C], output[oOff:oOff+bc], B, C)
+				} else {
+					for b := range B {
+						lOff := b * C
+						vv(lhs[lOff:lOff+C], rhs[rOff:rOff+C], output[oOff+lOff:oOff+lOff+C])
+					}
+				}
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMatchRowCol:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					rOff := a * C
+					oOff := ab * C
+					sv(lhs[ab], rhs[rOff:rOff+C], output[oOff:oOff+C])
+				}
+			})
+		} else {
+			for ab := range abTotal {
+				a := ab / B
+				rOff := a * C
+				oOff := ab * C
+				sv(lhs[ab], rhs[rOff:rOff+C], output[oOff:oOff+C])
+			}
+		}
+	case bcastCfg.Pattern == gobackend.BroadcastMatchColRow:
+		A, B, C := bcastCfg.A, bcastCfg.B, bcastCfg.C
+		abTotal := A * B
+		if canParallelize && abTotal > 1 {
+			minAB := max(1, binarySIMDChunkElements/max(1, C))
+			backend.Scheduler.ParallelizeChunks(abTotal, minAB, func(abStart, abEnd int) {
+				for ab := abStart; ab < abEnd; ab++ {
+					a := ab / B
+					lOff := a * C
+					oOff := ab * C
+					vs(lhs[lOff:lOff+C], rhs[ab], output[oOff:oOff+C])
+				}
+			})
+		} else {
+			for ab := range abTotal {
+				a := ab / B
+				lOff := a * C
+				oOff := ab * C
+				vs(lhs[lOff:lOff+C], rhs[ab], output[oOff:oOff+C])
+			}
+		}
 	default:
 		return gobackend.ErrFallback
 	}

@@ -219,6 +219,18 @@ const (
 	// BroadcastOuterInnerLHS indicates LHS is collapsed into [1, B, 1] and RHS into [A, B, C], producing [A, B, C].
 	BroadcastOuterInnerLHS
 
+	// BroadcastRowColMatch indicates LHS is collapsed into [A, 1, C] and RHS into [1, B, C], producing [A, B, C].
+	BroadcastRowColMatch
+
+	// BroadcastColRowMatch indicates LHS is collapsed into [1, B, C] and RHS into [A, 1, C], producing [A, B, C].
+	BroadcastColRowMatch
+
+	// BroadcastMatchRowCol indicates LHS is collapsed into [A, B, 1] and RHS into [A, 1, C], producing [A, B, C].
+	BroadcastMatchRowCol
+
+	// BroadcastMatchColRow indicates LHS is collapsed into [A, 1, C] and RHS into [A, B, 1], producing [A, B, C].
+	BroadcastMatchColRow
+
 	// BroadcastGeneral indicates arbitrary multi-axis broadcasting.
 	BroadcastGeneral
 )
@@ -379,6 +391,14 @@ func DetermineBroadcastConfig(lhsShape, rhsShape, tgtShape shapes.Shape) Broadca
 			return BroadcastConfig{Pattern: BroadcastOuterInnerRHS, A: a, B: b, C: c}
 		case segModes[0] == modeBcastLHS && segModes[1] == modeMatch && segModes[2] == modeBcastLHS:
 			return BroadcastConfig{Pattern: BroadcastOuterInnerLHS, A: a, B: b, C: c}
+		case segModes[0] == modeBcastRHS && segModes[1] == modeBcastLHS && segModes[2] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastRowColMatch, A: a, B: b, C: c}
+		case segModes[0] == modeBcastLHS && segModes[1] == modeBcastRHS && segModes[2] == modeMatch:
+			return BroadcastConfig{Pattern: BroadcastColRowMatch, A: a, B: b, C: c}
+		case segModes[0] == modeMatch && segModes[1] == modeBcastRHS && segModes[2] == modeBcastLHS:
+			return BroadcastConfig{Pattern: BroadcastMatchRowCol, A: a, B: b, C: c}
+		case segModes[0] == modeMatch && segModes[1] == modeBcastLHS && segModes[2] == modeBcastRHS:
+			return BroadcastConfig{Pattern: BroadcastMatchColRow, A: a, B: b, C: c}
 		}
 	}
 
