@@ -249,6 +249,7 @@ func BenchmarkSmallNoSIMD(b *testing.B) {
 		{"NonTransposed/[25,69]x[69,4]", dot.LayoutNonTransposed, 25, 69, 4},
 		{"NonTransposed/[49,4]x[4,1]", dot.LayoutNonTransposed, 49, 4, 1},
 		{"NonTransposed/[49,69]x[69,4]", dot.LayoutNonTransposed, 49, 69, 4},
+		{"NonTransposed/[32,64]x[64,32]", dot.LayoutNonTransposed, 32, 64, 32},
 
 		{"Transposed/[128,4]x[1,4]", dot.LayoutTransposed, 128, 4, 1},
 		{"Transposed/[128,69]x[4,69]", dot.LayoutTransposed, 128, 69, 4},
@@ -256,6 +257,7 @@ func BenchmarkSmallNoSIMD(b *testing.B) {
 		{"Transposed/[25,69]x[4,69]", dot.LayoutTransposed, 25, 69, 4},
 		{"Transposed/[49,4]x[1,4]", dot.LayoutTransposed, 49, 4, 1},
 		{"Transposed/[49,69]x[4,69]", dot.LayoutTransposed, 49, 69, 4},
+		{"Transposed/[32,64]x[32,64]", dot.LayoutTransposed, 32, 64, 32},
 	}
 
 	for _, tc := range cases {

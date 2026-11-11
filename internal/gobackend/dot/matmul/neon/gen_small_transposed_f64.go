@@ -36,9 +36,9 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 	rhsStride := contractingSize * rhsCrossSize
 	outputStride := lhsCrossSize * rhsCrossSize
 
-	lhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(lhs)))
-	rhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(rhs)))
-	outputPtr := uintptr(unsafe.Pointer(unsafe.SliceData(output)))
+	lhsPtr := unsafe.Pointer(unsafe.SliceData(lhs))
+	rhsPtr := unsafe.Pointer(unsafe.SliceData(rhs))
+	outputPtr := unsafe.Pointer(unsafe.SliceData(output))
 
 	//alt:f32 const elemSize = 4
 	//alt:bf16  const elemSize = 2
@@ -52,10 +52,6 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 	rhsByteStride := uintptr(rhsStride) * elemSize
 	outputByteStride := uintptr(outputStride) * outputElemSize
 
-	lhsBase := lhsPtr + uintptr(batchStart)*lhsByteStride
-	rhsBase := rhsPtr + uintptr(batchStart)*rhsByteStride
-	outputBase := outputPtr + uintptr(batchStart)*outputByteStride
-
 	outStrideBytes := rhsCrossSize * outputElemSize
 	//alt:bf16  useBFDOT := NEONUseBFDOT
 
@@ -63,21 +59,26 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 	var tmpOut [16]float64 //alt:f64
 	tmpPtr := unsafe.Pointer(&tmpOut[0])
 
-	for range batchCount {
+	for b := range batchCount {
+		bIdx := uintptr(batchStart + b)
+		lhsBase := unsafe.Add(lhsPtr, bIdx*lhsByteStride)
+		rhsBase := unsafe.Add(rhsPtr, bIdx*rhsByteStride)
+		outputBase := unsafe.Add(outputPtr, bIdx*outputByteStride)
+
 		row := 0
 		for ; row+3 < lhsCrossSize; row += 4 {
-			lRow0 := unsafe.Pointer(lhsBase + uintptr((row+0)*contractingSize)*elemSize)
-			lRow1 := unsafe.Pointer(lhsBase + uintptr((row+1)*contractingSize)*elemSize)
-			lRow2 := unsafe.Pointer(lhsBase + uintptr((row+2)*contractingSize)*elemSize)
-			lRow3 := unsafe.Pointer(lhsBase + uintptr((row+3)*contractingSize)*elemSize)
+			lRow0 := unsafe.Add(lhsBase, uintptr((row+0)*contractingSize)*elemSize)
+			lRow1 := unsafe.Add(lhsBase, uintptr((row+1)*contractingSize)*elemSize)
+			lRow2 := unsafe.Add(lhsBase, uintptr((row+2)*contractingSize)*elemSize)
+			lRow3 := unsafe.Add(lhsBase, uintptr((row+3)*contractingSize)*elemSize)
 
 			col := 0
 			for ; col+3 < rhsCrossSize; col += 4 {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr((col+0)*contractingSize)*elemSize)
-				rCol1 := unsafe.Pointer(rhsBase + uintptr((col+1)*contractingSize)*elemSize)
-				rCol2 := unsafe.Pointer(rhsBase + uintptr((col+2)*contractingSize)*elemSize)
-				rCol3 := unsafe.Pointer(rhsBase + uintptr((col+3)*contractingSize)*elemSize)
-				outPtr := unsafe.Pointer(outputBase + uintptr(row*rhsCrossSize+col)*outputElemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr((col+0)*contractingSize)*elemSize)
+				rCol1 := unsafe.Add(rhsBase, uintptr((col+1)*contractingSize)*elemSize)
+				rCol2 := unsafe.Add(rhsBase, uintptr((col+2)*contractingSize)*elemSize)
+				rCol3 := unsafe.Add(rhsBase, uintptr((col+3)*contractingSize)*elemSize)
+				outPtr := unsafe.Add(outputBase, uintptr(row*rhsCrossSize+col)*outputElemSize)
 
 				//alt:f32 neonSmallTransposedTile4x4Float32Asm(
 				//alt:f16  neonSmallTransposedTile4x4Float16Asm(
@@ -97,8 +98,8 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 			}
 
 			for ; col < rhsCrossSize; col++ {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr(col*contractingSize)*elemSize)
-				outPtr := unsafe.Pointer(outputBase + uintptr(row*rhsCrossSize+col)*outputElemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr(col*contractingSize)*elemSize)
+				outPtr := unsafe.Add(outputBase, uintptr(row*rhsCrossSize+col)*outputElemSize)
 
 				//alt:f32 neonSmallTransposedTile4x1Float32Asm(
 				//alt:f16  neonSmallTransposedTile4x1Float16Asm(
@@ -125,17 +126,17 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 			r2Idx := min(row+2, lhsCrossSize-1)
 			r3Idx := min(row+3, lhsCrossSize-1)
 
-			lRow0 := unsafe.Pointer(lhsBase + uintptr(r0Idx*contractingSize)*elemSize)
-			lRow1 := unsafe.Pointer(lhsBase + uintptr(r1Idx*contractingSize)*elemSize)
-			lRow2 := unsafe.Pointer(lhsBase + uintptr(r2Idx*contractingSize)*elemSize)
-			lRow3 := unsafe.Pointer(lhsBase + uintptr(r3Idx*contractingSize)*elemSize)
+			lRow0 := unsafe.Add(lhsBase, uintptr(r0Idx*contractingSize)*elemSize)
+			lRow1 := unsafe.Add(lhsBase, uintptr(r1Idx*contractingSize)*elemSize)
+			lRow2 := unsafe.Add(lhsBase, uintptr(r2Idx*contractingSize)*elemSize)
+			lRow3 := unsafe.Add(lhsBase, uintptr(r3Idx*contractingSize)*elemSize)
 
 			col := 0
 			for ; col+3 < rhsCrossSize; col += 4 {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr((col+0)*contractingSize)*elemSize)
-				rCol1 := unsafe.Pointer(rhsBase + uintptr((col+1)*contractingSize)*elemSize)
-				rCol2 := unsafe.Pointer(rhsBase + uintptr((col+2)*contractingSize)*elemSize)
-				rCol3 := unsafe.Pointer(rhsBase + uintptr((col+3)*contractingSize)*elemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr((col+0)*contractingSize)*elemSize)
+				rCol1 := unsafe.Add(rhsBase, uintptr((col+1)*contractingSize)*elemSize)
+				rCol2 := unsafe.Add(rhsBase, uintptr((col+2)*contractingSize)*elemSize)
+				rCol3 := unsafe.Add(rhsBase, uintptr((col+3)*contractingSize)*elemSize)
 
 				//alt:f32 neonSmallTransposedTile4x4Float32Asm(
 				//alt:f16  neonSmallTransposedTile4x4Float16Asm(
@@ -154,8 +155,8 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 				//alt:bf16  useBFDOT)
 
 				for r := range remRows {
-					//alt:f32|bf16|f16 outRowPtr := (*[4]float32)(unsafe.Pointer(outputBase + uintptr((row+r)*rhsCrossSize+col)*outputElemSize))
-					outRowPtr := (*[4]float64)(unsafe.Pointer(outputBase + uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) //alt:f64
+					//alt:f32|bf16|f16 outRowPtr := (*[4]float32)(unsafe.Add(outputBase, uintptr((row+r)*rhsCrossSize+col)*outputElemSize))
+					outRowPtr := (*[4]float64)(unsafe.Add(outputBase, uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) //alt:f64
 					outRowPtr[0] = tmpOut[r*4+0]
 					outRowPtr[1] = tmpOut[r*4+1]
 					outRowPtr[2] = tmpOut[r*4+2]
@@ -164,7 +165,7 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 			}
 
 			for ; col < rhsCrossSize; col++ {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr(col*contractingSize)*elemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr(col*contractingSize)*elemSize)
 
 				//alt:f32 neonSmallTransposedTile4x1Float32Asm(
 				//alt:f16  neonSmallTransposedTile4x1Float16Asm(
@@ -183,14 +184,10 @@ func neonSmallFloat64TransposedAsm( //alt:f64
 				//alt:bf16  useBFDOT)
 
 				for r := range remRows {
-					//alt:f32|bf16|f16 *(*float32)(unsafe.Pointer(outputBase + uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) = tmpOut[r]
-					*(*float64)(unsafe.Pointer(outputBase + uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) = tmpOut[r] //alt:f64
+					//alt:f32|bf16|f16 *(*float32)(unsafe.Add(outputBase, uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) = tmpOut[r]
+					*(*float64)(unsafe.Add(outputBase, uintptr((row+r)*rhsCrossSize+col)*outputElemSize)) = tmpOut[r] //alt:f64
 				}
 			}
 		}
-
-		lhsBase += lhsByteStride
-		rhsBase += rhsByteStride
-		outputBase += outputByteStride
 	}
 }
