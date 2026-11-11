@@ -168,10 +168,10 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, func(rStart, rEnd int) {
 			chunkOuter := rEnd - rStart
 			rowOffset := rStart * normSize
-			chunkIn := unsafe.Pointer(uintptr(inPtr) + uintptr(rowOffset*elemSize))
-			chunkOut := unsafe.Pointer(uintptr(outPtr) + uintptr(rowOffset*elemSize))
+			chunkIn := unsafe.Add(inPtr, rowOffset*elemSize)
+			chunkOut := unsafe.Add(outPtr, rowOffset*elemSize)
 			if resPtr != nil {
-				chunkRes := unsafe.Pointer(uintptr(resPtr) + uintptr(rowOffset*elemSize))
+				chunkRes := unsafe.Add(resPtr, rowOffset*elemSize)
 				if resArchFn != nil && resArchFn(chunkIn, chunkRes, chunkOut, gPtr, bPtr, chunkOuter, normSize, data.epsilon, dtype) {
 					return
 				}

@@ -131,17 +131,13 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 	}
 
 	// 3. For N >= vecWidth: Column-vectorized execution accumulating in registers across K.
-	lhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(lhs)))
-	rhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(rhs)))
-	outputPtr := uintptr(unsafe.Pointer(unsafe.SliceData(output)))
+	lhsPtr := unsafe.Pointer(unsafe.SliceData(lhs))
+	rhsPtr := unsafe.Pointer(unsafe.SliceData(rhs))
+	outputPtr := unsafe.Pointer(unsafe.SliceData(output))
 
 	lhsByteStride := uintptr(lhsStride) * elemSize
 	rhsByteStride := uintptr(rhsStride) * elemSize
 	outputByteStride := uintptr(outputStride) * outputElemSize
-
-	lhsBase := lhsPtr + uintptr(batchStart)*lhsByteStride
-	rhsBase := rhsPtr + uintptr(batchStart)*rhsByteStride
-	outputBase := outputPtr + uintptr(batchStart)*outputByteStride
 
 	rowStrideBytes := rhsCrossSize * elemSize
 	//alt:bf16 useBFDOT := NEONUseBFDOT
@@ -150,7 +146,12 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 	//alt:f64 var dummyOut [8]float64
 	dummyPtr := unsafe.Pointer(&dummyOut[0])
 
-	for range batchCount {
+	for b := range batchCount {
+		bIdx := uintptr(batchStart + b)
+		lhsBase := unsafe.Add(lhsPtr, bIdx*lhsByteStride)
+		rhsBase := unsafe.Add(rhsPtr, bIdx*rhsByteStride)
+		outputBase := unsafe.Add(outputPtr, bIdx*outputByteStride)
+
 		row := 0
 		for ; row < lhsCrossSize; row += 4 {
 			remRows := lhsCrossSize - row
@@ -159,27 +160,27 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 			r2Idx := min(row+2, lhsCrossSize-1)
 			r3Idx := min(row+3, lhsCrossSize-1)
 
-			lRow0 := unsafe.Pointer(lhsBase + uintptr(r0Idx*contractingSize)*elemSize)
-			lRow1 := unsafe.Pointer(lhsBase + uintptr(r1Idx*contractingSize)*elemSize)
-			lRow2 := unsafe.Pointer(lhsBase + uintptr(r2Idx*contractingSize)*elemSize)
-			lRow3 := unsafe.Pointer(lhsBase + uintptr(r3Idx*contractingSize)*elemSize)
+			lRow0 := unsafe.Add(lhsBase, uintptr(r0Idx*contractingSize)*elemSize)
+			lRow1 := unsafe.Add(lhsBase, uintptr(r1Idx*contractingSize)*elemSize)
+			lRow2 := unsafe.Add(lhsBase, uintptr(r2Idx*contractingSize)*elemSize)
+			lRow3 := unsafe.Add(lhsBase, uintptr(r3Idx*contractingSize)*elemSize)
 
 			col := 0
 			// 4 rows x 16 cols tile //alt:f32|bf16|f16
 			for ; col+15 < rhsCrossSize; col += 16 { //alt:f32|bf16|f16
-				rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)                               //alt:f32|bf16|f16
-				outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
-				outRow1 := dummyPtr                                                                      //alt:f32|bf16|f16
-				outRow2 := dummyPtr                                                                      //alt:f32|bf16|f16
-				outRow3 := dummyPtr                                                                      //alt:f32|bf16|f16
-				if remRows > 1 {                                                                         //alt:f32|bf16|f16
-					outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
+				rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)                               //alt:f32|bf16|f16
+				outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
+				outRow1 := dummyPtr                                                                 //alt:f32|bf16|f16
+				outRow2 := dummyPtr                                                                 //alt:f32|bf16|f16
+				outRow3 := dummyPtr                                                                 //alt:f32|bf16|f16
+				if remRows > 1 {                                                                    //alt:f32|bf16|f16
+					outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
 				} //alt:f32|bf16|f16
 				if remRows > 2 { //alt:f32|bf16|f16
-					outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
+					outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
 				} //alt:f32|bf16|f16
 				if remRows > 3 { //alt:f32|bf16|f16
-					outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
+					outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
 				} //alt:f32|bf16|f16
 
 				neonSmallNonTransposedTile4x16Float32Asm( //alt:f32
@@ -200,19 +201,19 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 
 			// 4 rows x 4 cols tile //alt:f32
 			for ; col+3 < rhsCrossSize; col += 4 { //alt:f32
-				rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)                               //alt:f32
-				outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize) //alt:f32
-				outRow1 := dummyPtr                                                                      //alt:f32
-				outRow2 := dummyPtr                                                                      //alt:f32
-				outRow3 := dummyPtr                                                                      //alt:f32
-				if remRows > 1 {                                                                         //alt:f32
-					outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize) //alt:f32
+				rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)                               //alt:f32
+				outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize) //alt:f32
+				outRow1 := dummyPtr                                                                 //alt:f32
+				outRow2 := dummyPtr                                                                 //alt:f32
+				outRow3 := dummyPtr                                                                 //alt:f32
+				if remRows > 1 {                                                                    //alt:f32
+					outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize) //alt:f32
 				} //alt:f32
 				if remRows > 2 { //alt:f32
-					outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize) //alt:f32
+					outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize) //alt:f32
 				} //alt:f32
 				if remRows > 3 { //alt:f32
-					outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32
+					outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32
 				} //alt:f32
 
 				neonSmallNonTransposedTile4x4Float32Asm( //alt:f32
@@ -225,19 +226,19 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 
 			// 4 rows x 8 cols tile //alt:bf16|f16
 			//alt:bf16 for ; col+7 < rhsCrossSize; col += 8 {
-			//alt:bf16 	rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)
-			//alt:bf16 	outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
+			//alt:bf16 	rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)
+			//alt:bf16 	outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
 			//alt:bf16 	outRow1 := dummyPtr
 			//alt:bf16 	outRow2 := dummyPtr
 			//alt:bf16 	outRow3 := dummyPtr
 			//alt:bf16 	if remRows > 1 {
-			//alt:bf16 		outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
+			//alt:bf16 		outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
 			//alt:bf16 	}
 			//alt:bf16 	if remRows > 2 {
-			//alt:bf16 		outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
+			//alt:bf16 		outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
 			//alt:bf16 	}
 			//alt:bf16 	if remRows > 3 {
-			//alt:bf16 		outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
+			//alt:bf16 		outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
 			//alt:bf16 	}
 			//alt:bf16 	neonSmallNonTransposedTile4x8BFloat16Asm(
 			//alt:bf16 		lRow0, lRow1, lRow2, lRow3,
@@ -249,19 +250,19 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 			//alt:bf16 }
 
 			//alt:f16 for ; col+7 < rhsCrossSize; col += 8 {
-			//alt:f16 	rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)
-			//alt:f16 	outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
+			//alt:f16 	rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)
+			//alt:f16 	outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
 			//alt:f16 	outRow1 := dummyPtr
 			//alt:f16 	outRow2 := dummyPtr
 			//alt:f16 	outRow3 := dummyPtr
 			//alt:f16 	if remRows > 1 {
-			//alt:f16 		outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
+			//alt:f16 		outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
 			//alt:f16 	}
 			//alt:f16 	if remRows > 2 {
-			//alt:f16 		outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
+			//alt:f16 		outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
 			//alt:f16 	}
 			//alt:f16 	if remRows > 3 {
-			//alt:f16 		outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
+			//alt:f16 		outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
 			//alt:f16 	}
 			//alt:f16 	neonSmallNonTransposedTile4x8Float16Asm(
 			//alt:f16 		lRow0, lRow1, lRow2, lRow3,
@@ -273,19 +274,19 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 
 			// 4 rows x 8 cols tile //alt:f64
 			//alt:f64 for ; col+7 < rhsCrossSize; col += 8 {
-			//alt:f64 	rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)
-			//alt:f64 	outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 	rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)
+			//alt:f64 	outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	outRow1 := dummyPtr
 			//alt:f64 	outRow2 := dummyPtr
 			//alt:f64 	outRow3 := dummyPtr
 			//alt:f64 	if remRows > 1 {
-			//alt:f64 		outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	if remRows > 2 {
-			//alt:f64 		outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	if remRows > 3 {
-			//alt:f64 		outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	neonSmallNonTransposedTile4x8Float64Asm(
 			//alt:f64 		lRow0, lRow1, lRow2, lRow3,
@@ -297,19 +298,19 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 
 			// 4 rows x 2 cols tile //alt:f64
 			//alt:f64 for ; col+1 < rhsCrossSize; col += 2 {
-			//alt:f64 	rhsCol := unsafe.Pointer(rhsBase + uintptr(col)*elemSize)
-			//alt:f64 	outRow0 := unsafe.Pointer(outputBase + uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 	rhsCol := unsafe.Add(rhsBase, uintptr(col)*elemSize)
+			//alt:f64 	outRow0 := unsafe.Add(outputBase, uintptr((row+0)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	outRow1 := dummyPtr
 			//alt:f64 	outRow2 := dummyPtr
 			//alt:f64 	outRow3 := dummyPtr
 			//alt:f64 	if remRows > 1 {
-			//alt:f64 		outRow1 = unsafe.Pointer(outputBase + uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow1 = unsafe.Add(outputBase, uintptr((row+1)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	if remRows > 2 {
-			//alt:f64 		outRow2 = unsafe.Pointer(outputBase + uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow2 = unsafe.Add(outputBase, uintptr((row+2)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	if remRows > 3 {
-			//alt:f64 		outRow3 = unsafe.Pointer(outputBase + uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
+			//alt:f64 		outRow3 = unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize)
 			//alt:f64 	}
 			//alt:f64 	neonSmallNonTransposedTile4x2Float64Asm(
 			//alt:f64 		lRow0, lRow1, lRow2, lRow3,
@@ -323,31 +324,27 @@ func neonSmallFloat32NonTransposedAsm( //alt:f32
 			rowLimit := min(row+4, lhsCrossSize)
 			for ; col < rhsCrossSize; col++ {
 				for r := row; r < rowLimit; r++ {
-					lRow := lhsBase + uintptr(r*contractingSize)*elemSize
+					lRow := unsafe.Add(lhsBase, uintptr(r*contractingSize)*elemSize)
 					var s float32 //alt:f32|bf16|f16
 					//alt:f64 var s float64
 					for k := range contractingSize {
 						kOffset := uintptr(k) * elemSize
-						lVal := *(*float32)(unsafe.Pointer(lRow + kOffset)) //alt:f32
-						//alt:bf16 lVal := (*(*bfloat16.BFloat16)(unsafe.Pointer(lRow + kOffset))).Float32()
-						//alt:f16 lVal := (*(*float16.Float16)(unsafe.Pointer(lRow + kOffset))).Float32()
-						//alt:f64 lVal := *(*float64)(unsafe.Pointer(lRow + kOffset))
+						lVal := *(*float32)(unsafe.Add(lRow, kOffset)) //alt:f32
+						//alt:bf16 lVal := (*(*bfloat16.BFloat16)(unsafe.Add(lRow, kOffset))).Float32()
+						//alt:f16 lVal := (*(*float16.Float16)(unsafe.Add(lRow, kOffset))).Float32()
+						//alt:f64 lVal := *(*float64)(unsafe.Add(lRow, kOffset))
 
-						rVal := *(*float32)(unsafe.Pointer(rhsBase + uintptr(k*rhsCrossSize+col)*elemSize)) //alt:f32
-						//alt:bf16 rVal := (*(*bfloat16.BFloat16)(unsafe.Pointer(rhsBase + uintptr(k*rhsCrossSize+col)*elemSize))).Float32()
-						//alt:f16 rVal := (*(*float16.Float16)(unsafe.Pointer(rhsBase + uintptr(k*rhsCrossSize+col)*elemSize))).Float32()
-						//alt:f64 rVal := *(*float64)(unsafe.Pointer(rhsBase + uintptr(k*rhsCrossSize+col)*elemSize))
+						rVal := *(*float32)(unsafe.Add(rhsBase, uintptr(k*rhsCrossSize+col)*elemSize)) //alt:f32
+						//alt:bf16 rVal := (*(*bfloat16.BFloat16)(unsafe.Add(rhsBase, uintptr(k*rhsCrossSize+col)*elemSize))).Float32()
+						//alt:f16 rVal := (*(*float16.Float16)(unsafe.Add(rhsBase, uintptr(k*rhsCrossSize+col)*elemSize))).Float32()
+						//alt:f64 rVal := *(*float64)(unsafe.Add(rhsBase, uintptr(k*rhsCrossSize+col)*elemSize))
 
 						s += lVal * rVal
 					}
-					*(*float32)(unsafe.Pointer(outputBase + uintptr(r*rhsCrossSize+col)*outputElemSize)) = s //alt:f32|bf16|f16
-					//alt:f64 *(*float64)(unsafe.Pointer(outputBase + uintptr(r*rhsCrossSize+col)*outputElemSize)) = s
+					*(*float32)(unsafe.Add(outputBase, uintptr(r*rhsCrossSize+col)*outputElemSize)) = s //alt:f32|bf16|f16
+					//alt:f64 *(*float64)(unsafe.Add(outputBase, uintptr(r*rhsCrossSize+col)*outputElemSize)) = s
 				}
 			}
 		}
-
-		lhsBase += lhsByteStride
-		rhsBase += rhsByteStride
-		outputBase += outputByteStride
 	}
 }

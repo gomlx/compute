@@ -37,9 +37,9 @@ func avx512SmallBFloat16TransposedAsm( //alt:bf16
 	rhsStride := contractingSize * rhsCrossSize
 	outputStride := lhsCrossSize * rhsCrossSize
 
-	lhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(lhs)))
-	rhsPtr := uintptr(unsafe.Pointer(unsafe.SliceData(rhs)))
-	outputPtr := uintptr(unsafe.Pointer(unsafe.SliceData(output)))
+	lhsPtr := unsafe.Pointer(unsafe.SliceData(lhs))
+	rhsPtr := unsafe.Pointer(unsafe.SliceData(rhs))
+	outputPtr := unsafe.Pointer(unsafe.SliceData(output))
 
 	//alt:f32 const elemSize = 4
 	const elemSize = 2 //alt:bf16
@@ -53,33 +53,34 @@ func avx512SmallBFloat16TransposedAsm( //alt:bf16
 	rhsByteStride := uintptr(rhsStride) * elemSize
 	outputByteStride := uintptr(outputStride) * outputElemSize
 
-	lhsBase := lhsPtr + uintptr(batchStart)*lhsByteStride
-	rhsBase := rhsPtr + uintptr(batchStart)*rhsByteStride
-	outputBase := outputPtr + uintptr(batchStart)*outputByteStride
+	for b := range batchCount {
+		bIdx := uintptr(batchStart + b)
+		lhsBase := unsafe.Add(lhsPtr, bIdx*lhsByteStride)
+		rhsBase := unsafe.Add(rhsPtr, bIdx*rhsByteStride)
+		outputBase := unsafe.Add(outputPtr, bIdx*outputByteStride)
 
-	for range batchCount {
 		for row := 0; row < lhsCrossSize; row += 4 {
 			r0 := row
 			r1 := min(row+1, lhsCrossSize-1)
 			r2 := min(row+2, lhsCrossSize-1)
 			r3 := min(row+3, lhsCrossSize-1)
 
-			lRow0 := unsafe.Pointer(lhsBase + uintptr(r0*contractingSize)*elemSize)
-			lRow1 := unsafe.Pointer(lhsBase + uintptr(r1*contractingSize)*elemSize)
-			lRow2 := unsafe.Pointer(lhsBase + uintptr(r2*contractingSize)*elemSize)
-			lRow3 := unsafe.Pointer(lhsBase + uintptr(r3*contractingSize)*elemSize)
+			lRow0 := unsafe.Add(lhsBase, uintptr(r0*contractingSize)*elemSize)
+			lRow1 := unsafe.Add(lhsBase, uintptr(r1*contractingSize)*elemSize)
+			lRow2 := unsafe.Add(lhsBase, uintptr(r2*contractingSize)*elemSize)
+			lRow3 := unsafe.Add(lhsBase, uintptr(r3*contractingSize)*elemSize)
 
 			col := 0
 			for ; col+3 < rhsCrossSize; col += 4 {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr((col+0)*contractingSize)*elemSize)
-				rCol1 := unsafe.Pointer(rhsBase + uintptr((col+1)*contractingSize)*elemSize)
-				rCol2 := unsafe.Pointer(rhsBase + uintptr((col+2)*contractingSize)*elemSize)
-				rCol3 := unsafe.Pointer(rhsBase + uintptr((col+3)*contractingSize)*elemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr((col+0)*contractingSize)*elemSize)
+				rCol1 := unsafe.Add(rhsBase, uintptr((col+1)*contractingSize)*elemSize)
+				rCol2 := unsafe.Add(rhsBase, uintptr((col+2)*contractingSize)*elemSize)
+				rCol3 := unsafe.Add(rhsBase, uintptr((col+3)*contractingSize)*elemSize)
 
-				outRow0 := unsafe.Pointer(outputBase + uintptr(r0*rhsCrossSize+col)*outputElemSize)
-				outRow1 := unsafe.Pointer(outputBase + uintptr(r1*rhsCrossSize+col)*outputElemSize)
-				outRow2 := unsafe.Pointer(outputBase + uintptr(r2*rhsCrossSize+col)*outputElemSize)
-				outRow3 := unsafe.Pointer(outputBase + uintptr(r3*rhsCrossSize+col)*outputElemSize)
+				outRow0 := unsafe.Add(outputBase, uintptr(r0*rhsCrossSize+col)*outputElemSize)
+				outRow1 := unsafe.Add(outputBase, uintptr(r1*rhsCrossSize+col)*outputElemSize)
+				outRow2 := unsafe.Add(outputBase, uintptr(r2*rhsCrossSize+col)*outputElemSize)
+				outRow3 := unsafe.Add(outputBase, uintptr(r3*rhsCrossSize+col)*outputElemSize)
 
 				//alt:f32 avx512SmallTransposedTile4x4Float32Asm(
 				avx512SmallTransposedTile4x4BFloat16Asm( //alt:bf16
@@ -93,11 +94,11 @@ func avx512SmallBFloat16TransposedAsm( //alt:bf16
 
 			// Remainder columns for these rows
 			for ; col < rhsCrossSize; col++ {
-				rCol0 := unsafe.Pointer(rhsBase + uintptr(col*contractingSize)*elemSize)
-				outRow0 := unsafe.Pointer(outputBase + uintptr(r0*rhsCrossSize+col)*outputElemSize)
-				outRow1 := unsafe.Pointer(outputBase + uintptr(r1*rhsCrossSize+col)*outputElemSize)
-				outRow2 := unsafe.Pointer(outputBase + uintptr(r2*rhsCrossSize+col)*outputElemSize)
-				outRow3 := unsafe.Pointer(outputBase + uintptr(r3*rhsCrossSize+col)*outputElemSize)
+				rCol0 := unsafe.Add(rhsBase, uintptr(col*contractingSize)*elemSize)
+				outRow0 := unsafe.Add(outputBase, uintptr(r0*rhsCrossSize+col)*outputElemSize)
+				outRow1 := unsafe.Add(outputBase, uintptr(r1*rhsCrossSize+col)*outputElemSize)
+				outRow2 := unsafe.Add(outputBase, uintptr(r2*rhsCrossSize+col)*outputElemSize)
+				outRow3 := unsafe.Add(outputBase, uintptr(r3*rhsCrossSize+col)*outputElemSize)
 
 				//alt:f32 avx512SmallTransposedTile4x1Float32Asm(
 				avx512SmallTransposedTile4x1BFloat16Asm( //alt:bf16
@@ -109,9 +110,5 @@ func avx512SmallBFloat16TransposedAsm( //alt:bf16
 					outRow0, outRow1, outRow2, outRow3)
 			}
 		}
-
-		lhsBase += lhsByteStride
-		rhsBase += rhsByteStride
-		outputBase += outputByteStride
 	}
 }

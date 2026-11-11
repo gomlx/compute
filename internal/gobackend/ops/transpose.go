@@ -272,6 +272,9 @@ func dispatchTranspose4D_0213(backend *gobackend.Backend, operand, output *gobac
 }
 
 func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim, dDim int) {
+	if startOuter >= endOuter || sDim <= 0 {
+		return
+	}
 	strideIn := hDim * dDim
 	sStrideOut := sDim * dDim
 	bStrideIn := sDim * strideIn
@@ -289,8 +292,11 @@ func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim,
 			h := outer % hDim
 			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
 			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
-			for range sDim {
+			for s := 0; ; {
 				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
+				if s++; s >= sDim {
+					break
+				}
 				src = unsafe.Add(src, stepIn)
 				dst = unsafe.Add(dst, 32)
 			}
@@ -302,9 +308,12 @@ func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim,
 			h := outer % hDim
 			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
 			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
-			for range sDim {
+			for s := 0; ; {
 				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
 				*(*[4]uint64)(unsafe.Add(dst, 32)) = *(*[4]uint64)(unsafe.Add(src, 32))
+				if s++; s >= sDim {
+					break
+				}
 				src = unsafe.Add(src, stepIn)
 				dst = unsafe.Add(dst, 64)
 			}
@@ -316,11 +325,14 @@ func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim,
 			h := outer % hDim
 			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
 			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
-			for range sDim {
+			for s := 0; ; {
 				*(*[4]uint64)(dst) = *(*[4]uint64)(src)
 				*(*[4]uint64)(unsafe.Add(dst, 32)) = *(*[4]uint64)(unsafe.Add(src, 32))
 				*(*[4]uint64)(unsafe.Add(dst, 64)) = *(*[4]uint64)(unsafe.Add(src, 64))
 				*(*[4]uint64)(unsafe.Add(dst, 96)) = *(*[4]uint64)(unsafe.Add(src, 96))
+				if s++; s >= sDim {
+					break
+				}
 				src = unsafe.Add(src, stepIn)
 				dst = unsafe.Add(dst, 128)
 			}
@@ -332,10 +344,13 @@ func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim,
 			h := outer % hDim
 			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
 			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
-			for range sDim {
+			for s := 0; ; {
 				for off := uintptr(0); off < 256; off += 64 {
 					*(*[4]uint64)(unsafe.Add(dst, off)) = *(*[4]uint64)(unsafe.Add(src, off))
 					*(*[4]uint64)(unsafe.Add(dst, off+32)) = *(*[4]uint64)(unsafe.Add(src, off+32))
+				}
+				if s++; s >= sDim {
+					break
 				}
 				src = unsafe.Add(src, stepIn)
 				dst = unsafe.Add(dst, 256)
@@ -348,10 +363,13 @@ func transpose4D_0213Block[T any](in, out []T, startOuter, endOuter, sDim, hDim,
 			h := outer % hDim
 			src := unsafe.Add(inPtr, uintptr(b*bStrideIn+h*dDim)*elemSize)
 			dst := unsafe.Add(outPtr, uintptr(outer*sStrideOut)*elemSize)
-			for range sDim {
+			for s := 0; ; {
 				for off := uintptr(0); off < 512; off += 64 {
 					*(*[4]uint64)(unsafe.Add(dst, off)) = *(*[4]uint64)(unsafe.Add(src, off))
 					*(*[4]uint64)(unsafe.Add(dst, off+32)) = *(*[4]uint64)(unsafe.Add(src, off+32))
+				}
+				if s++; s >= sDim {
+					break
 				}
 				src = unsafe.Add(src, stepIn)
 				dst = unsafe.Add(dst, 512)

@@ -1,3 +1,9 @@
+- 2026-11-11:
+  - Fixed `uintptr` pointer arithmetic (`checkptr: pointer arithmetic result points to invalid allocation`) and past-the-end loop pointer increments (`found bad pointer in Go heap`) under `-race` across `internal/gobackend`:
+    - Replaced `uintptr` Go heap pointer storage and casts with `unsafe.Pointer` + `unsafe.Add` across `SmallMatMul`, `LargeMatMul`, and LHS/RHS panel packing in `internal/gobackend/dot/matmul` (`nosimd`, `packing.go`, `avx2`, `avx512`, and `neon`) as well as `internal/gobackend/fusedops/layernorm_simd.go`.
+    - Eliminated final-iteration past-the-end `unsafe.Add` pointer increments in `internal/gobackend/ops/transpose.go` and `internal/gobackend/ops/{stridedcopy.go,avx2/stridedcopy_amd64.go,avx512/stridedcopy_amd64.go,neon/stridedcopy_arm64.go}`.
+    - Added shapes.DynamicShape() -> returns DynamicDim (-1) for dynamic shapes.
+
 - 2026-11-10:
   - Added centralized `internal/gobackend/simdarch` package, 1-cycle `TPIDR_EL0` 2-L2 / 2-SME hardware topology detection, 5-Tier Heterogeneous SME+NEON scheduling, fused in-SME small/medium GEMM, and Two-Regime Inter-Call/Inter-Op scheduling (`internal/gobackend/simdarch`, `internal/gobackend/dot/matmul/neon`, `internal/gobackend/scheduler`, documented in `internal/gobackend/simdarch/Neon.md` and `docs/GoBackendScheduler.md`) (#63):
     - **Centralized `simdarch` & 2-L2 / 2-SME Hardware Topology (`internal/gobackend/simdarch`)**: Moved SIMD feature flags (`IsNEONAllowed`, `IsSMEAllowed`, `IsAVX2Allowed`, `IsAVX512Allowed`, `NEONUseAsm`, `AVX2UseAsm`, `AVX512UseAsm`) and `darwin/arm64` SME cluster detection/locking (`AcquireSME`, `AcquireSMEWithLimit`, `AcquireSMEWithSpin`, `ReleaseSME`, `CurrentSMECluster`) into `internal/gobackend/simdarch`, using `MRS TPIDR_EL0, R0` (`clusterID = (TPIDR_EL0 >> 12) & 0xff`) to map Apple Silicon cores to their physical L2 cache and shared SME matrix unit in 1 CPU cycle.

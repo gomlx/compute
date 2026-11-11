@@ -64,68 +64,79 @@ func unsafePackRHS[T gotype.ScalarNotComplex](
 		return
 	}
 
-	srcPtr := uintptr(unsafe.Pointer(&src[0]))
-	dstPtr := uintptr(unsafe.Pointer(&dst[0]))
+	srcPtr := unsafe.Pointer(unsafe.SliceData(src))
+	dstBasePtr := unsafe.Pointer(unsafe.SliceData(dst))
 	elemSize := unsafe.Sizeof(T(0))
 	srcStrideBytes := uintptr(srcStrideCol) * elemSize
 	kernelColsBytes := uintptr(RHSL1KernelCols) * elemSize
+	dstOffset := uintptr(0)
 
 	for stripColIdx := 0; stripColIdx < rhsCols; stripColIdx += RHSL1KernelCols {
 		validCols := min(RHSL1KernelCols, rhsCols-stripColIdx)
 		srcIdxBase := (srcRowStart * srcStrideCol) + srcColStart + stripColIdx
-		pSrcRow := srcPtr + uintptr(srcIdxBase)*elemSize
+		pSrcRow := unsafe.Add(srcPtr, uintptr(srcIdxBase)*elemSize)
+		pDstRow := unsafe.Add(dstBasePtr, dstOffset)
 
 		if validCols == RHSL1KernelCols {
 			switch RHSL1KernelCols {
 			case 4:
-				for range contractingRows {
-					*(*[4]T)(unsafe.Pointer(dstPtr)) = *(*[4]T)(unsafe.Pointer(pSrcRow))
-					dstPtr += 4 * elemSize
-					pSrcRow += srcStrideBytes
+				for k := 0; ; {
+					*(*[4]T)(pDstRow) = *(*[4]T)(pSrcRow)
+					if k++; k >= contractingRows {
+						break
+					}
+					pDstRow = unsafe.Add(pDstRow, 4*elemSize)
+					pSrcRow = unsafe.Add(pSrcRow, srcStrideBytes)
 				}
 			case 8:
-				for range contractingRows {
-					*(*[8]T)(unsafe.Pointer(dstPtr)) = *(*[8]T)(unsafe.Pointer(pSrcRow))
-					dstPtr += 8 * elemSize
-					pSrcRow += srcStrideBytes
+				for k := 0; ; {
+					*(*[8]T)(pDstRow) = *(*[8]T)(pSrcRow)
+					if k++; k >= contractingRows {
+						break
+					}
+					pDstRow = unsafe.Add(pDstRow, 8*elemSize)
+					pSrcRow = unsafe.Add(pSrcRow, srcStrideBytes)
 				}
 			case 16:
-				for range contractingRows {
-					*(*[16]T)(unsafe.Pointer(dstPtr)) = *(*[16]T)(unsafe.Pointer(pSrcRow))
-					dstPtr += 16 * elemSize
-					pSrcRow += srcStrideBytes
+				for k := 0; ; {
+					*(*[16]T)(pDstRow) = *(*[16]T)(pSrcRow)
+					if k++; k >= contractingRows {
+						break
+					}
+					pDstRow = unsafe.Add(pDstRow, 16*elemSize)
+					pSrcRow = unsafe.Add(pSrcRow, srcStrideBytes)
 				}
 			default:
-				for range contractingRows {
-					pSrc := pSrcRow
-					pDst := dstPtr
-					for range RHSL1KernelCols {
-						*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
-						pSrc += elemSize
-						pDst += elemSize
+				for k := 0; ; {
+					for c := range RHSL1KernelCols {
+						off := uintptr(c) * elemSize
+						*(*T)(unsafe.Add(pDstRow, off)) = *(*T)(unsafe.Add(pSrcRow, off))
 					}
-					dstPtr += kernelColsBytes
-					pSrcRow += srcStrideBytes
+					if k++; k >= contractingRows {
+						break
+					}
+					pDstRow = unsafe.Add(pDstRow, kernelColsBytes)
+					pSrcRow = unsafe.Add(pSrcRow, srcStrideBytes)
 				}
 			}
 		} else {
 			// Fringe strip with partial valid columns and zero-padding
-			for range contractingRows {
-				pSrc := pSrcRow
-				pDst := dstPtr
-				for range validCols {
-					*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
-					pSrc += elemSize
-					pDst += elemSize
+			for k := 0; ; {
+				for c := range validCols {
+					off := uintptr(c) * elemSize
+					*(*T)(unsafe.Add(pDstRow, off)) = *(*T)(unsafe.Add(pSrcRow, off))
 				}
-				for range RHSL1KernelCols - validCols {
-					*(*T)(unsafe.Pointer(pDst)) = T(0)
-					pDst += elemSize
+				for c := validCols; c < RHSL1KernelCols; c++ {
+					*(*T)(unsafe.Add(pDstRow, uintptr(c)*elemSize)) = T(0)
 				}
-				dstPtr += kernelColsBytes
-				pSrcRow += srcStrideBytes
+				if k++; k >= contractingRows {
+					break
+				}
+				pDstRow = unsafe.Add(pDstRow, kernelColsBytes)
+				pSrcRow = unsafe.Add(pSrcRow, srcStrideBytes)
 			}
 		}
+		dstOffset += uintptr(contractingRows) * kernelColsBytes
 	}
 }
 
@@ -201,14 +212,13 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 		return
 	}
 
-	panelPtr := uintptr(unsafe.Pointer(&panel[0]))
-	lhsPtr := uintptr(unsafe.Pointer(&lhs[0]))
+	panelBasePtr := unsafe.Pointer(unsafe.SliceData(panel))
+	lhsPtr := unsafe.Pointer(unsafe.SliceData(lhs))
 	elemSize := unsafe.Sizeof(T(0))
 	kernelRowsBytes := uintptr(kernelRows) * elemSize
 	lhsColsBytes := uintptr(lhsCols) * elemSize
-	lhsColsBytes4 := 4 * lhsColsBytes
-	elemSize4 := 4 * elemSize
 	stripSizeBytes := uintptr(contractingCols) * kernelRowsBytes
+	panelOffsetBytes := uintptr(0)
 
 	fullStripsRows := (copyRows / kernelRows) * kernelRows
 
@@ -217,232 +227,180 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 	case kernelRows == 2:
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-
-			pSrc0 := pSrcBase
-			pSrc1 := pSrcBase + lhsColsBytes
-			pDst := panelPtr
+			pSrc0 := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+			pSrc1 := unsafe.Add(pSrc0, lhsColsBytes)
+			pDstBase := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
 			col := 0
 			for ; col+1 < contractingCols; col += 2 {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				*(*[2]T)(unsafe.Pointer(pDst)) = [2]T{v0, v1}
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (2 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				*(*[2]T)(unsafe.Add(pDstBase, dstOff)) = [2]T{v0, v1}
 
-				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
-				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
-				*(*[2]T)(unsafe.Pointer(pDst + 2*elemSize)) = [2]T{v0_1, v1_1}
-
-				pSrc0 += 2 * elemSize
-				pSrc1 += 2 * elemSize
-				pDst += 4 * elemSize
+				srcOff1 := srcOff + elemSize
+				v0_1 := *(*T)(unsafe.Add(pSrc0, srcOff1))
+				v1_1 := *(*T)(unsafe.Add(pSrc1, srcOff1))
+				*(*[2]T)(unsafe.Add(pDstBase, dstOff+2*elemSize)) = [2]T{v0_1, v1_1}
 			}
 			for ; col < contractingCols; col++ {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				*(*[2]T)(unsafe.Pointer(pDst)) = [2]T{v0, v1}
-
-				pSrc0 += elemSize
-				pSrc1 += elemSize
-				pDst += 2 * elemSize
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (2 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				*(*[2]T)(unsafe.Add(pDstBase, dstOff)) = [2]T{v0, v1}
 			}
-			panelPtr += stripSizeBytes
+			panelOffsetBytes += stripSizeBytes
 		}
 	case kernelRows == 4:
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-
-			pSrc0 := pSrcBase
-			pSrc1 := pSrc0 + lhsColsBytes
-			pSrc2 := pSrc1 + lhsColsBytes
-			pSrc3 := pSrc2 + lhsColsBytes
-
-			pDst := panelPtr
+			pSrc0 := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+			pSrc1 := unsafe.Add(pSrc0, lhsColsBytes)
+			pSrc2 := unsafe.Add(pSrc1, lhsColsBytes)
+			pSrc3 := unsafe.Add(pSrc2, lhsColsBytes)
+			pDstBase := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
 			col := 0
 			for ; col+1 < contractingCols; col += 2 {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				v2 := *(*T)(unsafe.Pointer(pSrc2))
-				v3 := *(*T)(unsafe.Pointer(pSrc3))
-				*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (4 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+				v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+				*(*[4]T)(unsafe.Add(pDstBase, dstOff)) = [4]T{v0, v1, v2, v3}
 
-				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
-				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
-				v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
-				v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
-				*(*[4]T)(unsafe.Pointer(pDst + 4*elemSize)) = [4]T{v0_1, v1_1, v2_1, v3_1}
-
-				pSrc0 += 2 * elemSize
-				pSrc1 += 2 * elemSize
-				pSrc2 += 2 * elemSize
-				pSrc3 += 2 * elemSize
-				pDst += 8 * elemSize
+				srcOff1 := srcOff + elemSize
+				v0_1 := *(*T)(unsafe.Add(pSrc0, srcOff1))
+				v1_1 := *(*T)(unsafe.Add(pSrc1, srcOff1))
+				v2_1 := *(*T)(unsafe.Add(pSrc2, srcOff1))
+				v3_1 := *(*T)(unsafe.Add(pSrc3, srcOff1))
+				*(*[4]T)(unsafe.Add(pDstBase, dstOff+4*elemSize)) = [4]T{v0_1, v1_1, v2_1, v3_1}
 			}
 			for ; col < contractingCols; col++ {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				v2 := *(*T)(unsafe.Pointer(pSrc2))
-				v3 := *(*T)(unsafe.Pointer(pSrc3))
-				*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
-
-				pSrc0 += elemSize
-				pSrc1 += elemSize
-				pSrc2 += elemSize
-				pSrc3 += elemSize
-				pDst += 4 * elemSize
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (4 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+				v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+				*(*[4]T)(unsafe.Add(pDstBase, dstOff)) = [4]T{v0, v1, v2, v3}
 			}
-			panelPtr += stripSizeBytes
+			panelOffsetBytes += stripSizeBytes
 		}
 	case kernelRows == 8:
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-
-			pSrc0 := pSrcBase
-			pSrc1 := pSrc0 + lhsColsBytes
-			pSrc2 := pSrc1 + lhsColsBytes
-			pSrc3 := pSrc2 + lhsColsBytes
-			pSrc4 := pSrc3 + lhsColsBytes
-			pSrc5 := pSrc4 + lhsColsBytes
-			pSrc6 := pSrc5 + lhsColsBytes
-			pSrc7 := pSrc6 + lhsColsBytes
-
-			pDst := panelPtr
+			pSrc0 := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+			pSrc1 := unsafe.Add(pSrc0, lhsColsBytes)
+			pSrc2 := unsafe.Add(pSrc1, lhsColsBytes)
+			pSrc3 := unsafe.Add(pSrc2, lhsColsBytes)
+			pSrc4 := unsafe.Add(pSrc3, lhsColsBytes)
+			pSrc5 := unsafe.Add(pSrc4, lhsColsBytes)
+			pSrc6 := unsafe.Add(pSrc5, lhsColsBytes)
+			pSrc7 := unsafe.Add(pSrc6, lhsColsBytes)
+			pDstBase := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
 			col := 0
 			for ; col+1 < contractingCols; col += 2 {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				v2 := *(*T)(unsafe.Pointer(pSrc2))
-				v3 := *(*T)(unsafe.Pointer(pSrc3))
-				v4 := *(*T)(unsafe.Pointer(pSrc4))
-				v5 := *(*T)(unsafe.Pointer(pSrc5))
-				v6 := *(*T)(unsafe.Pointer(pSrc6))
-				v7 := *(*T)(unsafe.Pointer(pSrc7))
-				*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (8 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+				v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+				v4 := *(*T)(unsafe.Add(pSrc4, srcOff))
+				v5 := *(*T)(unsafe.Add(pSrc5, srcOff))
+				v6 := *(*T)(unsafe.Add(pSrc6, srcOff))
+				v7 := *(*T)(unsafe.Add(pSrc7, srcOff))
+				*(*[8]T)(unsafe.Add(pDstBase, dstOff)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
 
-				v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
-				v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
-				v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
-				v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
-				v4_1 := *(*T)(unsafe.Pointer(pSrc4 + elemSize))
-				v5_1 := *(*T)(unsafe.Pointer(pSrc5 + elemSize))
-				v6_1 := *(*T)(unsafe.Pointer(pSrc6 + elemSize))
-				v7_1 := *(*T)(unsafe.Pointer(pSrc7 + elemSize))
-				*(*[8]T)(unsafe.Pointer(pDst + 8*elemSize)) = [8]T{v0_1, v1_1, v2_1, v3_1, v4_1, v5_1, v6_1, v7_1}
-
-				pSrc0 += 2 * elemSize
-				pSrc1 += 2 * elemSize
-				pSrc2 += 2 * elemSize
-				pSrc3 += 2 * elemSize
-				pSrc4 += 2 * elemSize
-				pSrc5 += 2 * elemSize
-				pSrc6 += 2 * elemSize
-				pSrc7 += 2 * elemSize
-				pDst += 16 * elemSize
+				srcOff1 := srcOff + elemSize
+				v0_1 := *(*T)(unsafe.Add(pSrc0, srcOff1))
+				v1_1 := *(*T)(unsafe.Add(pSrc1, srcOff1))
+				v2_1 := *(*T)(unsafe.Add(pSrc2, srcOff1))
+				v3_1 := *(*T)(unsafe.Add(pSrc3, srcOff1))
+				v4_1 := *(*T)(unsafe.Add(pSrc4, srcOff1))
+				v5_1 := *(*T)(unsafe.Add(pSrc5, srcOff1))
+				v6_1 := *(*T)(unsafe.Add(pSrc6, srcOff1))
+				v7_1 := *(*T)(unsafe.Add(pSrc7, srcOff1))
+				*(*[8]T)(unsafe.Add(pDstBase, dstOff+8*elemSize)) = [8]T{v0_1, v1_1, v2_1, v3_1, v4_1, v5_1, v6_1, v7_1}
 			}
 			for ; col < contractingCols; col++ {
-				v0 := *(*T)(unsafe.Pointer(pSrc0))
-				v1 := *(*T)(unsafe.Pointer(pSrc1))
-				v2 := *(*T)(unsafe.Pointer(pSrc2))
-				v3 := *(*T)(unsafe.Pointer(pSrc3))
-				v4 := *(*T)(unsafe.Pointer(pSrc4))
-				v5 := *(*T)(unsafe.Pointer(pSrc5))
-				v6 := *(*T)(unsafe.Pointer(pSrc6))
-				v7 := *(*T)(unsafe.Pointer(pSrc7))
-				*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
-
-				pSrc0 += elemSize
-				pSrc1 += elemSize
-				pSrc2 += elemSize
-				pSrc3 += elemSize
-				pSrc4 += elemSize
-				pSrc5 += elemSize
-				pSrc6 += elemSize
-				pSrc7 += elemSize
-				pDst += 8 * elemSize
+				srcOff := uintptr(col) * elemSize
+				dstOff := uintptr(col) * (8 * elemSize)
+				v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+				v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+				v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+				v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+				v4 := *(*T)(unsafe.Add(pSrc4, srcOff))
+				v5 := *(*T)(unsafe.Add(pSrc5, srcOff))
+				v6 := *(*T)(unsafe.Add(pSrc6, srcOff))
+				v7 := *(*T)(unsafe.Add(pSrc7, srcOff))
+				*(*[8]T)(unsafe.Add(pDstBase, dstOff)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
 			}
-			panelPtr += stripSizeBytes
+			panelOffsetBytes += stripSizeBytes
 		}
 
 	case kernelRows%8 == 0:
-		lhsColsBytes8 := 8 * lhsColsBytes
-		elemSize8 := 8 * elemSize
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-			pDstBase := panelPtr
+			pStripSrc := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+			pStripDst := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
 			for r := 0; r < kernelRows; r += 8 {
-				pSrc0 := pSrcBase
-				pSrc1 := pSrc0 + lhsColsBytes
-				pSrc2 := pSrc1 + lhsColsBytes
-				pSrc3 := pSrc2 + lhsColsBytes
-				pSrc4 := pSrc3 + lhsColsBytes
-				pSrc5 := pSrc4 + lhsColsBytes
-				pSrc6 := pSrc5 + lhsColsBytes
-				pSrc7 := pSrc6 + lhsColsBytes
+				pSrc0 := unsafe.Add(pStripSrc, uintptr(r)*lhsColsBytes)
+				pSrc1 := unsafe.Add(pSrc0, lhsColsBytes)
+				pSrc2 := unsafe.Add(pSrc1, lhsColsBytes)
+				pSrc3 := unsafe.Add(pSrc2, lhsColsBytes)
+				pSrc4 := unsafe.Add(pSrc3, lhsColsBytes)
+				pSrc5 := unsafe.Add(pSrc4, lhsColsBytes)
+				pSrc6 := unsafe.Add(pSrc5, lhsColsBytes)
+				pSrc7 := unsafe.Add(pSrc6, lhsColsBytes)
+				pDstBase := unsafe.Add(pStripDst, uintptr(r)*elemSize)
 
-				pDst := pDstBase
 				col := 0
 				for ; col+1 < contractingCols; col += 2 {
-					v0 := *(*T)(unsafe.Pointer(pSrc0))
-					v1 := *(*T)(unsafe.Pointer(pSrc1))
-					v2 := *(*T)(unsafe.Pointer(pSrc2))
-					v3 := *(*T)(unsafe.Pointer(pSrc3))
-					v4 := *(*T)(unsafe.Pointer(pSrc4))
-					v5 := *(*T)(unsafe.Pointer(pSrc5))
-					v6 := *(*T)(unsafe.Pointer(pSrc6))
-					v7 := *(*T)(unsafe.Pointer(pSrc7))
-					*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
+					srcOff := uintptr(col) * elemSize
+					dstOff := uintptr(col) * kernelRowsBytes
+					v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+					v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+					v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+					v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+					v4 := *(*T)(unsafe.Add(pSrc4, srcOff))
+					v5 := *(*T)(unsafe.Add(pSrc5, srcOff))
+					v6 := *(*T)(unsafe.Add(pSrc6, srcOff))
+					v7 := *(*T)(unsafe.Add(pSrc7, srcOff))
+					*(*[8]T)(unsafe.Add(pDstBase, dstOff)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
 
-					v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
-					v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
-					v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
-					v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
-					v4_1 := *(*T)(unsafe.Pointer(pSrc4 + elemSize))
-					v5_1 := *(*T)(unsafe.Pointer(pSrc5 + elemSize))
-					v6_1 := *(*T)(unsafe.Pointer(pSrc6 + elemSize))
-					v7_1 := *(*T)(unsafe.Pointer(pSrc7 + elemSize))
-					*(*[8]T)(unsafe.Pointer(pDst + kernelRowsBytes)) = [8]T{v0_1, v1_1, v2_1, v3_1, v4_1, v5_1, v6_1, v7_1}
-
-					pSrc0 += 2 * elemSize
-					pSrc1 += 2 * elemSize
-					pSrc2 += 2 * elemSize
-					pSrc3 += 2 * elemSize
-					pSrc4 += 2 * elemSize
-					pSrc5 += 2 * elemSize
-					pSrc6 += 2 * elemSize
-					pSrc7 += 2 * elemSize
-					pDst += 2 * kernelRowsBytes
+					srcOff1 := srcOff + elemSize
+					v0_1 := *(*T)(unsafe.Add(pSrc0, srcOff1))
+					v1_1 := *(*T)(unsafe.Add(pSrc1, srcOff1))
+					v2_1 := *(*T)(unsafe.Add(pSrc2, srcOff1))
+					v3_1 := *(*T)(unsafe.Add(pSrc3, srcOff1))
+					v4_1 := *(*T)(unsafe.Add(pSrc4, srcOff1))
+					v5_1 := *(*T)(unsafe.Add(pSrc5, srcOff1))
+					v6_1 := *(*T)(unsafe.Add(pSrc6, srcOff1))
+					v7_1 := *(*T)(unsafe.Add(pSrc7, srcOff1))
+					*(*[8]T)(unsafe.Add(pDstBase, dstOff+kernelRowsBytes)) = [8]T{v0_1, v1_1, v2_1, v3_1, v4_1, v5_1, v6_1, v7_1}
 				}
 				for ; col < contractingCols; col++ {
-					v0 := *(*T)(unsafe.Pointer(pSrc0))
-					v1 := *(*T)(unsafe.Pointer(pSrc1))
-					v2 := *(*T)(unsafe.Pointer(pSrc2))
-					v3 := *(*T)(unsafe.Pointer(pSrc3))
-					v4 := *(*T)(unsafe.Pointer(pSrc4))
-					v5 := *(*T)(unsafe.Pointer(pSrc5))
-					v6 := *(*T)(unsafe.Pointer(pSrc6))
-					v7 := *(*T)(unsafe.Pointer(pSrc7))
-					*(*[8]T)(unsafe.Pointer(pDst)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
-
-					pSrc0 += elemSize
-					pSrc1 += elemSize
-					pSrc2 += elemSize
-					pSrc3 += elemSize
-					pSrc4 += elemSize
-					pSrc5 += elemSize
-					pSrc6 += elemSize
-					pSrc7 += elemSize
-					pDst += kernelRowsBytes
+					srcOff := uintptr(col) * elemSize
+					dstOff := uintptr(col) * kernelRowsBytes
+					v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+					v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+					v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+					v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+					v4 := *(*T)(unsafe.Add(pSrc4, srcOff))
+					v5 := *(*T)(unsafe.Add(pSrc5, srcOff))
+					v6 := *(*T)(unsafe.Add(pSrc6, srcOff))
+					v7 := *(*T)(unsafe.Add(pSrc7, srcOff))
+					*(*[8]T)(unsafe.Add(pDstBase, dstOff)) = [8]T{v0, v1, v2, v3, v4, v5, v6, v7}
 				}
-				pSrcBase += lhsColsBytes8
-				pDstBase += elemSize8
 			}
-			panelPtr += stripSizeBytes
+			panelOffsetBytes += stripSizeBytes
 		}
 
 	default:
@@ -453,53 +411,44 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 		// The kernelRow is multiple of 4, but > 4.
 		for stripRowIdx := 0; stripRowIdx < fullStripsRows; stripRowIdx += kernelRows {
 			srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-			pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-			pDstBase := panelPtr
+			pStripSrc := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+			pStripDst := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
 			for r := 0; r < kernelRows; r += 4 {
-				pSrc0 := pSrcBase
-				pSrc1 := pSrc0 + lhsColsBytes
-				pSrc2 := pSrc1 + lhsColsBytes
-				pSrc3 := pSrc2 + lhsColsBytes
+				pSrc0 := unsafe.Add(pStripSrc, uintptr(r)*lhsColsBytes)
+				pSrc1 := unsafe.Add(pSrc0, lhsColsBytes)
+				pSrc2 := unsafe.Add(pSrc1, lhsColsBytes)
+				pSrc3 := unsafe.Add(pSrc2, lhsColsBytes)
+				pDstBase := unsafe.Add(pStripDst, uintptr(r)*elemSize)
 
-				pDst := pDstBase
 				col := 0
 				for ; col+1 < contractingCols; col += 2 {
-					v0 := *(*T)(unsafe.Pointer(pSrc0))
-					v1 := *(*T)(unsafe.Pointer(pSrc1))
-					v2 := *(*T)(unsafe.Pointer(pSrc2))
-					v3 := *(*T)(unsafe.Pointer(pSrc3))
-					*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
+					srcOff := uintptr(col) * elemSize
+					dstOff := uintptr(col) * kernelRowsBytes
+					v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+					v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+					v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+					v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+					*(*[4]T)(unsafe.Add(pDstBase, dstOff)) = [4]T{v0, v1, v2, v3}
 
-					v0_1 := *(*T)(unsafe.Pointer(pSrc0 + elemSize))
-					v1_1 := *(*T)(unsafe.Pointer(pSrc1 + elemSize))
-					v2_1 := *(*T)(unsafe.Pointer(pSrc2 + elemSize))
-					v3_1 := *(*T)(unsafe.Pointer(pSrc3 + elemSize))
-					*(*[4]T)(unsafe.Pointer(pDst + kernelRowsBytes)) = [4]T{v0_1, v1_1, v2_1, v3_1}
-
-					pSrc0 += 2 * elemSize
-					pSrc1 += 2 * elemSize
-					pSrc2 += 2 * elemSize
-					pSrc3 += 2 * elemSize
-					pDst += 2 * kernelRowsBytes
+					srcOff1 := srcOff + elemSize
+					v0_1 := *(*T)(unsafe.Add(pSrc0, srcOff1))
+					v1_1 := *(*T)(unsafe.Add(pSrc1, srcOff1))
+					v2_1 := *(*T)(unsafe.Add(pSrc2, srcOff1))
+					v3_1 := *(*T)(unsafe.Add(pSrc3, srcOff1))
+					*(*[4]T)(unsafe.Add(pDstBase, dstOff+kernelRowsBytes)) = [4]T{v0_1, v1_1, v2_1, v3_1}
 				}
 				for ; col < contractingCols; col++ {
-					v0 := *(*T)(unsafe.Pointer(pSrc0))
-					v1 := *(*T)(unsafe.Pointer(pSrc1))
-					v2 := *(*T)(unsafe.Pointer(pSrc2))
-					v3 := *(*T)(unsafe.Pointer(pSrc3))
-					*(*[4]T)(unsafe.Pointer(pDst)) = [4]T{v0, v1, v2, v3}
-
-					pSrc0 += elemSize
-					pSrc1 += elemSize
-					pSrc2 += elemSize
-					pSrc3 += elemSize
-					pDst += kernelRowsBytes
+					srcOff := uintptr(col) * elemSize
+					dstOff := uintptr(col) * kernelRowsBytes
+					v0 := *(*T)(unsafe.Add(pSrc0, srcOff))
+					v1 := *(*T)(unsafe.Add(pSrc1, srcOff))
+					v2 := *(*T)(unsafe.Add(pSrc2, srcOff))
+					v3 := *(*T)(unsafe.Add(pSrc3, srcOff))
+					*(*[4]T)(unsafe.Add(pDstBase, dstOff)) = [4]T{v0, v1, v2, v3}
 				}
-				pSrcBase += lhsColsBytes4
-				pDstBase += elemSize4
 			}
-			panelPtr += stripSizeBytes
+			panelOffsetBytes += stripSizeBytes
 		}
 	}
 
@@ -508,31 +457,24 @@ func unsafePackLHS[T gotype.ScalarNotComplex](
 		stripRowIdx := fullStripsRows
 		validRows := copyRows - stripRowIdx
 		srcIdxBase := ((lhsRowStart + stripRowIdx) * lhsCols) + lhsColStart
-		pSrcBase := lhsPtr + uintptr(srcIdxBase)*elemSize
-		pDstBase := panelPtr
+		pStripSrc := unsafe.Add(lhsPtr, uintptr(srcIdxBase)*elemSize)
+		pStripDst := unsafe.Add(panelBasePtr, panelOffsetBytes)
 
-		for range validRows {
-			pSrc := pSrcBase
-			pDst := pDstBase
+		for r := range validRows {
+			pSrcRow := unsafe.Add(pStripSrc, uintptr(r)*lhsColsBytes)
+			pDstRow := unsafe.Add(pStripDst, uintptr(r)*elemSize)
 
-			for range contractingCols {
-				*(*T)(unsafe.Pointer(pDst)) = *(*T)(unsafe.Pointer(pSrc))
-				pSrc += elemSize
-				pDst += kernelRowsBytes
+			for col := range contractingCols {
+				*(*T)(unsafe.Add(pDstRow, uintptr(col)*kernelRowsBytes)) = *(*T)(unsafe.Add(pSrcRow, uintptr(col)*elemSize))
 			}
-			pSrcBase += lhsColsBytes
-			pDstBase += elemSize
 		}
 
 		for r := validRows; r < kernelRows; r++ {
-			pDst := pDstBase
-			for range contractingCols {
-				*(*T)(unsafe.Pointer(pDst)) = T(0)
-				pDst += kernelRowsBytes
+			pDstRow := unsafe.Add(pStripDst, uintptr(r)*elemSize)
+			for col := range contractingCols {
+				*(*T)(unsafe.Add(pDstRow, uintptr(col)*kernelRowsBytes)) = T(0)
 			}
-			pDstBase += elemSize
 		}
-		panelPtr += uintptr(contractingCols) * kernelRowsBytes
 	}
 }
 

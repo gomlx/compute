@@ -9,6 +9,7 @@ import (
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/internal/exceptions"
 )
 
 func TestCastAsDType(t *testing.T) {
@@ -54,6 +55,9 @@ func TestShape(t *testing.T) {
 	if shape0.Size() != 1 {
 		t.Errorf("expected shape0.Size() to be 1, got %d", shape0.Size())
 	}
+	if shape0.DynamicSize() != 1 {
+		t.Errorf("expected shape0.Size() to be 1, got %d", shape0.Size())
+	}
 	if shape0.ByteSize() != 8 {
 		t.Errorf("expected shape0.ByteSize() to be 8, got %d", shape0.ByteSize())
 	}
@@ -76,6 +80,9 @@ func TestShape(t *testing.T) {
 	}
 	if shape1.Size() != 4*3*2 {
 		t.Errorf("expected shape1.Size() to be %d, got %d", 4*3*2, shape1.Size())
+	}
+	if shape1.DynamicSize() != 4*3*2 {
+		t.Errorf("expected shape1.DynamicSize() to be %d, got %d", 4*3*2, shape1.Size())
 	}
 	if shape1.ByteSize() != 4*4*3*2 {
 		t.Errorf("expected shape1.ByteSize() to be %d, got %d", 4*4*3*2, shape1.ByteSize())
@@ -117,6 +124,16 @@ func TestShape(t *testing.T) {
 	}
 	if shapeDynamic.ByteSize() != int64(DynamicDim) {
 		t.Errorf("expected shapeDynamic.ByteSize() to be DynamicDim (%d), got %d", DynamicDim, shapeDynamic.ByteSize())
+	}
+	if shapeDynamic.DynamicSize() != DynamicDim {
+		t.Errorf("expected shapeDynamic.DynamicSize() to be DynamicDim (%d), got %d", DynamicDim, shapeDynamic.Size())
+	}
+	var size int
+	err := exceptions.TryCatch[error](func() {
+		size = shapeDynamic.Size()
+	})
+	if err == nil {
+		t.Errorf("expected shapeDynamic.Size() to panic, got no error and size %d instead", size)
 	}
 }
 

@@ -216,6 +216,12 @@ func AddSlicesUsingArrays(a, b, res []float32) {
 }
 ```
 
+### Safe Pointer Arithmetic with `unsafe.Pointer` and `unsafe.Add` (`-race` / `checkptr`)
+
+When using raw pointers in hot kernels (such as GEMM microkernels, panel packing, strided copies, or fused ops), strictly follow Go's `unsafe.Pointer` rules so `go test -race` (`-d=checkptr` and Go heap pointer validation) always passes:
+- **Never store Go heap addresses in `uintptr` variables**: Converting `uintptr(unsafe.Pointer(...))` into a local variable and later casting `unsafe.Pointer(u + off)` violates Go's `unsafe.Pointer` rules and crashes under `-race` with `fatal error: checkptr: pointer arithmetic result points to invalid allocation`. Keep base pointers typed as `unsafe.Pointer` (e.g. `basePtr := unsafe.Pointer(unsafe.SliceData(s))`), keep byte offsets/strides as `uintptr`, and combine them via `unsafe.Add(basePtr, offset)` (which inlines to a single `ADD`/`LEA` instruction).
+- **Never advance an `unsafe.Pointer` past the end of its allocation on the final loop iteration**: Reassigning `ptr = unsafe.Add(ptr, stride)` at the bottom of a loop steps `ptr` to `allocBase + cap` (one past the end) on the final iteration, which crashes under `-race` / GC stack scanning with `fatal error: found bad pointer in Go heap`. Either keep `basePtr` fixed and advance a `uintptr` byte offset (`offset += stride`, computing `unsafe.Add(basePtr, offset)` inside the loop body), or break before advancing on the final iteration (`if i++; i >= count { break }` before `ptr = unsafe.Add(ptr, stride)`). Guard entry with `count == 0` / empty-slice checks before dereferencing or offsetting.
+
 ### Backend Operations (actually part of the `compute.Function` interface)
 
 The `compute` backend defines operations across four interfaces in `./ops*.go`:

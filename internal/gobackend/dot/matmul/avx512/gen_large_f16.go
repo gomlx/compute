@@ -1210,9 +1210,9 @@ func avx512LargeKernelFloat16( //alt:f16
 		//alt:f64  bytesPerOutputElement = 8
 	)
 
-	outputBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedOutput)))
-	rhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedRHS)))
-	lhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(packedLHS)))
+	outputBasePtr := unsafe.Pointer(unsafe.SliceData(packedOutput))
+	rhsBasePtr := unsafe.Pointer(unsafe.SliceData(packedRHS))
+	lhsBasePtr := unsafe.Pointer(unsafe.SliceData(packedLHS))
 
 	// Loop 1 (ir): Micro-Kernel Rows (Mr == lhsL1BlockRows)
 	for lhsRowIdx := 0; lhsRowIdx < lhsActiveRows; lhsRowIdx += kernelRows {
@@ -1257,8 +1257,8 @@ func avx512LargeKernelFloat16( //alt:f16
 			idxRHS := rhsColIdx * contractingLen
 
 			// Get the base pointers once
-			rhsRowPtr := rhsBasePtr + uintptr(idxRHS*bytesPerInputElement)
-			lhsRowPtr := lhsBasePtr + uintptr(idxLHS*bytesPerInputElement)
+			rhsRowPtr := unsafe.Add(rhsBasePtr, uintptr(idxRHS*bytesPerInputElement))
+			lhsRowPtr := unsafe.Add(lhsBasePtr, uintptr(idxLHS*bytesPerInputElement))
 
 			rOffset := uintptr(0)
 			lOffset := uintptr(0)
@@ -1274,8 +1274,8 @@ func avx512LargeKernelFloat16( //alt:f16
 			// ---------------------------------------------------------
 			for range contractingLen {
 				// Load RHS (Broadcasting/Streaming)
-				rhsPtr0 := unsafe.Pointer(rhsRowPtr + rOffset)
-				//alt:f32|f64 rhsPtr1 := unsafe.Pointer(rhsRowPtr + rOffset + rhsRegisterStride)
+				rhsPtr0 := unsafe.Add(rhsRowPtr, rOffset)
+				//alt:f32|f64 rhsPtr1 := unsafe.Add(rhsPtr0, rhsRegisterStride)
 				//alt:f32 rhsVec0 := archsimd.LoadFloat32x16Array((*[16]float32)(rhsPtr0))
 				//alt:f64  rhsVec0 := archsimd.LoadFloat64x8Array((*[8]float64)(rhsPtr0))
 				//alt:f32 rhsVec1 := archsimd.LoadFloat32x16Array((*[16]float32)(rhsPtr1))
@@ -1286,41 +1286,43 @@ func avx512LargeKernelFloat16( //alt:f16
 				rhsVec0, rhsVec1 := rhsF16.ToFloat32()                            //alt:f16
 				rOffset += rhsStride
 
+				lhsPtr := unsafe.Add(lhsRowPtr, lOffset)
+
 				// Row 0
-				//alt:f32 lhsVal0 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 0)))
-				//alt:bf16  lhsVal0 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 0))).Float32()
-				lhsVal0 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 0))).Float32() //alt:f16
-				//alt:f64  lhsVal0 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 0)))
+				//alt:f32 lhsVal0 := *((*float32)(lhsPtr))
+				//alt:bf16  lhsVal0 := ((*bfloat16.BFloat16)(lhsPtr)).Float32()
+				lhsVal0 := ((*float16.Float16)(lhsPtr)).Float32() //alt:f16
+				//alt:f64  lhsVal0 := *((*float64)(lhsPtr))
 				lhsVec0 := archsimd.BroadcastFloat32x16(lhsVal0) //alt:f32|bf16|f16
 				//alt:f64  lhsVec0 := archsimd.BroadcastFloat64x8(lhsVal0)
 				accum_lhs0_rhs0 = rhsVec0.MulAdd(lhsVec0, accum_lhs0_rhs0) //alt:f32|bf16|f16|f64
 				accum_lhs0_rhs1 = rhsVec1.MulAdd(lhsVec0, accum_lhs0_rhs1) //alt:f32|bf16|f16|f64
 
 				// Row 1
-				//alt:f32 lhsVal1 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement)))
-				//alt:bf16  lhsVal1 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement))).Float32()
-				lhsVal1 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement))).Float32() //alt:f16
-				//alt:f64  lhsVal1 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + bytesPerInputElement)))
+				//alt:f32 lhsVal1 := *((*float32)(unsafe.Add(lhsPtr, bytesPerInputElement)))
+				//alt:bf16  lhsVal1 := ((*bfloat16.BFloat16)(unsafe.Add(lhsPtr, bytesPerInputElement))).Float32()
+				lhsVal1 := ((*float16.Float16)(unsafe.Add(lhsPtr, bytesPerInputElement))).Float32() //alt:f16
+				//alt:f64  lhsVal1 := *((*float64)(unsafe.Add(lhsPtr, bytesPerInputElement)))
 				lhsVec1 := archsimd.BroadcastFloat32x16(lhsVal1) //alt:f32|bf16|f16
 				//alt:f64  lhsVec1 := archsimd.BroadcastFloat64x8(lhsVal1)
 				accum_lhs1_rhs0 = rhsVec0.MulAdd(lhsVec1, accum_lhs1_rhs0) //alt:f32|bf16|f16|f64
 				accum_lhs1_rhs1 = rhsVec1.MulAdd(lhsVec1, accum_lhs1_rhs1) //alt:f32|bf16|f16|f64
 
 				// Row 2
-				//alt:f32 lhsVal2 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement)))
-				//alt:bf16  lhsVal2 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement))).Float32()
-				lhsVal2 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement))).Float32() //alt:f16
-				//alt:f64  lhsVal2 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 2*bytesPerInputElement)))
+				//alt:f32 lhsVal2 := *((*float32)(unsafe.Add(lhsPtr, 2*bytesPerInputElement)))
+				//alt:bf16  lhsVal2 := ((*bfloat16.BFloat16)(unsafe.Add(lhsPtr, 2*bytesPerInputElement))).Float32()
+				lhsVal2 := ((*float16.Float16)(unsafe.Add(lhsPtr, 2*bytesPerInputElement))).Float32() //alt:f16
+				//alt:f64  lhsVal2 := *((*float64)(unsafe.Add(lhsPtr, 2*bytesPerInputElement)))
 				lhsVec2 := archsimd.BroadcastFloat32x16(lhsVal2) //alt:f32|bf16|f16
 				//alt:f64  lhsVec2 := archsimd.BroadcastFloat64x8(lhsVal2)
 				accum_lhs2_rhs0 = rhsVec0.MulAdd(lhsVec2, accum_lhs2_rhs0) //alt:f32|bf16|f16|f64
 				accum_lhs2_rhs1 = rhsVec1.MulAdd(lhsVec2, accum_lhs2_rhs1) //alt:f32|bf16|f16|f64
 
 				// Row 3
-				//alt:f32 lhsVal3 := *((*float32)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement)))
-				//alt:bf16  lhsVal3 := ((*bfloat16.BFloat16)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement))).Float32()
-				lhsVal3 := ((*float16.Float16)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement))).Float32() //alt:f16
-				//alt:f64  lhsVal3 := *((*float64)(unsafe.Pointer(lhsRowPtr + lOffset + 3*bytesPerInputElement)))
+				//alt:f32 lhsVal3 := *((*float32)(unsafe.Add(lhsPtr, 3*bytesPerInputElement)))
+				//alt:bf16  lhsVal3 := ((*bfloat16.BFloat16)(unsafe.Add(lhsPtr, 3*bytesPerInputElement))).Float32()
+				lhsVal3 := ((*float16.Float16)(unsafe.Add(lhsPtr, 3*bytesPerInputElement))).Float32() //alt:f16
+				//alt:f64  lhsVal3 := *((*float64)(unsafe.Add(lhsPtr, 3*bytesPerInputElement)))
 				lhsVec3 := archsimd.BroadcastFloat32x16(lhsVal3) //alt:f32|bf16|f16
 				//alt:f64  lhsVec3 := archsimd.BroadcastFloat64x8(lhsVal3)
 				accum_lhs3_rhs0 = rhsVec0.MulAdd(lhsVec3, accum_lhs3_rhs0) //alt:f32|bf16|f16|f64
@@ -1333,45 +1335,51 @@ func avx512LargeKernelFloat16( //alt:f16
 			// 4. Write Back to Output
 			// ---------------------------------------------------------
 			outputIdx0 := uintptr((outputRowStart*outputStride + outputColStart) * bytesPerOutputElement)
-			outputIdx1 := outputIdx0 + uintptr(rhsPanelCols*bytesPerOutputElement)
-			outputIdx2 := outputIdx0 + uintptr(2*rhsPanelCols*bytesPerOutputElement)
-			outputIdx3 := outputIdx0 + uintptr(3*rhsPanelCols*bytesPerOutputElement)
+			rowByteStride := uintptr(rhsPanelCols * bytesPerOutputElement)
+			outPtr0 := unsafe.Add(outputBasePtr, outputIdx0)
+			outPtr1 := unsafe.Add(outPtr0, rowByteStride)
+			outPtr2 := unsafe.Add(outPtr1, rowByteStride)
+			outPtr3 := unsafe.Add(outPtr2, rowByteStride)
 			registerStride := uintptr(outputNumLanes * bytesPerOutputElement) // It should be 64 bytes (512 bits) for AVX512.
 
 			if !accumulate {
-				accum_lhs0_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs0_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
-				accum_lhs0_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs0_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
-				accum_lhs1_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs1_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
-				accum_lhs1_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs1_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
-				accum_lhs2_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs2_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
-				accum_lhs2_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs2_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
-				accum_lhs3_rhs0.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs3_rhs0.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
-				accum_lhs3_rhs1.StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs3_rhs1.StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
+				accum_lhs0_rhs0.StoreArray((*[16]float32)(outPtr0)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs0_rhs0.StoreArray((*[8]float64)(outPtr0))
+				accum_lhs0_rhs1.StoreArray((*[16]float32)(unsafe.Add(outPtr0, registerStride))) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs0_rhs1.StoreArray((*[8]float64)(unsafe.Add(outPtr0, registerStride)))
+				accum_lhs1_rhs0.StoreArray((*[16]float32)(outPtr1)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs1_rhs0.StoreArray((*[8]float64)(outPtr1))
+				accum_lhs1_rhs1.StoreArray((*[16]float32)(unsafe.Add(outPtr1, registerStride))) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs1_rhs1.StoreArray((*[8]float64)(unsafe.Add(outPtr1, registerStride)))
+				accum_lhs2_rhs0.StoreArray((*[16]float32)(outPtr2)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs2_rhs0.StoreArray((*[8]float64)(outPtr2))
+				accum_lhs2_rhs1.StoreArray((*[16]float32)(unsafe.Add(outPtr2, registerStride))) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs2_rhs1.StoreArray((*[8]float64)(unsafe.Add(outPtr2, registerStride)))
+				accum_lhs3_rhs0.StoreArray((*[16]float32)(outPtr3)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs3_rhs0.StoreArray((*[8]float64)(outPtr3))
+				accum_lhs3_rhs1.StoreArray((*[16]float32)(unsafe.Add(outPtr3, registerStride))) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs3_rhs1.StoreArray((*[8]float64)(unsafe.Add(outPtr3, registerStride)))
 			} else {
-				accum_lhs0_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs0_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0)))
-				accum_lhs0_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs0_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx0 + registerStride)))
-				accum_lhs1_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs1_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1)))
-				accum_lhs1_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs1_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx1 + registerStride)))
-				accum_lhs2_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs2_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2)))
-				accum_lhs2_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs2_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx2 + registerStride)))
-				accum_lhs3_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs3_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3)))
-				accum_lhs3_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))).StoreArray((*[16]float32)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride))) //alt:f32|bf16|f16
-				//alt:f64  accum_lhs3_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))).StoreArray((*[8]float64)(unsafe.Pointer(outputBasePtr + outputIdx3 + registerStride)))
+				accum_lhs0_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr0))).StoreArray((*[16]float32)(outPtr0)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs0_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr0))).StoreArray((*[8]float64)(outPtr0))
+				outPtr0Hi := unsafe.Add(outPtr0, registerStride)
+				accum_lhs0_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr0Hi))).StoreArray((*[16]float32)(outPtr0Hi)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs0_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr0Hi))).StoreArray((*[8]float64)(outPtr0Hi))
+				accum_lhs1_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr1))).StoreArray((*[16]float32)(outPtr1)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs1_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr1))).StoreArray((*[8]float64)(outPtr1))
+				outPtr1Hi := unsafe.Add(outPtr1, registerStride)
+				accum_lhs1_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr1Hi))).StoreArray((*[16]float32)(outPtr1Hi)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs1_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr1Hi))).StoreArray((*[8]float64)(outPtr1Hi))
+				accum_lhs2_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr2))).StoreArray((*[16]float32)(outPtr2)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs2_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr2))).StoreArray((*[8]float64)(outPtr2))
+				outPtr2Hi := unsafe.Add(outPtr2, registerStride)
+				accum_lhs2_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr2Hi))).StoreArray((*[16]float32)(outPtr2Hi)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs2_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr2Hi))).StoreArray((*[8]float64)(outPtr2Hi))
+				accum_lhs3_rhs0.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr3))).StoreArray((*[16]float32)(outPtr3)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs3_rhs0.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr3))).StoreArray((*[8]float64)(outPtr3))
+				outPtr3Hi := unsafe.Add(outPtr3, registerStride)
+				accum_lhs3_rhs1.Add(archsimd.LoadFloat32x16Array((*[16]float32)(outPtr3Hi))).StoreArray((*[16]float32)(outPtr3Hi)) //alt:f32|bf16|f16
+				//alt:f64  accum_lhs3_rhs1.Add(archsimd.LoadFloat64x8Array((*[8]float64)(outPtr3Hi))).StoreArray((*[8]float64)(outPtr3Hi))
 			}
 		}
 	}

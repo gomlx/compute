@@ -61,64 +61,88 @@ func concat2StridedBytes(dst, src0, src1 []byte, count, b0, b1 int) {
 }
 
 func copyStridedBytesGeneric(dst, src []byte, count, blockBytes, dstStride, srcStride int) {
+	if count <= 0 || blockBytes <= 0 {
+		return
+	}
 	dstPtr := unsafe.Pointer(unsafe.SliceData(dst))
 	srcPtr := unsafe.Pointer(unsafe.SliceData(src))
 
 	switch {
 	case blockBytes == 1:
-		for range count {
+		for i := 0; ; {
 			*(*byte)(dstPtr) = *(*byte)(srcPtr)
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes == 2:
-		for range count {
+		for i := 0; ; {
 			*(*uint16)(dstPtr) = *(*uint16)(srcPtr)
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes == 3:
-		for range count {
+		for i := 0; ; {
 			*(*uint16)(dstPtr) = *(*uint16)(srcPtr)
 			*(*byte)(unsafe.Add(dstPtr, 2)) = *(*byte)(unsafe.Add(srcPtr, 2))
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes == 4:
-		for range count {
+		for i := 0; ; {
 			*(*uint32)(dstPtr) = *(*uint32)(srcPtr)
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes < 8:
 		tailOff := blockBytes - 4
-		for range count {
+		for i := 0; ; {
 			v0 := *(*uint32)(srcPtr)
 			v1 := *(*uint32)(unsafe.Add(srcPtr, tailOff))
 			*(*uint32)(dstPtr) = v0
 			*(*uint32)(unsafe.Add(dstPtr, tailOff)) = v1
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes == 8:
-		for range count {
+		for i := 0; ; {
 			*(*uint64)(dstPtr) = *(*uint64)(srcPtr)
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes <= 16:
 		tailOff := blockBytes - 8
-		for range count {
+		for i := 0; ; {
 			v0 := *(*uint64)(srcPtr)
 			v1 := *(*uint64)(unsafe.Add(srcPtr, tailOff))
 			*(*uint64)(dstPtr) = v0
 			*(*uint64)(unsafe.Add(dstPtr, tailOff)) = v1
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes <= 32:
 		tailOff := blockBytes - 16
-		for range count {
+		for i := 0; ; {
 			v0 := *(*uint64)(srcPtr)
 			v1 := *(*uint64)(unsafe.Add(srcPtr, 8))
 			v2 := *(*uint64)(unsafe.Add(srcPtr, tailOff))
@@ -127,12 +151,15 @@ func copyStridedBytesGeneric(dst, src []byte, count, blockBytes, dstStride, srcS
 			*(*uint64)(unsafe.Add(dstPtr, 8)) = v1
 			*(*uint64)(unsafe.Add(dstPtr, tailOff)) = v2
 			*(*uint64)(unsafe.Add(dstPtr, tailOff+8)) = v3
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
 	case blockBytes <= 256:
 		tailOff := blockBytes - 8
-		for range count {
+		for i := 0; ; {
 			off := 0
 			for ; off+32 < blockBytes; off += 32 {
 				v0 := *(*uint64)(unsafe.Add(srcPtr, off))
@@ -148,6 +175,9 @@ func copyStridedBytesGeneric(dst, src []byte, count, blockBytes, dstStride, srcS
 				*(*uint64)(unsafe.Add(dstPtr, off)) = *(*uint64)(unsafe.Add(srcPtr, off))
 			}
 			*(*uint64)(unsafe.Add(dstPtr, tailOff)) = *(*uint64)(unsafe.Add(srcPtr, tailOff))
+			if i++; i >= count {
+				break
+			}
 			dstPtr = unsafe.Add(dstPtr, dstStride)
 			srcPtr = unsafe.Add(srcPtr, srcStride)
 		}
