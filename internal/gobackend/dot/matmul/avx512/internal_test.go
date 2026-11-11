@@ -6,6 +6,7 @@ package avx512
 
 import (
 	"fmt"
+	"math"
 	"simd/archsimd"
 	"strings"
 	"testing"
@@ -867,6 +868,220 @@ func TestChoose2DSplit(t *testing.T) {
 		numM, numN := matmul.Choose2DSplit(tc.m, tc.n, tc.workers, &params)
 		t.Logf("M=%d, N=%d, workers=%d -> numM=%d, numN=%d (colChunk=%d, rowChunk=%d)",
 			tc.m, tc.n, tc.workers, numM, numN, (tc.n+numN-1)/numN, (tc.m+numM-1)/numM)
+	}
+}
+
+// TestAVX512LargeParallelUnalignedPanels tests multi-worker large GEMMs where worker row slices start at
+// rowStart % Mc != 0 and end at rowEnd % Mr != 0 with numKPanels > 1 (exercising useAccum copy-back,
+// L2 row sub-chunking, cached/uncached LHS & RHS panels, and both ASM 8x32 and Go SIMD 4x32 microkernels).
+// Regression test for the Timestral-123M GOMAXPROCS=2 bug on [36, 2560]@[2560, 672] and [810, 640]@[640, 640].
+func TestAVX512LargeParallelUnalignedPanels(t *testing.T) {
+	if !gobackend.IsAVX512Allowed {
+		t.Skip("AVX512 is not supported on this architecture")
+	}
+
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
+	// Pre-poison backend pooled buffers with sentinel garbage so any skipped copy-back or
+	// out-of-bounds accumBuffer read produces huge errors instead of accidental zeros.
+	poisonPool := func() {
+		for _, sz := range []int{32 * 512, 16 * 32 * 512, 64 * 32 * 512, 32 * 768, 64 * 32 * 768} {
+			bufRef, slice, ok := GetBuffer[float32](backend, sz)
+			if ok {
+				for i := range slice {
+					slice[i] = 99999.0
+				}
+				ReleaseBuffer(bufRef)
+			}
+			bufRef64, slice64, ok64 := GetBuffer[float64](backend, sz)
+			if ok64 {
+				for i := range slice64 {
+					slice64[i] = 99999.0
+				}
+				ReleaseBuffer(bufRef64)
+			}
+		}
+	}
+
+	shapes := []struct {
+		name       string
+		B, M, K, N int
+	}{
+		{"Timestral123M_QuantileHead_36x2560x672", 1, 36, 2560, 672},
+		{"Timestral123M_WO_810x640x640", 1, 810, 640, 640},
+		{"BatchedUnaligned_2x36x512x540", 2, 36, 512, 540},
+		{"UnalignedBothAxes_50x400x540", 1, 50, 400, 540},
+	}
+
+	for _, useAsm := range []bool{true, false} {
+		asmName := "Asm"
+		if !useAsm {
+			asmName = "GoSIMD"
+		}
+		t.Run(asmName, func(t *testing.T) {
+			origUseAsm := AVX512UseAsm
+			AVX512UseAsm = useAsm
+			defer func() { AVX512UseAsm = origUseAsm }()
+
+			for _, sc := range shapes {
+				t.Run(sc.name, func(t *testing.T) {
+					B, M, K, N := sc.B, sc.M, sc.K, sc.N
+					lhsF32 := make([]float32, B*M*K)
+					rhsNonT := make([]float32, B*K*N)
+					rhsTrans := make([]float32, B*N*K)
+					for i := range lhsF32 {
+						lhsF32[i] = float32((i%19)-9) * 0.125
+					}
+					for b := range B {
+						for k := range K {
+							for n := range N {
+								v := float32(((b*13+k*7+n*3)%23)-11) * 0.125
+								rhsNonT[b*K*N+k*N+n] = v
+								rhsTrans[b*N*K+n*K+k] = v
+							}
+						}
+					}
+
+					// Reference via single-worker execution (and spot-check scalar dot product).
+					backend.Scheduler.SetMaxParallelism(1)
+					refOut := make([]float32, B*M*N)
+					avx512LargeFloat32(backend, dot.LayoutNonTransposed, lhsF32, rhsNonT, B, M, N, K, refOut, nil)
+					for _, checkRow := range []int{0, M / 2, M - 1} {
+						for _, checkCol := range []int{0, N / 2, N - 1} {
+							var want float64
+							for k := range K {
+								want += float64(lhsF32[checkRow*K+k]) * float64(rhsNonT[k*N+checkCol])
+							}
+							got := float64(refOut[checkRow*N+checkCol])
+							if math.Abs(got-want) > 1e-3 {
+								t.Fatalf("single-worker reference mismatch at (%d,%d): got %v, want %v", checkRow, checkCol, got, want)
+							}
+						}
+					}
+
+					for _, workers := range []int{2, 3, 4, 8} {
+						backend.Scheduler.SetMaxParallelism(workers)
+
+						for _, layout := range []dot.Layout{dot.LayoutNonTransposed, dot.LayoutTransposed} {
+							rhs := rhsNonT
+							if layout == dot.LayoutTransposed {
+								rhs = rhsTrans
+							}
+
+							for _, cacheMode := range []string{"Uncached", "CachedRHS", "CachedLHS"} {
+								var nodeData *dot.NodeData
+								switch cacheMode {
+								case "CachedRHS":
+									nodeData = &dot.NodeData{RHSConstantData: gobackend.NewAnonymousConstantData()}
+								case "CachedLHS":
+									nodeData = &dot.NodeData{LHSConstantData: gobackend.NewAnonymousConstantData()}
+								}
+
+								poisonPool()
+								got := make([]float32, B*M*N)
+								for i := range got {
+									got[i] = -77777.0
+								}
+								avx512LargeFloat32(backend, layout, lhsF32, rhs, B, M, N, K, got, nodeData)
+
+								for i, want := range refOut {
+									diff := math.Abs(float64(got[i] - want))
+									if diff > 1e-4 || math.IsNaN(float64(got[i])) {
+										bIdx := i / (M * N)
+										rem := i % (M * N)
+										r, c := rem/N, rem%N
+										t.Fatalf("Float32 mismatch (workers=%d, layout=%v, %s) at [b=%d, r=%d, c=%d]: got %v, want %v (diff=%v)",
+											workers, layout, cacheMode, bIdx, r, c, got[i], want, diff)
+									}
+								}
+							}
+
+							// Also test MultiRHS path (used by FusedAttentionQKVProjection).
+							poisonPool()
+							gotMulti0 := make([]float32, B*M*N)
+							gotMulti1 := make([]float32, B*M*N)
+							for i := range gotMulti0 {
+								gotMulti0[i] = -77777.0
+								gotMulti1[i] = -88888.0
+							}
+							targets := []matmul.MultiRHSTarget[float32, float32]{
+								{RHS: rhs, RHSCrossSize: N, Output: gotMulti0},
+								{RHS: rhs, RHSCrossSize: N, Output: gotMulti1, NodeData: &dot.NodeData{RHSConstantData: gobackend.NewAnonymousConstantData()}},
+							}
+							if avx512LargeMultiFloat32(backend, layout, lhsF32, B, M, K, targets) {
+								for i, want := range refOut {
+									if math.Abs(float64(gotMulti0[i]-want)) > 1e-4 || math.Abs(float64(gotMulti1[i]-want)) > 1e-4 {
+										t.Fatalf("MultiRHS Float32 mismatch (workers=%d, layout=%v) at idx=%d: got (%v, %v), want %v",
+											workers, layout, i, gotMulti0[i], gotMulti1[i], want)
+									}
+								}
+							}
+						}
+					}
+				})
+			}
+
+			// Verify alternate generated dtypes (BFloat16, Float16, Float64) on [36, 512] @ [512, 672] with workers=2.
+			t.Run("AlternateDTypes_36x512x672", func(t *testing.T) {
+				const M, K, N = 36, 512, 672
+				lhsBF16 := make([]bfloat16.BFloat16, M*K)
+				rhsBF16 := make([]bfloat16.BFloat16, K*N)
+				lhsF16 := make([]float16.Float16, M*K)
+				rhsF16 := make([]float16.Float16, K*N)
+				lhsF64 := make([]float64, M*K)
+				rhsF64 := make([]float64, K*N)
+				for i := range lhsF64 {
+					v := float32((i%11)-5) * 0.25
+					lhsBF16[i] = bfloat16.FromFloat32(v)
+					lhsF16[i] = float16.FromFloat32(v)
+					lhsF64[i] = float64(v)
+				}
+				for i := range rhsF64 {
+					v := float32((i%13)-6) * 0.25
+					rhsBF16[i] = bfloat16.FromFloat32(v)
+					rhsF16[i] = float16.FromFloat32(v)
+					rhsF64[i] = float64(v)
+				}
+
+				backend.Scheduler.SetMaxParallelism(1)
+				refBF16 := make([]float32, M*N)
+				refF16 := make([]float32, M*N)
+				refF64 := make([]float64, M*N)
+				avx512LargeBFloat16(backend, dot.LayoutNonTransposed, lhsBF16, rhsBF16, 1, M, N, K, refBF16, nil)
+				avx512LargeFloat16(backend, dot.LayoutNonTransposed, lhsF16, rhsF16, 1, M, N, K, refF16, nil)
+				avx512LargeFloat64(backend, dot.LayoutNonTransposed, lhsF64, rhsF64, 1, M, N, K, refF64, nil)
+
+				backend.Scheduler.SetMaxParallelism(2)
+				poisonPool()
+				gotBF16 := make([]float32, M*N)
+				gotF16 := make([]float32, M*N)
+				gotF64 := make([]float64, M*N)
+				for i := range gotBF16 {
+					gotBF16[i] = -77777.0
+					gotF16[i] = -77777.0
+					gotF64[i] = -77777.0
+				}
+				avx512LargeBFloat16(backend, dot.LayoutNonTransposed, lhsBF16, rhsBF16, 1, M, N, K, gotBF16, nil)
+				avx512LargeFloat16(backend, dot.LayoutNonTransposed, lhsF16, rhsF16, 1, M, N, K, gotF16, nil)
+				avx512LargeFloat64(backend, dot.LayoutNonTransposed, lhsF64, rhsF64, 1, M, N, K, gotF64, nil)
+
+				for i := range M * N {
+					if math.Abs(float64(gotBF16[i]-refBF16[i])) > 1e-4 {
+						t.Fatalf("BFloat16 mismatch at idx=%d: got %v, want %v", i, gotBF16[i], refBF16[i])
+					}
+					if math.Abs(float64(gotF16[i]-refF16[i])) > 1e-4 {
+						t.Fatalf("Float16 mismatch at idx=%d: got %v, want %v", i, gotF16[i], refF16[i])
+					}
+					if math.Abs(gotF64[i]-refF64[i]) > 1e-9 {
+						t.Fatalf("Float64 mismatch at idx=%d: got %v, want %v", i, gotF64[i], refF64[i])
+					}
+				}
+			})
+		})
 	}
 }
 

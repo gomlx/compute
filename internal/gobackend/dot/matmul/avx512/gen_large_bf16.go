@@ -49,6 +49,9 @@ func avx512LargeBFloat16( //alt:bf16
 	params := AVX512ParamsBFloat16 //alt:bf16
 	//alt:f16  params := AVX512ParamsFloat16
 	//alt:f64  params := AVX512ParamsFloat64
+	if !AVX512UseAsm {
+		params.LHSL1KernelRows = 4
+	}
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
 	maxWorkers := min(
 		backend.Scheduler.AdjustedMaxParallelism(),
@@ -442,6 +445,9 @@ func avx512LargeMultiBFloat16( //alt:bf16
 	params := AVX512ParamsBFloat16 //alt:bf16
 	//alt:f16  params := AVX512ParamsFloat16
 	//alt:f64  params := AVX512ParamsFloat64
+	if !AVX512UseAsm {
+		params.LHSL1KernelRows = 4
+	}
 
 	totalRHSCrossSize := 0
 	hasPackedCache := false
@@ -979,8 +985,11 @@ func avx512LargeMatrixSliceBFloat16( //alt:bf16
 		if useAccum {
 			// Copy accumulated results from L2 cache to outputMatrix in a single pass (only for panels that could not direct output).
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
-				rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
-				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				lhsPanelEnd := lhsPanelRowIdx + params.LHSPanelCrossSize
+				if len(cachedLHSPanels) > 0 {
+					rowPanelIdx := lhsPanelRowIdx / params.LHSPanelCrossSize
+					lhsPanelEnd = (rowPanelIdx + 1) * params.LHSPanelCrossSize
+				}
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
 				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
@@ -1190,13 +1199,8 @@ func avx512LargeKernelBFloat16( //alt:bf16
 	}()
 	_ = lhsPanelRows // Not needed.
 
-	// BCE hints
-	_ = packedLHS[contractingLen*lhsActiveRows-1]
-	_ = packedRHS[contractingLen*rhsActiveCols-1]
-	_ = packedOutput[(lhsActiveRows-1)*rhsPanelCols+rhsActiveCols-1]
-
 	const (
-		// These much match params.LHSL1BlockRows and params.LHSL1BlockCols.
+		// These must match params.LHSL1KernelRows and params.RHSL1KernelCols.
 		kernelRows = 4  //alt:f32|bf16|f16|f64
 		kernelCols = 32 //alt:f32|bf16|f16
 		//alt:f64  kernelCols = 16
@@ -1209,6 +1213,14 @@ func avx512LargeKernelBFloat16( //alt:bf16
 		bytesPerOutputElement = 4 //alt:f32|bf16|f16
 		//alt:f64  bytesPerOutputElement = 8
 	)
+
+	maxRow := (lhsActiveRows + kernelRows - 1) / kernelRows * kernelRows
+	maxCol := (rhsActiveCols + kernelCols - 1) / kernelCols * kernelCols
+
+	// BCE / bounds checks before unsafe pointer arithmetic.
+	_ = packedLHS[contractingLen*maxRow-1]
+	_ = packedRHS[contractingLen*maxCol-1]
+	_ = packedOutput[(maxRow-1)*rhsPanelCols+maxCol-1]
 
 	outputBasePtr := unsafe.Pointer(unsafe.SliceData(packedOutput))
 	rhsBasePtr := unsafe.Pointer(unsafe.SliceData(packedRHS))
