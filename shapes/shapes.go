@@ -171,15 +171,26 @@ func (s Shape) String() string {
 // It panics if s.IsDynamic().
 //
 // For the number of bytes used to store this shape, see Shape.ByteSize.
-func (s Shape) Size() (size int) {
-	size = 1
+func (s Shape) Size() int {
+	size := s.DynamicSize()
+	if size == DynamicDim {
+		panic(errors.Errorf("Shape.Size() called on shape with dynamic dimensions: %s", s))
+	}
+	return size
+}
+
+// DynamicSize returns the number of elements (not bytes) for this shape. It's the product of all dimensions.
+//
+// If the shape is dynamic (any of the axis is set to DynamicDim), it return DynamicDim (-1) instead.
+func (s Shape) DynamicSize() int {
+	size := 1
 	for _, d := range s.Dimensions {
 		if d == DynamicDim {
-			panic(errors.Errorf("Shape.Size() called on shape with dynamic dimensions: %s", s))
+			return DynamicDim
 		}
 		size *= d
 	}
-	return
+	return size
 }
 
 // IsZeroSize returns whether any of the dimensions is zero, in which case
