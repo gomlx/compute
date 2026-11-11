@@ -1190,11 +1190,6 @@ func avx2LargeKernelBFloat16( //alt:bf16
 	}()
 	_ = lhsPanelRows // Not needed.
 
-	// BCE hints
-	_ = packedLHS[contractingLen*lhsActiveRows-1]
-	_ = packedRHS[contractingLen*rhsActiveCols-1]
-	_ = packedOutput[lhsActiveRows*rhsPanelCols-1]
-
 	const (
 		// These must match params.LHSL1KernelRows and params.RHSL1KernelCols.
 		kernelRows = 4  //alt:f32|bf16|f16|f64
@@ -1209,6 +1204,14 @@ func avx2LargeKernelBFloat16( //alt:bf16
 		bytesPerOutputElement = 4 //alt:f32|bf16|f16
 		//alt:f64  bytesPerOutputElement = 8
 	)
+
+	maxRow := (lhsActiveRows + kernelRows - 1) / kernelRows * kernelRows
+	maxCol := (rhsActiveCols + kernelCols - 1) / kernelCols * kernelCols
+
+	// BCE / bounds checks before unsafe pointer arithmetic.
+	_ = packedLHS[contractingLen*maxRow-1]
+	_ = packedRHS[contractingLen*maxCol-1]
+	_ = packedOutput[(maxRow-1)*rhsPanelCols+maxCol-1]
 
 	outputBasePtr := unsafe.Pointer(unsafe.SliceData(packedOutput))
 	rhsBasePtr := unsafe.Pointer(unsafe.SliceData(packedRHS))

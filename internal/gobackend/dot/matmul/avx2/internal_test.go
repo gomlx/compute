@@ -5,6 +5,7 @@
 package avx2
 
 import (
+	"math"
 	"simd/archsimd"
 	"testing"
 	"time"
@@ -349,6 +350,112 @@ func TestAVX2(t *testing.T) {
 			}
 		})
 	})
+}
+
+// TestAVX2LargeParallelAndGoSIMDBounds tests multi-worker large GEMMs with unaligned row panels
+// and multi-column-panel direct-output slices under both ASM and Go SIMD (AVX2UseAsm=false, where
+// non-zero column tiles with rhsActiveCols < rhsCrossSize previously triggered a BCE bounds panic).
+func TestAVX2LargeParallelAndGoSIMDBounds(t *testing.T) {
+	if !gobackend.IsAVX2Allowed {
+		t.Skip("AVX2 is not supported on this architecture")
+	}
+
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("failed to create backend: %+v", err)
+	}
+	defer backend.Finalize()
+
+	shapes := []struct {
+		name       string
+		B, M, K, N int
+	}{
+		{"DirectOutputMultiColPanel_32x512x672", 1, 32, 512, 672},
+		{"TimestralShape_36x512x672", 1, 36, 512, 672},
+		{"UnalignedTail_50x400x540", 2, 50, 400, 540},
+	}
+
+	for _, useAsm := range []bool{true, false} {
+		asmName := "Asm"
+		if !useAsm {
+			asmName = "GoSIMD"
+		}
+		t.Run(asmName, func(t *testing.T) {
+			origUseAsm := AVX2UseAsm
+			AVX2UseAsm = useAsm
+			defer func() { AVX2UseAsm = origUseAsm }()
+
+			for _, sc := range shapes {
+				t.Run(sc.name, func(t *testing.T) {
+					B, M, K, N := sc.B, sc.M, sc.K, sc.N
+					lhsF32 := make([]float32, B*M*K)
+					rhsF32 := make([]float32, B*K*N)
+					for i := range lhsF32 {
+						lhsF32[i] = float32((i%19)-9) * 0.125
+					}
+					for i := range rhsF32 {
+						rhsF32[i] = float32((i%23)-11) * 0.125
+					}
+
+					backend.Scheduler.SetMaxParallelism(1)
+					refOut := make([]float32, B*M*N)
+					avx2LargeFloat32(backend, dot.LayoutNonTransposed, lhsF32, rhsF32, B, M, N, K, refOut, nil)
+
+					for _, workers := range []int{2, 4} {
+						backend.Scheduler.SetMaxParallelism(workers)
+						got := make([]float32, B*M*N)
+						for i := range got {
+							got[i] = -77777.0
+						}
+						avx2LargeFloat32(backend, dot.LayoutNonTransposed, lhsF32, rhsF32, B, M, N, K, got, nil)
+						for i, want := range refOut {
+							if math.Abs(float64(got[i]-want)) > 1e-4 || math.IsNaN(float64(got[i])) {
+								t.Fatalf("AVX2 Float32 mismatch (%s, workers=%d) at idx=%d: got %v, want %v",
+									asmName, workers, i, got[i], want)
+							}
+						}
+					}
+				})
+			}
+
+			// Also verify BFloat16, Float16, and Float64 direct-output multi-col-panel bounds under GoSIMD/Asm.
+			t.Run("AlternateDTypes_32x256x800", func(t *testing.T) {
+				const M, K, N = 32, 256, 800 // N=800 > Nc=768 (BF16/F16) and Nc=256 (F64), with trailing cols divisible by Nr
+				lhsBF16 := make([]bfloat16.BFloat16, M*K)
+				rhsBF16 := make([]bfloat16.BFloat16, K*N)
+				lhsF16 := make([]float16.Float16, M*K)
+				rhsF16 := make([]float16.Float16, K*N)
+				lhsF64 := make([]float64, M*K)
+				rhsF64 := make([]float64, K*N)
+				for i := range lhsF64 {
+					v := float32((i%11)-5) * 0.25
+					lhsBF16[i] = bfloat16.FromFloat32(v)
+					lhsF16[i] = float16.FromFloat32(v)
+					lhsF64[i] = float64(v)
+				}
+				for i := range rhsF64 {
+					v := float32((i%13)-6) * 0.25
+					rhsBF16[i] = bfloat16.FromFloat32(v)
+					rhsF16[i] = float16.FromFloat32(v)
+					rhsF64[i] = float64(v)
+				}
+
+				backend.Scheduler.SetMaxParallelism(2)
+				outBF16 := make([]float32, M*N)
+				outF16 := make([]float32, M*N)
+				outF64 := make([]float64, M*N)
+				avx2LargeBFloat16(backend, dot.LayoutNonTransposed, lhsBF16, rhsBF16, 1, M, N, K, outBF16, nil)
+				avx2LargeFloat16(backend, dot.LayoutNonTransposed, lhsF16, rhsF16, 1, M, N, K, outF16, nil)
+				avx2LargeFloat64(backend, dot.LayoutNonTransposed, lhsF64, rhsF64, 1, M, N, K, outF64, nil)
+				for i := range M * N {
+					if math.Abs(float64(outBF16[i])-outF64[i]) > 1e-3 || math.Abs(float64(outF16[i])-outF64[i]) > 1e-3 {
+						t.Fatalf("AVX2 alternate dtype mismatch at idx=%d: bf16=%v, f16=%v, f64=%v",
+							i, outBF16[i], outF16[i], outF64[i])
+					}
+				}
+			})
+		})
+	}
 }
 
 func BenchmarkAVX2SmallMatMul(b *testing.B) {
