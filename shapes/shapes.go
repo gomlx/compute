@@ -168,7 +168,7 @@ func (s Shape) String() string {
 
 // Size returns the number of elements (not bytes) for this shape. It's the product of all dimensions.
 //
-// It panics if s.IsDynamic().
+// It panics if s.IsDynamic(). Use Shape.DynamicSize if you want it to return DynamicDim (-1) instead.
 //
 // For the number of bytes used to store this shape, see Shape.ByteSize.
 func (s Shape) Size() int {
