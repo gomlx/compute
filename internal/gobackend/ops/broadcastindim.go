@@ -193,8 +193,8 @@ func execDynamicBroadcastInDim(
 					return nil, errors.Wrapf(err, "execDynamicBroadcastInDim reading dynamic dimension spec %d (%q)", i, spec.Name)
 				}
 				valIdx++
-				if valSize <= 0 {
-					return nil, errors.Errorf("execDynamicBroadcastInDim: dynamic dimension size for axis %q must be positive, got %d", spec.Name, valSize)
+				if valSize < 0 {
+					return nil, errors.Errorf("execDynamicBroadcastInDim: dynamic dimension size for axis %q must be nonnegative, got %d", spec.Name, valSize)
 				}
 				concreteDims[i] = valSize
 			} else {

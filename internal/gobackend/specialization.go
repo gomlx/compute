@@ -21,7 +21,7 @@ type ShapeSpecialization struct {
 	bindings shapes.AxisBindings
 
 	// resolvedNodes is a shallow copy of the original Function.Nodes slice.
-	// Each node has its Shape field resolved (no DynamicDim values).
+	// Each node has its Shape field resolved as far as the bindings allow.
 	// All other fields (Inputs, Data, OpType, etc.) point to the originals.
 	resolvedNodes []*Node
 }
@@ -63,7 +63,10 @@ func extractBindingsFromInputs(params []*Node, inputs []*Buffer) (shapes.AxisBin
 // shape-dependent node.Data for operations that implement RecomputableNodeData.
 func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *ShapeSpecialization, err error) {
 
-	origNodes := e.builder.MainFn.Nodes
+	return specializeFunction(e.backend, e.builder.MainFn.Nodes, bindings)
+}
+
+func specializeFunction(backend *Backend, origNodes []*Node, bindings shapes.AxisBindings) (spec *ShapeSpecialization, err error) {
 	resolved := make([]*Node, len(origNodes))
 
 	// First pass: shallow copy each node and resolve its shape.
@@ -96,7 +99,7 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 		if orig.MultiOutputsShapes != nil {
 			n.MultiOutputsShapes = make([]shapes.Shape, len(orig.MultiOutputsShapes))
 			for j, s := range orig.MultiOutputsShapes {
-				n.MultiOutputsShapes[j], err = s.Resolve(bindings)
+				n.MultiOutputsShapes[j], err = s.ResolvePartial(bindings)
 				if err != nil {
 					return nil, errors.WithMessage(err, "createSpecialization: Shape.Resolve multi-output")
 				}
@@ -124,11 +127,17 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 
 	// Third pass: recompute shape-dependent node.Data for ops that need it.
 	for i, orig := range origNodes {
-		if orig == nil || !anyInputHasDynamicDims(orig) {
+		if orig == nil || !anyInputHasDynamicDims(orig, nil) {
 			continue // Static inputs → original data is fine
 		}
+		// Data-dependent dimensions may not be bound by the parameters. Leave
+		// their metadata unchanged here; resolveRuntimeNode recomputes it once
+		// the operation's concrete input buffers are available.
+		if anyInputHasDynamicDims(orig, resolved) {
+			continue
+		}
 		if recomputable, ok := orig.Data.(RecomputableNodeData); ok {
-			newData, recomputeErr := recomputable.Recompute(e.backend, resolved, orig)
+			newData, recomputeErr := recomputable.Recompute(backend, resolved, resolved[i])
 			if recomputeErr != nil {
 				return nil, errors.WithMessagef(recomputeErr, "specialization: recomputing data for node %d (%s)", i, orig.OpType)
 			}
@@ -142,15 +151,22 @@ func (e *Executable) createSpecialization(bindings shapes.AxisBindings) (spec *S
 	}, nil
 }
 
-// anyInputHasDynamicDims returns true if any input (including captured) of the node has dynamic dimensions.
-func anyInputHasDynamicDims(n *Node) bool {
+// anyInputHasDynamicDims reports whether an input (including captured inputs)
+// has dynamic dimensions. If resolvedNodes is non-nil, it checks those copies.
+func anyInputHasDynamicDims(n *Node, resolvedNodes []*Node) bool {
 	for _, input := range n.Inputs {
+		if resolvedNodes != nil {
+			input = resolvedNodes[input.Index]
+		}
 		if input.Shape.IsDynamic() {
 			return true
 		}
 	}
 	for _, closureCaptures := range n.CapturedInputs {
 		for _, capturedInput := range closureCaptures {
+			if resolvedNodes != nil {
+				capturedInput = resolvedNodes[capturedInput.Index]
+			}
 			if capturedInput.Shape.IsDynamic() {
 				return true
 			}

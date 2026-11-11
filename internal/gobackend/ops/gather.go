@@ -121,6 +121,9 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	if err != nil {
 		return nil, err
 	}
+	if output.RawShape.Size() == 0 {
+		return output, nil
+	}
 
 	// Where to read/write the data.
 	operandBytes, err := operand.MutableBytes()

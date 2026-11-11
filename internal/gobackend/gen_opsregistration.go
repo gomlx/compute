@@ -449,6 +449,14 @@ func (f *Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error
 	return RegisterFusedSoftmax.Fn(f, x, axis)
 }
 
+func (f *Function) FusedTopK(operand compute.Value, k int, axis int, largest bool) (values compute.Value, indices compute.Value, err error) {
+	if RegisterFusedTopK.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.FusedTopK(operand, k, axis, largest)
+	}
+	return RegisterFusedTopK.Fn(f, operand, k, axis, largest)
+}
+
 func (f *Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
 	if RegisterGather.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
@@ -655,6 +663,14 @@ func (f *Function) Neg(x compute.Value) (compute.Value, error) {
 		return f.Function.Neg(x)
 	}
 	return RegisterNeg.Fn(f, x)
+}
+
+func (f *Function) NonZero(operand compute.Value, countAxisName string) (compute.Value, error) {
+	if RegisterNonZero.Fn == nil {
+		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
+		return f.Function.NonZero(operand, countAxisName)
+	}
+	return RegisterNonZero.Fn(f, operand, countAxisName)
 }
 
 func (f *Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
@@ -1168,6 +1184,9 @@ var (
 	RegisterFusedSoftmax = OpHandlerRegistration[func(f *Function, x compute.Value, axis int) (compute.Value, error)]{
 		Method: "FusedSoftmax",
 	}
+	RegisterFusedTopK = OpHandlerRegistration[func(f *Function, operand compute.Value, k int, axis int, largest bool) (values compute.Value, indices compute.Value, err error)]{
+		Method: "FusedTopK",
+	}
 	RegisterGather = OpHandlerRegistration[func(f *Function, operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error)]{
 		Method: "Gather",
 	}
@@ -1245,6 +1264,9 @@ var (
 	}
 	RegisterNeg = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Neg",
+	}
+	RegisterNonZero = OpHandlerRegistration[func(f *Function, operand compute.Value, countAxisName string) (compute.Value, error)]{
+		Method: "NonZero",
 	}
 	RegisterNotEqual = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "NotEqual",

@@ -540,6 +540,12 @@ type ScaledDotProductAttentionConfig struct {
 // Like with standard ops, if the backend doesn't implement the fused op, return
 // ErrNotImplemented (wrapped with a stack).
 type FusedOps interface {
+	// FusedTopK returns sorted values and Int32 indices of the k largest (or
+	// smallest when largest is false) elements along axis. Ties prefer the
+	// lower original index. k must be positive and no larger than the axis.
+	// Backends may return ErrNotImplemented to use GoMLX's stable sort fallback.
+	FusedTopK(operand Value, k, axis int, largest bool) (values, indices Value, err error)
+
 	// FusedActivation applies the configured activation function.
 	// cfg.Type is obligatory, other fields are optional and specific for activations.
 	FusedActivation(x Value, cfg ActivationConfig) (Value, error)

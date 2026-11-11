@@ -49,8 +49,11 @@ func DotGeneral(
 		lDim := lhs.Dimensions[axis]
 		rDim := rhs.Dimensions[rAxis]
 		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
-			if !shapes.AxisNameEqual(lhs.AxisName(axis), rhs.AxisName(rAxis)) {
-				return output, errors.Errorf("DotGeneral contracting axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			// Anonymous axes are unknown at graph construction; the dot operation
+			// itself validates that their runtime sizes are compatible.
+			lhsName, rhsName := lhs.AxisName(axis), rhs.AxisName(rAxis)
+			if lhsName != shapes.AnonymousAxis && rhsName != shapes.AnonymousAxis && !shapes.AxisNameEqual(lhsName, rhsName) {
+				return output, errors.Errorf("DotGeneral contracting axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhsName, rhsName)
 			}
 		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
 			return output, errors.Errorf("DotGeneral contracting dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
@@ -73,14 +76,16 @@ func DotGeneral(
 		lDim := lhs.Dimensions[axis]
 		rDim := rhs.Dimensions[rAxis]
 		if lDim == shapes.DynamicDim && rDim == shapes.DynamicDim {
-			if !shapes.AxisNameEqual(lhs.AxisName(axis), rhs.AxisName(rAxis)) {
-				return output, errors.Errorf("DotGeneral batch axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhs.AxisName(axis), rhs.AxisName(rAxis))
+			// Anonymous axes are unknown at graph construction; the dot operation
+			// itself validates that their runtime sizes are compatible.
+			lhsName, rhsName := lhs.AxisName(axis), rhs.AxisName(rAxis)
+			if lhsName != shapes.AnonymousAxis && rhsName != shapes.AnonymousAxis && !shapes.AxisNameEqual(lhsName, rhsName) {
+				return output, errors.Errorf("DotGeneral batch axis #%d has different axis names (axis name conflict) for lhs (%q) and rhs (%q)", i, lhsName, rhsName)
 			}
 		} else if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim && lDim != rDim {
 			return output, errors.Errorf("DotGeneral batch dimensions do not match: lhs[%d]=%d, rhs[%d]=%d", axis, lDim, rAxis, rDim)
 		}
 	}
-
 
 	isRHSUsed := make([]bool, rhs.Rank())
 	for _, axis := range rhsContractingAxes {
@@ -119,6 +124,12 @@ func DotGeneral(
 		if axisNames != nil {
 			lName := lhs.AxisName(axis)
 			rName := rhs.AxisName(rhsBatchAxes[i])
+			// Explicit dot axes are checked at runtime when their sizes are
+			// unknown. Do not claim a symbolic equality for anonymous axes.
+			if lName == shapes.AnonymousAxis || rName == shapes.AnonymousAxis {
+				axisNames = append(axisNames, shapes.AnonymousAxis)
+				continue
+			}
 			unified, err := shapes.UnifyAxisName(lName, rName)
 			if err != nil {
 				return output, errors.Wrapf(err, "axis name conflict in DotGeneral batch axis %d", i)

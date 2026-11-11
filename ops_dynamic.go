@@ -43,6 +43,12 @@ type DynamicPadAxis struct {
 
 // DynamicOps defines the operations that expect or operate on dynamic shapes.
 type DynamicOps interface {
+	// NonZero returns row-major coordinates of nonzero elements as an int64
+	// tensor [operand rank, count]. The data-dependent count dimension is named
+	// countAxisName, which must be nonempty and unique to this result.
+	// A scalar operand produces shape [0, 0] or [0, 1].
+	NonZero(operand Value, countAxisName string) (Value, error)
+
 	// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
 	// This is only supported by backends that support dynamic shapes (see Capabilities.DynamicShapes).
 	//

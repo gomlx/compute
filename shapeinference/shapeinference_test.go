@@ -1530,16 +1530,18 @@ func TestDotGeneral_DynamicAndNames(t *testing.T) {
 		}
 	})
 
-	t.Run("AnonymousAxisConflict", func(t *testing.T) {
+	t.Run("AnonymousBatchAxes", func(t *testing.T) {
 		lhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
 		rhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
-		_, err := DotGeneral(lhs, []int{1}, []int{0}, rhs, []int{1}, []int{0}, DotGeneralConfig{})
-		if err == nil {
-			t.Fatalf("Expected error, got nil")
+		output, err := DotGeneral(lhs, []int{1}, []int{0}, rhs, []int{1}, []int{0}, DotGeneralConfig{})
+		if err != nil {
+			t.Fatalf("anonymous batch axes: %+v", err)
+		}
+		if output.Dim(0) != shapes.DynamicDim || output.AxisName(0) != shapes.AnonymousAxis {
+			t.Fatalf("expected an anonymous dynamic output axis, got %s", output)
 		}
 	})
 }
-
 
 func TestConcatenateOp_Dynamic(t *testing.T) {
 	t.Run("ConcatOnDynamicAxis", func(t *testing.T) {

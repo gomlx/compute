@@ -130,8 +130,8 @@ func execDynamicReshape(backend *gobackend.Backend, node *gobackend.Node, inputs
 					return nil, errors.Wrapf(err, "execDynamicReshape reading dynamic dimension spec %d (%q)", i, spec.Name)
 				}
 				valIdx++
-				if valSize <= 0 {
-					return nil, errors.Errorf("execDynamicReshape: dynamic dimension size for axis %q must be positive, got %d", spec.Name, valSize)
+				if valSize < 0 {
+					return nil, errors.Errorf("execDynamicReshape: dynamic dimension size for axis %q must be nonnegative, got %d", spec.Name, valSize)
 				}
 				concreteDims[i] = valSize
 				knownProduct *= valSize

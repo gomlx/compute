@@ -722,7 +722,6 @@ func CumSum(operand shapes.Shape, axis int) (output shapes.Shape, err error) {
 	return operand.Clone(), nil
 }
 
-
 // Gather returns the output shape of a Gather operation.
 func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutputAxes, collapsedSliceAxes,
 	startIndexMap, sliceSizes []int, indicesAreSorted bool) (output shapes.Shape, err error) {
@@ -1431,7 +1430,6 @@ func SelectAndScatter(operand, source shapes.Shape, windowDimensions, windowStri
 	return operand.Clone(), nil
 }
 
-
 // ConvGeneral returns the expected output shape for the ConvGeneral operation.
 func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	strides []int, paddings [][2]int,
@@ -1601,15 +1599,16 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 			kernelDilation = kernelDilations[spatialAxisIdx]
 		}
 
-		// Dynamic spatial dims: propagate DynamicDim without arithmetic.
+		// Runtime convolution geometry is derived from concrete input sizes.
 		if inputDim == shapes.DynamicDim {
-			// If it's a dynamic dimension, we currently don't support any operation that
-			// changes its size, because we don't have axis expressions to represent the new size.
-			if kernelDim != 1 || stride != 1 || padding[0] != 0 || padding[1] != 0 || inputDilation != 1 || kernelDilation != 1 {
-				return shapes.Invalid(), errors.Errorf("ConvGeneralOp: operation on a dynamic axis (%d, name %q) that changes its size is not supported yet (requires axis expressions)",
-					inputAxis, input.AxisName(inputAxis))
+			outputAxis := axes.OutputSpatial[spatialAxisIdx]
+			output.Dimensions[outputAxis] = shapes.DynamicDim
+			if stride != 1 || inputDilation != 1 || padding[0]+padding[1] != (kernelDim-1)*kernelDilation {
+				if output.AxisNames == nil {
+					output.AxisNames = make([]string, output.Rank())
+				}
+				output.AxisNames[outputAxis] = shapes.AnonymousAxis
 			}
-			output.Dimensions[axes.OutputSpatial[spatialAxisIdx]] = shapes.DynamicDim
 			continue
 		}
 

@@ -187,6 +187,23 @@ func FusedAttentionQKVProjection(f *gobackend.Function, x, wQKV, biasQ, biasK, b
 // inputs[1]: wQKV [inFeatures, qDim+2*kvDim]
 // inputs[2..]: biasQ, biasK, biasV (optional, determined by node data flags)
 // outputs: q [batch..., qDim], k [batch..., kvDim], v [batch..., kvDim]
+func resolveDynamicQKVOutputShape(outputShape, inputShape shapes.Shape) (shapes.Shape, error) {
+	if outputShape.Rank() != inputShape.Rank() {
+		return shapes.Invalid(), errors.Errorf("QKV output rank %d does not match input rank %d", outputShape.Rank(), inputShape.Rank())
+	}
+	dimensions := slices.Clone(outputShape.Dimensions)
+	for axis, dim := range dimensions {
+		if dim != shapes.DynamicDim {
+			continue
+		}
+		if inputShape.Dimensions[axis] == shapes.DynamicDim {
+			return shapes.Invalid(), errors.Errorf("QKV output axis %d is dynamic in the runtime input shape %s", axis, inputShape)
+		}
+		dimensions[axis] = inputShape.Dimensions[axis]
+	}
+	return shapes.Make(outputShape.DType, dimensions...), nil
+}
+
 func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) ([]*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedAttentionQKVProjection)
 	x := inputs[0]
@@ -207,9 +224,18 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 		biasV = inputs[biasIdx]
 	}
 
-	qShape := node.MultiOutputsShapes[0]
-	kShape := node.MultiOutputsShapes[1]
-	vShape := node.MultiOutputsShapes[2]
+	qShape, err := resolveDynamicQKVOutputShape(node.MultiOutputsShapes[0], x.RawShape)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve query output shape")
+	}
+	kShape, err := resolveDynamicQKVOutputShape(node.MultiOutputsShapes[1], x.RawShape)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve key output shape")
+	}
+	vShape, err := resolveDynamicQKVOutputShape(node.MultiOutputsShapes[2], x.RawShape)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolve value output shape")
+	}
 	qBuf, err := backend.GetBuffer(qShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", qShape)

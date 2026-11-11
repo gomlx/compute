@@ -35,7 +35,7 @@ func (b AxisBindings) Key() string {
 //
 // The resolved shape retains its AxisNames for provenance/debugging.
 //
-// Returns an error a named dynamic axis has no corresponding binding, or if the binding is non-positive.
+// Returns an error a named dynamic axis has no corresponding binding, or if the binding is negative.
 func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 	if !s.IsDynamic() {
 		return s, nil
@@ -53,8 +53,8 @@ func (s Shape) Resolve(bindings AxisBindings) (Shape, error) {
 		if !ok {
 			return Shape{}, errors.Errorf("Shape.Resolve: no binding for axis %q in shape %s", name, s)
 		}
-		if val <= 0 {
-			return Shape{}, errors.Errorf("Shape.Resolve: binding for axis %q must be positive, got %d", name, val)
+		if val < 0 {
+			return Shape{}, errors.Errorf("Shape.Resolve: binding for axis %q must be nonnegative, got %d", name, val)
 		}
 		resolved.Dimensions[i] = val
 	}
@@ -79,8 +79,8 @@ func (s Shape) ResolvePartial(bindings AxisBindings) (Shape, error) {
 		if !ok {
 			continue
 		}
-		if val <= 0 {
-			return Shape{}, errors.Errorf("Shape.ResolvePartial: binding for axis %q must be positive, got %d", name, val)
+		if val < 0 {
+			return Shape{}, errors.Errorf("Shape.ResolvePartial: binding for axis %q must be nonnegative, got %d", name, val)
 		}
 		resolved.Dimensions[i] = val
 	}
@@ -115,7 +115,6 @@ func resolveAxisName(name string, bindings AxisBindings) (int, bool) {
 	return 0, false
 }
 
-
 // Extract axis bindings by comparing a template shape (with named dynamic axes)
 // against a concrete shape with all dimensions known (presumably given during execution, when the concrete inputs
 // are given).
@@ -138,6 +137,10 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 
 		if templateDim == DynamicDim {
 			name := template.AxisName(i)
+			// Anonymous axes are independent runtime dimensions, not bindings.
+			if name == AnonymousAxis {
+				continue
+			}
 			if name == "" {
 				return errors.Errorf(
 					"ExtractBindings: template %s has dynamic dimension at axis %d but no axis name",
@@ -181,7 +184,6 @@ func UnifyAxisName(name1, name2 string) (string, error) {
 	}
 	return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
 }
-
 
 // UnifyAxisNames unifies axis names from two shapes of the same rank.
 // Returns the unified axis names, or error on name conflicts.

@@ -386,7 +386,9 @@ type funcExecBuffers struct {
 	//     still open at dispatch time.
 	//   - Capacity: sized to NumNodesToProcess+10, which exceeds the maximum
 	//     number of concurrently ready nodes, so sends never block.
-	readyQueue chan int
+	readyQueue  chan int
+	readyMu     sync.RWMutex
+	readyClosed bool
 }
 
 // Execute runs the compiled function with the given inputs.
@@ -402,6 +404,21 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	if len(inputs) != len(funcParams) {
 		return nil, errors.Errorf("function expects %d inputs, got %d",
 			len(funcParams), len(inputs))
+	}
+
+	// Named functions may receive dimensions produced by data-dependent ops
+	// in their caller. Bind these parameters before executing shape-only ops.
+	if spec == nil {
+		bindings, err := extractBindingsFromInputs(funcParams, inputs)
+		if err != nil {
+			return nil, err
+		}
+		if len(bindings) > 0 {
+			spec, err = specializeFunction(backend, fe.Function.Nodes, bindings)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Validate captured inputs count
@@ -423,6 +440,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// Get execution buffers from pool and reset
 	execBuf := fe.ExecutionBuffersPool.Get().(*funcExecBuffers)
 	execBuf.readyQueue = make(chan int, fe.NumNodesToProcess+10)
+	execBuf.readyClosed = false
 	for i := range fe.NumNodesToProcess {
 		execBuf.numUsed[i].Store(0)
 		execBuf.owned[i] = false
@@ -612,6 +630,11 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 	// Safety proof: at dispatch time, at least 2 completion units are outstanding
 	// (this node's increment and the dispatched node's future increment), so
 	// completed < expected and the channel is guaranteed to still be open.
+	execBuf.readyMu.RLock()
+	if execBuf.readyClosed {
+		execBuf.readyMu.RUnlock()
+		return
+	}
 	for _, depIdx := range newReady {
 		if localContinuation != nil && *localContinuation == -1 {
 			*localContinuation = depIdx
@@ -622,6 +645,8 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 			}
 		}
 	}
+
+	execBuf.readyMu.RUnlock()
 
 	// Phase 3: Atomic completion tracking.
 	// Compute total increment: 1 for the executed node itself, plus 1 for each
@@ -708,7 +733,10 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 	)
 
 	stopExecutionFn = sync.OnceFunc(func() {
+		execBuf.readyMu.Lock()
+		execBuf.readyClosed = true
 		close(execBuf.readyQueue)
+		execBuf.readyMu.Unlock()
 	})
 
 	appendErrorFn := func(err error) {
@@ -870,6 +898,12 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			fe.NumUses[inputIdx]-int(execBuf.numUsed[inputIdx].Load()) == 1
 	}
 
+	resolvedNode, resolveErr := resolveRuntimeNode(backend, node, inputBuffers, spec)
+	if resolveErr != nil {
+		return errors.Wrapf(resolveErr, "resolving runtime shape for %s", node.OpType)
+	}
+
+	node = resolvedNode
 	// Check for closure executor first (If, While, Sort).
 	// Closure executors receive captured inputs separately with explicit ownership tracking.
 	closureExecutor := NodeClosureExecutors[node.OpType]
