@@ -287,3 +287,55 @@ func BenchmarkSmallNoSIMD(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkLargeNoSIMD(b *testing.B) {
+	defer func() {
+		dot.ResetTestRegistrations()
+		matmul.ForceSmallVariant = false
+		matmul.ForceLargeVariant = false
+	}()
+	dot.ResetTestRegistrations()
+	matmul.RegisterNoSIMDForTests()
+	matmul.ForceSmallVariant = false
+	matmul.ForceLargeVariant = true
+
+	cases := []struct {
+		name    string
+		layout  dot.Layout
+		M, K, N int
+	}{
+		{"NonTransposed/[128,128]x[128,128]", dot.LayoutNonTransposed, 128, 128, 128},
+		{"NonTransposed/[256,256]x[256,256]", dot.LayoutNonTransposed, 256, 256, 256},
+		{"NonTransposed/[512,512]x[512,512]", dot.LayoutNonTransposed, 512, 512, 512},
+		{"Transposed/[128,128]x[128,128]", dot.LayoutTransposed, 128, 128, 128},
+		{"Transposed/[256,256]x[256,256]", dot.LayoutTransposed, 256, 256, 256},
+		{"Transposed/[512,512]x[512,512]", dot.LayoutTransposed, 512, 512, 512},
+	}
+
+	for _, tc := range cases {
+		M, K, N := tc.M, tc.K, tc.N
+		flops := float64(2 * M * N * K)
+		lhs := make([]float32, M*K)
+		var rhs []float32
+		if tc.layout == dot.LayoutNonTransposed {
+			rhs = make([]float32, K*N)
+		} else {
+			rhs = make([]float32, N*K)
+		}
+		out := make([]float32, M*N)
+
+		b.Run(tc.name, func(b *testing.B) {
+			bBackend := backend.(*gobackend.Backend)
+			b.ResetTimer()
+			for b.Loop() {
+				matmul.TestNoSIMDRouterFloat32(bBackend, tc.layout, lhs, rhs, 1, M, N, K, out)
+			}
+			elapsed := b.Elapsed()
+			if elapsed > 0 && b.N > 0 {
+				gflops := (flops * float64(b.N) / elapsed.Seconds()) / 1e9
+				b.ReportMetric(gflops, "GFlops/s")
+				b.ReportMetric(humanize.DurationPerOp(elapsed, b.N))
+			}
+		})
+	}
+}

@@ -360,12 +360,15 @@ func avx512PackRHSNonTransposed[T gotype.ScalarNotComplex](
 	rhs, panel []T,
 	rhsRowStart, rhsColStart, rhsCols,
 	contractingRows, copyCols, kernelCols int) {
+	if contractingRows == 0 || copyCols == 0 {
+		return
+	}
 
 	// We do our very best to convert the input into byte slices.
 	var zero T
 	bytesPerElement := uintptr(unsafe.Sizeof(zero))
-	rhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(rhs)))
-	panelBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(panel)))
+	rhsBasePtr := unsafe.Pointer(unsafe.SliceData(rhs))
+	panelBasePtr := unsafe.Pointer(unsafe.SliceData(panel))
 	copyColsBytesAll := uintptr(copyCols) * bytesPerElement
 	rhsStrideBytes := uintptr(rhsCols) * bytesPerElement // The row stride of the original matrix
 	rhsColStartBytes := uintptr(rhsColStart) * bytesPerElement
@@ -375,79 +378,97 @@ func avx512PackRHSNonTransposed[T gotype.ScalarNotComplex](
 	}
 
 	// From here on, we work only on byte indices.
-	panelPtr := panelBasePtr
+	panelOffset := uintptr(0)
 	// Iterate over full-strips (using all the kernelCols, so no padding needed).
 	stripColIdx := uintptr(0)
 	if AVX512UseAsm && (kernelColsBytes == 256 || kernelColsBytes == 128 || kernelColsBytes == 64) {
 		numFullStrips := int(copyColsBytesAll / kernelColsBytes)
 		if numFullStrips > 0 {
-			rhsStartPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes
+			rhsStartPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes)
 			avx512PackRHSFullStripsAsm(
-				unsafe.Pointer(rhsStartPtr),
-				unsafe.Pointer(panelBasePtr),
+				rhsStartPtr,
+				panelBasePtr,
 				rhsStrideBytes,
 				contractingRows,
 				numFullStrips,
 				int(kernelColsBytes),
 			)
 			stripColIdx = uintptr(numFullStrips) * kernelColsBytes
-			panelPtr = panelBasePtr + uintptr(numFullStrips)*uintptr(contractingRows)*kernelColsBytes
+			panelOffset = uintptr(numFullStrips) * uintptr(contractingRows) * kernelColsBytes
 		}
 	}
 	switch kernelColsBytes { // Multiple of 64.
 	case 256:
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
-			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
-			for range contractingRows {
-				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr)))
-				v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr + 64)))
-				v2 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr + 128)))
-				v3 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr + 192)))
-				v0.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr)))
-				v1.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr + 64)))
-				v2.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr + 128)))
-				v3.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr + 192)))
-				panelPtr += kernelColsBytes
-				rhsPtr += rhsStrideBytes
+			rhsPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes+stripColIdx)
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
+			for k := 0; ; {
+				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(rhsPtr))
+				v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsPtr, 64)))
+				v2 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsPtr, 128)))
+				v3 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsPtr, 192)))
+				v0.StoreArray((*[64]uint8)(pDst))
+				v1.StoreArray((*[64]uint8)(unsafe.Add(pDst, 64)))
+				v2.StoreArray((*[64]uint8)(unsafe.Add(pDst, 128)))
+				v3.StoreArray((*[64]uint8)(unsafe.Add(pDst, 192)))
+				if k++; k >= contractingRows {
+					break
+				}
+				pDst = unsafe.Add(pDst, kernelColsBytes)
+				rhsPtr = unsafe.Add(rhsPtr, rhsStrideBytes)
 			}
+			panelOffset += uintptr(contractingRows) * kernelColsBytes
 		}
 	case 128:
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
-			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
-			for range contractingRows {
-				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr)))
-				v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr + 64)))
-				v0.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr)))
-				v1.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr + 64)))
-				panelPtr += kernelColsBytes
-				rhsPtr += rhsStrideBytes
+			rhsPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes+stripColIdx)
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
+			for k := 0; ; {
+				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(rhsPtr))
+				v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsPtr, 64)))
+				v0.StoreArray((*[64]uint8)(pDst))
+				v1.StoreArray((*[64]uint8)(unsafe.Add(pDst, 64)))
+				if k++; k >= contractingRows {
+					break
+				}
+				pDst = unsafe.Add(pDst, kernelColsBytes)
+				rhsPtr = unsafe.Add(rhsPtr, rhsStrideBytes)
 			}
+			panelOffset += uintptr(contractingRows) * kernelColsBytes
 		}
 	case 64:
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
-			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
-			for range contractingRows {
-				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr)))
-				v0.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr)))
-				panelPtr += kernelColsBytes
-				rhsPtr += rhsStrideBytes
+			rhsPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes+stripColIdx)
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
+			for k := 0; ; {
+				v0 := archsimd.LoadUint8x64Array((*[64]uint8)(rhsPtr))
+				v0.StoreArray((*[64]uint8)(pDst))
+				if k++; k >= contractingRows {
+					break
+				}
+				pDst = unsafe.Add(pDst, kernelColsBytes)
+				rhsPtr = unsafe.Add(rhsPtr, rhsStrideBytes)
 			}
+			panelOffset += uintptr(contractingRows) * kernelColsBytes
 		}
 	default:
 		// Copy 64 bytes at a time.
 		for ; stripColIdx+kernelColsBytes <= copyColsBytesAll; stripColIdx += kernelColsBytes {
-			rhsPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
-			for range contractingRows {
-				rowRhsPtr := rhsPtr
+			rhsPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes+stripColIdx)
+			pDstRow := unsafe.Add(panelBasePtr, panelOffset)
+			for k := 0; ; {
 				// kernelColIdx is a multiple of 64, we checked at the start.
 				for kernelColIdx := uintptr(0); kernelColIdx < kernelColsBytes; kernelColIdx += 64 {
-					v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rowRhsPtr)))
-					v0.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr)))
-					panelPtr += 64
-					rowRhsPtr += 64
+					v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsPtr, kernelColIdx)))
+					v0.StoreArray((*[64]uint8)(unsafe.Add(pDstRow, kernelColIdx)))
 				}
-				rhsPtr += rhsStrideBytes
+				if k++; k >= contractingRows {
+					break
+				}
+				pDstRow = unsafe.Add(pDstRow, kernelColsBytes)
+				rhsPtr = unsafe.Add(rhsPtr, rhsStrideBytes)
 			}
+			panelOffset += uintptr(contractingRows) * kernelColsBytes
 		}
 	}
 
@@ -457,38 +478,38 @@ func avx512PackRHSNonTransposed[T gotype.ScalarNotComplex](
 		return
 	}
 
-	// The panelPtr is already at the correct position for the last strip.
-	rhsStripStartPtr := rhsBasePtr + uintptr(rhsRowStart)*rhsStrideBytes + rhsColStartBytes + stripColIdx
+	// The panelOffset is already at the correct position for the last strip.
+	rhsRowPtr := unsafe.Add(rhsBasePtr, uintptr(rhsRowStart)*rhsStrideBytes+rhsColStartBytes+stripColIdx)
+	panelRowPtr := unsafe.Add(panelBasePtr, panelOffset)
+	padBytes := kernelColsBytes - copyColsBytes
 
 	// Iterate over the rows of rhs
-	for range contractingRows {
-		rhsPtr := rhsStripStartPtr
+	for k := 0; ; {
 		colByteIdx := uintptr(0)
 		// Assuming copy() doesn't use AVX512, we copy 64 bytes at a time ourselves.
 		for ; colByteIdx+64 <= copyColsBytes; colByteIdx += 64 {
 			// Copy 64 bytes at a time.
-			v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(rhsPtr)))
-			v0.StoreArray((*[64]uint8)(unsafe.Pointer(panelPtr)))
-			rhsPtr += 64
-			panelPtr += 64
+			v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(rhsRowPtr, colByteIdx)))
+			v0.StoreArray((*[64]uint8)(unsafe.Add(panelRowPtr, colByteIdx)))
 		}
 		// Copy the remaining bytes.
 		remainingBytes := copyColsBytes - colByteIdx
 		if remainingBytes > 0 {
-			rhsSlice := unsafe.Slice((*uint8)(unsafe.Pointer(rhsPtr)), remainingBytes)
-			panelSlice := unsafe.Slice((*uint8)(unsafe.Pointer(panelPtr)), remainingBytes)
+			rhsSlice := unsafe.Slice((*uint8)(unsafe.Add(rhsRowPtr, colByteIdx)), remainingBytes)
+			panelSlice := unsafe.Slice((*uint8)(unsafe.Add(panelRowPtr, colByteIdx)), remainingBytes)
 			copy(panelSlice, rhsSlice)
-			panelPtr += remainingBytes
 		}
 
 		// Zero-pad if strip is incomplete (edge of matrix)
-		padBytes := kernelColsBytes - copyColsBytes
-		for range padBytes {
-			*(*uint8)(unsafe.Pointer(panelPtr)) = 0
-			panelPtr++
+		if padBytes > 0 {
+			clear(unsafe.Slice((*uint8)(unsafe.Add(panelRowPtr, copyColsBytes)), padBytes))
 		}
 
-		rhsStripStartPtr += rhsStrideBytes
+		if k++; k >= contractingRows {
+			break
+		}
+		rhsRowPtr = unsafe.Add(rhsRowPtr, rhsStrideBytes)
+		panelRowPtr = unsafe.Add(panelRowPtr, kernelColsBytes)
 	}
 }
 
@@ -509,11 +530,14 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	lhs, panel []T,
 	lhsRowStart, lhsColStart, lhsCols,
 	copyRows, contractingCols, kernelRows int) {
+	if copyRows == 0 || contractingCols == 0 {
+		return
+	}
 
 	var zero T
 	bytesPerElement := uintptr(unsafe.Sizeof(zero))
-	lhsBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(lhs)))
-	panelBasePtr := uintptr(unsafe.Pointer(unsafe.SliceData(panel)))
+	lhsBasePtr := unsafe.Pointer(unsafe.SliceData(lhs))
+	panelBasePtr := unsafe.Pointer(unsafe.SliceData(panel))
 
 	lhsStrideBytes := uintptr(lhsCols) * bytesPerElement
 	lhsColStartBytes := uintptr(lhsColStart) * bytesPerElement
@@ -566,8 +590,8 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 			if fullRows == copyRows {
 				return
 			}
-			panelOffset := fullRows * contractingCols
-			unsafePackLHS(lhs, panel[panelOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
+			panelElemOffset := fullRows * contractingCols
+			unsafePackLHS(lhs, panel[panelElemOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
 			return
 		}
 		unsafePackLHS(lhs, panel, lhsRowStart, lhsColStart, lhsCols, copyRows, contractingCols, kernelRows)
@@ -575,7 +599,7 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	}
 
 	kernelRowsBytes := uintptr(kernelRows) * bytesPerElement
-	panelPtr := panelBasePtr
+	panelOffset := uintptr(0)
 	stripRowIdx := 0
 
 	if AVX512UseAsm {
@@ -609,7 +633,7 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 				return
 			}
 			stripRowIdx = fullRows
-			panelPtr = panelBasePtr + uintptr(stripRowIdx*contractingCols)*bytesPerElement
+			panelOffset = uintptr(stripRowIdx*contractingCols) * bytesPerElement
 			goto edge_strip
 		}
 	}
@@ -617,42 +641,42 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 	// Iterate over full strips first:
 	for ; stripRowIdx < copyRows-kernelRows+1; stripRowIdx += kernelRows {
 		colByteIdx := uintptr(0)
-		lhsRow0Ptr := lhsBasePtr + uintptr(lhsRowStart+stripRowIdx)*lhsStrideBytes + lhsColStartBytes
-		lhsRow1Ptr := lhsRow0Ptr + lhsStrideBytes
-		lhsRow2Ptr := lhsRow1Ptr + lhsStrideBytes
-		lhsRow3Ptr := lhsRow2Ptr + lhsStrideBytes
+		lhsRow0Base := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+stripRowIdx)*lhsStrideBytes+lhsColStartBytes)
+		lhsRow1Base := unsafe.Add(lhsRow0Base, lhsStrideBytes)
+		lhsRow2Base := unsafe.Add(lhsRow1Base, lhsStrideBytes)
+		lhsRow3Base := unsafe.Add(lhsRow2Base, lhsStrideBytes)
 
 		// Vectorized loop over cols (64 bytes at a time)
 		for ; colByteIdx+64 <= contractingColsBytes; colByteIdx += 64 {
-			v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(lhsRow0Ptr)))
-			v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(lhsRow1Ptr)))
-			v2 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(lhsRow2Ptr)))
-			v3 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Pointer(lhsRow3Ptr)))
+			v0 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(lhsRow0Base, colByteIdx)))
+			v1 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(lhsRow1Base, colByteIdx)))
+			v2 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(lhsRow2Base, colByteIdx)))
+			v3 := archsimd.LoadUint8x64Array((*[64]uint8)(unsafe.Add(lhsRow3Base, colByteIdx)))
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
 
 			switch bytesPerElement {
 			case 4:
 				t0, t1, t2, t3 := avx512Transpose4x16x32bits(v0.AsUint32x16(), v1.AsUint32x16(), v2.AsUint32x16(), v3.AsUint32x16())
-				t0.StoreArray((*[16]uint32)(unsafe.Pointer(panelPtr)))
-				t1.StoreArray((*[16]uint32)(unsafe.Pointer(panelPtr + 64)))
-				t2.StoreArray((*[16]uint32)(unsafe.Pointer(panelPtr + 128)))
-				t3.StoreArray((*[16]uint32)(unsafe.Pointer(panelPtr + 192)))
-
-				panelPtr += 256 // 4 x 16 x uint32
+				t0.StoreArray((*[16]uint32)(pDst))
+				t1.StoreArray((*[16]uint32)(unsafe.Add(pDst, 64)))
+				t2.StoreArray((*[16]uint32)(unsafe.Add(pDst, 128)))
+				t3.StoreArray((*[16]uint32)(unsafe.Add(pDst, 192)))
+				panelOffset += 256 // 4 x 16 x uint32
 
 			case 8:
 				t0, t1, t2, t3 := avx512Transpose4x8x64bits(v0.AsUint64x8(), v1.AsUint64x8(), v2.AsUint64x8(), v3.AsUint64x8())
-				t0.StoreArray((*[8]uint64)(unsafe.Pointer(panelPtr)))
-				t1.StoreArray((*[8]uint64)(unsafe.Pointer(panelPtr + 64)))
-				t2.StoreArray((*[8]uint64)(unsafe.Pointer(panelPtr + 128)))
-				t3.StoreArray((*[8]uint64)(unsafe.Pointer(panelPtr + 192)))
-				panelPtr += 256
+				t0.StoreArray((*[8]uint64)(pDst))
+				t1.StoreArray((*[8]uint64)(unsafe.Add(pDst, 64)))
+				t2.StoreArray((*[8]uint64)(unsafe.Add(pDst, 128)))
+				t3.StoreArray((*[8]uint64)(unsafe.Add(pDst, 192)))
+				panelOffset += 256
 			case 2:
 				t0, t1, t2, t3 := avx512Transpose4x32x16bits(v0.AsUint16x32(), v1.AsUint16x32(), v2.AsUint16x32(), v3.AsUint16x32())
-				t0.StoreArray((*[32]uint16)(unsafe.Pointer(panelPtr)))
-				t1.StoreArray((*[32]uint16)(unsafe.Pointer(panelPtr + 64)))
-				t2.StoreArray((*[32]uint16)(unsafe.Pointer(panelPtr + 128)))
-				t3.StoreArray((*[32]uint16)(unsafe.Pointer(panelPtr + 192)))
-				panelPtr += 256 // 4 x 16 x uint32
+				t0.StoreArray((*[32]uint16)(pDst))
+				t1.StoreArray((*[32]uint16)(unsafe.Add(pDst, 64)))
+				t2.StoreArray((*[32]uint16)(unsafe.Add(pDst, 128)))
+				t3.StoreArray((*[32]uint16)(unsafe.Add(pDst, 192)))
+				panelOffset += 256 // 4 x 16 x uint32
 
 			case 1:
 				var tmp0, tmp1, tmp2, tmp3 [64]uint8
@@ -661,49 +685,43 @@ func avx512PackLHSKernelRows4[T gotype.ScalarNotComplex](
 				v2.StoreArray(&tmp2)
 				v3.StoreArray(&tmp3)
 				for i := uintptr(0); i < 64; i++ {
-					*(*uint8)(unsafe.Pointer(panelPtr)) = tmp0[i]
-					*(*uint8)(unsafe.Pointer(panelPtr + 1)) = tmp1[i]
-					*(*uint8)(unsafe.Pointer(panelPtr + 2)) = tmp2[i]
-					*(*uint8)(unsafe.Pointer(panelPtr + 3)) = tmp3[i]
-					panelPtr += kernelRowsBytes
+					pElem := unsafe.Add(pDst, i*kernelRowsBytes)
+					*(*uint8)(pElem) = tmp0[i]
+					*(*uint8)(unsafe.Add(pElem, 1)) = tmp1[i]
+					*(*uint8)(unsafe.Add(pElem, 2)) = tmp2[i]
+					*(*uint8)(unsafe.Add(pElem, 3)) = tmp3[i]
 				}
+				panelOffset += 64 * kernelRowsBytes
 			}
-
-			lhsRow0Ptr += 64
-			lhsRow1Ptr += 64
-			lhsRow2Ptr += 64
-			lhsRow3Ptr += 64
 		}
 
 		// Scalar tail
 		for col := int(colByteIdx / bytesPerElement); col < contractingCols; col++ {
+			srcOff := uintptr(col) * bytesPerElement
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
 			switch bytesPerElement {
 			case 8:
-				*(*uint64)(unsafe.Pointer(panelPtr)) = *(*uint64)(unsafe.Pointer(lhsRow0Ptr))
-				*(*uint64)(unsafe.Pointer(panelPtr + 8)) = *(*uint64)(unsafe.Pointer(lhsRow1Ptr))
-				*(*uint64)(unsafe.Pointer(panelPtr + 16)) = *(*uint64)(unsafe.Pointer(lhsRow2Ptr))
-				*(*uint64)(unsafe.Pointer(panelPtr + 24)) = *(*uint64)(unsafe.Pointer(lhsRow3Ptr))
+				*(*uint64)(pDst) = *(*uint64)(unsafe.Add(lhsRow0Base, srcOff))
+				*(*uint64)(unsafe.Add(pDst, 8)) = *(*uint64)(unsafe.Add(lhsRow1Base, srcOff))
+				*(*uint64)(unsafe.Add(pDst, 16)) = *(*uint64)(unsafe.Add(lhsRow2Base, srcOff))
+				*(*uint64)(unsafe.Add(pDst, 24)) = *(*uint64)(unsafe.Add(lhsRow3Base, srcOff))
 			case 4:
-				*(*uint32)(unsafe.Pointer(panelPtr)) = *(*uint32)(unsafe.Pointer(lhsRow0Ptr))
-				*(*uint32)(unsafe.Pointer(panelPtr + 4)) = *(*uint32)(unsafe.Pointer(lhsRow1Ptr))
-				*(*uint32)(unsafe.Pointer(panelPtr + 8)) = *(*uint32)(unsafe.Pointer(lhsRow2Ptr))
-				*(*uint32)(unsafe.Pointer(panelPtr + 12)) = *(*uint32)(unsafe.Pointer(lhsRow3Ptr))
+				*(*uint32)(pDst) = *(*uint32)(unsafe.Add(lhsRow0Base, srcOff))
+				*(*uint32)(unsafe.Add(pDst, 4)) = *(*uint32)(unsafe.Add(lhsRow1Base, srcOff))
+				*(*uint32)(unsafe.Add(pDst, 8)) = *(*uint32)(unsafe.Add(lhsRow2Base, srcOff))
+				*(*uint32)(unsafe.Add(pDst, 12)) = *(*uint32)(unsafe.Add(lhsRow3Base, srcOff))
 			case 2:
-				*(*uint16)(unsafe.Pointer(panelPtr)) = *(*uint16)(unsafe.Pointer(lhsRow0Ptr))
-				*(*uint16)(unsafe.Pointer(panelPtr + 2)) = *(*uint16)(unsafe.Pointer(lhsRow1Ptr))
-				*(*uint16)(unsafe.Pointer(panelPtr + 4)) = *(*uint16)(unsafe.Pointer(lhsRow2Ptr))
-				*(*uint16)(unsafe.Pointer(panelPtr + 6)) = *(*uint16)(unsafe.Pointer(lhsRow3Ptr))
+				*(*uint16)(pDst) = *(*uint16)(unsafe.Add(lhsRow0Base, srcOff))
+				*(*uint16)(unsafe.Add(pDst, 2)) = *(*uint16)(unsafe.Add(lhsRow1Base, srcOff))
+				*(*uint16)(unsafe.Add(pDst, 4)) = *(*uint16)(unsafe.Add(lhsRow2Base, srcOff))
+				*(*uint16)(unsafe.Add(pDst, 6)) = *(*uint16)(unsafe.Add(lhsRow3Base, srcOff))
 			case 1:
-				*(*uint8)(unsafe.Pointer(panelPtr)) = *(*uint8)(unsafe.Pointer(lhsRow0Ptr))
-				*(*uint8)(unsafe.Pointer(panelPtr + 1)) = *(*uint8)(unsafe.Pointer(lhsRow1Ptr))
-				*(*uint8)(unsafe.Pointer(panelPtr + 2)) = *(*uint8)(unsafe.Pointer(lhsRow2Ptr))
-				*(*uint8)(unsafe.Pointer(panelPtr + 3)) = *(*uint8)(unsafe.Pointer(lhsRow3Ptr))
+				*(*uint8)(pDst) = *(*uint8)(unsafe.Add(lhsRow0Base, srcOff))
+				*(*uint8)(unsafe.Add(pDst, 1)) = *(*uint8)(unsafe.Add(lhsRow1Base, srcOff))
+				*(*uint8)(unsafe.Add(pDst, 2)) = *(*uint8)(unsafe.Add(lhsRow2Base, srcOff))
+				*(*uint8)(unsafe.Add(pDst, 3)) = *(*uint8)(unsafe.Add(lhsRow3Base, srcOff))
 			}
-			lhsRow0Ptr += bytesPerElement
-			lhsRow1Ptr += bytesPerElement
-			lhsRow2Ptr += bytesPerElement
-			lhsRow3Ptr += bytesPerElement
-			panelPtr += kernelRowsBytes
+			panelOffset += kernelRowsBytes
 		}
 	}
 
@@ -711,37 +729,34 @@ edge_strip:
 	// Last strip, with less than kernelRows (4) valid rows, the rest needs to be zero-padded:
 	if stripRowIdx < copyRows {
 		remainingRows := copyRows - stripRowIdx
-		lhsRow0Ptr := lhsBasePtr + uintptr(lhsRowStart+stripRowIdx)*lhsStrideBytes + lhsColStartBytes
+		lhsRow0Base := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+stripRowIdx)*lhsStrideBytes+lhsColStartBytes)
 
 		// Less than kernelRows (4) valid rows
-		for range contractingCols {
-			lhsPtr := lhsRow0Ptr
+		for col := range contractingCols {
+			pColSrc := unsafe.Add(lhsRow0Base, uintptr(col)*bytesPerElement)
+			pDst := unsafe.Add(panelBasePtr, panelOffset)
 
 			for r := range remainingRows {
+				lhsPtr := unsafe.Add(pColSrc, uintptr(r)*lhsStrideBytes)
 				switch bytesPerElement {
 				case 8:
-					*(*uint64)(unsafe.Pointer(panelPtr + uintptr(r)*8)) = *(*uint64)(unsafe.Pointer(lhsPtr))
+					*(*uint64)(unsafe.Add(pDst, uintptr(r)*8)) = *(*uint64)(lhsPtr)
 				case 4:
-					*(*uint32)(unsafe.Pointer(panelPtr + uintptr(r)*4)) = *(*uint32)(unsafe.Pointer(lhsPtr))
+					*(*uint32)(unsafe.Add(pDst, uintptr(r)*4)) = *(*uint32)(lhsPtr)
 				case 2:
-					*(*uint16)(unsafe.Pointer(panelPtr + uintptr(r)*2)) = *(*uint16)(unsafe.Pointer(lhsPtr))
+					*(*uint16)(unsafe.Add(pDst, uintptr(r)*2)) = *(*uint16)(lhsPtr)
 				case 1:
-					*(*uint8)(unsafe.Pointer(panelPtr + uintptr(r))) = *(*uint8)(unsafe.Pointer(lhsPtr))
+					*(*uint8)(unsafe.Add(pDst, uintptr(r))) = *(*uint8)(lhsPtr)
 				}
-				lhsPtr += lhsStrideBytes
 			}
 
 			// Zero-pad if strip is incomplete (edge of matrix)
 			if remainingRows < kernelRows {
 				padBytes := uintptr(kernelRows-remainingRows) * bytesPerElement
-				padStart := panelPtr + uintptr(remainingRows)*bytesPerElement
-				for i := uintptr(0); i < padBytes; i++ {
-					*(*uint8)(unsafe.Pointer(padStart + i)) = 0
-				}
+				clear(unsafe.Slice((*uint8)(unsafe.Add(pDst, uintptr(remainingRows)*bytesPerElement)), padBytes))
 			}
 
-			lhsRow0Ptr += bytesPerElement
-			panelPtr += kernelRowsBytes
+			panelOffset += kernelRowsBytes
 		}
 	}
 }

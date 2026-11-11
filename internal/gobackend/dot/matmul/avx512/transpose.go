@@ -147,7 +147,7 @@ func avx512Transpose4x8x64bits(v0, v1, v2, v3 archsimd.Uint64x8) (row0to2, row2t
 // avx512PackLHSStrided8x16Uint32 packs full strips of height kernelRows (where kernelRows is a multiple of 8)
 // of 32-bit elements using 512-bit ZMM 8x16 SIMD register transposes.
 func avx512PackLHSStrided8x16Uint32(
-	lhsBasePtr, panelBasePtr uintptr,
+	lhsBasePtr, panelBasePtr unsafe.Pointer,
 	lhsRowStart, lhsColStart, lhsCols,
 	fullRows, contractingCols, kernelRows int,
 ) {
@@ -156,77 +156,62 @@ func avx512PackLHSStrided8x16Uint32(
 	panelColStrideBytes := uintptr(kernelRows) * 4
 	stripPanelBytes := uintptr(contractingCols) * panelColStrideBytes
 
-	storePair := func(top, bot archsimd.Uint32x8, dst uintptr) {
-		top.SetHi(bot.GetLo()).StoreArray((*[8]uint32)(unsafe.Pointer(dst)))
-		bot.SetLo(top.GetHi()).StoreArray((*[8]uint32)(unsafe.Pointer(dst + panelColStrideBytes)))
+	storePair := func(top, bot archsimd.Uint32x8, dst unsafe.Pointer) {
+		top.SetHi(bot.GetLo()).StoreArray((*[8]uint32)(dst))
+		bot.SetLo(top.GetHi()).StoreArray((*[8]uint32)(unsafe.Add(dst, panelColStrideBytes)))
 	}
 
 	for stripRowIdx := 0; stripRowIdx < fullRows; stripRowIdx += kernelRows {
-		stripPanelBase := panelBasePtr + uintptr(stripRowIdx/kernelRows)*stripPanelBytes
+		stripPanelBase := unsafe.Add(panelBasePtr, uintptr(stripRowIdx/kernelRows)*stripPanelBytes)
 		for subRow := 0; subRow < kernelRows; subRow += 8 {
-			r0Ptr := lhsBasePtr + uintptr(lhsRowStart+stripRowIdx+subRow)*lhsStrideBytes + lhsColStartBytes
-			r1Ptr := r0Ptr + lhsStrideBytes
-			r2Ptr := r1Ptr + lhsStrideBytes
-			r3Ptr := r2Ptr + lhsStrideBytes
-			r4Ptr := r3Ptr + lhsStrideBytes
-			r5Ptr := r4Ptr + lhsStrideBytes
-			r6Ptr := r5Ptr + lhsStrideBytes
-			r7Ptr := r6Ptr + lhsStrideBytes
-			pDst := stripPanelBase + uintptr(subRow)*4
+			r0Base := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+stripRowIdx+subRow)*lhsStrideBytes+lhsColStartBytes)
+			r1Base := unsafe.Add(r0Base, lhsStrideBytes)
+			r2Base := unsafe.Add(r1Base, lhsStrideBytes)
+			r3Base := unsafe.Add(r2Base, lhsStrideBytes)
+			r4Base := unsafe.Add(r3Base, lhsStrideBytes)
+			r5Base := unsafe.Add(r4Base, lhsStrideBytes)
+			r6Base := unsafe.Add(r5Base, lhsStrideBytes)
+			r7Base := unsafe.Add(r6Base, lhsStrideBytes)
+			pDstBase := unsafe.Add(stripPanelBase, uintptr(subRow)*4)
 
 			col := 0
 			for ; col+16 <= contractingCols; col += 16 {
-				v0 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r0Ptr)))
-				v1 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r1Ptr)))
-				v2 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r2Ptr)))
-				v3 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r3Ptr)))
+				srcOff := uintptr(col) * 4
+				pDst := unsafe.Add(pDstBase, uintptr(col)*panelColStrideBytes)
+				v0 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r0Base, srcOff)))
+				v1 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r1Base, srcOff)))
+				v2 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r2Base, srcOff)))
+				v3 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r3Base, srcOff)))
 				top0to4, top4to8, top8to12, top12to16 := avx512Transpose4x16x32bits(v0, v1, v2, v3)
 
-				v4 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r4Ptr)))
-				v5 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r5Ptr)))
-				v6 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r6Ptr)))
-				v7 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Pointer(r7Ptr)))
+				v4 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r4Base, srcOff)))
+				v5 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r5Base, srcOff)))
+				v6 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r6Base, srcOff)))
+				v7 := archsimd.LoadUint32x16Array((*[16]uint32)(unsafe.Add(r7Base, srcOff)))
 				bot0to4, bot4to8, bot8to12, bot12to16 := avx512Transpose4x16x32bits(v4, v5, v6, v7)
 
-				storePair(top0to4.GetLo(), bot0to4.GetLo(), pDst+0*panelColStrideBytes)
-				storePair(top0to4.GetHi(), bot0to4.GetHi(), pDst+2*panelColStrideBytes)
-				storePair(top4to8.GetLo(), bot4to8.GetLo(), pDst+4*panelColStrideBytes)
-				storePair(top4to8.GetHi(), bot4to8.GetHi(), pDst+6*panelColStrideBytes)
-				storePair(top8to12.GetLo(), bot8to12.GetLo(), pDst+8*panelColStrideBytes)
-				storePair(top8to12.GetHi(), bot8to12.GetHi(), pDst+10*panelColStrideBytes)
-				storePair(top12to16.GetLo(), bot12to16.GetLo(), pDst+12*panelColStrideBytes)
-				storePair(top12to16.GetHi(), bot12to16.GetHi(), pDst+14*panelColStrideBytes)
-
-				r0Ptr += 64
-				r1Ptr += 64
-				r2Ptr += 64
-				r3Ptr += 64
-				r4Ptr += 64
-				r5Ptr += 64
-				r6Ptr += 64
-				r7Ptr += 64
-				pDst += 16 * panelColStrideBytes
+				storePair(top0to4.GetLo(), bot0to4.GetLo(), pDst)
+				storePair(top0to4.GetHi(), bot0to4.GetHi(), unsafe.Add(pDst, 2*panelColStrideBytes))
+				storePair(top4to8.GetLo(), bot4to8.GetLo(), unsafe.Add(pDst, 4*panelColStrideBytes))
+				storePair(top4to8.GetHi(), bot4to8.GetHi(), unsafe.Add(pDst, 6*panelColStrideBytes))
+				storePair(top8to12.GetLo(), bot8to12.GetLo(), unsafe.Add(pDst, 8*panelColStrideBytes))
+				storePair(top8to12.GetHi(), bot8to12.GetHi(), unsafe.Add(pDst, 10*panelColStrideBytes))
+				storePair(top12to16.GetLo(), bot12to16.GetLo(), unsafe.Add(pDst, 12*panelColStrideBytes))
+				storePair(top12to16.GetHi(), bot12to16.GetHi(), unsafe.Add(pDst, 14*panelColStrideBytes))
 			}
 			for ; col < contractingCols; col++ {
-				*(*[8]uint32)(unsafe.Pointer(pDst)) = [8]uint32{
-					*(*uint32)(unsafe.Pointer(r0Ptr)),
-					*(*uint32)(unsafe.Pointer(r1Ptr)),
-					*(*uint32)(unsafe.Pointer(r2Ptr)),
-					*(*uint32)(unsafe.Pointer(r3Ptr)),
-					*(*uint32)(unsafe.Pointer(r4Ptr)),
-					*(*uint32)(unsafe.Pointer(r5Ptr)),
-					*(*uint32)(unsafe.Pointer(r6Ptr)),
-					*(*uint32)(unsafe.Pointer(r7Ptr)),
+				srcOff := uintptr(col) * 4
+				pDst := unsafe.Add(pDstBase, uintptr(col)*panelColStrideBytes)
+				*(*[8]uint32)(pDst) = [8]uint32{
+					*(*uint32)(unsafe.Add(r0Base, srcOff)),
+					*(*uint32)(unsafe.Add(r1Base, srcOff)),
+					*(*uint32)(unsafe.Add(r2Base, srcOff)),
+					*(*uint32)(unsafe.Add(r3Base, srcOff)),
+					*(*uint32)(unsafe.Add(r4Base, srcOff)),
+					*(*uint32)(unsafe.Add(r5Base, srcOff)),
+					*(*uint32)(unsafe.Add(r6Base, srcOff)),
+					*(*uint32)(unsafe.Add(r7Base, srcOff)),
 				}
-				r0Ptr += 4
-				r1Ptr += 4
-				r2Ptr += 4
-				r3Ptr += 4
-				r4Ptr += 4
-				r5Ptr += 4
-				r6Ptr += 4
-				r7Ptr += 4
-				pDst += panelColStrideBytes
 			}
 		}
 	}
