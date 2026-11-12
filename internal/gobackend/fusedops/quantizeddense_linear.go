@@ -46,8 +46,8 @@ func execQuantizedDenseLinearOrNF4Core(
 		defer releaseBias()
 	}
 
-	// Case 2: On-the-fly dynamic Int8 quantization hint (QuantizedMatmuls == true) for QuantLinear.
-	if data.quantizedMatmuls && data.weightScheme == compute.QuantLinear {
+	// Case 2: On-the-fly dynamic Int8 quantization hint (QuantizedMatmul == true) for QuantLinear.
+	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear {
 		return execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
 	}
 
@@ -562,7 +562,7 @@ func execQuantizedDenseLinearIntMatmul(
 }
 
 // execQuantizedDenseLinearDynamicInt8 dynamically quantizes float32 x rows on-the-fly to symmetric Int8
-// per k-block when QuantizedMatmuls == true and XQuantization == nil.
+// per k-block when QuantizedMatmul == true and XQuantization == nil.
 func execQuantizedDenseLinearDynamicInt8(
 	backend *gobackend.Backend,
 	data *nodeFusedQuantizedDense,

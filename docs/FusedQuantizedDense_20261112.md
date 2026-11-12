@@ -41,7 +41,7 @@ Used by GGUF models (`Q4_0`, `Q8_0`, `IQ4_NL`, and K-quants `Q2_K`..`Q6_K`). Sca
 
 **Calculation & Intermediate Shapes:**
 
-#### Mode A — Floating-Point Dot Product (`XQuantization == nil` and `QuantizedMatmuls == false`)
+#### Mode A — Floating-Point Dot Product (`XQuantization == nil` and `QuantizedMatmul == false`)
 
 **Step 1A — Block dequantization** *(logically; fused on-the-fly without materializing `W_dequant` in RAM)*:
 Each row $n \in [0, N)$ and block $g \in [0, G)$ of $B_{\text{bytes}}$ bytes is unpacked into $B_{\text{vals}}$ floats (for `Q4_0`: a `Float16` scale $d_{w,n,g}$ followed by 32 4-bit unsigned codes $q_{w,n,g,i} \in [0..15]$ shifted by $-8$):
@@ -56,11 +56,11 @@ $$
 Z = x \cdot W_{\text{dequant}}^T \quad \longrightarrow \quad Z : (\text{Float32})[M, N]
 $$
 
-#### Mode B — `llama.cpp`-Style Block-Integer Dot Product (`XQuantization != nil` or `QuantizedMatmuls == true`)
+#### Mode B — `llama.cpp`-Style Block-Integer Dot Product (`XQuantization != nil` or `QuantizedMatmul == true`)
 
 Used by `llama.cpp` (`ggml_mul_mat`) to exploit integer SIMD instructions (`SDOT`/`USDOT`/`VNNI`). Note that because **each block $g \in [0, G)$ along $K$ has its own floating-point scale**, integer dot products happen *within each block of $B_{\text{vals}}$ elements* (`Int32`) and are scaled and accumulated across blocks into a **`Float32` output `[M, N]`**:
 
-**Step 1B — Row quantization of `x` to `Q8_0` / `Q8_K`** *(performed internally into a temporary buffer when `XQuantization == nil && QuantizedMatmuls == true`, or passed in directly when `XQuantization != nil`)*:
+**Step 1B — Row quantization of `x` to `Q8_0` / `Q8_K`** *(performed internally into a temporary buffer when `XQuantization == nil && QuantizedMatmul == true`, or passed in directly when `XQuantization != nil`)*:
 For each row $m$ and block $g \in [0, G)$ of $B_{\text{vals}}$ elements (shown here for `Q8_0`, $B_{\text{vals}} = 32$):
 
 $$
@@ -242,7 +242,7 @@ type Quantization struct {
 ### 2.2 Current Behavior & Limitations
 1. **Weight-only (`Float32` `x` only)**:
    - `gobackend` rejects any `x` whose dtype is not `Float32` (`x` cannot be `Float16`, `BFloat16`, `Int8`, `Uint8`, or GGML `Q8_0`/`Q8_K` blocks).
-   - There is no `XQuantization`, `OutputQuantization`, or `QuantizedMatmuls` option, so ONNX `MatMulInteger` / `QLinearMatMul` (`Int32` accumulation) and `llama.cpp`-style `Q8_0`/`Q8_K` integer dot products cannot be represented or controlled.
+   - There is no `XQuantization`, `OutputQuantization`, or `QuantizedMatmul` option, so ONNX `MatMulInteger` / `QLinearMatMul` (`Int32` accumulation) and `llama.cpp`-style `Q8_0`/`Q8_K` integer dot products cannot be represented or controlled.
 2. **Rigid `Scale` shape (`[K, NumBlocks]` only) and `BlockAxis == 1` only**:
    - Even for per-tensor (`[]`) or per-channel (`[N]`) scales, callers must broadcast `Scale` across $K$ into `[K, NumBlocks]` (`[K, 1]` or `[K, N]`). For per-channel scales `[N]`, `[K, N]` allocates a `Float32` tensor the exact same size as an unquantized `Float32` weight matrix!
    - `BlockAxis == 0` (blocking along $K$ with `Scale` of shape `[NumBlocks, N]`), which is the standard layout of **GPTQ, AWQ, and `torchao`**, is rejected (`only Axis=1 is supported`).
@@ -268,7 +268,7 @@ type Quantization struct {
 //   - Weight-only quantization (options.XQuantization == nil):
 //     z = x @ dequant(weight, options.WeightQuantization) + bias
 //     (transposing dequant(weight) when options.WeightLayout == DenseLayoutOutputsInput; if
-//     options.QuantizedMatmuls is true, backends may dynamically quantize x internally to run
+//     options.QuantizedMatmul is true, backends may dynamically quantize x internally to run
 //     integer SIMD dot products).
 //   - Pre-quantized x + weight integer matmul (options.XQuantization != nil):
 //     supports QuantLinear (exact Int32 accumulation of (x - xZP) @ (w - wZP) rescaled by
@@ -327,12 +327,12 @@ type FusedQuantizedDenseConfig struct {
 	// Nil (the default) returns a floating-point output matching x's float dtype (or Float32 when x is quantized).
 	OutputQuantization *Quantization
 
-	// QuantizedMatmuls is an optional optimization hint used when XQuantization == nil (floating-point x).
+	// QuantizedMatmul is an optional optimization hint used when XQuantization == nil (floating-point x).
 	// If true, the backend may dynamically quantize x on-the-fly into a temporary integer/block buffer
 	// (e.g. Q8_0/Q8_K for GGML weights, or per-row Int8/Uint8 for QuantLinear weights) to execute integer
 	// SIMD dot products (ARM SDOT/USDOT, x86 VNNI), trading minor quantization rounding for throughput.
 	// Backends that do not support on-the-fly quantized matmuls silently ignore this flag and use float arithmetic.
-	QuantizedMatmuls bool
+	QuantizedMatmul bool
 
 	// Activation is applied after matmul/rescaling and bias (and before OutputQuantization if set);
 	// defaults to ActivationNone.
@@ -388,7 +388,7 @@ type Quantization struct {
 ```
 
 ### 3.3 Graph-Layer Counterpart (`gomlx/core/graph` & `gomlx/ml/nn`)
-- Just like `graph.Quantization` today wraps `*Node` instead of `compute.Value` so that GoMLX tracks `Scale` and `ZeroPoint` in `node.inputNodes` (for topological ordering, CSE/DCE, `CloneWithInputs`, and gradient checkpointing), `graph.QuantizedDenseConfig` mirrors `compute.FusedQuantizedDenseConfig` (`WeightQuantization`, `XQuantization`, `OutputQuantization`, `QuantizedMatmuls`, `Activation`, `WeightLayout`) and converts to `compute.FusedQuantizedDenseConfig` in `BackendFusedQuantizedDense`.
+- Just like `graph.Quantization` today wraps `*Node` instead of `compute.Value` so that GoMLX tracks `Scale` and `ZeroPoint` in `node.inputNodes` (for topological ordering, CSE/DCE, `CloneWithInputs`, and gradient checkpointing), `graph.QuantizedDenseConfig` mirrors `compute.FusedQuantizedDenseConfig` (`WeightQuantization`, `XQuantization`, `OutputQuantization`, `QuantizedMatmul`, `Activation`, `WeightLayout`) and converts to `compute.FusedQuantizedDenseConfig` in `BackendFusedQuantizedDense`.
 - `nn.QuantizedDense(x, weight, bias *Node, cfg QuantizedDenseConfig, optionalActivation ...activation.Type)` provides automatic `InternalFusedOpCaller` fallback to `quantizedDenseDecomposed` (including exact `Int32` `DotGeneral` decomposition when `XQuantization` uses `QuantLinear`, and GGML block dequantization/quantization helpers in `gomlx/ml/ggml` when `XQuantization` uses `QuantGGML`!).
 - Provide a graph-level row-quantizer helper (`ggml.Quantize(x, GGMLQ8_0)` / `ggml.Quantize(x, GGMLQ8_K)`) so GGUF Transformer layers can quantize `x` once and pass it with `XQuantization: &Quantization{Scheme: QuantGGML, GGMLType: ...}` into multiple `nn.QuantizedDense` projections (Q, K, V or Gate, Up).
 
@@ -452,7 +452,7 @@ During fine-tuning across a multi-layer network (e.g., 32 Transformer blocks):
 - **Current bottleneck**: Without `FusedQuantizedDenseVJP`, `nn.QuantizedDense` uses `useDecomposedAlternateVJP = true`, which falls back during autodiff to `quantizedDenseDecomposed` — **unpacking and materializing the entire `[K, N]` `Float32` base weight matrix in memory** on the backward pass, defeating QLoRA's memory savings!
 
 ### 4.2 Scope of `FusedQuantizedDenseVJP`
-- **Supported**: Weight-only quantization (`options.XQuantization == nil` and `options.OutputQuantization == nil`), where `x` is floating-point (`Float32` / `Float16` / `BFloat16`). (If `options.QuantizedMatmuls` is `true`, the backend may likewise quantize `dZ` on-the-fly if supported, or compute `dx` in float.)
+- **Supported**: Weight-only quantization (`options.XQuantization == nil` and `options.OutputQuantization == nil`), where `x` is floating-point (`Float32` / `Float16` / `BFloat16`). (If `options.QuantizedMatmul` is `true`, the backend may likewise quantize `dZ` on-the-fly if supported, or compute `dx` in float.)
 - **Not applicable**: Pre-quantized inputs or quantized outputs (`XQuantization != nil` or `OutputQuantization != nil`), which are discrete step functions (returns `ErrNotImplemented`).
 - **Activation handling**: Identical to `FusedDenseVJP`!
   - Works directly when `!options.Activation.Type.VJPRequiresInput()` (`ActivationNone`, `ActivationRelu`, `ActivationSigmoid`, `ActivationTanh`, etc.), computing pre-activation gradient `dZ` from `y` and `dOutput`.
@@ -538,12 +538,12 @@ When the LoRA branch `+ loraScale * (x @ A) @ B` is present in the graph alongsi
 ## 5. Implementation Roadmap
 
 1. **`compute`**:
-   - Add `FusedQuantizedDenseConfig` (`WeightQuantization`, `XQuantization`, `OutputQuantization`, `QuantizedMatmuls`, `Activation`, `WeightLayout`), update `Quantization` docstrings/validation (standard `(q - zp) * scale` zero-point semantics, flexible `Scale`/`ZeroPoint` shapes, `BlockAxis` `0` and `1`), update `FusedQuantizedDense` signature, and add `OpTypeFusedQuantizedDenseVJP` + `FusedQuantizedDenseVJP`.
+   - Add `FusedQuantizedDenseConfig` (`WeightQuantization`, `XQuantization`, `OutputQuantization`, `QuantizedMatmul`, `Activation`, `WeightLayout`), update `Quantization` docstrings/validation (standard `(q - zp) * scale` zero-point semantics, flexible `Scale`/`ZeroPoint` shapes, `BlockAxis` `0` and `1`), update `FusedQuantizedDense` signature, and add `OpTypeFusedQuantizedDenseVJP` + `FusedQuantizedDenseVJP`.
    - Implement `gobackend` executors for:
      - Weight-only `QuantLinear`, `QuantNF4`, `QuantGGML` (both `BlockAxis=0` and `BlockAxis=1`, `InputOutputs` and `OutputsInput`).
-     - Integer matmul via `XQuantization != nil` (both `QuantLinear` `Int8`/`Uint8` $\to$ exact `Int32` accumulation and `QuantGGML` `Q8_0`/`Q8_K` per-block `Int32` dot products $\to$ `Float32` accumulation + bias + activation + optional `OutputQuantization`) as well as on-the-fly `QuantizedMatmuls == true` for `Float32` `x`.
+     - Integer matmul via `XQuantization != nil` (both `QuantLinear` `Int8`/`Uint8` $\to$ exact `Int32` accumulation and `QuantGGML` `Q8_0`/`Q8_K` per-block `Int32` dot products $\to$ `Float32` accumulation + bias + activation + optional `OutputQuantization`) as well as on-the-fly `QuantizedMatmul == true` for `Float32` `x`.
      - `FusedQuantizedDenseVJP` (streaming `dZ @ dequant(weight)^T` and `sum(dZ)` without materializing `[K, N]` float weights).
-   - Add backend compliance tests in `compute/support/backendtest/` covering all schemes, block axes, layouts, `XQuantization` (`QuantLinear` and `QuantGGML`), `QuantizedMatmuls`, `OutputQuantization`, and VJPs.
+   - Add backend compliance tests in `compute/support/backendtest/` covering all schemes, block axes, layouts, `XQuantization` (`QuantLinear` and `QuantGGML`), `QuantizedMatmul`, `OutputQuantization`, and VJPs.
 2. **`compute-onnx`, `go-xla`, `go-darwinml`**:
    - Update signatures and generators; implement or return `compute.ErrNotImplemented` for unsupported combinations so GoMLX's decomposed fallback handles them seamlessly.
 3. **`gomlx`**:

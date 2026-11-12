@@ -450,7 +450,7 @@ type Quantization struct {
 //   - Correctness-affecting fields (WeightQuantization, XQuantization, OutputQuantization,
 //     Activation, WeightLayout): backends that cannot honor the requested combination MUST
 //     return errors.Wrapf(compute.ErrNotImplemented, ...) so callers fall back cleanly.
-//   - Pure optimization hints (QuantizedMatmuls): backends that do not support dynamic
+//   - Pure optimization hints (QuantizedMatmul): backends that do not support dynamic
 //     integer matmul when XQuantization == nil may ignore the hint and compute in float.
 type FusedQuantizedDenseConfig struct {
 	// WeightQuantization describes how weight is quantized. Required (must not be nil).
@@ -472,12 +472,12 @@ type FusedQuantizedDenseConfig struct {
 	// when x is pre-quantized).
 	OutputQuantization *Quantization
 
-	// QuantizedMatmuls is an optimization hint used only when XQuantization == nil:
+	// QuantizedMatmul is an optimization hint used only when XQuantization == nil:
 	// if true, backends with fast integer dot-product kernels may dynamically quantize
 	// floating-point x on-the-fly (e.g. to Q8_0/Q8_K blocks for QuantGGML weights, or
 	// per-row symmetric Int8 for QuantLinear weights) and accumulate in Int32.
 	// Backends that do not support on-the-fly dynamic quantization ignore this hint.
-	QuantizedMatmuls bool
+	QuantizedMatmul bool
 
 	// Activation is applied after matmul/rescaling and bias (and before OutputQuantization if set).
 	// Defaults to ActivationNone (zero value).
@@ -699,7 +699,7 @@ type FusedOps interface {
 	//   - Weight-only quantization (options.XQuantization == nil):
 	//     z = x @ dequant(weight, options.WeightQuantization) + bias
 	//     (transposing dequant(weight) when options.WeightLayout == DenseLayoutOutputsInput; if
-	//     options.QuantizedMatmuls is true, backends may dynamically quantize x internally to run
+	//     options.QuantizedMatmul is true, backends may dynamically quantize x internally to run
 	//     integer SIMD dot products).
 	//   - Pre-quantized x + weight integer matmul (options.XQuantization != nil):
 	//     supports QuantLinear (exact Int32 accumulation of (x - xZP) @ (w - wZP) rescaled by

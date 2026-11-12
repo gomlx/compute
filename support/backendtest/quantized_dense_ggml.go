@@ -31,7 +31,7 @@ var allComplianceGGMLTypes = []compute.GGMLQuantType{
 
 func testQDGGMLAllModesAndFormats(t *testing.T, b compute.Backend) {
 	// 1. Exhaustive sweep of all 9 GGML formats across Mode A (Float x), Mode B1 (Pre-quantized Q8_0/Q8_K x),
-	//    and Mode B2 (QuantizedMatmuls=true dynamic Q8 quantization).
+	//    and Mode B2 (QuantizedMatmul=true dynamic Q8 quantization).
 	for _, wType := range allComplianceGGMLTypes {
 		t.Run(wType.String(), func(t *testing.T) {
 			vpb := wType.ValuesPerBlock()
@@ -120,25 +120,25 @@ func testQDGGMLAllModesAndFormats(t *testing.T, b compute.Backend) {
 				}
 			})
 
-			t.Run("QuantizedMatmuls", func(t *testing.T) {
+			t.Run("QuantizedMatmul", func(t *testing.T) {
 				got, err := testutil.Exec1(b, []any{xF32, wBytes, bias},
 					func(f compute.Function, p []compute.Value) (compute.Value, error) {
 						return f.FusedQuantizedDense(p[0], p[1], p[2], compute.FusedQuantizedDenseConfig{
 							WeightQuantization: &compute.Quantization{Scheme: compute.QuantGGML, GGMLType: wType},
-							QuantizedMatmuls:   true,
+							QuantizedMatmul:    true,
 							WeightLayout:       compute.DenseLayoutOutputsInput,
 						})
 					})
 				skipIfQuantizedDenseNotImplemented(t, b, err)
 				if err != nil {
-					t.Fatalf("GGML(%s) QuantizedMatmuls failed: %+v", wType, err)
+					t.Fatalf("GGML(%s) QuantizedMatmul failed: %+v", wType, err)
 				}
 				// Backends may either quantize dynamically to Q8 (matching wantQ8 within 1e-2)
-				// or ignore the QuantizedMatmuls hint and compute in float (matching wantFloat within 1e-3).
+				// or ignore the QuantizedMatmul hint and compute in float (matching wantFloat within 1e-3).
 				okQ8, diffQ8 := testutil.IsInDelta(wantQ8, got, 1e-2)
 				okF32, _ := testutil.IsInDelta(wantFloat, got, 1e-3)
 				if !okQ8 && !okF32 {
-					t.Errorf("GGML(%s) QuantizedMatmuls matched neither Q8 nor Float reference:\n%s", wType, diffQ8)
+					t.Errorf("GGML(%s) QuantizedMatmul matched neither Q8 nor Float reference:\n%s", wType, diffQ8)
 				}
 			})
 		})

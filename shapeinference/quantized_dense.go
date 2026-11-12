@@ -25,7 +25,7 @@ type QuantizedDenseConfigShapes struct {
 	WeightQuantization *QuantizationShapes
 	XQuantization      *QuantizationShapes // nil when x is floating-point
 	OutputQuantization *QuantizationShapes // nil when output is floating-point
-	QuantizedMatmuls   bool
+	QuantizedMatmul    bool
 	Activation         compute.ActivationConfig
 	WeightLayout       compute.DenseLayout
 }

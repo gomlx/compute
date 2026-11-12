@@ -41,7 +41,7 @@ type nodeFusedQuantizedDense struct {
 	xGGMLType        compute.GGMLQuantType
 	hasOutputQuant   bool
 	outputQuantDType dtypes.DType
-	quantizedMatmuls bool
+	quantizedMatmul  bool
 	activation       compute.ActivationConfig
 
 	hasWScale   bool
@@ -67,7 +67,7 @@ func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparab
 		d.xGGMLType == o.xGGMLType &&
 		d.hasOutputQuant == o.hasOutputQuant &&
 		d.outputQuantDType == o.outputQuantDType &&
-		d.quantizedMatmuls == o.quantizedMatmuls &&
+		d.quantizedMatmul == o.quantizedMatmul &&
 		d.activation == o.activation &&
 		d.hasWScale == o.hasWScale &&
 		d.hasWZP == o.hasWZP &&
@@ -180,7 +180,7 @@ func FusedQuantizedDense(
 		WeightQuantization: wqs,
 		XQuantization:      xqs,
 		OutputQuantization: oqs,
-		QuantizedMatmuls:   options.QuantizedMatmuls,
+		QuantizedMatmul:    options.QuantizedMatmul,
 		Activation:         options.Activation,
 		WeightLayout:       options.WeightLayout,
 	}
@@ -227,7 +227,7 @@ func FusedQuantizedDense(
 		hasXQuant:        xqs != nil,
 		hasOutputQuant:   oqs != nil,
 		outputQuantDType: info.OutputShape.DType,
-		quantizedMatmuls: options.QuantizedMatmuls,
+		quantizedMatmul:  options.QuantizedMatmul,
 		activation:       options.Activation,
 		hasWScale:        wScaleNode != nil,
 		hasWZP:           wZPNode != nil,

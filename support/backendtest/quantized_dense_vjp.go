@@ -27,8 +27,8 @@ func testFusedQuantizedDenseVJP(t *testing.T, b compute.Backend) {
 		t.Run("QuantNF4_LayoutsAndBlockAxes", func(t *testing.T) {
 			testQDVJPNF4LayoutsAndBlockAxes(t, b)
 		})
-		t.Run("QuantLinear_LayoutsDTypesZeroPointAndQuantizedMatmuls", func(t *testing.T) {
-			testQDVJPLinearLayoutsDTypesAndQuantizedMatmuls(t, b)
+		t.Run("QuantLinear_LayoutsDTypesZeroPointAndQuantizedMatmul", func(t *testing.T) {
+			testQDVJPLinearLayoutsDTypesAndQuantizedMatmul(t, b)
 		})
 		t.Run("QuantGGML_AllFormatsAndNilInputs", func(t *testing.T) {
 			testQDVJPGGMLAllFormatsAndNilInputs(t, b)
@@ -129,7 +129,7 @@ func testQDVJPNF4LayoutsAndBlockAxes(t *testing.T, b compute.Backend) {
 	}
 }
 
-func testQDVJPLinearLayoutsDTypesAndQuantizedMatmuls(t *testing.T, b compute.Backend) {
+func testQDVJPLinearLayoutsDTypesAndQuantizedMatmul(t *testing.T, b compute.Backend) {
 	// 1. Uint8 OutputsInput with ZeroPoint and nil x, nil y, nil bias
 	t.Run("Uint8_OutputsInput_WithZeroPoint_NilXNilYNilBias", func(t *testing.T) {
 		const M, K, N, G = 2, 12, 8, 4
@@ -180,8 +180,8 @@ func testQDVJPLinearLayoutsDTypesAndQuantizedMatmuls(t *testing.T, b compute.Bac
 		}
 	})
 
-	// 2. Sub-byte Int2 InputOutputs VJP + QuantizedMatmuls=true VJP
-	t.Run("SubByteInt2_And_QuantizedMatmulsHint", func(t *testing.T) {
+	// 2. Sub-byte Int2 InputOutputs VJP + QuantizedMatmul=true VJP
+	t.Run("SubByteInt2_And_QuantizedMatmulHint", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeBitcast)
 		testutil.SkipIfMissingDType(t, b, dtypes.Int2)
 		const M, K, N = 2, 8, 8
@@ -217,7 +217,7 @@ func testQDVJPLinearLayoutsDTypesAndQuantizedMatmuls(t *testing.T, b compute.Bac
 				}
 				dx, _, err := f.FusedQuantizedDenseVJP(nil, wI2, nil, nil, p[2], compute.FusedQuantizedDenseConfig{
 					WeightQuantization: &compute.Quantization{Scheme: compute.QuantLinear, Scale: p[1]},
-					QuantizedMatmuls:   true,
+					QuantizedMatmul:    true,
 					WeightLayout:       compute.DenseLayoutInputOutputs,
 				})
 				return dx, err

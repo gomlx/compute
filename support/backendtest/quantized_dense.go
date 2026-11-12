@@ -35,8 +35,8 @@ func testFusedQuantizedDense(t *testing.T, b compute.Backend) {
 		t.Run("QuantNF4_LayoutsAxesAndDTypes", func(t *testing.T) {
 			testQDNF4LayoutsAxesAndDTypes(t, b)
 		})
-		t.Run("QuantLinear_QuantizedMatmuls", func(t *testing.T) {
-			testQDLinearQuantizedMatmuls(t, b)
+		t.Run("QuantLinear_QuantizedMatmul", func(t *testing.T) {
+			testQDLinearQuantizedMatmul(t, b)
 		})
 		t.Run("PreQuantizedX_QuantLinear", func(t *testing.T) {
 			testQDPreQuantizedXLinear(t, b)
@@ -722,9 +722,9 @@ func testQDNF4LayoutsAxesAndDTypes(t *testing.T, b compute.Backend) {
 	})
 }
 
-// testQDLinearQuantizedMatmuls verifies QuantizedMatmuls=true (on-the-fly dynamic Int8 activation quantization)
+// testQDLinearQuantizedMatmul verifies QuantizedMatmul=true (on-the-fly dynamic Int8 activation quantization)
 // on QuantLinear weights across layouts, dtypes (Int8, Uint8, Int4), and integer/float zero-points.
-func testQDLinearQuantizedMatmuls(t *testing.T, b compute.Backend) {
+func testQDLinearQuantizedMatmul(t *testing.T, b compute.Backend) {
 	const M, K, N, G = 3, 16, 10, 8
 	x := makeFloat32Matrix(M, K, 0.25)
 	// Include a zero row to test maxAbs == 0 handling in dynamic row quantization!
@@ -776,22 +776,22 @@ func testQDLinearQuantizedMatmuls(t *testing.T, b compute.Backend) {
 							BlockAxis: blockAxis,
 							BlockSize: G,
 						},
-						QuantizedMatmuls: true,
-						WeightLayout:     layout,
+						QuantizedMatmul: true,
+						WeightLayout:    layout,
 					})
 				})
 			skipIfQuantizedDenseNotImplemented(t, b, err)
 			if err != nil {
-				t.Fatalf("QuantizedMatmuls %s failed: %+v", layout, err)
+				t.Fatalf("QuantizedMatmul %s failed: %+v", layout, err)
 			}
 			// Dynamic Int8 quantization introduces minor rounding (~1/127), so tolerance 0.05 checks close agreement.
 			if ok, diff := testutil.IsInDelta(wantIntZP, got, 0.05); !ok {
-				t.Errorf("QuantizedMatmuls %s drifted too far from float:\n%s", layout, diff)
+				t.Errorf("QuantizedMatmul %s drifted too far from float:\n%s", layout, diff)
 			}
 		})
 	}
 
-	// Float ZeroPoint with QuantizedMatmuls=true must remain accurate.
+	// Float ZeroPoint with QuantizedMatmul=true must remain accurate.
 	t.Run("FloatZeroPoint_FallbackAccuracy", func(t *testing.T) {
 		wantFloatZP := refQuantLinear2D(x, int8ToF32Matrix(wI8IO), bias, compute.ActivationNone, func(k, n int) (float32, float32) {
 			return scalesIO[k/G][n], zpF32IO[k/G][n]
@@ -806,16 +806,16 @@ func testQDLinearQuantizedMatmuls(t *testing.T, b compute.Backend) {
 						BlockAxis: 0,
 						BlockSize: G,
 					},
-					QuantizedMatmuls: true,
-					WeightLayout:     compute.DenseLayoutInputOutputs,
+					QuantizedMatmul: true,
+					WeightLayout:    compute.DenseLayoutInputOutputs,
 				})
 			})
 		skipIfQuantizedDenseNotImplemented(t, b, err)
 		if err != nil {
-			t.Fatalf("QuantizedMatmuls FloatZP failed: %+v", err)
+			t.Fatalf("QuantizedMatmul FloatZP failed: %+v", err)
 		}
 		if ok, diff := testutil.IsInDelta(wantFloatZP, got, 0.05); !ok {
-			t.Errorf("QuantizedMatmuls FloatZP mismatch:\n%s", diff)
+			t.Errorf("QuantizedMatmul FloatZP mismatch:\n%s", diff)
 		}
 	})
 }

@@ -21,9 +21,9 @@ import (
 type nodeFusedQuantizedDenseVJP struct {
 	weightScheme     compute.QuantizationScheme
 	weightGGMLType   compute.GGMLQuantType
-	weightLayout     compute.DenseLayout
-	quantizedMatmuls bool
-	activation       compute.ActivationConfig
+	weightLayout    compute.DenseLayout
+	quantizedMatmul bool
+	activation      compute.ActivationConfig
 
 	hasX      bool
 	hasBias   bool
@@ -42,7 +42,7 @@ func (d *nodeFusedQuantizedDenseVJP) EqualNodeData(other gobackend.NodeDataCompa
 	return d.weightScheme == o.weightScheme &&
 		d.weightGGMLType == o.weightGGMLType &&
 		d.weightLayout == o.weightLayout &&
-		d.quantizedMatmuls == o.quantizedMatmuls &&
+		d.quantizedMatmul == o.quantizedMatmul &&
 		d.activation == o.activation &&
 		d.hasX == o.hasX &&
 		d.hasBias == o.hasBias &&
@@ -121,7 +121,7 @@ func FusedQuantizedDenseVJP(
 		WeightQuantization: wqs,
 		XQuantization:      xqs,
 		OutputQuantization: oqs,
-		QuantizedMatmuls:   options.QuantizedMatmuls,
+		QuantizedMatmul:    options.QuantizedMatmul,
 		Activation:         options.Activation,
 		WeightLayout:       options.WeightLayout,
 	}
@@ -163,7 +163,7 @@ func FusedQuantizedDenseVJP(
 		weightScheme:          wqs.Scheme,
 		weightGGMLType:        wqs.GGMLType,
 		weightLayout:          options.WeightLayout,
-		quantizedMatmuls:      options.QuantizedMatmuls,
+		quantizedMatmul:       options.QuantizedMatmul,
 		activation:            options.Activation,
 		hasX:                  xNode != nil,
 		hasBias:               biasNode != nil,

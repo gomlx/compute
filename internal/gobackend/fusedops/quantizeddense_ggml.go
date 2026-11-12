@@ -55,8 +55,8 @@ func execQuantizedDenseGGMLCore(
 	}
 	defer releaseX()
 
-	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmuls == true.
-	if data.quantizedMatmuls {
+	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmul == true.
+	if data.quantizedMatmul {
 		var xType compute.GGMLQuantType
 		if wType.ValuesPerBlock() == 32 {
 			xType = compute.GGMLQ8_0
