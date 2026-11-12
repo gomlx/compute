@@ -301,12 +301,15 @@ const (
 	GGMLQ5_K                       // 176 bytes/block, 256 values
 	GGMLQ6_K                       // 210 bytes/block, 256 values
 	GGMLQ8_K                       // 292 bytes/block, 256 values (used for paired K-quant activations)
+	GGMLQ4_1                       // 20 bytes/block, 32 values (fp16 d + fp16 m + 16B nibbles)
+	GGMLQ5_0                       // 22 bytes/block, 32 values (fp16 d + 4B high bits + 16B nibbles)
+	GGMLQ5_1                       // 24 bytes/block, 32 values (fp16 d + fp16 m + 4B high bits + 16B nibbles)
 )
 
 // ValuesPerBlock returns the number of float32 values represented by one block.
 func (t GGMLQuantType) ValuesPerBlock() int {
 	switch t {
-	case GGMLQ4_0, GGMLQ8_0, GGMLIQ4NL:
+	case GGMLQ4_0, GGMLQ4_1, GGMLQ5_0, GGMLQ5_1, GGMLQ8_0, GGMLIQ4NL:
 		return 32
 	case GGMLQ2_K, GGMLQ3_K, GGMLQ4_K, GGMLQ5_K, GGMLQ6_K, GGMLQ8_K:
 		return 256
@@ -320,6 +323,12 @@ func (t GGMLQuantType) BytesPerBlock() int {
 	switch t {
 	case GGMLQ4_0, GGMLIQ4NL:
 		return 18
+	case GGMLQ4_1:
+		return 20
+	case GGMLQ5_0:
+		return 22
+	case GGMLQ5_1:
+		return 24
 	case GGMLQ8_0:
 		return 34
 	case GGMLQ2_K:
@@ -344,6 +353,12 @@ func (t GGMLQuantType) String() string {
 	switch t {
 	case GGMLQ4_0:
 		return "Q4_0"
+	case GGMLQ4_1:
+		return "Q4_1"
+	case GGMLQ5_0:
+		return "Q5_0"
+	case GGMLQ5_1:
+		return "Q5_1"
 	case GGMLQ8_0:
 		return "Q8_0"
 	case GGMLIQ4NL:
@@ -435,7 +450,7 @@ type Quantization struct {
 //   - Correctness-affecting fields (WeightQuantization, XQuantization, OutputQuantization,
 //     Activation, WeightLayout): backends that cannot honor the requested combination MUST
 //     return errors.Wrapf(compute.ErrNotImplemented, ...) so callers fall back cleanly.
-//   - Pure optimization hints (QuantizedMatmuls): backends that do not support dynamic
+//   - Pure optimization hints (QuantizedMatmul): backends that do not support dynamic
 //     integer matmul when XQuantization == nil may ignore the hint and compute in float.
 type FusedQuantizedDenseConfig struct {
 	// WeightQuantization describes how weight is quantized. Required (must not be nil).
@@ -457,12 +472,12 @@ type FusedQuantizedDenseConfig struct {
 	// when x is pre-quantized).
 	OutputQuantization *Quantization
 
-	// QuantizedMatmuls is an optimization hint used only when XQuantization == nil:
+	// QuantizedMatmul is an optimization hint used only when XQuantization == nil:
 	// if true, backends with fast integer dot-product kernels may dynamically quantize
 	// floating-point x on-the-fly (e.g. to Q8_0/Q8_K blocks for QuantGGML weights, or
 	// per-row symmetric Int8 for QuantLinear weights) and accumulate in Int32.
 	// Backends that do not support on-the-fly dynamic quantization ignore this hint.
-	QuantizedMatmuls bool
+	QuantizedMatmul bool
 
 	// Activation is applied after matmul/rescaling and bias (and before OutputQuantization if set).
 	// Defaults to ActivationNone (zero value).
@@ -684,7 +699,7 @@ type FusedOps interface {
 	//   - Weight-only quantization (options.XQuantization == nil):
 	//     z = x @ dequant(weight, options.WeightQuantization) + bias
 	//     (transposing dequant(weight) when options.WeightLayout == DenseLayoutOutputsInput; if
-	//     options.QuantizedMatmuls is true, backends may dynamically quantize x internally to run
+	//     options.QuantizedMatmul is true, backends may dynamically quantize x internally to run
 	//     integer SIMD dot products).
 	//   - Pre-quantized x + weight integer matmul (options.XQuantization != nil):
 	//     supports QuantLinear (exact Int32 accumulation of (x - xZP) @ (w - wZP) rescaled by

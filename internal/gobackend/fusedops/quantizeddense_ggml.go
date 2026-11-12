@@ -55,8 +55,8 @@ func execQuantizedDenseGGMLCore(
 	}
 	defer releaseX()
 
-	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmuls == true.
-	if data.quantizedMatmuls {
+	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmul == true.
+	if data.quantizedMatmul {
 		var xType compute.GGMLQuantType
 		if wType.ValuesPerBlock() == 32 {
 			xType = compute.GGMLQ8_0
@@ -246,6 +246,12 @@ func ggmlDequantFunc(ggmlType compute.GGMLQuantType) (func(data []uint8, output 
 	switch ggmlType {
 	case compute.GGMLQ4_0:
 		return dequantQ4_0Row, nil
+	case compute.GGMLQ4_1:
+		return dequantQ4_1Row, nil
+	case compute.GGMLQ5_0:
+		return dequantQ5_0Row, nil
+	case compute.GGMLQ5_1:
+		return dequantQ5_1Row, nil
 	case compute.GGMLQ8_0:
 		return dequantQ8_0Row, nil
 	case compute.GGMLIQ4NL:
@@ -272,6 +278,12 @@ func ggmlVecDotFunc(wType compute.GGMLQuantType) (func(wRow, xRow []uint8) float
 	switch wType {
 	case compute.GGMLQ4_0:
 		return vecDotQ4_0_Q8_0, nil
+	case compute.GGMLQ4_1:
+		return vecDotQ4_1_Q8_0, nil
+	case compute.GGMLQ5_0:
+		return vecDotQ5_0_Q8_0, nil
+	case compute.GGMLQ5_1:
+		return vecDotQ5_1_Q8_0, nil
 	case compute.GGMLQ8_0:
 		return vecDotQ8_0_Q8_0, nil
 	case compute.GGMLIQ4NL:
@@ -336,6 +348,68 @@ func dequantQ4_0Row(data []uint8, output []float32) {
 			output[outOff+i] = d * float32(lo-8)
 			hi := int((qs[i] >> 4) & 0x0F)
 			output[outOff+16+i] = d * float32(hi-8)
+		}
+	}
+}
+
+func dequantQ4_1Row(data []uint8, output []float32) {
+	const blockSize = 20
+	const qk = 32
+	nblocks := len(data) / blockSize
+	for b := range nblocks {
+		blockData := data[b*blockSize : (b+1)*blockSize]
+		d := ggmlFp16LE(blockData[0], blockData[1])
+		m := ggmlFp16LE(blockData[2], blockData[3])
+		qs := blockData[4:]
+		outOff := b * qk
+		for i := range 16 {
+			lo := qs[i] & 0x0F
+			output[outOff+i] = d*float32(lo) + m
+			hi := (qs[i] >> 4) & 0x0F
+			output[outOff+16+i] = d*float32(hi) + m
+		}
+	}
+}
+
+func dequantQ5_0Row(data []uint8, output []float32) {
+	const blockSize = 22
+	const qk = 32
+	nblocks := len(data) / blockSize
+	for b := range nblocks {
+		blockData := data[b*blockSize : (b+1)*blockSize]
+		d := ggmlFp16LE(blockData[0], blockData[1])
+		qh := binary.LittleEndian.Uint32(blockData[2:6])
+		qs := blockData[6:]
+		outOff := b * qk
+		for i := range 16 {
+			xh0 := ((qh >> uint(i)) << 4) & 0x10
+			xh1 := (qh >> uint(i+12)) & 0x10
+			q0 := int32(uint32(qs[i]&0x0F)|xh0) - 16
+			q1 := int32(uint32(qs[i]>>4)|xh1) - 16
+			output[outOff+i] = d * float32(q0)
+			output[outOff+16+i] = d * float32(q1)
+		}
+	}
+}
+
+func dequantQ5_1Row(data []uint8, output []float32) {
+	const blockSize = 24
+	const qk = 32
+	nblocks := len(data) / blockSize
+	for b := range nblocks {
+		blockData := data[b*blockSize : (b+1)*blockSize]
+		d := ggmlFp16LE(blockData[0], blockData[1])
+		m := ggmlFp16LE(blockData[2], blockData[3])
+		qh := binary.LittleEndian.Uint32(blockData[4:8])
+		qs := blockData[8:]
+		outOff := b * qk
+		for i := range 16 {
+			xh0 := ((qh >> uint(i)) << 4) & 0x10
+			xh1 := (qh >> uint(i+12)) & 0x10
+			q0 := uint32(qs[i]&0x0F) | xh0
+			q1 := uint32(qs[i]>>4) | xh1
+			output[outOff+i] = d*float32(q0) + m
+			output[outOff+16+i] = d*float32(q1) + m
 		}
 	}
 }
@@ -660,6 +734,89 @@ func vecDotQ4_0_Q8_0(wRow, xRow []uint8) float32 {
 			sumi += lo*int32(int8(qx[i])) + hi*int32(int8(qx[16+i]))
 		}
 		acc += (dW * dX) * float32(sumi)
+	}
+	return acc
+}
+
+func vecDotQ4_1_Q8_0(wRow, xRow []uint8) float32 {
+	const wBytes = 20
+	const xBytes = 34
+	nblocks := len(wRow) / wBytes
+	var acc float32
+	for b := range nblocks {
+		wb := wRow[b*wBytes : (b+1)*wBytes]
+		xb := xRow[b*xBytes : (b+1)*xBytes]
+		dW := ggmlFp16LE(wb[0], wb[1])
+		mW := ggmlFp16LE(wb[2], wb[3])
+		dX := ggmlFp16LE(xb[0], xb[1])
+		qw := wb[4:20]
+		qx := xb[2:34]
+		var sumi, sumx int32
+		for i := range 16 {
+			x0 := int32(int8(qx[i]))
+			x1 := int32(int8(qx[16+i]))
+			lo := int32(qw[i] & 0x0F)
+			hi := int32(qw[i] >> 4)
+			sumi += lo*x0 + hi*x1
+			sumx += x0 + x1
+		}
+		acc += (dW*dX)*float32(sumi) + (mW*dX)*float32(sumx)
+	}
+	return acc
+}
+
+func vecDotQ5_0_Q8_0(wRow, xRow []uint8) float32 {
+	const wBytes = 22
+	const xBytes = 34
+	nblocks := len(wRow) / wBytes
+	var acc float32
+	for b := range nblocks {
+		wb := wRow[b*wBytes : (b+1)*wBytes]
+		xb := xRow[b*xBytes : (b+1)*xBytes]
+		dW := ggmlFp16LE(wb[0], wb[1])
+		qh := binary.LittleEndian.Uint32(wb[2:6])
+		dX := ggmlFp16LE(xb[0], xb[1])
+		qw := wb[6:22]
+		qx := xb[2:34]
+		var sumi int32
+		for i := range 16 {
+			xh0 := ((qh >> uint(i)) << 4) & 0x10
+			xh1 := (qh >> uint(i+12)) & 0x10
+			q0 := int32(uint32(qw[i]&0x0F)|xh0) - 16
+			q1 := int32(uint32(qw[i]>>4)|xh1) - 16
+			sumi += q0*int32(int8(qx[i])) + q1*int32(int8(qx[16+i]))
+		}
+		acc += (dW * dX) * float32(sumi)
+	}
+	return acc
+}
+
+func vecDotQ5_1_Q8_0(wRow, xRow []uint8) float32 {
+	const wBytes = 24
+	const xBytes = 34
+	nblocks := len(wRow) / wBytes
+	var acc float32
+	for b := range nblocks {
+		wb := wRow[b*wBytes : (b+1)*wBytes]
+		xb := xRow[b*xBytes : (b+1)*xBytes]
+		dW := ggmlFp16LE(wb[0], wb[1])
+		mW := ggmlFp16LE(wb[2], wb[3])
+		qh := binary.LittleEndian.Uint32(wb[4:8])
+		dX := ggmlFp16LE(xb[0], xb[1])
+		qw := wb[8:24]
+		qx := xb[2:34]
+		var sumi, sumx int32
+		for i := range 16 {
+			x0 := int32(int8(qx[i]))
+			x1 := int32(int8(qx[16+i]))
+			xh0 := ((qh >> uint(i)) << 4) & 0x10
+			xh1 := (qh >> uint(i+12)) & 0x10
+			q0 := int32(uint32(qw[i]&0x0F) | xh0)
+			q1 := int32(uint32(qw[i]>>4) | xh1)
+			sumi += q0*x0 + q1*x1
+			sumx += x0 + x1
+		}
+		acc += (dW*dX)*float32(sumi) + (mW*dX)*float32(sumx)
 	}
 	return acc
 }

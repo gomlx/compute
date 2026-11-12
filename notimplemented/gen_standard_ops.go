@@ -469,7 +469,7 @@ func (f Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, g
 //   - Weight-only quantization (options.XQuantization == nil):
 //     z = x @ dequant(weight, options.WeightQuantization) + bias
 //     (transposing dequant(weight) when options.WeightLayout == DenseLayoutOutputsInput; if
-//     options.QuantizedMatmuls is true, backends may dynamically quantize x internally to run
+//     options.QuantizedMatmul is true, backends may dynamically quantize x internally to run
 //     integer SIMD dot products).
 //   - Pre-quantized x + weight integer matmul (options.XQuantization != nil):
 //     supports QuantLinear (exact Int32 accumulation of (x - xZP) @ (w - wZP) rescaled by
