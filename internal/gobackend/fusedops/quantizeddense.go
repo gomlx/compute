@@ -1,252 +1,652 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
 package fusedops
 
 import (
+	"math"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/internal/gobackend/ops"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
 
 func init() {
 	gobackend.RegisterFusedQuantizedDense.Register(FusedQuantizedDense, gobackend.PriorityGeneric)
+	gobackend.RegisterFusedQuantizedDenseVJP.Register(FusedQuantizedDenseVJP, gobackend.PriorityGeneric)
 	gobackend.RegisterQuantizedEmbeddingLookup.Register(QuantizedEmbeddingLookup, gobackend.PriorityGeneric)
+
 	gobackend.SetNodeExecutor(compute.OpTypeFusedQuantizedDense, gobackend.PriorityTyped, execFusedQuantizedDense)
+	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedQuantizedDenseVJP] = execFusedQuantizedDenseVJP
 	gobackend.SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, gobackend.PriorityTyped, execQuantizedEmbeddingLookup)
 }
 
-// nodeFusedQuantizedDense stores parameters for the quantized dense op.
+// nodeFusedQuantizedDense stores compile-time validated metadata for FusedQuantizedDense.
 //
-// For the QuantGGML scheme, weights are stored in native GGML block format
-// (see exec_fused_quantized_ggml.go for format details). The weight tensor is
-// [N, bytesPerRow] Uint8, where N is the output-features dimension and
-// bytesPerRow = (K / valuesPerBlock) * bytesPerBlock. K (input-features) is
-// derived from bytesPerRow at build time via deriveGGMLK.
+// Node inputs order:
+//
+//	[x, weight, wScale?, wZeroPoint?, xScale?, xZeroPoint?, outScale?, outZeroPoint?, bias?]
 type nodeFusedQuantizedDense struct {
-	scheme       compute.QuantizationScheme
-	blockAxis    int // Always 1 (output-features axis); validated in builder. Stored for EqualNodeData.
-	blockSize    int
-	activation   compute.ActivationType
-	hasZeroPoint bool
-	hasBias      bool
-	// ggmlType specifies the concrete GGML block format (Q4_0, Q8_0, etc.).
-	// See exec_fused_quantized_ggml.go for block layouts and references.
-	ggmlType compute.GGMLQuantType // Only used when scheme == QuantGGML.
-	ggmlN    int                   // Output features (rows in GGML layout). Only for QuantGGML.
-	ggmlK    int                   // Input features (logical columns). Only for QuantGGML.
+	weightScheme     compute.QuantizationScheme
+	weightGGMLType   compute.GGMLQuantType
+	weightLayout     compute.DenseLayout
+	hasXQuant        bool
+	xScheme          compute.QuantizationScheme
+	xGGMLType        compute.GGMLQuantType
+	hasOutputQuant   bool
+	outputQuantDType dtypes.DType
+	quantizedMatmuls bool
+	activation       compute.ActivationConfig
+
+	hasWScale   bool
+	hasWZP      bool
+	hasXScale   bool
+	hasXZP      bool
+	hasOutScale bool
+	hasOutZP    bool
+	hasBias     bool
+
+	info shapeinference.QuantizedDenseInfo
 }
+
+var _ gobackend.FusedDenseActivationTarget = (*nodeFusedQuantizedDense)(nil)
 
 func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedQuantizedDense)
-	return d.scheme == o.scheme && d.blockAxis == o.blockAxis &&
-		d.blockSize == o.blockSize && d.activation == o.activation &&
-		d.hasZeroPoint == o.hasZeroPoint && d.hasBias == o.hasBias &&
-		d.ggmlType == o.ggmlType && d.ggmlN == o.ggmlN && d.ggmlK == o.ggmlK
+	return d.weightScheme == o.weightScheme &&
+		d.weightGGMLType == o.weightGGMLType &&
+		d.weightLayout == o.weightLayout &&
+		d.hasXQuant == o.hasXQuant &&
+		d.xScheme == o.xScheme &&
+		d.xGGMLType == o.xGGMLType &&
+		d.hasOutputQuant == o.hasOutputQuant &&
+		d.outputQuantDType == o.outputQuantDType &&
+		d.quantizedMatmuls == o.quantizedMatmuls &&
+		d.activation == o.activation &&
+		d.hasWScale == o.hasWScale &&
+		d.hasWZP == o.hasWZP &&
+		d.hasXScale == o.hasXScale &&
+		d.hasXZP == o.hasXZP &&
+		d.hasOutScale == o.hasOutScale &&
+		d.hasOutZP == o.hasOutZP &&
+		d.hasBias == o.hasBias &&
+		d.info.K == o.info.K &&
+		d.info.N == o.info.N &&
+		d.info.FloatComputeDType == o.info.FloatComputeDType &&
+		d.info.WeightScaleLayout == o.info.WeightScaleLayout &&
+		d.info.WeightZeroPointLayout == o.info.WeightZeroPointLayout &&
+		d.info.XScaleLayout == o.info.XScaleLayout &&
+		d.info.XZeroPointLayout == o.info.XZeroPointLayout &&
+		d.info.OutputScaleLayout == o.info.OutputScaleLayout &&
+		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout
 }
 
-// FusedQuantizedDense performs fused dequantization + matmul + optional bias + optional activation.
-//
-// Unlike FusedDense, this does not create a DotGeneral sub-node — the quantized matmul
-// is fundamentally different (mixed-dtype with per-group scales). The inputs to the
-// executor are [x, weights, scales, zeroPoints?, bias?] directly.
-//
-// Weights should have their dtype set to reflect the actual storage type (e.g. Int4, Int8).
-// For sub-byte types, the caller should Bitcast packed byte data to the correct dtype.
+// TryFuseActivation implements gobackend.FusedDenseActivationTarget so single-consumer
+// FusedQuantizedDense(ActivationNone) -> FusedActivation(cfg) pairs fuse automatically.
+func (d *nodeFusedQuantizedDense) TryFuseActivation(cfg compute.ActivationConfig) bool {
+	if d == nil || d.hasOutputQuant || d.activation.Type != compute.ActivationNone {
+		return false
+	}
+	if cfg.Type == compute.ActivationNone || cfg.Type == compute.ActivationSwiGLU {
+		return false
+	}
+	d.activation = cfg
+	return true
+}
+
+// quantizationToShapes converts a *compute.Quantization into a *shapeinference.QuantizationShapes,
+// verifying and casting any non-nil Scale / ZeroPoint compute.Value nodes along the way.
+func extractQuantizationShapes(
+	f *gobackend.Function,
+	opName string,
+	q *compute.Quantization,
+) (qs *shapeinference.QuantizationShapes, scaleNode, zpNode *gobackend.Node, err error) {
+	if q == nil {
+		return nil, nil, nil, nil
+	}
+	qs = &shapeinference.QuantizationShapes{
+		Scheme:         q.Scheme,
+		BlockAxis:      q.BlockAxis,
+		BlockSize:      q.BlockSize,
+		GGMLType:       q.GGMLType,
+		QuantizedDType: q.QuantizedDType,
+	}
+	if q.Scale != nil {
+		nodes, err := f.VerifyAndCastValues(opName, q.Scale)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		scaleNode = nodes[0]
+		qs.Scale = scaleNode.Shape
+	}
+	if q.ZeroPoint != nil {
+		nodes, err := f.VerifyAndCastValues(opName, q.ZeroPoint)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		zpNode = nodes[0]
+		qs.ZeroPoint = zpNode.Shape
+	}
+	return qs, scaleNode, zpNode, nil
+}
+
+// FusedQuantizedDense builds an OpTypeFusedQuantizedDense node in the Go backend graph.
 func FusedQuantizedDense(
 	f *gobackend.Function,
-	x, weights, bias compute.Value,
-	weightsQuantization *compute.Quantization,
-	activation compute.ActivationType) (compute.Value, error) {
-
-	scheme := weightsQuantization.Scheme
-
-	// GGML weights have scales embedded in their native block format.
-	// The weight layout is [N, bytesPerRow] Uint8 instead of [K, N].
-	if scheme == compute.QuantGGML {
-		return FusedQuantizedDenseGGML(f, x, weights, bias, weightsQuantization, activation)
+	x, weight, bias compute.Value,
+	options compute.FusedQuantizedDenseConfig,
+) (compute.Value, error) {
+	if options.WeightQuantization == nil {
+		return nil, errors.Errorf("FusedQuantizedDense: options.WeightQuantization must not be nil")
 	}
 
-	scales := weightsQuantization.Scale
-	zeroPoints := weightsQuantization.ZeroPoint
-	blockAxis := weightsQuantization.BlockAxis
-	blockSize := weightsQuantization.BlockSize
-
-	values := []compute.Value{x, weights, scales}
-	if zeroPoints != nil {
-		values = append(values, zeroPoints)
-	}
-	if bias != nil {
-		values = append(values, bias)
-	}
-	inputs, err := f.VerifyAndCastValues("FusedQuantizedDense", values...)
+	baseInputs, err := f.VerifyAndCastValues("FusedQuantizedDense", x, weight)
 	if err != nil {
 		return nil, err
 	}
-	xNode := inputs[0]
-	weightsNode := inputs[1]
-	scalesNode := inputs[2]
+	xNode, wNode := baseInputs[0], baseInputs[1]
 
-	// Validate x dtype: only float32 is supported.
-	if xNode.Shape.DType != dtypes.Float32 {
-		return nil, errors.Errorf("FusedQuantizedDense: x must be float32, got %s", xNode.Shape.DType)
+	wqs, wScaleNode, wZPNode, err := extractQuantizationShapes(f, "FusedQuantizedDense", options.WeightQuantization)
+	if err != nil {
+		return nil, err
+	}
+	xqs, xScaleNode, xZPNode, err := extractQuantizationShapes(f, "FusedQuantizedDense", options.XQuantization)
+	if err != nil {
+		return nil, err
+	}
+	oqs, oScaleNode, oZPNode, err := extractQuantizationShapes(f, "FusedQuantizedDense", options.OutputQuantization)
+	if err != nil {
+		return nil, err
 	}
 
-	// Validate x shape: [batch..., K]
-	if xNode.Shape.Rank() < 1 {
-		return nil, errors.Errorf("FusedQuantizedDense: x must have rank >= 1, got %d", xNode.Shape.Rank())
-	}
-	K := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
-
-	// Derive N from weights shape. The weights dtype reflects the storage type.
-	if weightsNode.Shape.Rank() != 2 || weightsNode.Shape.Dimensions[0] != K {
-		return nil, errors.Errorf("FusedQuantizedDense: weights must be [%d, N], got %v", K, weightsNode.Shape.Dimensions)
-	}
-	N := weightsNode.Shape.Dimensions[1]
-
-	// Validate scales shape: [K, numBlocks]
-	numBlocks := (N + blockSize - 1) / blockSize
-	if scalesNode.Shape.Rank() != 2 || scalesNode.Shape.Dimensions[0] != K || scalesNode.Shape.Dimensions[1] != numBlocks {
-		return nil, errors.Errorf("FusedQuantizedDense: scales must be [%d, %d], got %v",
-			K, numBlocks, scalesNode.Shape.Dimensions)
+	var biasNode *gobackend.Node
+	var biasShape shapes.Shape
+	if bias != nil {
+		bNodes, err := f.VerifyAndCastValues("FusedQuantizedDense", bias)
+		if err != nil {
+			return nil, err
+		}
+		biasNode = bNodes[0]
+		biasShape = biasNode.Shape
 	}
 
-	// Output shape: [batch..., N]
-	outDims := make([]int, xNode.Shape.Rank())
-	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
-	outDims[xNode.Shape.Rank()-1] = N
-	outShape := shapes.Make(xNode.Shape.DType, outDims...)
-
-	// Only blockAxis=1 (output-features axis) is currently supported.
-	if blockAxis != 1 {
-		return nil, errors.Errorf("FusedQuantizedDense: only Axis=1 is supported, got %d", blockAxis)
+	cfgShapes := shapeinference.QuantizedDenseConfigShapes{
+		WeightQuantization: wqs,
+		XQuantization:      xqs,
+		OutputQuantization: oqs,
+		QuantizedMatmuls:   options.QuantizedMatmuls,
+		Activation:         options.Activation,
+		WeightLayout:       options.WeightLayout,
+	}
+	info, err := shapeinference.FusedQuantizedDenseWithInfo(xNode.Shape, wNode.Shape, biasShape, cfgShapes)
+	if err != nil {
+		return nil, err
 	}
 
-	// NF4 quantization uses a fixed lookup table and does not support zero points.
-	if scheme == compute.QuantNF4 && zeroPoints != nil {
-		return nil, errors.Errorf("FusedQuantizedDense: ZeroPoint must be nil for NF4 quantization scheme")
+	// Extra GGML implementation check so unsupported enum values fail at build time.
+	if wqs.Scheme == compute.QuantGGML {
+		if _, err := ggmlDequantFunc(wqs.GGMLType); err != nil {
+			return nil, err
+		}
+	}
+
+	inputs := make([]*gobackend.Node, 0, 9)
+	inputs = append(inputs, xNode, wNode)
+	if wScaleNode != nil {
+		inputs = append(inputs, wScaleNode)
+	}
+	if wZPNode != nil {
+		inputs = append(inputs, wZPNode)
+	}
+	if xScaleNode != nil {
+		inputs = append(inputs, xScaleNode)
+	}
+	if xZPNode != nil {
+		inputs = append(inputs, xZPNode)
+	}
+	if oScaleNode != nil {
+		inputs = append(inputs, oScaleNode)
+	}
+	if oZPNode != nil {
+		inputs = append(inputs, oZPNode)
+	}
+	if biasNode != nil {
+		inputs = append(inputs, biasNode)
 	}
 
 	data := &nodeFusedQuantizedDense{
-		scheme:       scheme,
-		blockAxis:    blockAxis,
-		blockSize:    blockSize,
-		activation:   activation,
-		hasZeroPoint: zeroPoints != nil,
-		hasBias:      bias != nil,
+		weightScheme:     wqs.Scheme,
+		weightGGMLType:   wqs.GGMLType,
+		weightLayout:     options.WeightLayout,
+		hasXQuant:        xqs != nil,
+		hasOutputQuant:   oqs != nil,
+		outputQuantDType: info.OutputShape.DType,
+		quantizedMatmuls: options.QuantizedMatmuls,
+		activation:       options.Activation,
+		hasWScale:        wScaleNode != nil,
+		hasWZP:           wZPNode != nil,
+		hasXScale:        xScaleNode != nil,
+		hasXZP:           xZPNode != nil,
+		hasOutScale:      oScaleNode != nil,
+		hasOutZP:         oZPNode != nil,
+		hasBias:          biasNode != nil,
+		info:             info,
 	}
-	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
+	if xqs != nil {
+		data.xScheme = xqs.Scheme
+		data.xGGMLType = xqs.GGMLType
+	}
+
+	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, info.OutputShape, inputs, data)
 	return node, nil
 }
 
-// validateGGMLTypeSupported checks that the given GGML type has a fused executor implementation.
-func validateGGMLTypeSupported(opName string, ggmlType compute.GGMLQuantType) error {
-	switch ggmlType {
-	case compute.GGMLQ4_0, compute.GGMLQ8_0, compute.GGMLIQ4NL, compute.GGMLQ4_K, compute.GGMLQ6_K:
-		return nil
+type unpackedQDInputs struct {
+	x        *gobackend.Buffer
+	weight   *gobackend.Buffer
+	wScale   *gobackend.Buffer
+	wZP      *gobackend.Buffer
+	xScale   *gobackend.Buffer
+	xZP      *gobackend.Buffer
+	outScale *gobackend.Buffer
+	outZP    *gobackend.Buffer
+	bias     *gobackend.Buffer
+}
+
+func unpackQDInputs(data *nodeFusedQuantizedDense, inputs []*gobackend.Buffer) unpackedQDInputs {
+	var res unpackedQDInputs
+	res.x = inputs[0]
+	res.weight = inputs[1]
+	idx := 2
+	if data.hasWScale {
+		res.wScale = inputs[idx]
+		idx++
+	}
+	if data.hasWZP {
+		res.wZP = inputs[idx]
+		idx++
+	}
+	if data.hasXScale {
+		res.xScale = inputs[idx]
+		idx++
+	}
+	if data.hasXZP {
+		res.xZP = inputs[idx]
+		idx++
+	}
+	if data.hasOutScale {
+		res.outScale = inputs[idx]
+		idx++
+	}
+	if data.hasOutZP {
+		res.outZP = inputs[idx]
+		idx++
+	}
+	if data.hasBias {
+		res.bias = inputs[idx]
+	}
+	return res
+}
+
+// execFusedQuantizedDense dispatches FusedQuantizedDense across weight-only, pre-quantized,
+// and on-the-fly quantized matmul kernels, followed by activation and optional output quantization.
+func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+	data := node.Data.(*nodeFusedQuantizedDense)
+	in := unpackQDInputs(data, inputs)
+
+	output, err := backend.GetBuffer(node.Shape)
+	if err != nil {
+		return nil, err
+	}
+	if backend.NoOps || node.Shape.Size() == 0 {
+		return output, nil
+	}
+
+	N := data.info.N
+	K := data.info.K
+	M := node.Shape.Size() / N
+
+	// Allocate or alias Float32 accumulation buffer [M, N].
+	var outF32 []float32
+	var tmpOutBuf *gobackend.Buffer
+	if !data.hasOutputQuant && output.RawShape.DType == dtypes.Float32 {
+		outF32 = output.Flat.([]float32)
+	} else {
+		tmpOutBuf, err = backend.GetBuffer(shapes.Make(dtypes.Float32, M, N))
+		if err != nil {
+			backend.PutBuffer(output)
+			return nil, err
+		}
+		defer backend.PutBuffer(tmpOutBuf)
+		outF32 = tmpOutBuf.Flat.([]float32)
+	}
+
+	switch data.weightScheme {
+	case compute.QuantGGML:
+		err = execQuantizedDenseGGMLCore(backend, data, in, M, K, N, outF32)
+	case compute.QuantLinear, compute.QuantNF4:
+		err = execQuantizedDenseLinearOrNF4Core(backend, data, in, M, K, N, outF32)
 	default:
-		return errors.Wrapf(compute.ErrNotImplemented, "%s: GGML type %s not supported in fused path", opName, ggmlType)
+		err = errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unsupported scheme %s", data.weightScheme)
 	}
-}
-
-// deriveGGMLK computes the logical input-features dimension K from bytesPerRow
-// and the GGML block format. GGML weights are stored as [N, bytesPerRow] Uint8,
-// where each row consists of consecutive quantization blocks. Each block packs
-// valuesPerBlock logical float32 values into bytesPerBlock bytes. K is therefore:
-//
-//	K = (bytesPerRow / bytesPerBlock) * valuesPerBlock
-//
-// This function validates that bytesPerRow is an exact multiple of bytesPerBlock.
-//
-// See exec_fused_quantized_ggml.go for per-type block layouts.
-// Ref: https://github.com/ggerganov/ggml/blob/master/docs/gguf.md
-func deriveGGMLK(opName string, bytesPerRow int, ggmlType compute.GGMLQuantType) (int, error) {
-	vpb := ggmlType.ValuesPerBlock()
-	bpb := ggmlType.BytesPerBlock()
-	if vpb == 0 || bpb == 0 {
-		return 0, errors.Errorf("%s: unsupported GGML type %s", opName, ggmlType)
-	}
-	if bytesPerRow%bpb != 0 {
-		return 0, errors.Errorf("%s: bytesPerRow %d not divisible by bytesPerBlock %d for %s",
-			opName, bytesPerRow, bpb, ggmlType)
-	}
-	return (bytesPerRow / bpb) * vpb, nil
-}
-
-// FusedQuantizedDenseGGML handles the GGML path for FusedQuantizedDense.
-// GGML weights are [N, bytesPerRow] Uint8 with native block layout.
-// Scales and zero points are embedded in the blocks.
-func FusedQuantizedDenseGGML(f *gobackend.Function, x, weights, bias compute.Value,
-	wq *compute.Quantization,
-	activation compute.ActivationType) (compute.Value, error) {
-
-	values := []compute.Value{x, weights}
-	if bias != nil {
-		values = append(values, bias)
-	}
-	inputs, err := f.VerifyAndCastValues("FusedQuantizedDense(GGML)", values...)
 	if err != nil {
-		return nil, err
-	}
-	xNode := inputs[0]
-	wNode := inputs[1]
-
-	// Validate x dtype: only float32 is supported.
-	if xNode.Shape.DType != dtypes.Float32 {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must be float32, got %s", xNode.Shape.DType)
-	}
-	if xNode.Shape.Rank() < 1 {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): x must have rank >= 1, got %d", xNode.Shape.Rank())
-	}
-
-	// GGML weights: [N, bytesPerRow] Uint8.
-	if wNode.Shape.Rank() != 2 || wNode.Shape.DType != dtypes.Uint8 {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): weights must be [N, bytesPerRow] Uint8, got %v %s",
-			wNode.Shape.Dimensions, wNode.Shape.DType)
-	}
-	N := wNode.Shape.Dimensions[0]
-	bytesPerRow := wNode.Shape.Dimensions[1]
-
-	ggmlType := wq.GGMLType
-	if err := validateGGMLTypeSupported("FusedQuantizedDense(GGML)", ggmlType); err != nil {
-		return nil, err
-	}
-	K, err := deriveGGMLK("FusedQuantizedDense(GGML)", bytesPerRow, ggmlType)
-	if err != nil {
+		backend.PutBuffer(output)
 		return nil, err
 	}
 
-	// Validate that x's last dimension matches K.
-	xK := xNode.Shape.Dimensions[xNode.Shape.Rank()-1]
-	if xK != K {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): x's last dim (%d) must match K=%d derived from weights", xK, K)
+	// Apply post-matmul+bias activation in Float32.
+	applyActivationConfigFloat32(backend, data.activation, outF32)
+
+	// Optional OutputQuantization (e.g. ONNX QLinearMatMul).
+	if data.hasOutputQuant {
+		if err := quantizeOutputFloat32(backend, outF32, M, N, in.outScale, in.outZP, data.info.OutputScaleLayout, data.info.OutputZeroPointLayout, output); err != nil {
+			backend.PutBuffer(output)
+			return nil, err
+		}
+		return output, nil
 	}
 
-	// Zero points are not supported for GGML (embedded in blocks).
-	if wq.ZeroPoint != nil {
-		return nil, errors.Errorf("FusedQuantizedDense(GGML): ZeroPoint must be nil for GGML scheme")
+	// Convert Float32 -> Float16 / BFloat16 if needed.
+	switch output.RawShape.DType {
+	case dtypes.Float32:
+		// Already written directly into output.Flat.
+	case dtypes.Float16:
+		dst := output.Flat.([]float16.Float16)
+		for i, v := range outF32 {
+			dst[i] = float16.FromFloat32(v)
+		}
+	case dtypes.BFloat16:
+		dst := output.Flat.([]bfloat16.BFloat16)
+		for i, v := range outF32 {
+			dst[i] = bfloat16.FromFloat32(v)
+		}
+	default:
+		backend.PutBuffer(output)
+		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unsupported output DType %s", output.RawShape.DType)
 	}
-
-	// Output shape: [batch..., N]
-	outDims := make([]int, xNode.Shape.Rank())
-	copy(outDims, xNode.Shape.Dimensions[:xNode.Shape.Rank()-1])
-	outDims[xNode.Shape.Rank()-1] = N
-	outShape := shapes.Make(xNode.Shape.DType, outDims...)
-
-	data := &nodeFusedQuantizedDense{
-		scheme:     compute.QuantGGML,
-		activation: activation,
-		hasBias:    bias != nil,
-		ggmlType:   ggmlType,
-		ggmlN:      N,
-		ggmlK:      K,
-	}
-	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, outShape, inputs, data)
-	return node, nil
+	return output, nil
 }
 
-// nodeQuantizedEmbeddingLookup stores parameters for the quantized embedding lookup op.
+func applyActivationConfigFloat32(backend *gobackend.Backend, cfg compute.ActivationConfig, data []float32) {
+	if cfg.Type == compute.ActivationNone || len(data) == 0 {
+		return
+	}
+	activations.Apply(backend, cfg.Type, data)
+}
+
+func applyActivationVJPConfigFloat32(backend *gobackend.Backend, cfg compute.ActivationConfig, y, dOut, dz []float32) error {
+	if len(dOut) == 0 {
+		return nil
+	}
+	return activations.ExecuteVJPFromOutput(backend, cfg.Type, y, dOut, dz)
+}
+
+func quantizeOutputFloat32(
+	backend *gobackend.Backend,
+	yF32 []float32,
+	M, N int,
+	scaleBuf, zpBuf *gobackend.Buffer,
+	scaleLayout, zpLayout shapeinference.ActivationParamLayout,
+	outBuf *gobackend.Buffer,
+) error {
+	scales, releaseScale, err := bufferToFloat32Slice(backend, scaleBuf)
+	if err != nil {
+		return err
+	}
+	defer releaseScale()
+
+	var zps []float32
+	if zpBuf != nil {
+		var releaseZP func()
+		zps, releaseZP, err = bufferToZeroPointFloat32Slice(backend, zpBuf)
+		if err != nil {
+			return err
+		}
+		defer releaseZP()
+	}
+
+	switch outBuf.RawShape.DType {
+	case dtypes.Int8:
+		dst := outBuf.Flat.([]int8)
+		for m := range M {
+			rowOff := m * N
+			for n := range N {
+				sc := scales[scaleLayout.Index(m, n)]
+				var zp float32
+				if zps != nil {
+					zp = zps[zpLayout.Index(m, n)]
+				}
+				q := float32(math.RoundToEven(float64(yF32[rowOff+n]/sc))) + zp
+				q = max(float32(-128), min(float32(127), q))
+				dst[rowOff+n] = int8(int32(math.RoundToEven(float64(q))))
+			}
+		}
+	case dtypes.Uint8:
+		dst := outBuf.Flat.([]uint8)
+		for m := range M {
+			rowOff := m * N
+			for n := range N {
+				sc := scales[scaleLayout.Index(m, n)]
+				var zp float32
+				if zps != nil {
+					zp = zps[zpLayout.Index(m, n)]
+				}
+				q := float32(math.RoundToEven(float64(yF32[rowOff+n]/sc))) + zp
+				q = max(float32(0), min(float32(255), q))
+				dst[rowOff+n] = uint8(int32(math.RoundToEven(float64(q))))
+			}
+		}
+	default:
+		return errors.Errorf("FusedQuantizedDense: unsupported OutputQuantization DType %s", outBuf.RawShape.DType)
+	}
+	return nil
+}
+
+// bufferToFloat32Slice returns a []float32 view (zero-copy when already Float32) or a pooled converted buffer.
+func bufferToFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer) ([]float32, func(), error) {
+	if buf == nil {
+		return nil, func() {}, nil
+	}
+	switch buf.RawShape.DType {
+	case dtypes.Float32:
+		return buf.Flat.([]float32), func() {}, nil
+	case dtypes.Float16:
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		if err != nil {
+			return nil, nil, err
+		}
+		src := buf.Flat.([]float16.Float16)
+		dst := tmp.Flat.([]float32)
+		for i, v := range src {
+			dst[i] = v.Float32()
+		}
+		return dst, func() { backend.PutBuffer(tmp) }, nil
+	case dtypes.BFloat16:
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		if err != nil {
+			return nil, nil, err
+		}
+		src := buf.Flat.([]bfloat16.BFloat16)
+		dst := tmp.Flat.([]float32)
+		for i, v := range src {
+			dst[i] = v.Float32()
+		}
+		return dst, func() { backend.PutBuffer(tmp) }, nil
+	default:
+		return nil, nil, errors.Errorf("expected float buffer (Float32/Float16/BFloat16), got %s", buf.RawShape.DType)
+	}
+}
+
+// isSubByteQuantDType reports whether dt is a packed sub-byte integer type (Int2/Uint2/Int4/Uint4).
+func isSubByteQuantDType(dt dtypes.DType) bool {
+	switch dt {
+	case dtypes.Int2, dtypes.Uint2, dtypes.Int4, dtypes.Uint4:
+		return true
+	default:
+		return false
+	}
+}
+
+// bufferToZeroPointFloat32Slice converts an integer or float ZeroPoint buffer into a []float32 slice.
+func bufferToZeroPointFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer) ([]float32, func(), error) {
+	if buf == nil {
+		return nil, func() {}, nil
+	}
+	if buf.RawShape.DType == dtypes.Float32 {
+		return buf.Flat.([]float32), func() {}, nil
+	}
+	if buf.RawShape.DType == dtypes.Float16 || buf.RawShape.DType == dtypes.BFloat16 {
+		return bufferToFloat32Slice(backend, buf)
+	}
+	if isSubByteQuantDType(buf.RawShape.DType) {
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n))
+		if err != nil {
+			return nil, nil, err
+		}
+		tmpI8 := make([]int8, n)
+		unpackSubByteSpanInt8(buf.RawShape.DType, buf.Flat.([]byte), 0, n, tmpI8)
+		dst := tmp.Flat.([]float32)
+		for i, v := range tmpI8 {
+			dst[i] = float32(v)
+		}
+		return dst, func() { backend.PutBuffer(tmp) }, nil
+	}
+
+	tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Dimensions...))
+	if err != nil {
+		return nil, nil, err
+	}
+	convertFnAny, err := ops.ConvertDTypePairMap.Get(buf.RawShape.DType, dtypes.Float32)
+	if err != nil {
+		backend.PutBuffer(tmp)
+		return nil, nil, err
+	}
+	convertFnAny.(ops.ConvertFnType)(buf, tmp)
+	return tmp.Flat.([]float32), func() { backend.PutBuffer(tmp) }, nil
+}
+
+// bufferToZeroPointInt32Slice converts a ZeroPoint buffer into a []int32 slice for integer matmul kernels.
+func bufferToZeroPointInt32Slice(backend *gobackend.Backend, buf *gobackend.Buffer) ([]int32, func(), error) {
+	if buf == nil {
+		return nil, func() {}, nil
+	}
+	if buf.RawShape.DType == dtypes.Int32 {
+		return buf.Flat.([]int32), func() {}, nil
+	}
+	if buf.RawShape.DType.IsFloat() {
+		f32, releaseF32, err := bufferToFloat32Slice(backend, buf)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer releaseF32()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Int32, len(f32)))
+		if err != nil {
+			return nil, nil, err
+		}
+		dst := tmp.Flat.([]int32)
+		for i, v := range f32 {
+			dst[i] = int32(math.RoundToEven(float64(v)))
+		}
+		return dst, func() { backend.PutBuffer(tmp) }, nil
+	}
+	if isSubByteQuantDType(buf.RawShape.DType) {
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Int32, n))
+		if err != nil {
+			return nil, nil, err
+		}
+		tmpI8 := make([]int8, n)
+		unpackSubByteSpanInt8(buf.RawShape.DType, buf.Flat.([]byte), 0, n, tmpI8)
+		dst := tmp.Flat.([]int32)
+		for i, v := range tmpI8 {
+			dst[i] = int32(v)
+		}
+		return dst, func() { backend.PutBuffer(tmp) }, nil
+	}
+
+	tmp, err := backend.GetBuffer(shapes.Make(dtypes.Int32, buf.RawShape.Dimensions...))
+	if err != nil {
+		return nil, nil, err
+	}
+	convertFnAny, err := ops.ConvertDTypePairMap.Get(buf.RawShape.DType, dtypes.Int32)
+	if err != nil {
+		backend.PutBuffer(tmp)
+		return nil, nil, err
+	}
+	convertFnAny.(ops.ConvertFnType)(buf, tmp)
+	return tmp.Flat.([]int32), func() { backend.PutBuffer(tmp) }, nil
+}
+
+// unpackSubByteSpanInt8 unpacks `count` sub-byte elements starting at logical element index `startElem`
+// from `packed` into `dst` (as signed int8 for Int4/Int2, or 0..15 / 0..3 int8 for Uint4/Uint2, which all fit in int8!).
+func unpackSubByteSpanInt8(dt dtypes.DType, packed []byte, startElem, count int, dst []int8) {
+	switch dt {
+	case dtypes.Int4:
+		if startElem&1 == 0 && count&1 == 0 {
+			byteOff := startElem >> 1
+			half := count >> 1
+			src := packed[byteOff : byteOff+half]
+			for i, b := range src {
+				lo := int8(b & 0x0F)
+				if lo >= 8 {
+					lo -= 16
+				}
+				hi := int8(b) >> 4
+				dst[2*i] = lo
+				dst[2*i+1] = hi
+			}
+			return
+		}
+		for i := range count {
+			idx := startElem + i
+			nib := int8((packed[idx>>1] >> uint((idx&1)*4)) & 0x0F)
+			if nib >= 8 {
+				nib -= 16
+			}
+			dst[i] = nib
+		}
+
+	case dtypes.Uint4:
+		if startElem&1 == 0 && count&1 == 0 {
+			byteOff := startElem >> 1
+			half := count >> 1
+			src := packed[byteOff : byteOff+half]
+			for i, b := range src {
+				dst[2*i] = int8(b & 0x0F)
+				dst[2*i+1] = int8(b >> 4)
+			}
+			return
+		}
+		for i := range count {
+			idx := startElem + i
+			dst[i] = int8((packed[idx>>1] >> uint((idx&1)*4)) & 0x0F)
+		}
+
+	case dtypes.Int2:
+		for i := range count {
+			idx := startElem + i
+			v := int8((packed[idx>>2] >> uint((idx&3)*2)) & 0x03)
+			if v >= 2 {
+				v -= 4
+			}
+			dst[i] = v
+		}
+
+	case dtypes.Uint2:
+		for i := range count {
+			idx := startElem + i
+			dst[i] = int8((packed[idx>>2] >> uint((idx&3)*2)) & 0x03)
+		}
+	}
+}
+
 type nodeQuantizedEmbeddingLookup struct {
 	ggmlType compute.GGMLQuantType
 	ggmlK    int // Logical embedding dimension (valuesPerBlock * numBlocks).
@@ -259,198 +659,41 @@ func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other gobackend.NodeDataCom
 
 // QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
 // with on-the-fly dequantization.
-// data: [vocabSize, bytesPerRow] Uint8 with native GGML block layout.
-// indices: integer tensor with last dim = 1 (same as Gather convention).
-// Output: [batch..., K] Float32 where K is derived from the block format.
-func QuantizedEmbeddingLookup(f *gobackend.Function, data, indices compute.Value,
-	wq *compute.Quantization) (compute.Value, error) {
-
-	if wq.Scheme != compute.QuantGGML {
-		return nil, errors.Wrapf(compute.ErrNotImplemented,
-			"QuantizedEmbeddingLookup: only QuantGGML scheme is supported, got %s -- "+
-				"please create a feature request if you need support for a different quantization scheme", wq.Scheme)
+func QuantizedEmbeddingLookup(
+	f *gobackend.Function,
+	data, indices compute.Value,
+	wq *compute.Quantization,
+) (compute.Value, error) {
+	if wq == nil {
+		return nil, errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
 	}
-
 	inputs, err := f.VerifyAndCastValues("QuantizedEmbeddingLookup", data, indices)
 	if err != nil {
 		return nil, err
 	}
-	dNode := inputs[0]
-	iNode := inputs[1]
+	dNode, iNode := inputs[0], inputs[1]
 
-	// Validate data: [vocabSize, bytesPerRow] Uint8.
-	if dNode.Shape.Rank() != 2 || dNode.Shape.DType != dtypes.Uint8 {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: data must be [vocabSize, bytesPerRow] Uint8, got %v %s",
-			dNode.Shape.Dimensions, dNode.Shape.DType)
-	}
-	bytesPerRow := dNode.Shape.Dimensions[1]
-
-	// Validate indices: must be integer, last dim = 1.
-	if !iNode.Shape.DType.IsInt() {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices must be integer, got %s", iNode.Shape.DType)
-	}
-	if iNode.Shape.Rank() < 1 || iNode.Shape.Dimensions[iNode.Shape.Rank()-1] != 1 {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: indices last dim must be 1, got shape %v", iNode.Shape.Dimensions)
-	}
-
-	ggmlType := wq.GGMLType
-	if err := validateGGMLTypeSupported("QuantizedEmbeddingLookup", ggmlType); err != nil {
-		return nil, err
-	}
-
-	// Derive K from bytesPerRow.
-	K, err := deriveGGMLK("QuantizedEmbeddingLookup", bytesPerRow, ggmlType)
+	wqs, _, _, err := extractQuantizationShapes(f, "QuantizedEmbeddingLookup", wq)
 	if err != nil {
 		return nil, err
 	}
-
-	// Output shape: [batch..., K] Float32.
-	// indices shape is [batch..., 1]. Output replaces the last dim with K.
-	outDims := make([]int, iNode.Shape.Rank())
-	copy(outDims, iNode.Shape.Dimensions)
-	outDims[len(outDims)-1] = K
-	outShape := shapes.Make(dtypes.Float32, outDims...)
+	outShape, err := shapeinference.QuantizedEmbeddingLookup(dNode.Shape, iNode.Shape, wqs)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ggmlDequantFunc(wq.GGMLType); err != nil {
+		return nil, err
+	}
 
 	nodeData := &nodeQuantizedEmbeddingLookup{
-		ggmlType: ggmlType,
-		ggmlK:    K,
+		ggmlType: wq.GGMLType,
+		ggmlK:    outShape.Dimensions[outShape.Rank()-1],
 	}
 	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedEmbeddingLookup, outShape, inputs, nodeData)
 	return node, nil
 }
 
-// execFusedQuantizedDense implements scalar dequant + matmul + bias + activation.
-// inputs layout: [x, weights, scales, zeroPoints?, bias?]
-//
-// Weights have their dtype set to reflect the storage type (Int4, Int8, etc.).
-// Int4/Uint4 weights may be in packed form ([]byte, 2 nibbles per byte) when
-// produced by Bitcast, or unpacked ([]int8/[]uint8, one value per element) when
-// produced by ConvertDType. Both forms are supported.
-func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	data := node.Data.(*nodeFusedQuantizedDense)
-
-	// GGML has a different input layout: [x, weights, bias?] (no scales/zeroPoints).
-	if data.scheme == compute.QuantGGML {
-		return execFusedQuantizedDenseGGML(backend, node, inputs, data)
-	}
-
-	xBuf := inputs[0]
-	wBuf := inputs[1]
-	sBuf := inputs[2]
-
-	// Determine zeroPoints and bias from remaining inputs using explicit flags.
-	// Inputs: [x, weights, scales, zeroPoints?, bias?]
-	var zeroPointsBuf, biasBuf *gobackend.Buffer
-	nextIdx := 3
-	if data.hasZeroPoint {
-		zeroPointsBuf = inputs[nextIdx]
-		nextIdx++
-	}
-	if data.hasBias {
-		biasBuf = inputs[nextIdx]
-	}
-
-	if xBuf.RawShape.DType != dtypes.Float32 {
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: only float32 input supported, got %s", xBuf.RawShape.DType)
-	}
-
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
-	}
-	x := xBuf.Flat.([]float32)
-	scales := sBuf.Flat.([]float32)
-	out := output.Flat.([]float32)
-
-	K := xBuf.RawShape.Dimensions[xBuf.RawShape.Rank()-1]
-	N := wBuf.RawShape.Dimensions[1]
-	M := xBuf.RawShape.Size() / K
-	blockSize := data.blockSize
-	numBlocks := (N + blockSize - 1) / blockSize
-
-	var bias []float32
-	if biasBuf != nil {
-		bias = biasBuf.Flat.([]float32)
-	}
-	var zeroPoints []float32
-	if zeroPointsBuf != nil {
-		zeroPoints = zeroPointsBuf.Flat.([]float32)
-	}
-
-	// For packed sub-byte weights (from Bitcast), unpack nibbles via the buffer pool
-	// and ConvertDType infrastructure. Non-sub-byte types pass through unchanged.
-	unpackedBuf, isUnpackedOwned, err := unpackWeightsToBuffer(backend, wBuf)
-	if err != nil {
-		return nil, err
-	}
-	if isUnpackedOwned {
-		defer backend.PutBuffer(unpackedBuf)
-	}
-	wFlat := unpackedBuf.Flat
-
-	switch data.scheme {
-	case compute.QuantNF4:
-		// NF4 weights are nibble indices [0..15]. Supports Int4/Int8/Uint4/Uint8.
-		switch wFlat := wFlat.(type) {
-		case []uint8:
-			quantizedDenseNF4(backend, x, wFlat, scales, bias, out, M, K, N, blockSize, numBlocks)
-		case []int8:
-			quantizedDenseNF4(backend, x, wFlat, scales, bias, out, M, K, N, blockSize, numBlocks)
-		default:
-			return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: NF4 unsupported weight type %T", wFlat)
-		}
-	case compute.QuantLinear:
-		switch wFlat := wFlat.(type) {
-		case []int8:
-			quantizedDenseLinearInt(backend, x, wFlat, scales, zeroPoints, bias, out, M, K, N, blockSize, numBlocks)
-		case []uint8:
-			quantizedDenseLinearInt(backend, x, wFlat, scales, zeroPoints, bias, out, M, K, N, blockSize, numBlocks)
-		default:
-			return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: Linear unsupported weight type %T", wFlat)
-		}
-	default:
-		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unknown quantization scheme %d", data.scheme)
-	}
-
-	activations.Apply(backend, data.activation, output.Flat.([]float32))
-	return output, nil
-}
-
-// unpackWeightsToBuffer unpacks sub-byte weight data (Int4, Uint4) into a pooled
-// buffer using the ConvertDType infrastructure. For non-sub-byte types, returns the
-// original buffer unchanged.
-//
-// Returns the (possibly new) buffer, whether it was allocated from the pool
-// (caller must putBuffer), and any error.
-func unpackWeightsToBuffer(backend *gobackend.Backend, wBuf *gobackend.Buffer) (*gobackend.Buffer, bool, error) {
-	var targetDType dtypes.DType
-	switch wBuf.RawShape.DType {
-	case dtypes.Int4, dtypes.Int2:
-		targetDType = dtypes.Int8
-	case dtypes.Uint4, dtypes.Uint2:
-		targetDType = dtypes.Uint8
-	default:
-		return wBuf, false, nil
-	}
-
-	outBuf, err := backend.GetBuffer(shapes.Make(targetDType, wBuf.RawShape.Dimensions...))
-	if err != nil {
-		return nil, false, err
-	}
-
-	convertFnAny, err := ops.ConvertDTypePairMap.Get(wBuf.RawShape.DType, targetDType)
-	if err != nil {
-		backend.PutBuffer(outBuf)
-		return nil, false, err
-	}
-	convertFn := convertFnAny.(ops.ConvertFnType)
-	convertFn(wBuf, outBuf)
-	return outBuf, true, nil
-}
-
 // execQuantizedEmbeddingLookup performs quantized embedding lookup.
-// Inputs: [data, indices]. Data is [vocabSize, bytesPerRow] Uint8.
-// Indices are integer with last dim = 1. Output is [batch..., K] Float32.
 func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeQuantizedEmbeddingLookup)
 	dataBuf := inputs[0]
@@ -460,6 +703,9 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps || node.Shape.Size() == 0 {
+		return output, nil
+	}
 
 	dataBytes := dataBuf.Flat.([]uint8)
 	out := output.Flat.([]float32)
@@ -468,15 +714,14 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 
 	dequantFn, err := ggmlDequantFunc(data.ggmlType)
 	if err != nil {
+		backend.PutBuffer(output)
 		return nil, err
 	}
 
-	// Last dim is pre-validated to be 1, so total elements == number of indices.
 	numIndices := indicesBuf.RawShape.Size()
-
-	// Convert indices to int64 via the buffer pool and ConvertDType infrastructure.
 	idxBuf, isIdxOwned, err := convertIndicesToInt64(backend, indicesBuf)
 	if err != nil {
+		backend.PutBuffer(output)
 		return nil, errors.Wrapf(err, "QuantizedEmbeddingLookup")
 	}
 	if isIdxOwned {
@@ -487,22 +732,16 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
 	for i, rowIdx := range indices[:numIndices] {
 		if rowIdx < 0 || rowIdx >= vocabSize {
+			backend.PutBuffer(output)
 			return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rowIdx, vocabSize)
 		}
 		rowStart := rowIdx * int64(bytesPerRow)
 		rowData := dataBytes[rowStart : rowStart+int64(bytesPerRow)]
 		dequantFn(rowData, out[i*K:(i+1)*K])
 	}
-
 	return output, nil
 }
 
-// convertIndicesToInt64 converts an integer index buffer to int64 via the buffer
-// pool and ConvertDType infrastructure. If the buffer is already int64, it is
-// returned as-is.
-//
-// Returns the (possibly new) buffer, whether it was allocated from the pool
-// (caller must putBuffer), and any error.
 func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buffer) (*gobackend.Buffer, bool, error) {
 	if indicesBuf.RawShape.DType == dtypes.Int64 {
 		return indicesBuf, false, nil
@@ -511,36 +750,33 @@ func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buf
 	if err != nil {
 		return nil, false, err
 	}
-
 	convertFnAny, err := ops.ConvertDTypePairMap.Get(indicesBuf.RawShape.DType, dtypes.Int64)
 	if err != nil {
 		backend.PutBuffer(outBuf)
 		return nil, false, err
 	}
-	convertFn := convertFnAny.(ops.ConvertFnType)
-	convertFn(indicesBuf, outBuf)
+	convertFnAny.(ops.ConvertFnType)(indicesBuf, outBuf)
 	return outBuf, true, nil
 }
 
 const quantizedDenseMinParallelizeChunk = 4096
 
-// quantizedDenseParallelTileCount returns the number of parallel work units that
-// quantizedDenseParallel will dispatch for the given dimensions.
 func quantizedDenseParallelTileCount(backend *gobackend.Backend, M, K, N int) int {
 	totalWork := M * K * N
 	if backend == nil || !backend.Scheduler.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
-		return M
+		return max(M, 1)
 	}
 	if M > 1 {
 		return M
 	}
-	tileSize := max(quantizedDenseMinParallelizeChunk/K, 1)
+	tileSize := max(quantizedDenseMinParallelizeChunk/max(K, 1), 1)
 	return (N + tileSize - 1) / tileSize
 }
 
-// quantizedDenseParallel parallelizes over M rows, or tiles over N columns when M=1.
-// workerIdx is a dense index in [0, quantizedDenseParallelTileCount) identifying the work unit.
 func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(workerIdx, m, nStart, nEnd int)) {
+	if M == 0 || N == 0 {
+		return
+	}
 	totalWork := M * K * N
 	if backend == nil || !backend.Scheduler.IsEnabled() || totalWork <= quantizedDenseMinParallelizeChunk {
 		for m := range M {
@@ -550,15 +786,13 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 	}
 
 	if M > 1 {
-		// Parallelize over M rows.
 		backend.Scheduler.ParallelizeChunks(M, 1, func(mStart, mEnd int) {
 			for m := mStart; m < mEnd; m++ {
 				rowFn(m, m, 0, N)
 			}
 		})
 	} else {
-		// M=1: tile over N columns for single-token inference.
-		tileSize := max(quantizedDenseMinParallelizeChunk/K, 1)
+		tileSize := max(quantizedDenseMinParallelizeChunk/max(K, 1), 1)
 		numTiles := (N + tileSize - 1) / tileSize
 		tasks := make([]func(), 0, numTiles)
 		workerIdx := 0
@@ -572,75 +806,4 @@ func quantizedDenseParallel(backend *gobackend.Backend, M, K, N int, rowFn func(
 		}
 		backend.Scheduler.RunIntraOpTasks(tasks)
 	}
-}
-
-// quantizedDenseNF4 performs NF4 dequant + matmul + bias for Int4 (int8) or Uint4 (uint8) weights.
-// NF4 does not support zeroPoints (validated by the builder).
-//
-// Uses cache-friendly (m, k, n) loop order so both weights[k*N+n] and out[m*N+n] are
-// accessed with stride-1 in the innermost loop.
-func quantizedDenseNF4[T int8 | uint8](backend *gobackend.Backend, x []float32, weights []T, scales, bias, out []float32, M, K, N, blockSize, numBlocks int) {
-	quantizedDenseParallel(backend, M, K, N, func(_, m, nStart, nEnd int) {
-		outSlice := out[m*N+nStart : m*N+nEnd]
-		if bias != nil {
-			copy(outSlice, bias[nStart:nEnd])
-		} else {
-			clear(outSlice)
-		}
-		for k := range K {
-			xVal := x[m*K+k]
-			wRow := weights[k*N:]
-			sRow := scales[k*numBlocks:]
-			blockIdx := nStart / blockSize
-			nextBlock := (blockIdx + 1) * blockSize
-			for n := nStart; n < nEnd; n++ {
-				if n >= nextBlock {
-					blockIdx++
-					nextBlock += blockSize
-				}
-				outSlice[n-nStart] += xVal * compute.NF4LookupTable[uint8(wRow[n])&0x0F] * sRow[blockIdx]
-			}
-		}
-	})
-}
-
-// quantizedDenseLinearInt performs linear dequant + matmul + bias for integer weights.
-// float_value = int_value * scale + zeroPoint
-//
-// Uses cache-friendly (m, k, n) loop order so both weights[k*N+n] and out[m*N+n] are
-// accessed with stride-1 in the innermost loop.
-func quantizedDenseLinearInt[T int8 | uint8](backend *gobackend.Backend, x []float32, weights []T, scales, zeroPoints, bias, out []float32, M, K, N, blockSize, numBlocks int) {
-	quantizedDenseParallel(backend, M, K, N, func(_, m, nStart, nEnd int) {
-		outSlice := out[m*N+nStart : m*N+nEnd]
-		if bias != nil {
-			copy(outSlice, bias[nStart:nEnd])
-		} else {
-			clear(outSlice)
-		}
-		for k := range K {
-			xVal := x[m*K+k]
-			wRow := weights[k*N:]
-			sRow := scales[k*numBlocks:]
-			blockIdx := nStart / blockSize
-			nextBlock := (blockIdx + 1) * blockSize
-			if zeroPoints != nil {
-				zpRow := zeroPoints[k*numBlocks:]
-				for n := nStart; n < nEnd; n++ {
-					if n >= nextBlock {
-						blockIdx++
-						nextBlock += blockSize
-					}
-					outSlice[n-nStart] += xVal * (float32(wRow[n])*sRow[blockIdx] + zpRow[blockIdx])
-				}
-			} else {
-				for n := nStart; n < nEnd; n++ {
-					if n >= nextBlock {
-						blockIdx++
-						nextBlock += blockSize
-					}
-					outSlice[n-nStart] += xVal * float32(wRow[n]) * sRow[blockIdx]
-				}
-			}
-		}
-	})
 }

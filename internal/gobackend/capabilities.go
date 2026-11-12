@@ -157,6 +157,7 @@ var Capabilities = compute.Capabilities{
 		compute.OpTypeFusedScaledDotProductAttention: true,
 		compute.OpTypeFusedAttentionQKVProjection:    true,
 		compute.OpTypeFusedQuantizedDense:            true,
+		compute.OpTypeFusedQuantizedDenseVJP:         true,
 		compute.OpTypeQuantizedEmbeddingLookup:       true,
 
 		// TODO: not implemented yet:

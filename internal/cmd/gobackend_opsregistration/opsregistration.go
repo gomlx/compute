@@ -152,6 +152,8 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.ActivationConfig"
 			case "DenseConfig":
 				param.Type = "compute.DenseConfig"
+			case "FusedQuantizedDenseConfig":
+				param.Type = "compute.FusedQuantizedDenseConfig"
 			case "DenseLayout":
 				param.Type = "compute.DenseLayout"
 			case "AttentionAxesLayout":
