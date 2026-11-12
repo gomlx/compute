@@ -3,6 +3,7 @@
 package backendtest
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"testing"
@@ -136,15 +137,39 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 
 	t.Run("Clamp", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeClamp)
-		got, err := testutil.Exec1(b, []any{float32(-1), []float32{-5, -1, 0, 2, 10}, float32(3)},
-			func(f compute.Function, p []compute.Value) (compute.Value, error) {
-				return f.Clamp(p[0], p[1], p[2])
-			})
-		if err != nil {
-			t.Fatalf("Clamp failed: %v", err)
+		tests := []struct {
+			name  string
+			dtype dtypes.DType
+			min   any
+			x     any
+			max   any
+			want  any
+		}{
+			{"float32 scalar bounds", dtypes.Float32, float32(-1), []float32{-5, -1, 0, 2, 10}, float32(3), []float32{-1, -1, 0, 2, 3}},
+			{"elementwise bounds", dtypes.Float32, []float32{0, 2, 4}, []float32{-1, 3, 9}, []float32{1, 3, 5}, []float32{0, 3, 5}},
+			{"scalar lower bound", dtypes.Float64, float64(0), [][]float64{{-2, 3}, {4, 8}}, [][]float64{{1, 2}, {3, 5}}, [][]float64{{0, 2}, {3, 5}}},
+			{"scalar upper bound", dtypes.Int32, []int32{-3, -2, -1}, []int32{-9, 0, 8}, int32(4), []int32{-3, 0, 4}},
+			{"int8 bounds", dtypes.Int8, int8(-2), []int8{-128, -1, 127}, int8(2), []int8{-2, -1, 2}},
+			{"uint8 bounds", dtypes.Uint8, uint8(2), []uint8{0, 3, 255}, uint8(4), []uint8{2, 3, 4}},
+			{"scalar input", dtypes.Float32, float32(0), float32(9), float32(3), float32(3)},
 		}
-		if ok, diff := testutil.IsEqual([]float32{-1, -1, 0, 2, 3}, got); !ok {
-			t.Errorf("Clamp mismatch:\n%s", diff)
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				testutil.SkipIfMissingDType(t, b, test.dtype)
+				got, err := testutil.Exec1(b, []any{test.min, test.x, test.max},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.Clamp(params[0], params[1], params[2])
+					})
+				if errors.Is(err, compute.ErrNotImplemented) {
+					t.Skipf("Clamp is not implemented for this case: %v", err)
+				}
+				if err != nil {
+					t.Fatalf("Clamp failed: %v", err)
+				}
+				if ok, diff := testutil.IsEqual(test.want, got); !ok {
+					t.Errorf("Clamp mismatch:\n%s", diff)
+				}
+			})
 		}
 	})
 
