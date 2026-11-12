@@ -100,6 +100,8 @@ func GenerateStandardOpsInterface(methods []backendparser.Method) {
 				pi.Type = "compute.ActivationConfig"
 			case "DenseConfig":
 				pi.Type = "compute.DenseConfig"
+			case "FusedQuantizedDenseConfig":
+				pi.Type = "compute.FusedQuantizedDenseConfig"
 			case "DenseLayout":
 				pi.Type = "compute.DenseLayout"
 			case "AttentionAxesLayout":

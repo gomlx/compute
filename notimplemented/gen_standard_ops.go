@@ -462,27 +462,51 @@ func (f Function) FusedLayerNorm(x compute.Value, axes []int, epsilon float64, g
 	return nil, f.baseErrFn(compute.OpTypeFusedLayerNorm)
 }
 
-// FusedQuantizedDense performs fused dequantization + matmul + optional bias + optional activation.
+// FusedQuantizedDense performs fused quantized matrix multiplication + optional bias +
+// optional activation (+ optional output re-quantization), without materializing the full
+// dequantized weight tensor in memory:
 //
-// It computes y = activation(x @ dequant(weights, weightsQuantization) + bias), where the
-// dequantization and matmul are fused into a single pass to avoid materializing the
-// full float32 weight matrix.
+//   - Weight-only quantization (options.XQuantization == nil):
+//     z = x @ dequant(weight, options.WeightQuantization) + bias
+//     (transposing dequant(weight) when options.WeightLayout == DenseLayoutOutputsInput; if
+//     options.QuantizedMatmuls is true, backends may dynamically quantize x internally to run
+//     integer SIMD dot products).
+//   - Pre-quantized x + weight integer matmul (options.XQuantization != nil):
+//     supports QuantLinear (exact Int32 accumulation of (x - xZP) @ (w - wZP) rescaled by
+//     xScale * wScale) and QuantGGML (GGMLQ8_0 / GGMLQ8_K paired per-block Int32 dot products
+//     scaled by d_x * d_w into Float32).
+//   - Bias conventions (when bias != nil, shape [N]):
+//     Floating-point bias (matching x's float DType when XQuantization == nil, or
+//     Float32/Float16/BFloat16 when XQuantization != nil) is already in real units and is added
+//     in floating-point AFTER dequantization / (xScale * wScale) rescaling and BEFORE
+//     options.Activation / options.OutputQuantization.
+//     Int32 bias (valid only for QuantLinear XQuantization when neither XQuantization.Scale nor
+//     WeightQuantization.Scale is sub-blocked along K) is pre-quantized at scale xScale * wScale[n]
+//     (i.e. bias_int32[n] = round(bias_float[n] / (xScale * wScale[n]))) and is added directly to
+//     the Int32 accumulator BEFORE converting to Float32 and multiplying by xScale * wScale:
+//     z[m, n] = float32(acc_int32[m, n] + bias[n]) * (xScale[m] * wScale[n]).
+//   - Optional output quantization (options.OutputQuantization != nil):
+//     re-quantizes the post-activation float output to Int8 or Uint8.
 //
 // Inputs:
-//   - x: [batch..., K] float32 input activations.
-//   - weights: For Linear/NF4: [K, N] with dtype reflecting storage precision (e.g. Int4, Int8).
-//     For sub-byte types the caller should Bitcast packed uint8 data to the correct dtype
-//     before calling.
-//     For GGML: [N, bytesPerRow] Uint8 with native GGML block layout, where N is the
-//     output-features dimension and bytesPerRow = (K / valuesPerBlock) * bytesPerBlock.
-//   - bias: [N] float32 (nil-able), added after matmul but before activation.
-//   - weightsQuantization: describes how to dequantize the weights tensor. Must not be nil.
-//   - activation: applied after matmul+bias; set to ActivationNone for no activation.
+//   - x: [batch..., K] floating-point (when XQuantization == nil) or quantized integer/block
+//     tensor ([batch..., K] Int8/Uint8 for QuantLinear, [batch..., bytesPerRowX] Uint8 for QuantGGML).
+//   - weight: [K, N] (DenseLayoutInputOutputs) or [N, K] (DenseLayoutOutputsInput) with DType
+//     Int2/Uint2/Int4/Uint4/Int8/Uint8 for QuantLinear/QuantNF4; or [N, bytesPerRow] Uint8 for
+//     QuantGGML (requires DenseLayoutOutputsInput, bytesPerRow = (K / valuesPerBlock) * bytesPerBlock).
+//   - bias: optional [N] tensor (nil for no bias); floating-point (added after dequantization/rescaling)
+//     or Int32 (added to the Int32 accumulator before xScale * wScale rescaling when XQuantization uses
+//     QuantLinear without K sub-blocking), applied before options.Activation and options.OutputQuantization.
+//   - options: FusedQuantizedDenseConfig (WeightQuantization must not be nil).
 //
-// Future: inputQuantization, outputQuantization, and biasQuantization parameters may be
-// added to support fully quantized operations where the activations and/or output are
-// also quantized.
-func (f Function) FusedQuantizedDense(x compute.Value, weights compute.Value, bias compute.Value, weightsQuantization *compute.Quantization, activation compute.ActivationType) (compute.Value, error) {
+// Note: Like FusedDense, ActivationSwiGLU is not supported here because it halves the output dimension;
+// emit FusedQuantizedDense with ActivationNone followed by FusedActivation(ActivationSwiGLU).
+//
+// Migration note: quantization, layout, and activation options are grouped in FusedQuantizedDenseConfig,
+// QuantGGML weights require WeightLayout = DenseLayoutOutputsInput, scalar [] and 1D [N] scales no longer
+// need [K, NumBlocks] broadcasts, and QuantLinear ZeroPoint uses the standard pre-scale convention
+// real = (float(q) - float(zp)) * scale (legacy additive offsets convert via zero_point = -offset / scale).
+func (f Function) FusedQuantizedDense(x compute.Value, weight compute.Value, bias compute.Value, options compute.FusedQuantizedDenseConfig) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeFusedQuantizedDense)
 }
 

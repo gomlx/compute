@@ -732,9 +732,15 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 			nf4Fused, err := newBenchExec(backend, []shapes.Shape{xShape, nf4Shape, scalesShape, biasShape},
 				[]any{xData, nf4Data, scalesData, biasData},
 				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedQuantizedDense(params[0], params[1], params[3],
-						&compute.Quantization{Scheme: compute.QuantNF4, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-						compute.ActivationNone)
+					return f.FusedQuantizedDense(params[0], params[1], params[3], compute.FusedQuantizedDenseConfig{
+						WeightQuantization: &compute.Quantization{
+							Scheme:    compute.QuantNF4,
+							Scale:     params[2],
+							BlockAxis: 1,
+							BlockSize: groupSize,
+						},
+						WeightLayout: compute.DenseLayoutInputOutputs,
+					})
 				})
 			if err != nil {
 				if errors.Is(err, compute.ErrNotImplemented) {
@@ -754,9 +760,15 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 				backend, []shapes.Shape{xShape, int4WeightsShape, scalesShape, biasShape},
 				[]any{xData, int4WeightsData, scalesData, biasData},
 				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedQuantizedDense(params[0], params[1], params[3],
-						&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-						compute.ActivationNone)
+					return f.FusedQuantizedDense(params[0], params[1], params[3], compute.FusedQuantizedDenseConfig{
+						WeightQuantization: &compute.Quantization{
+							Scheme:    compute.QuantLinear,
+							Scale:     params[2],
+							BlockAxis: 1,
+							BlockSize: groupSize,
+						},
+						WeightLayout: compute.DenseLayoutInputOutputs,
+					})
 				})
 			if err != nil {
 				if errors.Is(err, compute.ErrNotImplemented) {
@@ -775,9 +787,15 @@ func BenchmarkQuantizedDense(b *testing.B, backend compute.Backend) {
 			int8Fused, err := newBenchExec(backend, []shapes.Shape{xShape, int8WeightsShape, scalesShape, biasShape},
 				[]any{xData, int8WeightsData, scalesData, biasData},
 				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedQuantizedDense(params[0], params[1], params[3],
-						&compute.Quantization{Scheme: compute.QuantLinear, Scale: params[2], BlockAxis: 1, BlockSize: groupSize},
-						compute.ActivationNone)
+					return f.FusedQuantizedDense(params[0], params[1], params[3], compute.FusedQuantizedDenseConfig{
+						WeightQuantization: &compute.Quantization{
+							Scheme:    compute.QuantLinear,
+							Scale:     params[2],
+							BlockAxis: 1,
+							BlockSize: groupSize,
+						},
+						WeightLayout: compute.DenseLayoutInputOutputs,
+					})
 				})
 			if err != nil {
 				if errors.Is(err, compute.ErrNotImplemented) {

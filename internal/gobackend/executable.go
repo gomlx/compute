@@ -196,7 +196,7 @@ func (fe *FunctionExecutable) fuseSingleConsumerDenseActivations() {
 			continue
 		}
 		denseNode := actNode.Inputs[0]
-		if denseNode.OpType != compute.OpTypeFusedDense {
+		if denseNode.OpType != compute.OpTypeFusedDense && denseNode.OpType != compute.OpTypeFusedQuantizedDense {
 			continue
 		}
 		// Ensure actNode is the sole consumer of denseNode (and denseNode is not in fe.OutputNodes).

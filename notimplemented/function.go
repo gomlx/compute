@@ -135,6 +135,10 @@ func (f Function) FusedDenseVJP(x, weight, bias, y, dOutput compute.Value, optio
 	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedDenseVJP)
 }
 
+func (f Function) FusedQuantizedDenseVJP(x, weight, bias, y, dOutput compute.Value, options compute.FusedQuantizedDenseConfig) (dx, dBias compute.Value, err error) {
+	return nil, nil, f.baseErrFn(compute.OpTypeFusedQuantizedDenseVJP)
+}
+
 func (f Function) FusedLayerNormVJP(x, dOutput compute.Value, axes []int, epsilon float64, gamma, beta compute.Value) (dx, dGamma, dBeta compute.Value, err error) {
 	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedLayerNormVJP)
 }
