@@ -163,6 +163,7 @@ type Backend struct {
 	Scheduler   *scheduler.Scheduler
 
 	NumLiveExecutions atomic.Int32
+	uniqueAxisNameID  atomic.Uint64
 
 	// OpsExecutionType defines how to execute the ops of a computation.
 	OpsExecutionType OpsExecutionType
@@ -214,6 +215,11 @@ func (b *Backend) NumDevices() int {
 // DeviceDescription returns a description of the device with the given deviceNum.
 func (b *Backend) DeviceDescription(_ compute.DeviceNum) string {
 	return "device#0"
+}
+
+// UniqueAxisName returns a name derived from base that is unique across this backend.
+func (b *Backend) UniqueAxisName(base string) string {
+	return fmt.Sprintf("%s_%d", base, b.uniqueAxisNameID.Add(1))
 }
 
 // Capabilities method returns information about what is supported by this backend.

@@ -451,3 +451,36 @@ func (f *Function) KnownDynamicAxisNames() sets.Set[string] {
 	}
 	return rootFn.knownDynamicAxisNames
 }
+
+// NameAnonymousDynamicAxes assigns fresh names to anonymous dynamic axes in
+// shape. Named dynamic axes are retained. The fresh names let runtime size
+// bindings propagate through downstream operations that inspect this node's
+// shape at graph construction time.
+func (f *Function) NameAnonymousDynamicAxes(shape shapes.Shape, base string) shapes.Shape {
+	var names []string
+	for axis, dim := range shape.Dimensions {
+		if dim != shapes.DynamicDim || shape.AxisName(axis) != shapes.AnonymousAxis {
+			continue
+		}
+		if names == nil {
+			names = slices.Clone(shape.AxisNames)
+			if names == nil {
+				names = make([]string, shape.Rank())
+			}
+		}
+		known := f.KnownDynamicAxisNames()
+		for {
+			candidate := f.RawBuilder.Backend.UniqueAxisName(base)
+			if !known.Has(candidate) {
+				names[axis] = candidate
+				known.Insert(candidate)
+				break
+			}
+		}
+	}
+	if names == nil {
+		return shape
+	}
+	shape.AxisNames = names
+	return shape
+}

@@ -424,10 +424,10 @@ func UnaryOp(opType compute.OpType, operand shapes.Shape) (output shapes.Shape, 
 // The onTrue and onFalse must have the same dtype.
 //
 // Standard implicit broadcasting rules apply across all three operands:
-// - Scalar operands are implicitly broadcast to the shape of the other operands.
-// - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
-//   Dimension 1 is broadcast to the larger dimension.
-// - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
+//   - Scalar operands are implicitly broadcast to the shape of the other operands.
+//   - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
+//     Dimension 1 is broadcast to the larger dimension.
+//   - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
 func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err error) {
 	if condition.DType != dtypes.Bool {
 		err = errors.Errorf("condition for Where() must be a boolean, got %s instead", condition)
@@ -742,6 +742,18 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 		return output, errors.Errorf("Gather() requires a non-scalar operand, got %s", operand)
 	}
 
+	// Validate indexVectorAxis before using it to identify the batch dimensions.
+	if indexVectorAxis < 0 || indexVectorAxis > startIndices.Rank() {
+		return output, errors.Errorf("indexVectorAxis=%d is out of range for startIndices %s", indexVectorAxis, startIndices)
+	}
+	noBatchIndices := false
+	for axis, dim := range startIndices.Dimensions {
+		if axis != indexVectorAxis && dim == 0 {
+			noBatchIndices = true
+			break
+		}
+	}
+
 	setCollapsedAxes := sets.Make[int]()
 	for _, collapsedSliceAxis := range collapsedSliceAxes {
 		if collapsedSliceAxis < 0 || collapsedSliceAxis >= operand.Rank() {
@@ -765,7 +777,7 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 		if sliceSize < 0 {
 			return output, errors.Errorf("sliceSize %d for axis %d is negative, it must be non-negative", sliceSize, axis)
 		}
-		if operand.Dimensions[axis] != shapes.DynamicDim && operand.Dimensions[axis] < sliceSize {
+		if !noBatchIndices && operand.Dimensions[axis] != shapes.DynamicDim && operand.Dimensions[axis] < sliceSize {
 			return output, errors.Errorf("sliceSize %d for axis %d is larger than the corresponding operand dimension %d", sliceSize, axis, operand.Dimensions[axis])
 		}
 	}
@@ -1598,6 +1610,9 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 		if kernelDilations != nil {
 			kernelDilation = kernelDilations[spatialAxisIdx]
 		}
+		if stride < 1 {
+			return errorf("stride[%d]=%d must be >= 1 for input shape %s", spatialAxisIdx, stride, input)
+		}
 
 		// Runtime convolution geometry is derived from concrete input sizes.
 		if inputDim == shapes.DynamicDim {
@@ -1612,11 +1627,14 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 			continue
 		}
 
-		// Calculate outputDim of the convolution.
-		if stride < 1 {
-			return errorf("stride[%d]=%d must be >= 1 for input shape %s", spatialAxisIdx, stride, input)
+		// An empty spatial input produces an empty output on the same axis.
+		// No convolution windows exist, so kernel size does not constrain it.
+		if inputDim == 0 {
+			output.Dimensions[axes.OutputSpatial[spatialAxisIdx]] = 0
+			continue
 		}
 
+		// Calculate outputDim of the convolution.
 		// Calculate effective dimensions after dilations
 		effectiveInputDim := (inputDim-1)*inputDilation + 1
 		effectiveKernelDim := (kernelDim-1)*kernelDilation + 1
@@ -1637,6 +1655,66 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	}
 
 	return output, nil
+}
+
+// NonZero returns the output shape for NonZero. The output contains one row per
+// nonzero input element and one column per input axis. If cfg.Transpose is set,
+// the output axes are reversed. The nonzero count axis is data-dependent.
+func NonZero(operand shapes.Shape, cfg compute.NonZeroConfig) (shapes.Shape, error) {
+	if !operand.Ok() {
+		return shapes.Invalid(), errors.Errorf("NonZero requires a valid operand shape, got %s", operand)
+	}
+	if !(operand.DType.IsInt() || operand.DType.IsFloat() || operand.DType.IsComplex() || operand.DType == dtypes.Bool) || operand.DType.IsPacked() {
+		return shapes.Invalid(), errors.Errorf("NonZero does not support dtype %s", operand.DType)
+	}
+	countAxisName := cfg.CountAxisName
+	if countAxisName == "" {
+		countAxisName = shapes.AnonymousAxis
+	} else if countAxisName == shapes.AnonymousAxis {
+		return shapes.Invalid(), errors.Errorf("NonZero count axis name %q is reserved for anonymous dimensions", countAxisName)
+	}
+	if cfg.CountAxisName != "" {
+		for axis := range operand.Rank() {
+			if operand.AxisName(axis) == countAxisName {
+				return shapes.Invalid(), errors.Errorf("NonZero count axis name %q conflicts with operand axis %d", countAxisName, axis)
+			}
+		}
+	}
+	if cfg.Transpose {
+		return shapes.MakeDynamic(dtypes.Int64, []int{operand.Rank(), shapes.DynamicDim}, []string{"", countAxisName}), nil
+	}
+	return shapes.MakeDynamic(dtypes.Int64, []int{shapes.DynamicDim, operand.Rank()}, []string{countAxisName, ""}), nil
+}
+
+// FusedTopK returns the output shapes for selecting k values along cfg.Axis.
+// The selected axis becomes size k; all other dimensions and their names are
+// preserved. Indices are returned as Int32.
+func FusedTopK(operand shapes.Shape, k int, cfg compute.FusedTopKConfig) (values, indices shapes.Shape, err error) {
+	if !operand.Ok() {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("FusedTopK requires a valid operand shape, got %s", operand)
+	}
+	if k < 1 {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("FusedTopK requires k >= 1, got %d", k)
+	}
+	if !(operand.DType.IsFloat() || operand.DType.IsInt()) || operand.DType.IsPacked() {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("FusedTopK does not support sortable dtype %s", operand.DType)
+	}
+	rank := operand.Rank()
+	axis := cfg.Axis
+	if axis < 0 {
+		axis += rank
+	}
+	if axis < 0 || axis >= rank {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("FusedTopK axis %d out of range for rank %d", cfg.Axis, rank)
+	}
+	if dim := operand.Dimensions[axis]; dim != shapes.DynamicDim && k > dim {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("FusedTopK k=%d exceeds operand dimension %d at axis %d", k, dim, axis)
+	}
+	values = operand.Clone()
+	values.Dimensions[axis] = k
+	indices = values.Clone()
+	indices.DType = dtypes.Int32
+	return values, indices, nil
 }
 
 // Bitcast calculates the output shape for a Bitcast operation.

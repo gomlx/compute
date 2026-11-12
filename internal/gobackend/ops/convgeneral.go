@@ -57,6 +57,7 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 			input.Shape, kernel.Shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 		return nil, err
 	}
+	outputShape = f.NameAnonymousDynamicAxes(outputShape, "#conv")
 
 	// Sanitize parameters.
 	spatialRank := input.Shape.Rank() - 2
@@ -247,7 +248,7 @@ func ExecConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	output.Zeros()

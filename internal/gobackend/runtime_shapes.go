@@ -12,6 +12,9 @@ import (
 // by data-dependent operations. All copies are private to this invocation.
 func resolveRuntimeNode(backend *Backend, node *Node, inputs []*Buffer, spec *ShapeSpecialization) (*Node, error) {
 	needs := node.Shape.IsDynamic()
+	for _, outputShape := range node.MultiOutputsShapes {
+		needs = needs || outputShape.IsDynamic()
+	}
 	for _, input := range node.Inputs {
 		template := input
 		if spec != nil {
@@ -40,12 +43,23 @@ func resolveRuntimeNode(backend *Backend, node *Node, inputs []*Buffer, spec *Sh
 	if err != nil {
 		return nil, err
 	}
+	var multiOutputsShapes []shapes.Shape
+	if node.MultiOutputsShapes != nil {
+		multiOutputsShapes = make([]shapes.Shape, len(node.MultiOutputsShapes))
+		for i, outputShape := range node.MultiOutputsShapes {
+			multiOutputsShapes[i], err = outputShape.ResolvePartial(bindings)
+			if err != nil {
+				return nil, errors.Wrapf(err, "resolving runtime shape for output %d of %s", i, node.OpType)
+			}
+		}
+	}
 	resolved := &Node{
 		Index: node.Index, Inputs: node.Inputs, CapturedInputs: node.CapturedInputs,
 		OpType: node.OpType, Shape: shape, Builder: node.Builder, Function: node.Function,
 		Data: node.Data, IsNodeSelectOutput: node.IsNodeSelectOutput, SelectOutputIdx: node.SelectOutputIdx,
-		MultiOutputsShapes: node.MultiOutputsShapes, MultiOutputsNodes: node.MultiOutputsNodes,
+		MultiOutputsShapes: multiOutputsShapes, MultiOutputsNodes: node.MultiOutputsNodes,
 	}
+	resolved.cachedExecutorIdx.Store(node.cachedExecutorIdx.Load())
 	if recomputable, ok := node.Data.(RecomputableNodeData); ok {
 		nodes := make([]*Node, maxIndex+1)
 		nodes[node.Index] = resolved

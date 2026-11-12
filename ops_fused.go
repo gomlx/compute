@@ -533,6 +533,15 @@ type ScaledDotProductAttentionConfig struct {
 	Mask Value
 }
 
+// FusedTopKConfig configures FusedTopK.
+type FusedTopKConfig struct {
+	// Axis is the axis along which to select the top k elements.
+	Axis int
+
+	// Smallest selects the k smallest elements when true. The default selects the largest.
+	Smallest bool
+}
+
 // FusedOps defines optional fused operations. Backends may implement these for
 // better performance; the graph layer falls back to decomposed operations when
 // unavailable.
@@ -541,10 +550,10 @@ type ScaledDotProductAttentionConfig struct {
 // ErrNotImplemented (wrapped with a stack).
 type FusedOps interface {
 	// FusedTopK returns sorted values and Int32 indices of the k largest (or
-	// smallest when largest is false) elements along axis. Ties prefer the
+	// smallest when cfg.Smallest is true) elements along cfg.Axis. Ties prefer the
 	// lower original index. k must be positive and no larger than the axis.
 	// Backends may return ErrNotImplemented to use GoMLX's stable sort fallback.
-	FusedTopK(operand Value, k, axis int, largest bool) (values, indices Value, err error)
+	FusedTopK(operand Value, k int, cfg FusedTopKConfig) (values, indices Value, err error)
 
 	// FusedActivation applies the configured activation function.
 	// cfg.Type is obligatory, other fields are optional and specific for activations.

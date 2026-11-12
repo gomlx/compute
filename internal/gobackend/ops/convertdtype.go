@@ -87,7 +87,9 @@ func subSliceBufferElements(buf *gobackend.Buffer, elemStart, elemEnd int) (goba
 func execConvertDType(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
 	_ = inputsOwned // We don't reuse the inputs.
-	output, err := backend.GetBuffer(node.Shape)
+	outputShape := operand.RawShape.Clone()
+	outputShape.DType = node.Shape.DType
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}

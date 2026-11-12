@@ -108,6 +108,61 @@ func TestBinaryOp(t *testing.T) {
 	}
 }
 
+func TestNonZero(t *testing.T) {
+	input := SD(F32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+	output, err := NonZero(input, NonZeroConfig{CountAxisName: "count"})
+	if err != nil {
+		t.Fatalf("NonZero: unexpected error: %v", err)
+	}
+	want := SD(dtypes.Int64, []int{shapes.DynamicDim, 2}, []string{"count", ""})
+	if !output.Equal(want) {
+		t.Fatalf("NonZero shape = %s, want %s", output, want)
+	}
+
+	transposed, err := NonZero(S(Bool, 2, 0, 3), NonZeroConfig{CountAxisName: "nnz", Transpose: true})
+	if err != nil {
+		t.Fatalf("NonZero transpose: unexpected error: %v", err)
+	}
+	want = SD(dtypes.Int64, []int{3, shapes.DynamicDim}, []string{"", "nnz"})
+	if !transposed.Equal(want) {
+		t.Fatalf("transposed NonZero shape = %s, want %s", transposed, want)
+	}
+
+	if _, err := NonZero(S(dtypes.Int4, 4), NonZeroConfig{}); err == nil {
+		t.Fatal("NonZero accepted a packed dtype")
+	}
+	if _, err := NonZero(SD(F32, []int{shapes.DynamicDim}, []string{"count"}), NonZeroConfig{CountAxisName: "count"}); err == nil {
+		t.Fatal("NonZero accepted a count axis name already used by the input")
+	}
+}
+
+func TestFusedTopK(t *testing.T) {
+	input := SD(F32, []int{shapes.DynamicDim, 5, 7}, []string{"batch", "sequence", "feature"})
+	values, indices, err := FusedTopK(input, 3, FusedTopKConfig{Axis: -2})
+	if err != nil {
+		t.Fatalf("FusedTopK: unexpected error: %v", err)
+	}
+	wantValues := SD(F32, []int{shapes.DynamicDim, 3, 7}, []string{"batch", "sequence", "feature"})
+	wantIndices := wantValues.Clone()
+	wantIndices.DType = dtypes.Int32
+	if !values.Equal(wantValues) || !indices.Equal(wantIndices) {
+		t.Fatalf("FusedTopK shapes = (%s, %s), want (%s, %s)", values, indices, wantValues, wantIndices)
+	}
+
+	if _, _, err := FusedTopK(S(F32, 4), 0, FusedTopKConfig{Axis: 0}); err == nil {
+		t.Fatal("FusedTopK accepted k=0")
+	}
+	if _, _, err := FusedTopK(S(F32, 4), 5, FusedTopKConfig{Axis: 0}); err == nil {
+		t.Fatal("FusedTopK accepted k larger than a static axis")
+	}
+	if _, _, err := FusedTopK(S(F32, 4), 1, FusedTopKConfig{Axis: 1}); err == nil {
+		t.Fatal("FusedTopK accepted an out-of-range axis")
+	}
+	if _, _, err := FusedTopK(S(dtypes.Complex64, 4), 1, FusedTopKConfig{Axis: 0}); err == nil {
+		t.Fatal("FusedTopK accepted complex values")
+	}
+}
+
 func TestUnaryOp(t *testing.T) {
 	// Invalid data types check.
 	if panicked, _ := testutil.Try(func() { must1(UnaryOp(OpTypeLogicalNot, S(F32))) }); !panicked {

@@ -150,6 +150,8 @@ func execDynamicReshape(backend *gobackend.Backend, node *gobackend.Node, inputs
 			return nil, errors.Errorf("execDynamicReshape: total input volume %d is not divisible by product of specified dimensions %d", operandSize, knownProduct)
 		}
 		concreteDims[inferredIdx] = operandSize / knownProduct
+	} else if targetSize := shapes.Make(operand.RawShape.DType, concreteDims...).Size(); targetSize != operand.RawShape.Size() {
+		return nil, errors.Errorf("execDynamicReshape: target element count %d does not match input element count %d", targetSize, operand.RawShape.Size())
 	}
 
 	targetShape := shapes.Make(operand.RawShape.DType, concreteDims...)

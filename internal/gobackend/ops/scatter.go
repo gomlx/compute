@@ -170,7 +170,7 @@ func execScatter(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 			return nil, err
 		}
 	}
-	output.RawShape = node.Shape // Output shape is the same as operand shape.
+	output.RawShape = operand.RawShape // Keep the concrete runtime dimensions from the operand buffer.
 	if backend.NoOps || updates.RawShape.Size() == 0 {
 		return output, nil
 	}

@@ -193,7 +193,15 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 
 	data := node.Data.(*nodeFusedDense)
 
-	output, err := backend.GetBuffer(node.Shape)
+	var biasShape shapes.Shape
+	if bias != nil {
+		biasShape = bias.RawShape
+	}
+	outputShape, err := shapeinference.FusedDense(x.RawShape, weight.RawShape, biasShape, data.options)
+	if err != nil {
+		return nil, err
+	}
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}

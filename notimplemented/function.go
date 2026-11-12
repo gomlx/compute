@@ -143,6 +143,6 @@ func (f Function) FusedLayerNormVJP(x, dOutput compute.Value, axes []int, epsilo
 	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedLayerNormVJP)
 }
 
-func (f Function) FusedTopK(operand compute.Value, k, axis int, largest bool) (compute.Value, compute.Value, error) {
+func (f Function) FusedTopK(operand compute.Value, k int, cfg compute.FusedTopKConfig) (compute.Value, compute.Value, error) {
 	return nil, nil, f.baseErrFn(compute.OpTypeFusedTopK)
 }
