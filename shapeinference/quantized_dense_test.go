@@ -156,6 +156,25 @@ func TestFusedQuantizedDense(t *testing.T) {
 			t.Fatalf("expected F32[3, 20], got %s", outQ8)
 		}
 
+		// Q4_1 (20B), Q5_0 (22B), Q5_1 (24B): 32 values/block -> K=64 => bytesPerRow=40, 44, 48 paired with Q8_0
+		for _, tc := range []struct {
+			t   compute.GGMLQuantType
+			bpr int
+		}{
+			{compute.GGMLQ4_1, 40},
+			{compute.GGMLQ5_0, 44},
+			{compute.GGMLQ5_1, 48},
+		} {
+			out, err := FusedQuantizedDense(xQ8, S(dtypes.Uint8, 20, tc.bpr), S(F32, 20), QuantizedDenseConfigShapes{
+				WeightQuantization: &QuantizationShapes{Scheme: compute.QuantGGML, GGMLType: tc.t},
+				XQuantization:      &QuantizationShapes{Scheme: compute.QuantGGML, GGMLType: compute.GGMLQ8_0},
+				WeightLayout:       compute.DenseLayoutOutputsInput,
+			})
+			if err != nil || !out.Equal(S(F32, 3, 20)) {
+				t.Fatalf("GGML(%s) Q8_0 x failed: out=%s err=%v", tc.t, out, err)
+			}
+		}
+
 		// Q4_K weight (144 bytes / 256 values) + Q8_K x (292 bytes / 256 values) for K=256
 		wQ4K := S(dtypes.Uint8, 12, 144)
 		xQ8K := S(dtypes.Uint8, 2, 292)

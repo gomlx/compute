@@ -16,6 +16,9 @@ import (
 
 var allComplianceGGMLTypes = []compute.GGMLQuantType{
 	compute.GGMLQ4_0,
+	compute.GGMLQ4_1,
+	compute.GGMLQ5_0,
+	compute.GGMLQ5_1,
 	compute.GGMLQ8_0,
 	compute.GGMLIQ4NL,
 	compute.GGMLQ2_K,
@@ -416,6 +419,56 @@ func makeTestGGMLWeightRow(wType compute.GGMLQuantType, numBlocks, seed int) ([]
 				bRaw[2+i] = lo | (hi << 4)
 				bDeq[i] = d * float32(int(lo)-8)
 				bDeq[16+i] = d * float32(int(hi)-8)
+			}
+
+		case compute.GGMLQ4_1:
+			dF16 := float16.FromFloat32(0.06 + float32((bSeed%5))*0.02)
+			mF16 := float16.FromFloat32(-0.35 + float32((bSeed%7))*0.05)
+			binary.LittleEndian.PutUint16(bRaw[0:2], dF16.Bits())
+			binary.LittleEndian.PutUint16(bRaw[2:4], mF16.Bits())
+			d := dF16.Float32()
+			m := mF16.Float32()
+			for i := range 16 {
+				lo := uint8((bSeed + i*3) & 0x0F)
+				hi := uint8((bSeed*3 + i*5 + 7) & 0x0F)
+				bRaw[4+i] = lo | (hi << 4)
+				bDeq[i] = d*float32(lo) + m
+				bDeq[16+i] = d*float32(hi) + m
+			}
+
+		case compute.GGMLQ5_0:
+			dF16 := float16.FromFloat32(0.05 + float32((bSeed%5))*0.015)
+			qh := uint32(bSeed*0x9E3779B1) ^ 0xA5A55A5A
+			binary.LittleEndian.PutUint16(bRaw[0:2], dF16.Bits())
+			binary.LittleEndian.PutUint32(bRaw[2:6], qh)
+			d := dF16.Float32()
+			for i := range 16 {
+				lo := uint8((bSeed + i*3) & 0x0F)
+				hi := uint8((bSeed*3 + i*5 + 7) & 0x0F)
+				bRaw[6+i] = lo | (hi << 4)
+				xh0 := ((qh >> uint(i)) << 4) & 0x10
+				xh1 := (qh >> uint(i+12)) & 0x10
+				bDeq[i] = d * float32(int32(uint32(lo)|xh0)-16)
+				bDeq[16+i] = d * float32(int32(uint32(hi)|xh1)-16)
+			}
+
+		case compute.GGMLQ5_1:
+			dF16 := float16.FromFloat32(0.04 + float32((bSeed%5))*0.01)
+			mF16 := float16.FromFloat32(-0.5 + float32((bSeed%6))*0.08)
+			qh := uint32(bSeed*0x85EBCA6B) ^ 0x5A5AA5A5
+			binary.LittleEndian.PutUint16(bRaw[0:2], dF16.Bits())
+			binary.LittleEndian.PutUint16(bRaw[2:4], mF16.Bits())
+			binary.LittleEndian.PutUint32(bRaw[4:8], qh)
+			d := dF16.Float32()
+			m := mF16.Float32()
+			for i := range 16 {
+				lo := uint8((bSeed + i*3) & 0x0F)
+				hi := uint8((bSeed*3 + i*5 + 7) & 0x0F)
+				bRaw[8+i] = lo | (hi << 4)
+				xh0 := ((qh >> uint(i)) << 4) & 0x10
+				xh1 := (qh >> uint(i+12)) & 0x10
+				bDeq[i] = d*float32(uint32(lo)|xh0) + m
+				bDeq[16+i] = d*float32(uint32(hi)|xh1) + m
 			}
 
 		case compute.GGMLQ8_0:

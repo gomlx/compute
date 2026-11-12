@@ -18,6 +18,9 @@ import (
 func TestGGMLAllFormatsVecDotVsDequant(t *testing.T) {
 	allTypes := []compute.GGMLQuantType{
 		compute.GGMLQ4_0,
+		compute.GGMLQ4_1,
+		compute.GGMLQ5_0,
+		compute.GGMLQ5_1,
 		compute.GGMLQ8_0,
 		compute.GGMLIQ4NL,
 		compute.GGMLQ2_K,
@@ -45,8 +48,11 @@ func TestGGMLAllFormatsVecDotVsDequant(t *testing.T) {
 			for blk := range numBlocks {
 				off := blk * bpb
 				switch wType {
-				case compute.GGMLQ4_0, compute.GGMLQ8_0, compute.GGMLIQ4NL:
+				case compute.GGMLQ4_0, compute.GGMLQ5_0, compute.GGMLQ8_0, compute.GGMLIQ4NL:
 					binary.LittleEndian.PutUint16(wRow[off:off+2], dF16.Bits())
+				case compute.GGMLQ4_1, compute.GGMLQ5_1:
+					binary.LittleEndian.PutUint16(wRow[off:off+2], dF16.Bits())
+					binary.LittleEndian.PutUint16(wRow[off+2:off+4], dminF16.Bits())
 				case compute.GGMLQ2_K:
 					binary.LittleEndian.PutUint16(wRow[off+80:off+82], dF16.Bits())
 					binary.LittleEndian.PutUint16(wRow[off+82:off+84], dminF16.Bits())
