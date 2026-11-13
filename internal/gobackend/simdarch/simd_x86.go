@@ -16,10 +16,16 @@ var (
 	// generic portable SIMD operations will still use hardware vector features if available.
 	IsAVX2Allowed = envutil.MustReadBool(envutil.GoBackendSIMD_AVX2, true) && archsimd.X86.AVX2()
 
+	// IsAVXVNNIAllowed returns true if VEX-encoded AVX-VNNI is supported and AVX2 is allowed.
+	IsAVXVNNIAllowed = IsAVX2Allowed && archsimd.X86.AVXVNNI()
+
 	// IsAVX512Allowed returns true if AVX-512 is supported by the CPU and not disabled by GOMLX_GO_SIMD_AVX512.
 	// Note that this only controls AVX512-specific implementations (e.g. specialized matmul and activations);
 	// generic portable SIMD operations will still use hardware vector features if available.
 	IsAVX512Allowed = envutil.MustReadBool(envutil.GoBackendSIMD_AVX512, true) && archsimd.X86.AVX512()
+
+	// IsAVX512VNNIAllowed returns true if AVX-512 VNNI (VPDPBUSD) is supported and AVX-512 is allowed.
+	IsAVX512VNNIAllowed = IsAVX512Allowed && archsimd.X86.AVX512VNNI()
 
 	// ARM64 feature flags are always false on amd64.
 	IsNEONAllowed         = false

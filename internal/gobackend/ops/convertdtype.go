@@ -32,6 +32,58 @@ func ConvertDType(f *gobackend.Function, operandOp compute.Value, dtype dtypes.D
 	return node, nil
 }
 
+const (
+	convertDTypeMinParallelElems = 16384
+	convertDTypeParallelBlock    = 64
+)
+
+func subSliceBufferElements(buf *gobackend.Buffer, elemStart, elemEnd int) (gobackend.Buffer, bool) {
+	switch buf.RawShape.DType {
+	case dtypes.Int4, dtypes.Uint4:
+		if elemStart&1 != 0 {
+			return gobackend.Buffer{}, false
+		}
+		b := buf.Flat.([]byte)
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: b[elemStart>>1 : (elemEnd+1)>>1]}, true
+	case dtypes.Int2, dtypes.Uint2:
+		if elemStart&3 != 0 {
+			return gobackend.Buffer{}, false
+		}
+		b := buf.Flat.([]byte)
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: b[elemStart>>2 : (elemEnd+3)>>2]}, true
+	}
+	switch s := buf.Flat.(type) {
+	case []float32:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []float64:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []int8:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []int16:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []int32:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []int64:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []uint8:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []uint16:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []uint32:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []uint64:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []bool:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []float16.Float16:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	case []bfloat16.BFloat16:
+		return gobackend.Buffer{RawShape: buf.RawShape, Flat: s[elemStart:elemEnd]}, true
+	default:
+		return gobackend.Buffer{}, false
+	}
+}
+
 func execConvertDType(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
 	_ = inputsOwned // We don't reuse the inputs.
@@ -39,14 +91,34 @@ func execConvertDType(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	if err != nil {
 		return nil, err
 	}
-	if backend.NoOps {
+	totalElems := output.RawShape.Size()
+	if backend.NoOps || totalElems == 0 {
 		return output, nil
 	}
 	convertFnAny, err := ConvertDTypePairMap.Get(operand.RawShape.DType, output.RawShape.DType)
 	if err != nil {
+		backend.PutBuffer(output)
 		return nil, err
 	}
 	convertFn := convertFnAny.(ConvertFnType)
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalElems >= convertDTypeMinParallelElems {
+		if _, okIn := subSliceBufferElements(operand, 0, totalElems); okIn {
+			if _, okOut := subSliceBufferElements(output, 0, totalElems); okOut {
+				numBlocks := (totalElems + convertDTypeParallelBlock - 1) / convertDTypeParallelBlock
+				minBlocks := max(1, 4096/convertDTypeParallelBlock)
+				backend.Scheduler.ParallelizeChunks(numBlocks, minBlocks, func(bStart, bEnd int) {
+					elemStart := bStart * convertDTypeParallelBlock
+					elemEnd := min(bEnd*convertDTypeParallelBlock, totalElems)
+					inSub, _ := subSliceBufferElements(operand, elemStart, elemEnd)
+					outSub, _ := subSliceBufferElements(output, elemStart, elemEnd)
+					convertFn(&inSub, &outSub)
+				})
+				return output, nil
+			}
+		}
+	}
+
 	convertFn(operand, output)
 	return output, nil
 }
@@ -103,11 +175,51 @@ func execConvertDTypeToBFloat16[FromT gobackend.PODNumericConstraints, _ bfloat1
 func execConvertDTypeFromBool[_ bool, ToT gobackend.PODNumericConstraints](operand, output *gobackend.Buffer) {
 	operandFlat := operand.Flat.([]bool)
 	outputFlat := output.Flat.([]ToT)
-	for idx, value := range operandFlat {
-		if value {
-			outputFlat[idx] = ToT(1)
+	n := len(operandFlat)
+	zero, one := ToT(0), ToT(1)
+	idx := 0
+	for ; idx+4 <= n; idx += 4 {
+		b0, b1, b2, b3 := operandFlat[idx], operandFlat[idx+1], operandFlat[idx+2], operandFlat[idx+3]
+		if b0 && b1 && b2 && b3 {
+			outputFlat[idx] = one
+			outputFlat[idx+1] = one
+			outputFlat[idx+2] = one
+			outputFlat[idx+3] = one
+			continue
+		}
+		if !b0 && !b1 && !b2 && !b3 {
+			outputFlat[idx] = zero
+			outputFlat[idx+1] = zero
+			outputFlat[idx+2] = zero
+			outputFlat[idx+3] = zero
+			continue
+		}
+		if b0 {
+			outputFlat[idx] = one
 		} else {
-			outputFlat[idx] = ToT(0)
+			outputFlat[idx] = zero
+		}
+		if b1 {
+			outputFlat[idx+1] = one
+		} else {
+			outputFlat[idx+1] = zero
+		}
+		if b2 {
+			outputFlat[idx+2] = one
+		} else {
+			outputFlat[idx+2] = zero
+		}
+		if b3 {
+			outputFlat[idx+3] = one
+		} else {
+			outputFlat[idx+3] = zero
+		}
+	}
+	for ; idx < n; idx++ {
+		if operandFlat[idx] {
+			outputFlat[idx] = one
+		} else {
+			outputFlat[idx] = zero
 		}
 	}
 }

@@ -116,6 +116,11 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		return nil, err
 	}
 
+	// Group sibling FusedQuantizedDense projections (e.g., attention Q/K/V or SwiGLU gate/up)
+	// sharing the same x input node and identical activation quantization parameters so x is
+	// quantized once per step instead of once per sibling projection.
+	fe.bindSharedQuantizedDenseActivations()
+
 	// Initialize execution buffers pool
 	fe.ExecutionBuffersPool = sync.Pool{
 		New: func() any {
@@ -219,6 +224,69 @@ func (fe *FunctionExecutable) fuseSingleConsumerDenseActivations() {
 // Add operands have identical shapes and no other node references the intermediate sum.
 type FusedLayerNormResidualTarget interface {
 	TryFuseResidualInput() bool
+}
+
+// FusedQuantizedDenseActShareTarget is implemented by nodeFusedQuantizedDense so compile-time
+// graph optimization can group sibling quantized projections (e.g., attention Q/K/V or SwiGLU
+// gate/up) consuming the same input x node with identical activation quantization parameters.
+type FusedQuantizedDenseActShareTarget interface {
+	QuantActShareKey() (key string, ok bool)
+	BindSharedQuantActSiblings(siblings []FusedQuantizedDenseActShareTarget)
+}
+
+func (fe *FunctionExecutable) bindSharedQuantizedDenseActivations() {
+	for srcIdx := range fe.NumNodesToProcess {
+		deps := fe.Dependents[srcIdx]
+		if len(deps) < 2 {
+			continue
+		}
+		srcNode := fe.Function.Nodes[srcIdx]
+		if srcNode == nil {
+			continue
+		}
+		var groups map[string][]FusedQuantizedDenseActShareTarget
+		var seenBuf [8]int
+		seen := seenBuf[:0]
+		for _, depIdx := range deps {
+			if depIdx < 0 || depIdx >= fe.NumNodesToProcess || fe.NumUses[depIdx] == 0 {
+				continue
+			}
+			alreadySeen := false
+			for _, s := range seen {
+				if s == depIdx {
+					alreadySeen = true
+					break
+				}
+			}
+			if alreadySeen {
+				continue
+			}
+			seen = append(seen, depIdx)
+
+			depNode := fe.Function.Nodes[depIdx]
+			if depNode == nil || depNode.OpType != compute.OpTypeFusedQuantizedDense ||
+				len(depNode.Inputs) == 0 || depNode.Inputs[0].Index != srcIdx {
+				continue
+			}
+			target, ok := depNode.Data.(FusedQuantizedDenseActShareTarget)
+			if !ok {
+				continue
+			}
+			key, ok := target.QuantActShareKey()
+			if !ok {
+				continue
+			}
+			if groups == nil {
+				groups = make(map[string][]FusedQuantizedDenseActShareTarget, 2)
+			}
+			groups[key] = append(groups[key], target)
+		}
+		for _, siblings := range groups {
+			if len(siblings) >= 2 {
+				siblings[0].BindSharedQuantActSiblings(siblings)
+			}
+		}
+	}
 }
 
 // fuseSingleConsumerResidualAddIntoLayerNorm fuses Add(a, b) -> FusedLayerNorm(sum, ...)

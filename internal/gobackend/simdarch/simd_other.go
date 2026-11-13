@@ -8,8 +8,14 @@ var (
 	// IsAVX512Allowed returns false on non-amd64 architectures or when SIMD is disabled.
 	IsAVX512Allowed = false
 
+	// IsAVX512VNNIAllowed returns false on non-amd64 architectures or when SIMD is disabled.
+	IsAVX512VNNIAllowed = false
+
 	// IsAVX2Allowed returns false on non-amd64 architectures or when SIMD is disabled.
 	IsAVX2Allowed = false
+
+	// IsAVXVNNIAllowed returns false on non-amd64 architectures or when SIMD is disabled.
+	IsAVXVNNIAllowed = false
 
 	// ARM64 SIMD flags return false on non-arm64 architectures or when SIMD is disabled.
 	IsNEONAllowed         = false

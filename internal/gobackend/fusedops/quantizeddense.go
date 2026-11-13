@@ -3,6 +3,7 @@
 package fusedops
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/gomlx/compute"
@@ -11,6 +12,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/activations"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -53,9 +55,84 @@ type nodeFusedQuantizedDense struct {
 	hasBias     bool
 
 	info shapeinference.QuantizedDenseInfo
+
+	wConstantData    *gobackend.ConstantData
+	linearPanelCache *linearConstantPanelCache
+	floatDotNodeData *dot.NodeData
+	actShareGroup    *sharedQuantActGroup
 }
 
-var _ gobackend.FusedDenseActivationTarget = (*nodeFusedQuantizedDense)(nil)
+var (
+	_ gobackend.FusedDenseActivationTarget        = (*nodeFusedQuantizedDense)(nil)
+	_ gobackend.FusedQuantizedDenseActShareTarget = (*nodeFusedQuantizedDense)(nil)
+	_ gobackend.ConstantCacheNodeData             = (*nodeFusedQuantizedDense)(nil)
+	_ gobackend.RecomputableNodeData              = (*nodeFusedQuantizedDense)(nil)
+)
+
+func (d *nodeFusedQuantizedDense) QuantActShareKey() (string, bool) {
+	if d == nil || d.hasXQuant || !d.quantizedMatmul || d.info.K <= 0 || d.info.N <= 0 {
+		return "", false
+	}
+	switch d.info.FloatComputeDType {
+	case dtypes.Float32, dtypes.Float16, dtypes.BFloat16:
+	default:
+		return "", false
+	}
+	switch d.weightScheme {
+	case compute.QuantGGML:
+		subBlockSize, _, ok := ggmlPanelSpec(d.weightGGMLType)
+		if !ok || d.info.K%subBlockSize != 0 {
+			return "", false
+		}
+		q8K := d.weightGGMLType.ValuesPerBlock() == 256
+		return fmt.Sprintf("GGML:K=%d,sub=%d,q8k=%t", d.info.K, subBlockSize, q8K), true
+	case compute.QuantLinear:
+		kBlock, ok := linearPanelKBlock(d)
+		if !ok {
+			return "", false
+		}
+		return fmt.Sprintf("Linear:K=%d,kBlock=%d", d.info.K, kBlock), true
+	default:
+		return "", false
+	}
+}
+
+func (d *nodeFusedQuantizedDense) BindSharedQuantActSiblings(siblings []gobackend.FusedQuantizedDenseActShareTarget) {
+	if len(siblings) < 2 {
+		return
+	}
+	group := &sharedQuantActGroup{numConsumers: len(siblings)}
+	for _, s := range siblings {
+		if nd, ok := s.(*nodeFusedQuantizedDense); ok {
+			nd.actShareGroup = group
+		}
+	}
+}
+
+func (d *nodeFusedQuantizedDense) CacheSignature(inputIdx int) string {
+	if d == nil || inputIdx != 1 || d.wConstantData == nil {
+		return ""
+	}
+	return fmt.Sprintf("QDGGMLPanel(type=%s,K=%d,N=%d)", d.weightGGMLType, d.info.K, d.info.N)
+}
+
+func (d *nodeFusedQuantizedDense) BindConstantData(inputIdx int, cd *gobackend.ConstantData) {
+	if d == nil || inputIdx != 1 || d.wConstantData == nil || cd == nil {
+		return
+	}
+	d.wConstantData = cd
+}
+
+func (d *nodeFusedQuantizedDense) IsInputCached(inputIdx int) bool {
+	if d == nil || inputIdx != 1 || d.wConstantData == nil {
+		return false
+	}
+	return d.wConstantData.CachedForm() != nil
+}
+
+func (d *nodeFusedQuantizedDense) Recompute(_ *gobackend.Backend, _ []*gobackend.Node, _ *gobackend.Node) (any, error) {
+	return d, nil
+}
 
 func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedQuantizedDense)
@@ -84,7 +161,8 @@ func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparab
 		d.info.XScaleLayout == o.info.XScaleLayout &&
 		d.info.XZeroPointLayout == o.info.XZeroPointLayout &&
 		d.info.OutputScaleLayout == o.info.OutputScaleLayout &&
-		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout
+		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout &&
+		(d.floatDotNodeData != nil) == (o.floatDotNodeData != nil)
 }
 
 // TryFuseActivation implements gobackend.FusedDenseActivationTarget so single-consumer
@@ -242,6 +320,37 @@ func FusedQuantizedDense(
 		data.xScheme = xqs.Scheme
 		data.xGGMLType = xqs.GGMLType
 	}
+	if f.RawBuilder != nil && f.RawBuilder.Backend != nil && f.RawBuilder.Backend.QuantizedCache && wNode.IsConstant() {
+		if data.weightScheme == compute.QuantGGML && (data.quantizedMatmul || data.hasXQuant) &&
+			canCacheGGMLPanel(data.weightGGMLType, info.K, info.N) {
+			data.wConstantData = gobackend.NewAnonymousConstantData()
+		} else if canCacheQuantLinearPanel(data) &&
+			(wScaleNode == nil || wScaleNode.IsConstant()) &&
+			(wZPNode == nil || wZPNode.IsConstant()) {
+			data.linearPanelCache = &linearConstantPanelCache{}
+		} else if !data.quantizedMatmul && !data.hasXQuant &&
+			(wScaleNode == nil || wScaleNode.IsConstant()) &&
+			(wZPNode == nil || wZPNode.IsConstant()) {
+			layout := dot.LayoutTransposed
+			if data.weightLayout == compute.DenseLayoutInputOutputs && data.weightScheme != compute.QuantGGML {
+				layout = dot.LayoutNonTransposed
+			}
+			lhsCrossSize := 0
+			if !info.OutputShape.IsDynamic() && info.N > 0 {
+				lhsCrossSize = info.OutputShape.Size() / info.N
+			}
+			data.floatDotNodeData = &dot.NodeData{
+				InputDType:      dtypes.Float32,
+				OutputDType:     dtypes.Float32,
+				Layout:          layout,
+				BatchSize:       1,
+				LHSCrossSize:    lhsCrossSize,
+				RHSCrossSize:    info.N,
+				ContractingSize: info.K,
+				RHSConstantData: gobackend.NewAnonymousConstantData(),
+			}
+		}
+	}
 
 	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, info.OutputShape, inputs, data)
 	return node, nil
@@ -327,11 +436,17 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 		outF32 = tmpOutBuf.Flat.([]float32)
 	}
 
+	var inTileAct activations.KernelFn[float32]
+	if data.activation.Type != compute.ActivationNone {
+		inTileAct, _ = activations.GetKernelWithMetadata[float32](data.activation.Type)
+	}
+	var appliedAct bool
+
 	switch data.weightScheme {
 	case compute.QuantGGML:
-		err = execQuantizedDenseGGMLCore(backend, data, in, M, K, N, outF32)
+		appliedAct, err = execQuantizedDenseGGMLCore(backend, data, in, M, K, N, outF32, inTileAct)
 	case compute.QuantLinear, compute.QuantNF4:
-		err = execQuantizedDenseLinearOrNF4Core(backend, data, in, M, K, N, outF32)
+		appliedAct, err = execQuantizedDenseLinearOrNF4Core(backend, data, in, M, K, N, outF32, inTileAct)
 	default:
 		err = errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unsupported scheme %s", data.weightScheme)
 	}
@@ -340,8 +455,10 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 		return nil, err
 	}
 
-	// Apply post-matmul+bias activation in Float32.
-	applyActivationConfigFloat32(backend, data.activation, outF32)
+	// Apply post-matmul+bias activation in Float32 if not already fused in-tile.
+	if !appliedAct {
+		applyActivationConfigFloat32(backend, data.activation, outF32)
+	}
 
 	// Optional OutputQuantization (e.g. ONNX QLinearMatMul).
 	if data.hasOutputQuant {
@@ -357,20 +474,48 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 	case dtypes.Float32:
 		// Already written directly into output.Flat.
 	case dtypes.Float16:
-		dst := output.Flat.([]float16.Float16)
-		for i, v := range outF32 {
-			dst[i] = float16.FromFloat32(v)
-		}
+		convertFloat32SliceToFloat16(backend, outF32, output.Flat.([]float16.Float16))
 	case dtypes.BFloat16:
-		dst := output.Flat.([]bfloat16.BFloat16)
-		for i, v := range outF32 {
-			dst[i] = bfloat16.FromFloat32(v)
-		}
+		convertFloat32SliceToBFloat16(backend, outF32, output.Flat.([]bfloat16.BFloat16))
 	default:
 		backend.PutBuffer(output)
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unsupported output DType %s", output.RawShape.DType)
 	}
 	return output, nil
+}
+
+func convertFloat32SliceToFloat16(backend *gobackend.Backend, src []float32, dst []float16.Float16) {
+	n := len(src)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+		backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+			s := src[start:end]
+			d := dst[start:end]
+			for i, v := range s {
+				d[i] = float16.FromFloat32(v)
+			}
+		})
+		return
+	}
+	for i, v := range src {
+		dst[i] = float16.FromFloat32(v)
+	}
+}
+
+func convertFloat32SliceToBFloat16(backend *gobackend.Backend, src []float32, dst []bfloat16.BFloat16) {
+	n := len(src)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+		backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+			s := src[start:end]
+			d := dst[start:end]
+			for i, v := range s {
+				d[i] = bfloat16.FromFloat32(v)
+			}
+		})
+		return
+	}
+	for i, v := range src {
+		dst[i] = bfloat16.FromFloat32(v)
+	}
 }
 
 func applyActivationConfigFloat32(backend *gobackend.Backend, cfg compute.ActivationConfig, data []float32) {
@@ -457,25 +602,47 @@ func bufferToFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer) ([]
 	case dtypes.Float32:
 		return buf.Flat.([]float32), func() {}, nil
 	case dtypes.Float16:
-		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n))
 		if err != nil {
 			return nil, nil, err
 		}
-		src := buf.Flat.([]float16.Float16)
-		dst := tmp.Flat.([]float32)
-		for i, v := range src {
-			dst[i] = v.Float32()
+		src := buf.Flat.([]float16.Float16)[:n]
+		dst := tmp.Flat.([]float32)[:n]
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+			backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+				s := src[start:end]
+				d := dst[start:end]
+				for i, v := range s {
+					d[i] = v.Float32()
+				}
+			})
+		} else {
+			for i, v := range src {
+				dst[i] = v.Float32()
+			}
 		}
 		return dst, func() { backend.PutBuffer(tmp) }, nil
 	case dtypes.BFloat16:
-		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n))
 		if err != nil {
 			return nil, nil, err
 		}
-		src := buf.Flat.([]bfloat16.BFloat16)
-		dst := tmp.Flat.([]float32)
-		for i, v := range src {
-			dst[i] = v.Float32()
+		src := buf.Flat.([]bfloat16.BFloat16)[:n]
+		dst := tmp.Flat.([]float32)[:n]
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+			backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+				s := src[start:end]
+				d := dst[start:end]
+				for i, v := range s {
+					d[i] = v.Float32()
+				}
+			})
+		} else {
+			for i, v := range src {
+				dst[i] = v.Float32()
+			}
 		}
 		return dst, func() { backend.PutBuffer(tmp) }, nil
 	default:
@@ -719,6 +886,35 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	}
 
 	numIndices := indicesBuf.RawShape.Size()
+	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
+	canParallel := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		numIndices*K >= quantizedDenseMinParallelizeChunk && numIndices > 1
+	minChunk := max(1, quantizedDenseMinParallelizeChunk/max(K, 1))
+
+	if indicesBuf.RawShape.DType == dtypes.Int32 {
+		indices := indicesBuf.Flat.([]int32)[:numIndices]
+		for _, rawIdx := range indices {
+			if int64(rawIdx) < 0 || int64(rawIdx) >= vocabSize {
+				backend.PutBuffer(output)
+				return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rawIdx, vocabSize)
+			}
+		}
+		if canParallel {
+			backend.Scheduler.ParallelizeChunks(numIndices, minChunk, func(start, end int) {
+				for i := start; i < end; i++ {
+					rowStart := int(indices[i]) * bytesPerRow
+					dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
+				}
+			})
+		} else {
+			for i, rawIdx := range indices {
+				rowStart := int(rawIdx) * bytesPerRow
+				dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
+			}
+		}
+		return output, nil
+	}
+
 	idxBuf, isIdxOwned, err := convertIndicesToInt64(backend, indicesBuf)
 	if err != nil {
 		backend.PutBuffer(output)
@@ -727,17 +923,26 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	if isIdxOwned {
 		defer backend.PutBuffer(idxBuf)
 	}
-	indices := idxBuf.Flat.([]int64)
+	indices := idxBuf.Flat.([]int64)[:numIndices]
 
-	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
-	for i, rowIdx := range indices[:numIndices] {
+	for _, rowIdx := range indices {
 		if rowIdx < 0 || rowIdx >= vocabSize {
 			backend.PutBuffer(output)
 			return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rowIdx, vocabSize)
 		}
-		rowStart := rowIdx * int64(bytesPerRow)
-		rowData := dataBytes[rowStart : rowStart+int64(bytesPerRow)]
-		dequantFn(rowData, out[i*K:(i+1)*K])
+	}
+	if canParallel {
+		backend.Scheduler.ParallelizeChunks(numIndices, minChunk, func(start, end int) {
+			for i := start; i < end; i++ {
+				rowStart := int(indices[i]) * bytesPerRow
+				dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
+			}
+		})
+	} else {
+		for i, rowIdx := range indices {
+			rowStart := int(rowIdx) * bytesPerRow
+			dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
+		}
 	}
 	return output, nil
 }

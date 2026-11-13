@@ -5,11 +5,12 @@ package gobackend_test
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/shapes"
 	"k8s.io/klog/v2"
 
@@ -53,4 +54,19 @@ func TestMain(m *testing.M) {
 	code := m.Run() // Run all tests in the file
 	teardown()
 	os.Exit(code)
+}
+
+func TestUnknownBackendOptionError(t *testing.T) {
+	_, err := compute.NewWithConfig("go:help")
+	if err == nil {
+		t.Fatalf("expected error from compute.NewWithConfig(\"go:help\"), got nil")
+	}
+	for _, want := range []string{
+		"quantized_cache",
+		"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected error %q to contain %q", err.Error(), want)
+		}
+	}
 }

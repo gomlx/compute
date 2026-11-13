@@ -329,15 +329,9 @@ func execFusedQuantizedDenseVJP(backend *gobackend.Backend, node *gobackend.Node
 	switch dxBuf.RawShape.DType {
 	case dtypes.Float32:
 	case dtypes.Float16:
-		dst := dxBuf.Flat.([]float16.Float16)
-		for i, v := range dxF32 {
-			dst[i] = float16.FromFloat32(v)
-		}
+		convertFloat32SliceToFloat16(backend, dxF32, dxBuf.Flat.([]float16.Float16))
 	case dtypes.BFloat16:
-		dst := dxBuf.Flat.([]bfloat16.BFloat16)
-		for i, v := range dxF32 {
-			dst[i] = bfloat16.FromFloat32(v)
-		}
+		convertFloat32SliceToBFloat16(backend, dxF32, dxBuf.Flat.([]bfloat16.BFloat16))
 	default:
 		putOutputs()
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDenseVJP: unsupported DType %s", dxBuf.RawShape.DType)
@@ -414,30 +408,17 @@ func execQuantizedDenseVJPGGML(
 	weights := wBuf.Flat.([]uint8)
 	bytesPerRow := wBuf.RawShape.Dimensions[1]
 
-	totalWork := M * K * N
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalWork > quantizedDenseMinParallelizeChunk && M > 1 {
-		// Chunk over M rows so each worker dequantizes row n once per chunk [mStart, mEnd).
-		backend.Scheduler.ParallelizeChunks(M, 1, func(mStart, mEnd int) {
-			wRowK := make([]float32, K)
-			clear(dx[mStart*K : mEnd*K])
-			for n := range N {
-				dequantFn(weights[n*bytesPerRow:(n+1)*bytesPerRow], wRowK)
-				for m := mStart; m < mEnd; m++ {
-					dzVal := dZ[m*N+n]
-					if dzVal == 0 {
-						continue
-					}
-					dxRow := dx[m*K : (m+1)*K]
-					for k := range K {
-						dxRow[k] += dzVal * wRowK[k]
-					}
-				}
-			}
-		})
-		return nil
+	if M >= 2 {
+		return execQuantizedVJPOutputsInputMatmul(
+			backend, dZ, dx, M, K, N,
+			defaultQuantizedFloatMaxScratchFloats,
+			func(nStart, nEnd int, dst []float32) {
+				dequantGGMLRowsChunk(backend, weights, bytesPerRow, nStart, nEnd, K, dequantFn, dst)
+			},
+		)
 	}
 
-	// Single-token (M == 1) or small problem: stream row-by-row using a single [K] float32 buffer.
+	// Single-token (M == 1): stream row-by-row using a single [K] float32 buffer with zero-skipping.
 	wRowK := make([]float32, K)
 	clear(dx[:M*K])
 	for n := range N {
@@ -496,6 +477,25 @@ func execQuantizedDenseVJPLinearOrNF4(
 	sLayout := data.weightScaleLayout
 	zpLayout := data.weightZeroPointLayout
 	scheme := data.weightScheme
+
+	if M >= 2 {
+		if data.weightLayout == compute.DenseLayoutInputOutputs {
+			return execQuantizedVJPInputOutputsMatmul(
+				backend, dZ, dx, M, K, N,
+				defaultQuantizedFloatMaxScratchFloats,
+				func(kStart, kEnd int, dst []float32) {
+					dequantLinearOrNF4RowsChunk(backend, scheme, wBuf, wScales, wZPs, kStart, kEnd, N, sLayout, zpLayout, dst)
+				},
+			)
+		}
+		return execQuantizedVJPOutputsInputMatmul(
+			backend, dZ, dx, M, K, N,
+			defaultQuantizedFloatMaxScratchFloats,
+			func(nStart, nEnd int, dst []float32) {
+				dequantLinearOrNF4RowsChunk(backend, scheme, wBuf, wScales, wZPs, nStart, nEnd, K, sLayout, zpLayout, dst)
+			},
+		)
+	}
 
 	if data.weightLayout == compute.DenseLayoutInputOutputs {
 		// Weight is [K, N]: dx[m, k] = sum_{n=0..N-1} dZ[m, n] * W_deq[k, n].

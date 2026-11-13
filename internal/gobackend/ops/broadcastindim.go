@@ -4,9 +4,6 @@ import (
 	"slices"
 
 	"github.com/gomlx/compute"
-	"github.com/gomlx/compute/dtypes"
-	"github.com/gomlx/compute/dtypes/bfloat16"
-	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -14,9 +11,21 @@ import (
 	"github.com/pkg/errors"
 )
 
+const broadcastMinParallelElems = 16384
+
 type dynamicBroadcastInDimData struct {
 	broadcastAxes []int
 	specs         []compute.DynamicDimensionSpec
+}
+
+type broadcastRun struct {
+	size        int
+	isBroadcast bool
+}
+
+type broadcastPlan struct {
+	runs []broadcastRun
+	iter *gobackend.BroadcastIterator
 }
 
 func init() {
@@ -25,21 +34,6 @@ func init() {
 
 	gobackend.RegisterDynamicBroadcastInDim.Register(DynamicBroadcastInDim, gobackend.PriorityGeneric)
 	gobackend.SetNodeExecutor(compute.OpTypeDynamicBroadcastInDim, gobackend.PriorityGeneric, execDynamicBroadcastInDim)
-
-	// DTypeMap: broadcastInDimDTypeMap
-	broadcastInDimDTypeMap.Register(dtypes.Int8, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int8])
-	broadcastInDimDTypeMap.Register(dtypes.Int16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int16])
-	broadcastInDimDTypeMap.Register(dtypes.Int32, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int32])
-	broadcastInDimDTypeMap.Register(dtypes.Int64, gobackend.PriorityGeneric, execBroadcastInDimGeneric[int64])
-	broadcastInDimDTypeMap.Register(dtypes.Uint8, gobackend.PriorityGeneric, execBroadcastInDimGeneric[uint8])
-	broadcastInDimDTypeMap.Register(dtypes.Uint16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[uint16])
-	broadcastInDimDTypeMap.Register(dtypes.Uint32, gobackend.PriorityGeneric, execBroadcastInDimGeneric[uint32])
-	broadcastInDimDTypeMap.Register(dtypes.Uint64, gobackend.PriorityGeneric, execBroadcastInDimGeneric[uint64])
-	broadcastInDimDTypeMap.Register(dtypes.Float32, gobackend.PriorityGeneric, execBroadcastInDimGeneric[float32])
-	broadcastInDimDTypeMap.Register(dtypes.Float64, gobackend.PriorityGeneric, execBroadcastInDimGeneric[float64])
-	broadcastInDimDTypeMap.Register(dtypes.BFloat16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[bfloat16.BFloat16])
-	broadcastInDimDTypeMap.Register(dtypes.Float16, gobackend.PriorityGeneric, execBroadcastInDimGeneric[float16.Float16])
-	broadcastInDimDTypeMap.Register(dtypes.Bool, gobackend.PriorityGeneric, execBroadcastInDimGeneric[bool])
 }
 
 // BroadcastInDim broadcasts x to an output with the given shape.
@@ -47,20 +41,8 @@ func init() {
 //   - outputShape will be the new shape after x is broadcast.
 //   - broadcastAxes maps x-axes to the corresponding outputShape axes (len(broadcastAxes) == x.Shape.Rank()),
 //     the i-th axis of x is mapped to the broadcastAxes[i]-th dimension of the output.
-//     broadcastAxes must be also increasing: this operation cannot be used to transpose axes,
+//     broadcastAxes must be strictly increasing: this operation cannot be used to transpose axes,
 //     it will only broadcast and introduce new axes in-between.
-//     -
-//
-// This also requires that the i-th input axis is either 1 or is the same as the
-// output dimension it's broadcasting into.
-// For example, say operand `x = (s32)[2]{1, 2}`; outputShape = `(s32)[2,2]`:
-//   - Specifying []int{1} as broadcastAxes will generate output
-//     {{1, 2},
-//     {1, 2}}
-//   - On the other hand, specifying []int{0} as broadcastAxes
-//     will generate output
-//     {{1 , 1},
-//     {2 , 2}}
 func BroadcastInDim(
 	f *gobackend.Function,
 	operandValue compute.Value,
@@ -113,46 +95,74 @@ func DynamicBroadcastInDim(
 	return node, nil
 }
 
+func buildBroadcastPlan(operandShape, outputShape shapes.Shape, broadcastAxes []int) broadcastPlan {
+	var runsBuf [8]broadcastRun
+	runs := runsBuf[:0]
+
+	var reshapedBuf [8]int
+	var reshapedDims []int
+	outRank := outputShape.Rank()
+	if outRank <= len(reshapedBuf) {
+		reshapedDims = reshapedBuf[:outRank]
+		for i := range reshapedDims {
+			reshapedDims[i] = 1
+		}
+	} else {
+		reshapedDims = xslices.SliceWithValue(outRank, 1)
+	}
+	for operandAxis, outputAxis := range broadcastAxes {
+		reshapedDims[outputAxis] = operandShape.Dimensions[operandAxis]
+	}
+
+	for a, outDim := range outputShape.Dimensions {
+		if outDim <= 1 {
+			continue
+		}
+		isBcast := reshapedDims[a] == 1
+		if n := len(runs); n > 0 && runs[n-1].isBroadcast == isBcast {
+			runs[n-1].size *= outDim
+		} else {
+			runs = append(runs, broadcastRun{size: outDim, isBroadcast: isBcast})
+		}
+	}
+
+	if len(runs) >= 4 {
+		reshapedOperand := shapes.Make(operandShape.DType, reshapedDims...)
+		return broadcastPlan{
+			runs: slices.Clone(runs),
+			iter: gobackend.NewBroadcastIterator(reshapedOperand, outputShape),
+		}
+	}
+	return broadcastPlan{runs: slices.Clone(runs)}
+}
+
 func broadcastToShape(backend *gobackend.Backend, targetShape shapes.Shape, broadcastAxes []int, operand *gobackend.Buffer) (*gobackend.Buffer, error) {
 	output, err := backend.GetBuffer(targetShape)
 	if err != nil {
 		return nil, err
 	}
-	if backend.NoOps {
+	if backend.NoOps || targetShape.Size() == 0 {
 		return output, nil
 	}
 
-	var iter *gobackend.BroadcastIterator
-
-	if operand.RawShape.Size() == 1 {
-		// Special case 1: just leave iter as nil.
-	} else {
-		// Reshape operand shape: same dimension as the operand on the corresponding axes, 1 elsewhere.
-		// We are only changing the rank, but it stays the same size; hence the flat data doesn't change.
-		// Notice: broadcastAxes is strictly increasing (no transpositions are happening).
-		dims := xslices.SliceWithValue(output.RawShape.Rank(), 1)
-		for operandAxis, outputAxis := range broadcastAxes {
-			dims[outputAxis] = operand.RawShape.Dimensions[operandAxis]
-		}
-		reshapedOperand := shapes.Make(operand.RawShape.DType, dims...)
-
-		// Create broadcasting the iterator: it requires operand and output shapes to have the same rank.
-		iter = gobackend.NewBroadcastIterator(reshapedOperand, output.RawShape)
+	var plan broadcastPlan
+	if operand.RawShape.Size() > 1 {
+		plan = buildBroadcastPlan(operand.RawShape, output.RawShape, broadcastAxes)
 	}
 
-	// Call implementation for corresponding dtype.
 	fnAny, err := broadcastInDimDTypeMap.Get(targetShape.DType)
 	if err != nil {
+		backend.PutBuffer(output)
 		return nil, err
 	}
-	fnAny.(func(*gobackend.Buffer, *gobackend.Buffer, *gobackend.BroadcastIterator))(operand, output, iter)
+	fnAny.(func(*gobackend.Backend, *gobackend.Buffer, *gobackend.Buffer, broadcastPlan))(backend, operand, output, plan)
 	return output, nil
 }
 
 // execBroadcastInDim executes the BroadcastInDim operation.
 func execBroadcastInDim(
 	backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	_ = inputsOwned // We don't reuse the inputs, since presumably the shape will change.
+	_ = inputsOwned
 	operand := inputs[0]
 	broadcastAxes := node.Data.([]int)
 	return broadcastToShape(backend, node.Shape, broadcastAxes, operand)
@@ -207,31 +217,150 @@ func execDynamicBroadcastInDim(
 	return broadcastToShape(backend, targetShape, broadcastAxes, operand)
 }
 
+// repeatSliceDoubling tiles src across dst (whose length is a multiple of len(src))
+// using exponential doubling so large contiguous memmove calls saturate cache/DRAM bandwidth.
+func repeatSliceDoubling[T any](dst, src []T) {
+	k := len(src)
+	total := len(dst)
+	if k == 0 || total == 0 {
+		return
+	}
+	copy(dst[:k], src)
+	for copied := k; copied < total; {
+		n := min(copied, total-copied)
+		copy(dst[copied:copied+n], dst[:n])
+		copied += n
+	}
+}
+
 //gobackend:dtypemap execBroadcastInDimGeneric ints,uints,floats,half,bool
 var broadcastInDimDTypeMap = gobackend.NewDTypeMap("BroadcastInDim")
 
 func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
-	operand, output *gobackend.Buffer, iter *gobackend.BroadcastIterator) {
+	backend *gobackend.Backend, operand, output *gobackend.Buffer, plan broadcastPlan,
+) {
 	operandFlat, outputFlat := operand.Flat.([]T), output.Flat.([]T)
-	if iter == nil {
-		// Special cases:
-		if len(operandFlat) == 1 {
-			// 1. Where operand is a scalar (or size 1) that is broadcast everywhere.
-			xslices.FillSlice(outputFlat, operandFlat[0])
-		} else {
-			// 2. Where we are simply broadcasting a prefix dimensions:
-			repeats := len(outputFlat) / len(operandFlat)
-			pos := 0
-			for range repeats {
-				copy(outputFlat[pos:], operandFlat)
-				pos += len(operandFlat)
-			}
+	totalOut := len(outputFlat)
+	if totalOut == 0 {
+		return
+	}
+	canParallel := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalOut >= broadcastMinParallelElems
+
+	// Case 0: Scalar (or size-1) operand broadcast everywhere.
+	if len(operandFlat) == 1 {
+		val := operandFlat[0]
+		if canParallel {
+			backend.Scheduler.ParallelizeChunks(totalOut, 4096, func(start, end int) {
+				xslices.FillSlice(outputFlat[start:end], val)
+			})
+			return
 		}
+		xslices.FillSlice(outputFlat, val)
 		return
 	}
 
-	// Arbitrary broadcasting using the flexible but slower broadcast iterator:
-	for operandFlatIdx, outputFlatIdx := range iter.IterFlatIndices() {
+	switch len(plan.runs) {
+	case 0, 1:
+		// Pure identity copy [N] -> [N] (since size-1 broadcast was handled above).
+		if canParallel {
+			backend.Scheduler.ParallelizeChunks(totalOut, 4096, func(start, end int) {
+				copy(outputFlat[start:end], operandFlat[start:end])
+			})
+			return
+		}
+		copy(outputFlat, operandFlat)
+		return
+
+	case 2:
+		if plan.runs[0].isBroadcast {
+			// Prefix broadcast: [1, K] -> [Outer, K].
+			outer, k := plan.runs[0].size, plan.runs[1].size
+			src := operandFlat[:k]
+			if canParallel && outer > 1 {
+				minOuter := max(1, 4096/k)
+				backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
+					repeatSliceDoubling(outputFlat[oStart*k:oEnd*k], src)
+				})
+				return
+			}
+			repeatSliceDoubling(outputFlat, src)
+			return
+		}
+		// Suffix broadcast: [Outer, 1] -> [Outer, Inner].
+		outer, inner := plan.runs[0].size, plan.runs[1].size
+		if canParallel && outer > 1 {
+			minOuter := max(1, 4096/inner)
+			backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
+				for o := oStart; o < oEnd; o++ {
+					xslices.FillSlice(outputFlat[o*inner:(o+1)*inner], operandFlat[o])
+				}
+			})
+			return
+		}
+		for o := range outer {
+			xslices.FillSlice(outputFlat[o*inner:(o+1)*inner], operandFlat[o])
+		}
+		return
+
+	case 3:
+		if !plan.runs[0].isBroadcast && plan.runs[1].isBroadcast && !plan.runs[2].isBroadcast {
+			// Middle broadcast: [Outer, 1, Inner] -> [Outer, Mid, Inner].
+			outer, mid, inner := plan.runs[0].size, plan.runs[1].size, plan.runs[2].size
+			outStride := mid * inner
+			if canParallel && outer*mid > 1 {
+				if outer >= backend.Scheduler.EffectiveParallelism() {
+					minOuter := max(1, 4096/outStride)
+					backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
+						for o := oStart; o < oEnd; o++ {
+							repeatSliceDoubling(outputFlat[o*outStride:(o+1)*outStride], operandFlat[o*inner:(o+1)*inner])
+						}
+					})
+				} else {
+					totalPairs := outer * mid
+					minPairs := max(1, 4096/inner)
+					backend.Scheduler.ParallelizeChunks(totalPairs, minPairs, func(pStart, pEnd int) {
+						for p := pStart; p < pEnd; {
+							o := p / mid
+							mLo := p % mid
+							pGroupEnd := min(pEnd, (o+1)*mid)
+							mHi := mLo + (pGroupEnd - p)
+							repeatSliceDoubling(outputFlat[o*outStride+mLo*inner:o*outStride+mHi*inner], operandFlat[o*inner:(o+1)*inner])
+							p = pGroupEnd
+						}
+					})
+				}
+				return
+			}
+			for o := range outer {
+				repeatSliceDoubling(outputFlat[o*outStride:(o+1)*outStride], operandFlat[o*inner:(o+1)*inner])
+			}
+			return
+		}
+		if plan.runs[0].isBroadcast && !plan.runs[1].isBroadcast && plan.runs[2].isBroadcast {
+			// Outer + Inner broadcast: [1, Mid, 1] -> [Outer, Mid, Inner].
+			outer, mid, inner := plan.runs[0].size, plan.runs[1].size, plan.runs[2].size
+			sliceLen := mid * inner
+			firstSlice := outputFlat[:sliceLen]
+			for m := range mid {
+				xslices.FillSlice(firstSlice[m*inner:(m+1)*inner], operandFlat[m])
+			}
+			if outer > 1 {
+				rest := outputFlat[sliceLen:]
+				if canParallel && outer-1 > 1 {
+					minOuter := max(1, 4096/sliceLen)
+					backend.Scheduler.ParallelizeChunks(outer-1, minOuter, func(oStart, oEnd int) {
+						repeatSliceDoubling(rest[oStart*sliceLen:oEnd*sliceLen], firstSlice)
+					})
+				} else {
+					repeatSliceDoubling(rest, firstSlice)
+				}
+			}
+			return
+		}
+	}
+
+	// Fallback for 4+ alternating broadcast runs:
+	for operandFlatIdx, outputFlatIdx := range plan.iter.IterFlatIndices() {
 		outputFlat[outputFlatIdx] = operandFlat[operandFlatIdx]
 	}
 }

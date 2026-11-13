@@ -8,7 +8,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
-	"github.com/gomlx/compute/shapeinference"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 )
 
 func execQuantizedDenseLinearOrNF4Core(
@@ -17,59 +17,65 @@ func execQuantizedDenseLinearOrNF4Core(
 	in unpackedQDInputs,
 	M, K, N int,
 	outF32 []float32,
-) error {
+	inTileAct activations.KernelFn[float32],
+) (bool, error) {
 	wScales, releaseWScale, err := bufferToFloat32Slice(backend, in.wScale)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer releaseWScale()
 
 	// Case 1: Pre-quantized XQuantization (QuantLinear Int32 matmul).
 	if data.hasXQuant {
-		return execQuantizedDenseLinearIntMatmul(backend, data, in, wScales, M, K, N, outF32)
+		return false, execQuantizedDenseLinearIntMatmul(backend, data, in, wScales, M, K, N, outF32)
 	}
-
-	// Float x input.
-	xF32, releaseX, err := bufferToFloat32Slice(backend, in.x)
-	if err != nil {
-		return err
-	}
-	defer releaseX()
 
 	var biasF32 []float32
 	if in.bias != nil {
 		var releaseBias func()
 		biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer releaseBias()
 	}
 
 	// Case 2: On-the-fly dynamic Int8 quantization hint (QuantizedMatmul == true) for QuantLinear.
 	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear {
-		return execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
+		if ok, err := execQuantizedDenseLinearPanelDynamicInt8(backend, data, in.x, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32, inTileAct); err != nil {
+			return false, err
+		} else if ok {
+			return inTileAct != nil, nil
+		}
 	}
 
-	// Case 3: Weight-only float matmul (QuantLinear or QuantNF4).
+	// Float x input (for fallback dynamic Int8 or weight-only float matmul).
+	xF32, releaseX, err := bufferToFloat32Slice(backend, in.x)
+	if err != nil {
+		return false, err
+	}
+	defer releaseX()
+
+	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear &&
+		(in.wZP == nil || !in.wZP.RawShape.DType.IsFloat()) {
+		return false, execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
+	}
+
+	// Case 3: Weight-only float matmul (QuantLinear or QuantNF4, or non-integer float zero-points).
 	var wZPF32 []float32
 	if in.wZP != nil {
 		var releaseWZP func()
 		wZPF32, releaseWZP, err = bufferToZeroPointFloat32Slice(backend, in.wZP)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer releaseWZP()
 	}
 
-	if data.weightLayout == compute.DenseLayoutInputOutputs {
-		execWeightOnlyInputOutputs(backend, data.weightScheme, xF32, in.weight, wScales, wZPF32, biasF32, outF32, M, K, N,
-			data.info.WeightScaleLayout, data.info.WeightZeroPointLayout)
-	} else {
-		execWeightOnlyOutputsInput(backend, data.weightScheme, xF32, in.weight, wScales, wZPF32, biasF32, outF32, M, K, N,
-			data.info.WeightScaleLayout, data.info.WeightZeroPointLayout)
-	}
-	return nil
+	return execQuantizedDenseLinearOrNF4FloatMatmul(
+		backend, data, xF32, in.weight, wScales, wZPF32, biasF32, outF32,
+		M, K, N, defaultQuantizedFloatMaxScratchFloats,
+	)
 }
 
 // weightRowReader provides zero-allocation row access for Int8, Uint8, and sub-byte [D0, D1] weights.
@@ -110,208 +116,18 @@ func (r *weightRowReader) rowUint8(row int) []uint8 {
 	return r.u8Data[row*r.d1 : (row+1)*r.d1]
 }
 
-// execWeightOnlyInputOutputs computes out = x @ dequant(W) + bias for W of shape [K, N].
-// Uses cache-friendly (m, k, n) loop order so both W[k, n] and out[m, n] are accessed with stride-1.
-func execWeightOnlyInputOutputs(
-	backend *gobackend.Backend,
-	scheme compute.QuantizationScheme,
-	x []float32,
-	wBuf *gobackend.Buffer,
-	wScales, wZPs, bias, out []float32,
-	M, K, N int,
-	sLayout, zpLayout shapeinference.BlockParamLayout,
-) {
-	reader := makeWeightRowReader(wBuf, N)
-	numWorkers := quantizedDenseParallelTileCount(backend, M, K, N)
-	var scratchRows [][]int8
-	if reader.needsScratch() {
-		scratchRows = make([][]int8, numWorkers)
-		for i := range scratchRows {
-			scratchRows[i] = make([]int8, N)
-		}
+func (r *weightRowReader) spanInt8(row, colStart, colLen int, scratch []int8) []int8 {
+	if r.dtype == dtypes.Int8 {
+		off := row*r.d1 + colStart
+		return r.int8Data[off : off+colLen]
 	}
-
-	quantizedDenseParallel(backend, M, K, N, func(workerIdx, m, nStart, nEnd int) {
-		outSlice := out[m*N+nStart : m*N+nEnd]
-		if bias != nil {
-			copy(outSlice, bias[nStart:nEnd])
-		} else {
-			clear(outSlice)
-		}
-
-		var scratch []int8
-		if scratchRows != nil {
-			scratch = scratchRows[workerIdx]
-		}
-
-		for k := range K {
-			xVal := x[m*K+k]
-			if xVal == 0 {
-				continue
-			}
-			sRowOff := (k / sLayout.RowBlockSize) * sLayout.NumColBlocks
-			var zpRowOff int
-			if wZPs != nil {
-				zpRowOff = (k / zpLayout.RowBlockSize) * zpLayout.NumColBlocks
-			}
-
-			if scheme == compute.QuantNF4 {
-				if reader.isUint8 {
-					wRow := reader.rowUint8(k)
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * compute.NF4LookupTable[wRow[n]&0x0F] * sc
-					}
-				} else {
-					wRow := reader.rowInt8(k, scratch)
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * compute.NF4LookupTable[uint8(wRow[n])&0x0F] * sc
-					}
-				}
-				continue
-			}
-
-			// QuantLinear: real = (float32(q) - zp) * scale
-			if reader.isUint8 {
-				wRow := reader.rowUint8(k)
-				if wZPs != nil {
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						zp := wZPs[zpRowOff+n/zpLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * (float32(wRow[n]) - zp) * sc
-					}
-				} else {
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * float32(wRow[n]) * sc
-					}
-				}
-			} else {
-				wRow := reader.rowInt8(k, scratch)
-				if wZPs != nil {
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						zp := wZPs[zpRowOff+n/zpLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * (float32(wRow[n]) - zp) * sc
-					}
-				} else {
-					for n := nStart; n < nEnd; n++ {
-						sc := wScales[sRowOff+n/sLayout.ColBlockSize]
-						outSlice[n-nStart] += xVal * float32(wRow[n]) * sc
-					}
-				}
-			}
-		}
-	})
+	unpackSubByteSpanInt8(r.dtype, r.u8Data, row*r.d1+colStart, colLen, scratch[:colLen])
+	return scratch[:colLen]
 }
 
-// execWeightOnlyOutputsInput computes out = x @ dequant(W)^T + bias for W of shape [N, K].
-// Uses cache-friendly (m, n, k) loop order so both x[m, k] and W[n, k] are accessed with stride-1,
-// hoisting block scale/zeroPoint outside the inner k-block dot product.
-func execWeightOnlyOutputsInput(
-	backend *gobackend.Backend,
-	scheme compute.QuantizationScheme,
-	x []float32,
-	wBuf *gobackend.Buffer,
-	wScales, wZPs, bias, out []float32,
-	M, K, N int,
-	sLayout, zpLayout shapeinference.BlockParamLayout,
-) {
-	reader := makeWeightRowReader(wBuf, K)
-	numWorkers := quantizedDenseParallelTileCount(backend, M, K, N)
-	var scratchRows [][]int8
-	if reader.needsScratch() {
-		scratchRows = make([][]int8, numWorkers)
-		for i := range scratchRows {
-			scratchRows[i] = make([]int8, K)
-		}
-	}
-
-	kStep := sLayout.ColBlockSize
-	if wZPs != nil && zpLayout.ColBlockSize < kStep {
-		kStep = zpLayout.ColBlockSize
-	}
-
-	quantizedDenseParallel(backend, M, K, N, func(workerIdx, m, nStart, nEnd int) {
-		var scratch []int8
-		if scratchRows != nil {
-			scratch = scratchRows[workerIdx]
-		}
-		xRow := x[m*K : (m+1)*K]
-
-		for n := nStart; n < nEnd; n++ {
-			sRowOff := (n / sLayout.RowBlockSize) * sLayout.NumColBlocks
-			var zpRowOff int
-			if wZPs != nil {
-				zpRowOff = (n / zpLayout.RowBlockSize) * zpLayout.NumColBlocks
-			}
-
-			var dot float32
-			if scheme == compute.QuantNF4 {
-				if reader.isUint8 {
-					wRow := reader.rowUint8(n)
-					for k0 := 0; k0 < K; k0 += kStep {
-						k1 := min(k0+kStep, K)
-						sc := wScales[sRowOff+k0/sLayout.ColBlockSize]
-						var sub float32
-						for k := k0; k < k1; k++ {
-							sub += xRow[k] * compute.NF4LookupTable[wRow[k]&0x0F]
-						}
-						dot += sub * sc
-					}
-				} else {
-					wRow := reader.rowInt8(n, scratch)
-					for k0 := 0; k0 < K; k0 += kStep {
-						k1 := min(k0+kStep, K)
-						sc := wScales[sRowOff+k0/sLayout.ColBlockSize]
-						var sub float32
-						for k := k0; k < k1; k++ {
-							sub += xRow[k] * compute.NF4LookupTable[uint8(wRow[k])&0x0F]
-						}
-						dot += sub * sc
-					}
-				}
-			} else {
-				if reader.isUint8 {
-					wRow := reader.rowUint8(n)
-					for k0 := 0; k0 < K; k0 += kStep {
-						k1 := min(k0+kStep, K)
-						sc := wScales[sRowOff+k0/sLayout.ColBlockSize]
-						var zp float32
-						if wZPs != nil {
-							zp = wZPs[zpRowOff+k0/zpLayout.ColBlockSize]
-						}
-						var sub float32
-						for k := k0; k < k1; k++ {
-							sub += xRow[k] * (float32(wRow[k]) - zp)
-						}
-						dot += sub * sc
-					}
-				} else {
-					wRow := reader.rowInt8(n, scratch)
-					for k0 := 0; k0 < K; k0 += kStep {
-						k1 := min(k0+kStep, K)
-						sc := wScales[sRowOff+k0/sLayout.ColBlockSize]
-						var zp float32
-						if wZPs != nil {
-							zp = wZPs[zpRowOff+k0/zpLayout.ColBlockSize]
-						}
-						var sub float32
-						for k := k0; k < k1; k++ {
-							sub += xRow[k] * (float32(wRow[k]) - zp)
-						}
-						dot += sub * sc
-					}
-				}
-			}
-
-			if bias != nil {
-				dot += bias[n]
-			}
-			out[m*N+n] = dot
-		}
-	})
+func (r *weightRowReader) spanUint8(row, colStart, colLen int) []uint8 {
+	off := row*r.d1 + colStart
+	return r.u8Data[off : off+colLen]
 }
 
 // execQuantizedDenseLinearIntMatmul executes exact Int32 matmul when XQuantization != nil (QuantLinear).
@@ -575,26 +391,7 @@ func execQuantizedDenseLinearDynamicInt8(
 	outF32 []float32,
 ) error {
 	var wZPs []int32
-	var wZPF32 []float32
 	if wZPBuf != nil {
-		if wZPBuf.RawShape.DType.IsFloat() {
-			// Non-integer float zero-point: fall back cleanly to exact float arithmetic.
-			var releaseZP func()
-			var err error
-			wZPF32, releaseZP, err = bufferToZeroPointFloat32Slice(backend, wZPBuf)
-			if err != nil {
-				return err
-			}
-			defer releaseZP()
-			if data.weightLayout == compute.DenseLayoutInputOutputs {
-				execWeightOnlyInputOutputs(backend, compute.QuantLinear, xF32, wBuf, wScales, wZPF32, biasF32, outF32, M, K, N,
-					data.info.WeightScaleLayout, data.info.WeightZeroPointLayout)
-			} else {
-				execWeightOnlyOutputsInput(backend, compute.QuantLinear, xF32, wBuf, wScales, wZPF32, biasF32, outF32, M, K, N,
-					data.info.WeightScaleLayout, data.info.WeightZeroPointLayout)
-			}
-			return nil
-		}
 		var releaseZP func()
 		var err error
 		wZPs, releaseZP, err = bufferToZeroPointInt32Slice(backend, wZPBuf)

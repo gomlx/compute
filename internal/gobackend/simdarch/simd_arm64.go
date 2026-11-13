@@ -20,8 +20,10 @@ type arm64Features struct {
 
 var (
 	// X86 SIMD flags are always false on arm64.
-	IsAVX2Allowed   = false
-	IsAVX512Allowed = false
+	IsAVX2Allowed       = false
+	IsAVXVNNIAllowed    = false
+	IsAVX512Allowed     = false
+	IsAVX512VNNIAllowed = false
 
 	arm64CPU = detectARM64Features()
 

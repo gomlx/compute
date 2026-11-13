@@ -11,8 +11,14 @@ var (
 	// IsAVX2Allowed returns true if AVX2 is supported by the CPU and not disabled by GOMLX_GO_SIMD_AVX2.
 	IsAVX2Allowed = simdarch.IsAVX2Allowed
 
+	// IsAVXVNNIAllowed returns true if AVX-VNNI is supported and AVX2 is allowed.
+	IsAVXVNNIAllowed = simdarch.IsAVXVNNIAllowed
+
 	// IsAVX512Allowed returns true if AVX-512 is supported by the CPU and not disabled by GOMLX_GO_SIMD_AVX512.
 	IsAVX512Allowed = simdarch.IsAVX512Allowed
+
+	// IsAVX512VNNIAllowed returns true if AVX-512 VNNI is supported and AVX-512 is allowed.
+	IsAVX512VNNIAllowed = simdarch.IsAVX512VNNIAllowed
 
 	// IsNEONAllowed returns true if ARM64 AdvSIMD (NEON) is supported and not disabled by GOMLX_GO_SIMD_NEON.
 	IsNEONAllowed = simdarch.IsNEONAllowed

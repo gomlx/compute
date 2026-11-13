@@ -15,6 +15,8 @@
 #define FMIN_4S(Vd, Vn, Vm) WORD $(0x4EA0F400 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
 #define FABS_4S(Vd, Vn)     WORD $(0x4EA0F800 | ((Vn)<<5) | (Vd))
 #define FNEG_4S(Vd, Vn)     WORD $(0x6EA0F800 | ((Vn)<<5) | (Vd))
+#define FRECPE_4S(Vd, Vn)   WORD $(0x4EA1D800 | ((Vn)<<5) | (Vd))
+#define FRECPS_4S(Vd, Vn, Vm) WORD $(0x4E20FC00 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
 #define SHL23_4S(Vd, Vn)    WORD $(0x4F375400 | ((Vn)<<5) | (Vd))
 #define ADD_4S(Vd, Vn, Vm)  WORD $(0x4EA08400 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
 #define AND_16B(Vd, Vn, Vm) WORD $(0x4E201C00 | ((Vm)<<16) | ((Vn)<<5) | (Vd))
@@ -245,13 +247,18 @@ gelu_approx_vec8_loop:
 	FMUL_4S(6, 14, 6)    // exp2xA = expPolyA * scaleA
 	FMUL_4S(7, 15, 7)    // exp2xB = expPolyB * scaleB
 
-	// out = (v * exp2x) / (exp2x + 1.0)
+	// out = (v * exp2x) / (exp2x + 1.0) using parallel FDIV on V1 and FRECPE+2xFRECPS on V0
 	FADD_4S(8, 6, 17)
 	FADD_4S(9, 7, 17)
 	FMUL_4S(0, 0, 6)
 	FMUL_4S(1, 1, 7)
-	FDIV_4S(0, 0, 8)
+	FRECPE_4S(10, 8)
 	FDIV_4S(1, 1, 9)
+	FRECPS_4S(12, 8, 10)
+	FMUL_4S(10, 10, 12)
+	FRECPS_4S(12, 8, 10)
+	FMUL_4S(10, 10, 12)
+	FMUL_4S(0, 0, 10)
 
 	VST1.P [V0.S4, V1.S4], 32(R1)
 
