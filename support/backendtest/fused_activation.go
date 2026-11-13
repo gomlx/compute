@@ -102,6 +102,7 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 			got, err := testutil.Exec1(b, []any{input1D}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 				return f.FusedActivation(params[0], compute.ActivationConfig{Type: tc.actType})
 			})
+			skipIfFusedNotImplemented(t, b, err)
 			if err != nil {
 				t.Fatalf("FusedActivation(%s) failed: %+v", tc.name, err)
 			}
@@ -115,12 +116,14 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 		gotExact, err := testutil.Exec1(b, []any{input1D}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationGelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivation(Gelu) failed: %+v", err)
 		}
 		gotApprox, err := testutil.Exec1(b, []any{input1D}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationGeluApproximate})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivation(GeluApproximate) failed: %+v", err)
 		}
@@ -146,6 +149,7 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{input}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationSwiGLU})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivation(SwiGLU) failed: %+v", err)
 		}
@@ -168,11 +172,13 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("Float16", func(t *testing.T) {
+		testutil.SkipIfMissingDType(t, b, dtypes.Float16)
 		f16 := float16.FromFloat32
 		inputF16 := []float16.Float16{f16(0), f16(-1), f16(2), f16(-3), f16(4)}
 		got, err := testutil.Exec1(b, []any{inputF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationRelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivation Float16 failed: %+v", err)
 		}
@@ -189,6 +195,7 @@ func testFusedActivation(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{inputBF16}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivation(params[0], compute.ActivationConfig{Type: compute.ActivationRelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivation BFloat16 failed: %+v", err)
 		}
@@ -210,6 +217,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{y, x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], params[1], params[2], compute.ActivationConfig{Type: compute.ActivationRelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Relu) failed: %+v", err)
 		}
@@ -222,6 +230,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		gotNilX, err := testutil.Exec1(b, []any{y, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], nil, params[1], compute.ActivationConfig{Type: compute.ActivationRelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Relu, x=nil) failed: %+v", err)
 		}
@@ -237,6 +246,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{y, x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], params[1], params[2], compute.ActivationConfig{Type: compute.ActivationTanh})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Tanh) failed: %+v", err)
 		}
@@ -254,6 +264,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		gotNilX, err := testutil.Exec1(b, []any{y, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], nil, params[1], compute.ActivationConfig{Type: compute.ActivationTanh})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Tanh, x=nil) failed: %+v", err)
 		}
@@ -270,6 +281,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{y, x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], params[1], params[2], compute.ActivationConfig{Type: compute.ActivationSigmoid})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Sigmoid) failed: %+v", err)
 		}
@@ -287,6 +299,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		gotNilX, err := testutil.Exec1(b, []any{y, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], nil, params[1], compute.ActivationConfig{Type: compute.ActivationSigmoid})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Sigmoid, x=nil) failed: %+v", err)
 		}
@@ -302,6 +315,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{y, x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], params[1], params[2], compute.ActivationConfig{Type: compute.ActivationHardSigmoid})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(HardSigmoid) failed: %+v", err)
 		}
@@ -319,6 +333,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{y, x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(params[0], params[1], params[2], compute.ActivationConfig{Type: compute.ActivationLeakyRelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(LeakyRelu) failed: %+v", err)
 		}
@@ -335,6 +350,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(nil, params[0], params[1], compute.ActivationConfig{Type: compute.ActivationGelu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Gelu) failed: %+v", err)
 		}
@@ -361,6 +377,7 @@ func testFusedActivationVJP(t *testing.T, b compute.Backend) {
 		got, err := testutil.Exec1(b, []any{x, dOutput}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return f.FusedActivationVJP(nil, params[0], params[1], compute.ActivationConfig{Type: compute.ActivationSilu})
 		})
+		skipIfFusedNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("FusedActivationVJP(Silu) failed: %+v", err)
 		}

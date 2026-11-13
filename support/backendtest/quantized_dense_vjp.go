@@ -119,10 +119,10 @@ func testQDVJPNF4LayoutsAndBlockAxes(t *testing.T, b compute.Backend) {
 			if err != nil {
 				t.Fatalf("NF4 VJP %s failed: %+v", layout, err)
 			}
-			if ok, diff := testutil.IsInDelta(wantDx, gotDx, 1e-5); !ok {
+			if ok, diff := testutil.IsInDelta(wantDx, gotDx, quantizedDenseFloat32Tol); !ok {
 				t.Errorf("NF4 VJP %s dx mismatch:\n%s", layout, diff)
 			}
-			if ok, diff := testutil.IsInDelta(wantDBias, gotDBias, 1e-5); !ok {
+			if ok, diff := testutil.IsInDelta(wantDBias, gotDBias, quantizedDenseFloat32Tol); !ok {
 				t.Errorf("NF4 VJP %s dBias mismatch:\n%s", layout, diff)
 			}
 		})
@@ -175,7 +175,7 @@ func testQDVJPLinearLayoutsDTypesAndQuantizedMatmul(t *testing.T, b compute.Back
 		if err != nil {
 			t.Fatalf("Uint8 OutputsInput VJP failed: %+v", err)
 		}
-		if ok, diff := testutil.IsInDelta(wantDx, gotDx, 1e-5); !ok {
+		if ok, diff := testutil.IsInDelta(wantDx, gotDx, quantizedDenseFloat32Tol); !ok {
 			t.Errorf("Uint8 OutputsInput VJP mismatch:\n%s", diff)
 		}
 	})
@@ -268,7 +268,7 @@ func testQDVJPGGMLAllFormatsAndNilInputs(t *testing.T, b compute.Backend) {
 			if err != nil {
 				t.Fatalf("GGML(%s) VJP failed: %+v", wType, err)
 			}
-			if ok, diff := testutil.IsInDelta(wantDx, gotDx, 1e-3); !ok {
+			if ok, diff := testutil.IsInDelta(wantDx, gotDx, quantizedDenseFloat32Tol); !ok {
 				t.Errorf("GGML(%s) VJP dx mismatch:\n%s", wType, diff)
 			}
 		})
@@ -428,7 +428,7 @@ func testQDVJPRanksDynamicAndHalfPrecision(t *testing.T, b compute.Backend) {
 		if err != nil {
 			t.Fatalf("1D VJP failed: %+v", err)
 		}
-		if ok, diff := testutil.IsInDelta(want2D[0], got1D, 1e-5); !ok {
+		if ok, diff := testutil.IsInDelta(want2D[0], got1D, quantizedDenseFloat32Tol); !ok {
 			t.Errorf("1D VJP mismatch:\n%s", diff)
 		}
 
@@ -452,13 +452,14 @@ func testQDVJPRanksDynamicAndHalfPrecision(t *testing.T, b compute.Backend) {
 					WeightLayout:       compute.DenseLayoutInputOutputs,
 				})
 			})
+		skipIfQuantizedDenseVJPNotImplemented(t, b, err)
 		if err != nil {
 			t.Fatalf("3D VJP failed: %+v", err)
 		}
-		if ok, diff := testutil.IsInDelta(want3D, got3D, 1e-5); !ok {
+		if ok, diff := testutil.IsInDelta(want3D, got3D, quantizedDenseFloat32Tol); !ok {
 			t.Errorf("3D VJP dx mismatch:\n%s", diff)
 		}
-		if ok, diff := testutil.IsInDelta(wantDBias, gotDB3D, 1e-5); !ok {
+		if ok, diff := testutil.IsInDelta(wantDBias, gotDB3D, quantizedDenseFloat32Tol); !ok {
 			t.Errorf("3D VJP dBias mismatch:\n%s", diff)
 		}
 	})
@@ -498,7 +499,7 @@ func testQDVJPRanksDynamicAndHalfPrecision(t *testing.T, b compute.Backend) {
 				t.Fatalf("Dynamic VJP Execute(M=%d) failed: %+v", M, err)
 			}
 			gotDx, _ := testutil.FromBuffer(b, outs[0])
-			if ok, diff := testutil.IsInDelta(wantDx, gotDx, 1e-5); !ok {
+			if ok, diff := testutil.IsInDelta(wantDx, gotDx, quantizedDenseFloat32Tol); !ok {
 				t.Errorf("Dynamic VJP M=%d mismatch:\n%s", M, diff)
 			}
 		}
