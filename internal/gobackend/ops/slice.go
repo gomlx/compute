@@ -137,7 +137,39 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.Data)
 	}
 
-	output, err := backend.GetBuffer(node.Shape)
+	outputShape := node.Shape
+	runtimeParams := sliceParams
+	hasRuntimeBounds := outputShape.IsDynamic()
+	if !hasRuntimeBounds {
+		for axis := range sliceParams.starts {
+			if sliceParams.starts[axis] < 0 || sliceParams.limits[axis] < 0 {
+				hasRuntimeBounds = true
+				break
+			}
+		}
+	}
+	if hasRuntimeBounds {
+		// Resolve symbolic or anonymous dimensions from the concrete runtime input.
+		runtimeParams = &sliceNode{
+			starts: slices.Clone(sliceParams.starts), limits: slices.Clone(sliceParams.limits), strides: slices.Clone(sliceParams.strides),
+		}
+		for axis, dim := range operand.RawShape.Dimensions {
+			if runtimeParams.starts[axis] < 0 {
+				runtimeParams.starts[axis] = dim + runtimeParams.starts[axis]
+			}
+			if runtimeParams.limits[axis] == shapes.DynamicDim {
+				runtimeParams.limits[axis] = dim
+			} else if runtimeParams.limits[axis] < 0 {
+				runtimeParams.limits[axis] = dim + runtimeParams.limits[axis]
+			}
+		}
+		var err error
+		outputShape, err = shapeinference.Slice(operand.RawShape, runtimeParams.starts, runtimeParams.limits, runtimeParams.strides)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving runtime Slice output shape")
+		}
+	}
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +177,7 @@ func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		return output, nil
 	}
 
-	if err := execSliceBytes(backend, operand, output, sliceParams); err != nil {
+	if err := execSliceBytes(backend, operand, output, runtimeParams); err != nil {
 		return nil, err
 	}
 	return output, nil

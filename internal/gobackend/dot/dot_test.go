@@ -118,6 +118,146 @@ func TestDotGeneralDynamic(t *testing.T) {
 	}
 }
 
+func TestDotGeneralAnonymousRuntimeAxes(t *testing.T) {
+	if _, ok := backend.(*gobackend.Backend); !ok {
+		t.Skip("Skipping test because backend is not the Go backend")
+	}
+	builder := backend.Builder("TestDotGeneralAnonymousRuntimeAxes")
+	fn := builder.Main()
+	lhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, 2, -1}, []string{shapes.AnonymousAxis, "", shapes.AnonymousAxis})
+	rhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, -1, 3}, []string{shapes.AnonymousAxis, shapes.AnonymousAxis, ""})
+	lhs, err := fn.Parameter("lhs", lhsShape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rhs, err := fn.Parameter("rhs", rhsShape, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dot, err := fn.DotGeneral(lhs, []int{2}, []int{0}, rhs, []int{1}, []int{0}, compute.DotGeneralConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := fn.Neg(dot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fn.Return([]compute.Value{out}, nil); err != nil {
+		t.Fatal(err)
+	}
+	exec, err := builder.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exec.Finalize()
+
+	run := func(rhsRuntimeShape shapes.Shape) error {
+		lhsRuntimeShape := shapes.Make(dtypes.Float32, 2, 2, 4)
+		lhsBuffer, err := backend.BufferFromFlatData(0, make([]float32, lhsRuntimeShape.Size()), lhsRuntimeShape)
+		if err != nil {
+			return err
+		}
+		defer lhsBuffer.Finalize()
+		rhsBuffer, err := backend.BufferFromFlatData(0, make([]float32, rhsRuntimeShape.Size()), rhsRuntimeShape)
+		if err != nil {
+			return err
+		}
+		defer rhsBuffer.Finalize()
+		outputs, err := exec.Execute([]compute.Buffer{lhsBuffer, rhsBuffer}, nil, 0)
+		if err != nil {
+			return err
+		}
+		defer outputs[0].Finalize()
+		actual, err := outputs[0].Shape()
+		if err != nil {
+			return err
+		}
+		return actual.Check(dtypes.Float32, 2, 2, 3)
+	}
+
+	if err := run(shapes.Make(dtypes.Float32, 2, 4, 3)); err != nil {
+		t.Fatalf("matching anonymous runtime axes failed: %+v", err)
+	}
+	if err := run(shapes.Make(dtypes.Float32, 3, 4, 3)); err == nil {
+		t.Fatal("DotGeneral accepted mismatched runtime batch dimensions")
+	}
+	if err := run(shapes.Make(dtypes.Float32, 2, 5, 3)); err == nil {
+		t.Fatal("DotGeneral accepted mismatched runtime contracting dimensions")
+	}
+
+	t.Run("WithCachedConstantRHS", func(t *testing.T) {
+		b2 := backend.Builder("TestDotGeneralAnonymousCachedConstantRHS")
+		fn2 := b2.Main()
+		const K, N = 128, 64
+		lhsParam, err := fn2.Parameter("lhs", shapes.MakeDynamic(dtypes.Float32, []int{-1, K}, []string{shapes.AnonymousAxis, ""}), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rhsFlat := make([]float32, K*N)
+		for i := range rhsFlat {
+			rhsFlat[i] = 1.0
+		}
+		rhsConst, err := fn2.Constant(rhsFlat, K, N)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dot2, err := fn2.DotGeneral(lhsParam, []int{1}, nil, rhsConst, []int{0}, nil, compute.DotGeneralConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out2, err := fn2.Neg(dot2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fn2.Return([]compute.Value{out2}, nil); err != nil {
+			t.Fatal(err)
+		}
+		exec2, err := b2.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exec2.Finalize()
+
+		// Run twice with different anonymous batch sizes: run 1 populates RHSConstantData,
+		// run 2 exercises specializeNode and execDotGeneral when inputs[1] == nil.
+		for _, m := range []int{4, 7} {
+			lhsFlat := make([]float32, m*K)
+			for i := range lhsFlat {
+				lhsFlat[i] = 1.0
+			}
+			lhsBuf, err := backend.BufferFromFlatData(0, lhsFlat, shapes.Make(dtypes.Float32, m, K))
+			if err != nil {
+				t.Fatal(err)
+			}
+			outputs, err := exec2.Execute([]compute.Buffer{lhsBuf}, nil, 0)
+			lhsBuf.Finalize()
+			if err != nil {
+				t.Fatalf("m=%d failed: %+v", m, err)
+			}
+			gotShape, err := outputs[0].Shape()
+			if err != nil {
+				outputs[0].Finalize()
+				t.Fatal(err)
+			}
+			if err := gotShape.Check(dtypes.Float32, m, N); err != nil {
+				outputs[0].Finalize()
+				t.Fatalf("m=%d shape mismatch: %v", m, err)
+			}
+			gotFlat := make([]float32, m*N)
+			if err := outputs[0].ToFlatData(gotFlat); err != nil {
+				outputs[0].Finalize()
+				t.Fatal(err)
+			}
+			outputs[0].Finalize()
+			for i, v := range gotFlat {
+				if v != -float32(K) {
+					t.Fatalf("m=%d index %d: got %v, want %v", m, i, v, -float32(K))
+				}
+			}
+		}
+	})
+}
+
 func TestDotGeneralConstantCaching(t *testing.T) {
 	if _, ok := backend.(*gobackend.Backend); !ok {
 		t.Skip("Skipping test because backend is not the Go backend")

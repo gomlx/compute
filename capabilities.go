@@ -36,8 +36,9 @@ type Capabilities struct {
 
 	// DynamicShapes indicates whether the backend supports dynamic shapes
 	// during graph building. If supported the same computation graph can be
-	// used for different shapes of inputs -- currently only input-shape depended
-	// dynamism is supported (not data-dependent dynamic shapes).
+	// used for different shapes of inputs. Some operations can also produce
+	// data-dependent dynamic dimensions (for example, NonZero); support for
+	// those operations is backend-specific.
 	//
 	// A backend may not support dynamic shapes at all -- in which case GoMLX
 	// recreates and recompiles the whole graph at runtime for each different

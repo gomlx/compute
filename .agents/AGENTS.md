@@ -247,13 +247,14 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 
 | Category | Operations |
 | :--- | :--- |
-| **Dynamic Shapes** | `DynamicBroadcastInDim`, `DynamicDimensionSize`, `DynamicIota`, `DynamicPad`, `DynamicReshape` |
+| **Dynamic Shapes** | `DynamicBroadcastInDim`, `DynamicDimensionSize`, `DynamicIota`, `DynamicPad`, `DynamicReshape`, `NonZero` |
 
 #### 3. Fused Operations (`FusedOps` in [ops_fused.go](./ops_fused.go))
 
 | Category | Operations |
 | :--- | :--- |
 | **Activations & Normalization** | `FusedSoftmax`, `FusedActivation`, `FusedActivationVJP`, `FusedLayerNorm`, `FusedLayerNormVJP` |
+| **Selection** | `FusedTopK` |
 | **Dense & Projections** | `FusedDense`, `FusedDenseVJP`, `FusedAttentionQKVProjection` |
 | **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
 | **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense`, `FusedQuantizedDenseVJP` |

@@ -140,7 +140,16 @@ func execTranspose(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// We can't write to the same buffer we read from because it's not done with swaps.
-	output, err := backend.GetBuffer(node.Shape)
+	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		// node.Shape may contain anonymous dynamic dimensions; derive concrete dimensions from operand.RawShape.
+		outputDims := make([]int, len(permutations))
+		for axis, inputAxis := range permutations {
+			outputDims[axis] = operand.RawShape.Dimensions[inputAxis]
+		}
+		outputShape = shapes.Make(operand.RawShape.DType, outputDims...)
+	}
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}

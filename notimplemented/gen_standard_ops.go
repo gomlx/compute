@@ -716,6 +716,15 @@ func (f Function) Neg(x compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeNeg)
 }
 
+// NonZero returns row-major coordinates of nonzero elements as an int64
+// tensor [count, operand rank]. Options:
+//   - cfg.Transpose: it returns the non-zero shaped like [operand rank, count].
+//   - CountAxisName: name of the data-dependent count axis. If left empty, an
+//     automatically generated unique name will be chosen.
+func (f Function) NonZero(operand compute.Value, cfg compute.NonZeroConfig) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeNonZero)
+}
+
 // NotEqual performs element-wise inequality check, returns boolean results with the same dimensions as input.
 func (f Function) NotEqual(lhs compute.Value, rhs compute.Value) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeNotEqual)

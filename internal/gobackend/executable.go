@@ -378,15 +378,13 @@ type funcExecBuffers struct {
 	//   - Exactly-once dispatch: each node index is sent at most once, because
 	//     atomic.Int32.Add(-1) on remainingDeps returns 0 for exactly one
 	//     goroutine.
-	//   - No send-after-close: nodeCompleted dispatches ready nodes (phase 2)
-	//     BEFORE incrementing the completion counter (phase 3). A dispatched
-	//     node is not yet completed, so at least 2 completion units are
-	//     outstanding (this node's increment + the dispatched node's future
-	//     increment), guaranteeing completed < expected and the channel is
-	//     still open at dispatch time.
+	//   - Sends are guarded by readyMu: stopExecutionFn takes the write lock
+	//     before closing this channel, so a worker can never send after close.
 	//   - Capacity: sized to NumNodesToProcess+10, which exceeds the maximum
 	//     number of concurrently ready nodes, so sends never block.
-	readyQueue chan int
+	readyQueue  chan int
+	readyMu     sync.RWMutex
+	readyClosed bool
 }
 
 // Execute runs the compiled function with the given inputs.
@@ -402,6 +400,21 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	if len(inputs) != len(funcParams) {
 		return nil, errors.Errorf("function expects %d inputs, got %d",
 			len(funcParams), len(inputs))
+	}
+
+	// Named functions may receive dimensions produced by data-dependent ops
+	// in their caller. Bind these parameters before executing shape-only ops.
+	if spec == nil {
+		bindings, err := extractBindingsFromInputs(funcParams, inputs)
+		if err != nil {
+			return nil, err
+		}
+		if len(bindings) > 0 {
+			spec, err = specializeFunction(backend, fe.Function.Nodes, bindings)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Validate captured inputs count
@@ -423,6 +436,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	// Get execution buffers from pool and reset
 	execBuf := fe.ExecutionBuffersPool.Get().(*funcExecBuffers)
 	execBuf.readyQueue = make(chan int, fe.NumNodesToProcess+10)
+	execBuf.readyClosed = false
 	for i := range fe.NumNodesToProcess {
 		execBuf.numUsed[i].Store(0)
 		execBuf.owned[i] = false
@@ -563,7 +577,9 @@ func (fe *FunctionExecutable) executeSequentially(backend *Backend, execBuf *fun
 // dependents (when a graph branches) are enqueued to readyQueue and spawned as on-demand
 // inter-op tasks via spawnBranchExecutorFn.
 //
-// This function is fully lock-free. It operates in three phases:
+// Dependency tracking and local continuations are lock-free; readyQueue sends
+// use readyMu so they cannot race with stopExecutionFn closing the channel. The
+// function operates in three phases:
 //  1. Atomic dependency decrements — uses atomic.Int32.Add(-1) on remainingDeps to determine
 //     which dependent nodes have all their inputs satisfied (newReady).
 //  2. Dispatch ready nodes — sets localContinuation for the first ready node and sends any
@@ -607,20 +623,29 @@ func (fe *FunctionExecutable) nodeCompleted(execBuf *funcExecBuffers, nodeIdx in
 		}
 	}
 
-	// Phase 2: Dispatch ready nodes.
-	// This must happen BEFORE phase 3 which may close the channel.
-	// Safety proof: at dispatch time, at least 2 completion units are outstanding
-	// (this node's increment and the dispatched node's future increment), so
-	// completed < expected and the channel is guaranteed to still be open.
+	// Phase 2: Dispatch ready nodes. Local continuations do not use readyQueue,
+	// so only additional ready nodes need the channel lock.
+	var queued []int
 	for _, depIdx := range newReady {
 		if localContinuation != nil && *localContinuation == -1 {
 			*localContinuation = depIdx
 		} else {
+			queued = append(queued, depIdx)
+		}
+	}
+	if len(queued) > 0 {
+		execBuf.readyMu.RLock()
+		if execBuf.readyClosed {
+			execBuf.readyMu.RUnlock()
+			return
+		}
+		for _, depIdx := range queued {
 			execBuf.readyQueue <- depIdx
 			if spawnBranchExecutorFn != nil {
 				spawnBranchExecutorFn()
 			}
 		}
+		execBuf.readyMu.RUnlock()
 	}
 
 	// Phase 3: Atomic completion tracking.
@@ -708,7 +733,10 @@ func (fe *FunctionExecutable) executeParallel(backend *Backend, execBuf *funcExe
 	)
 
 	stopExecutionFn = sync.OnceFunc(func() {
+		execBuf.readyMu.Lock()
+		execBuf.readyClosed = true
 		close(execBuf.readyQueue)
+		execBuf.readyMu.Unlock()
 	})
 
 	appendErrorFn := func(err error) {
@@ -870,6 +898,12 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			fe.NumUses[inputIdx]-int(execBuf.numUsed[inputIdx].Load()) == 1
 	}
 
+	specializedNode, specErr := specializeNode(backend, node, inputBuffers, spec)
+	if specErr != nil {
+		return errors.Wrapf(specErr, "specializing node shape for %s", node.OpType)
+	}
+
+	node = specializedNode
 	// Check for closure executor first (If, While, Sort).
 	// Closure executors receive captured inputs separately with explicit ownership tracking.
 	closureExecutor := NodeClosureExecutors[node.OpType]

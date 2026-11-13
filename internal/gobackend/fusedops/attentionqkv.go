@@ -207,9 +207,7 @@ func execFusedAttentionQKVProjection(backend *gobackend.Backend, node *gobackend
 		biasV = inputs[biasIdx]
 	}
 
-	qShape := node.MultiOutputsShapes[0]
-	kShape := node.MultiOutputsShapes[1]
-	vShape := node.MultiOutputsShapes[2]
+	qShape, kShape, vShape := node.MultiOutputsShapes[0], node.MultiOutputsShapes[1], node.MultiOutputsShapes[2]
 	qBuf, err := backend.GetBuffer(qShape)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to get buffer for shape %s", qShape)

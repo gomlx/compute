@@ -117,9 +117,29 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	_ = inputsOwned // We don't reuse the inputs.
 	operand, startIndices := inputs[0], inputs[1]
 	gatherParams := node.Data.(*gatherNode)
-	output, err := backend.GetBuffer(node.Shape)
+	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		var err error
+		outputShape, err = shapeinference.Gather(
+			operand.RawShape,
+			startIndices.RawShape,
+			gatherParams.indexVectorAxis,
+			gatherParams.offsetOutputAxes,
+			gatherParams.collapsedSlicesAxes,
+			gatherParams.startIndexMap,
+			gatherParams.sliceSizes,
+			gatherParams.indicesAreSorted,
+		)
+		if err != nil {
+			return nil, errors.Wrapf(err, "runtime gather shapes: operand=%s indices=%s params=%+v", operand.RawShape, startIndices.RawShape, gatherParams)
+		}
+	}
+	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
+	}
+	if output.RawShape.Size() == 0 {
+		return output, nil
 	}
 
 	// Where to read/write the data.

@@ -57,6 +57,7 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 			input.Shape, kernel.Shape, outputShape, axes, strides, paddings, inputDilations, kernelDilations, channelGroupCount, batchGroupCount)
 		return nil, err
 	}
+	outputShape = f.NameAnonymousDynamicAxes(outputShape, "#conv")
 
 	// Sanitize parameters.
 	spatialRank := input.Shape.Rank() - 2
@@ -100,8 +101,6 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 
 		hasInputDilations:       len(inputDilations) > 0 && slices.Max(inputDilations) > 1,
 		hasKernelDilations:      len(kernelDilations) > 0 && slices.Max(kernelDilations) > 1,
-		inputStrides:            input.Shape.Strides(),
-		kernelStrides:           kernel.Shape.Strides(),
 		dilatedInputSpatialDims: outputShape.Dimensions,
 	}
 
@@ -115,6 +114,14 @@ func ConvGeneral(f *gobackend.Function, inputOp, kernelOp compute.Value, axes co
 		}
 	}
 
+	// Runtime shapes are resolved before Recompute prepares strides and
+	// convolution geometry. They cannot be derived from symbolic dimensions.
+	if input.Shape.IsDynamic() || kernel.Shape.IsDynamic() || outputShape.IsDynamic() {
+		node, _ := f.GetOrCreateNode(opType, outputShape, []*gobackend.Node{input, kernel}, params)
+		return node, nil
+	}
+	params.inputStrides = input.Shape.Strides()
+	params.kernelStrides = kernel.Shape.Strides()
 	// Generate static derived data that will be used during execution.
 	params.dilatedInputSpatialDims = make([]int, spatialRank)
 	params.inputSpatialStrides = make([]int, spatialRank)
@@ -159,7 +166,11 @@ type convNode struct {
 func (c *convNode) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
 	inputShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
 	kernelShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
-	outputShape := resolvedNodes[originalNode.Index].Shape
+	outputShape, err := shapeinference.ConvGeneral(inputShape, kernelShape, c.axes, c.strides, c.paddings, c.inputDilations, c.kernelDilations, c.channelGroupCount, c.batchGroupCount)
+	if err != nil {
+		return nil, err
+	}
+	resolvedNodes[originalNode.Index].Shape = outputShape
 
 	newData := &convNode{
 		axes:               c.axes,
@@ -237,7 +248,7 @@ func ExecConvGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []
 	if err != nil {
 		return nil, err
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	output.Zeros()

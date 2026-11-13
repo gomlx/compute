@@ -533,6 +533,15 @@ type ScaledDotProductAttentionConfig struct {
 	Mask Value
 }
 
+// FusedTopKConfig configures FusedTopK.
+type FusedTopKConfig struct {
+	// Axis is the axis along which to select the top k elements.
+	Axis int
+
+	// Smallest selects the k smallest elements when true. The default selects the largest.
+	Smallest bool
+}
+
 // FusedOps defines optional fused operations. Backends may implement these for
 // better performance; the graph layer falls back to decomposed operations when
 // unavailable.
@@ -781,4 +790,9 @@ type FusedOps interface {
 		x, wQKV, biasQ, biasK, biasV Value,
 		queryDim, keyValueDim int) (
 		query, key, value Value, err error)
+
+	// FusedTopK returns sorted values and Int32 indices of the k largest (or
+	// smallest when cfg.Smallest is true) elements along cfg.Axis. Ties prefer the
+	// lower original index. k must be positive and no larger than the axis.
+	FusedTopK(operand Value, k int, cfg FusedTopKConfig) (values, indices Value, err error)
 }

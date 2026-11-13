@@ -142,3 +142,7 @@ func (f Function) FusedQuantizedDenseVJP(x, weight, bias, y, dOutput compute.Val
 func (f Function) FusedLayerNormVJP(x, dOutput compute.Value, axes []int, epsilon float64, gamma, beta compute.Value) (dx, dGamma, dBeta compute.Value, err error) {
 	return nil, nil, nil, f.baseErrFn(compute.OpTypeFusedLayerNormVJP)
 }
+
+func (f Function) FusedTopK(operand compute.Value, k int, cfg compute.FusedTopKConfig) (compute.Value, compute.Value, error) {
+	return nil, nil, f.baseErrFn(compute.OpTypeFusedTopK)
+}

@@ -112,7 +112,7 @@ func main() {
 
 **Short term:**
 
-- [x] Add basic dynamic shapes support. (experimental, see `./docs/DynamicShapes.md`)
+- [x] Add basic dynamic shapes support, including data-dependent `NonZero` (experimental, see `./docs/DynamicShapes.md`).
 - [x] Add initial SIMD implementation for the Go backend (AVX512 and AVX2, using plain `simd/archsimd`).
 - [x] Add ARM64 NEON and Apple SME SIMD acceleration and hierarchical parallel scheduler for the Go backend.
 

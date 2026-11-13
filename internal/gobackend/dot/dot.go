@@ -64,8 +64,22 @@ type NodeData struct {
 
 // SetSizes computes and sets the internal sizes (BatchSize, LHSCrossSize, RHSCrossSize, ContractingSize)
 // from the concrete LHS and RHS shapes.
-func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
+func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) error {
 	numBatchAxes := len(d.LHSBatchAxes)
+	for i, lhsAxis := range d.LHSBatchAxes {
+		lhsDim := lhsShape.Dimensions[lhsAxis]
+		rhsDim := rhsShape.Dimensions[d.RHSBatchAxes[i]]
+		if lhsDim != shapes.DynamicDim && rhsDim != shapes.DynamicDim && lhsDim != rhsDim {
+			return errors.Errorf("DotGeneral batch dimensions do not match at axis pair %d: lhs[%d]=%d, rhs[%d]=%d", i, lhsAxis, lhsDim, d.RHSBatchAxes[i], rhsDim)
+		}
+	}
+	for i, lhsAxis := range d.LHSContractingAxes {
+		lhsDim := lhsShape.Dimensions[lhsAxis]
+		rhsDim := rhsShape.Dimensions[d.RHSContractingAxes[i]]
+		if lhsDim != shapes.DynamicDim && rhsDim != shapes.DynamicDim && lhsDim != rhsDim {
+			return errors.Errorf("DotGeneral contracting dimensions do not match at axis pair %d: lhs[%d]=%d, rhs[%d]=%d", i, lhsAxis, lhsDim, d.RHSContractingAxes[i], rhsDim)
+		}
+	}
 	d.BatchSize = 1
 	for i := range numBatchAxes {
 		dim := lhsShape.Dimensions[d.LHSBatchAxes[i]]
@@ -131,6 +145,7 @@ func (d *NodeData) SetSizes(lhsShape, rhsShape shapes.Shape) {
 			d.RHSCrossSize *= dim
 		}
 	}
+	return nil
 }
 
 // EqualNodeData implements nodeDataComparable for dotGeneralNodeData.
@@ -170,7 +185,17 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 	rhsShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
 
 	// Recompute sizes from concrete shapes.
-	newData.SetSizes(lhsShape, rhsShape)
+	if err := newData.SetSizes(lhsShape, rhsShape); err != nil {
+		return nil, err
+	}
+	outputShape, err := shapeinference.DotGeneral(
+		lhsShape, newData.LHSContractingAxes, newData.LHSBatchAxes,
+		rhsShape, newData.RHSContractingAxes, newData.RHSBatchAxes, newData.Config)
+	if err != nil {
+		return nil, errors.Wrap(err, "recomputing DotGeneral output shape")
+	}
+	outputShape.DType = originalNode.Shape.DType
+	resolvedNodes[originalNode.Index].Shape = outputShape
 
 	// Re-find implementation (might change based on new sizes).
 	newData.implementation = FindRegisteredImplementation(newData.Layout, newData.InputDType, newData.OutputDType)
@@ -273,6 +298,7 @@ func DotGeneral(f *gobackend.Function,
 	if err != nil {
 		return nil, err
 	}
+	outputShape = f.NameAnonymousDynamicAxes(outputShape, "#dot")
 
 	// Create node params or the "normalized" dot-general, after all reshaping/transposition.
 	// - LayoutNonTransposed: lhs=[batch, lhsCross, contracting], rhs=[batch, contracting, rhsCross]
@@ -307,7 +333,9 @@ func DotGeneral(f *gobackend.Function,
 	// Find sizes of the normalized operands (batchSize, crossSizes and contractSize).
 	// The shape is already normalized (to a LayoutNonTranposed or LayoutTransposed), so
 	// there is at most one axis of each type.
-	params.SetSizes(lhs.Shape, rhs.Shape)
+	if err = params.SetSizes(lhs.Shape, rhs.Shape); err != nil {
+		return nil, err
+	}
 
 	// Find a registered implementation for the current layout.
 	inputs := []*gobackend.Node{lhs, rhs}
@@ -451,18 +479,46 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs := inputs[0], inputs[1]
 	params := node.Data.(*NodeData)
 	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		lhsShape := node.Inputs[0].Shape
+		if lhs != nil {
+			lhsShape = lhs.RawShape
+		}
+		rhsShape := node.Inputs[1].Shape
+		if rhs != nil {
+			rhsShape = rhs.RawShape
+		}
+		localParams := *params
+		if err := localParams.SetSizes(lhsShape, rhsShape); err != nil {
+			return nil, errors.Wrap(err, "resolving runtime DotGeneral sizes")
+		}
+		var err error
+		outputShape, err = shapeinference.DotGeneral(
+			lhsShape, localParams.LHSContractingAxes, localParams.LHSBatchAxes,
+			rhsShape, localParams.RHSContractingAxes, localParams.RHSBatchAxes, localParams.Config,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving runtime DotGeneral output shape")
+		}
+		outputShape.DType = node.Shape.DType
+		params = &localParams
+	}
 	output, err := backend.GetBuffer(outputShape)
-
 	if err != nil {
 		return nil, err
 	}
-
+	if backend.NoOps || output.RawShape.Size() == 0 {
+		return output, nil
+	}
+	if params.implementation == nil {
+		params.implementation = FindRegisteredImplementation(params.Layout, params.InputDType, params.OutputDType)
+	}
 	if params.implementation == nil {
 		return nil, errors.Errorf("no DotGeneral implementation found for layout=%s and dtypes=%s,%s",
 			params.Layout, params.InputDType, params.OutputDType)
 	}
-
-	if backend.NoOps {
+	if params.ContractingSize == 0 {
+		output.Zeros()
 		return output, nil
 	}
 

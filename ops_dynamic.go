@@ -41,6 +41,16 @@ type DynamicPadAxis struct {
 	TargetAxisName string
 }
 
+// NonZeroConfig configures NonZero's output shape.
+type NonZeroConfig struct {
+	// CountAxisName names the data-dependent number of nonzero elements.
+	// If empty, the backend generates a unique axis name.
+	CountAxisName string
+
+	// Transpose returns coordinates with shape [rank, count] instead of [count, rank].
+	Transpose bool
+}
+
 // DynamicOps defines the operations that expect or operate on dynamic shapes.
 type DynamicOps interface {
 	// DynamicDimensionSize returns the dimension of the given axis of the operand as a dynamic scalar value.
@@ -102,4 +112,11 @@ type DynamicOps interface {
 	//
 	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
 	DynamicPad(x, fillValue Value, axesConfig ...DynamicPadAxis) (Value, error)
+
+	// NonZero returns row-major coordinates of nonzero elements as an int64
+	// tensor [count, operand rank]. Options:
+	// - cfg.Transpose: it returns the non-zero shaped like [operand rank, count].
+	// - CountAxisName: name of the data-dependent count axis. If left empty, an
+	//   automatically generated unique name will be chosen.
+	NonZero(operand Value, cfg NonZeroConfig) (Value, error)
 }

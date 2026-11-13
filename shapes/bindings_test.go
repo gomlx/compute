@@ -93,15 +93,28 @@ func TestBindings(t *testing.T) {
 		}
 	})
 
-	t.Run("Resolve_NonPositiveBinding", func(t *testing.T) {
+	t.Run("Resolve_ZeroBinding", func(t *testing.T) {
 		s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
-		_, err := s.Resolve(AxisBindings{"batch": 0})
-		if err == nil {
-			t.Fatalf("Expected error, got nil")
+		for _, resolve := range []func(AxisBindings) (Shape, error){s.Resolve, s.ResolvePartial} {
+			resolved, err := resolve(AxisBindings{"batch": 0})
+			if err != nil {
+				t.Fatalf("Resolving empty dimension failed: %+v", err)
+			}
+			if resolved.IsDynamic() || !reflect.DeepEqual(resolved.Dimensions, []int{0, 512}) {
+				t.Fatalf("Expected concrete empty shape [0, 512], got %s", resolved)
+			}
 		}
-		_, err = s.Resolve(AxisBindings{"batch": -5})
-		if err == nil {
-			t.Fatalf("Expected error, got nil")
+		if !s.IsDynamic() {
+			t.Fatal("Resolving a shape must not mutate the template")
+		}
+	})
+
+	t.Run("Resolve_NegativeBinding", func(t *testing.T) {
+		s := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{"batch", ""})
+		for _, resolve := range []func(AxisBindings) (Shape, error){s.Resolve, s.ResolvePartial} {
+			if _, err := resolve(AxisBindings{"batch": -5}); err == nil {
+				t.Fatal("Expected error for negative dimension")
+			}
 		}
 	})
 
@@ -282,7 +295,6 @@ func TestBindings(t *testing.T) {
 			t.Fatalf("Expected error for AnonymousAxis, got nil")
 		}
 	})
-
 
 	t.Run("RoundTrip_ExtractAndResolve", func(t *testing.T) {
 		// Extract bindings from concrete shape, then resolve template with those bindings.
