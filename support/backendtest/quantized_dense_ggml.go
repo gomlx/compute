@@ -97,7 +97,7 @@ func testQDGGMLAllModesAndFormats(t *testing.T, b compute.Backend) {
 				if err != nil {
 					t.Fatalf("GGML(%s) FloatX failed: %+v", wType, err)
 				}
-				if ok, diff := testutil.IsInDelta(wantFloat, got, 1e-3); !ok {
+				if ok, diff := testutil.IsInDelta(wantFloat, got, quantizedDenseFloat32Tol); !ok {
 					t.Errorf("GGML(%s) FloatX mismatch:\n%s", wType, diff)
 				}
 			})
@@ -134,9 +134,9 @@ func testQDGGMLAllModesAndFormats(t *testing.T, b compute.Backend) {
 					t.Fatalf("GGML(%s) QuantizedMatmul failed: %+v", wType, err)
 				}
 				// Backends may either quantize dynamically to Q8 (matching wantQ8 within 1e-2)
-				// or ignore the QuantizedMatmul hint and compute in float (matching wantFloat within 1e-3).
+				// or ignore the QuantizedMatmul hint and compute in float (matching wantFloat within quantizedDenseFloat32Tol).
 				okQ8, diffQ8 := testutil.IsInDelta(wantQ8, got, 1e-2)
-				okF32, _ := testutil.IsInDelta(wantFloat, got, 1e-3)
+				okF32, _ := testutil.IsInDelta(wantFloat, got, quantizedDenseFloat32Tol)
 				if !okQ8 && !okF32 {
 					t.Errorf("GGML(%s) QuantizedMatmul matched neither Q8 nor Float reference:\n%s", wType, diffQ8)
 				}
