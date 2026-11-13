@@ -898,12 +898,12 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			fe.NumUses[inputIdx]-int(execBuf.numUsed[inputIdx].Load()) == 1
 	}
 
-	resolvedNode, resolveErr := resolveRuntimeNode(backend, node, inputBuffers, spec)
-	if resolveErr != nil {
-		return errors.Wrapf(resolveErr, "resolving runtime shape for %s", node.OpType)
+	specializedNode, specErr := specializeNode(backend, node, inputBuffers, spec)
+	if specErr != nil {
+		return errors.Wrapf(specErr, "specializing node shape for %s", node.OpType)
 	}
 
-	node = resolvedNode
+	node = specializedNode
 	// Check for closure executor first (If, While, Sort).
 	// Closure executors receive captured inputs separately with explicit ownership tracking.
 	closureExecutor := NodeClosureExecutors[node.OpType]

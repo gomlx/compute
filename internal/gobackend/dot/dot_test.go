@@ -219,7 +219,7 @@ func TestDotGeneralAnonymousRuntimeAxes(t *testing.T) {
 		defer exec2.Finalize()
 
 		// Run twice with different anonymous batch sizes: run 1 populates RHSConstantData,
-		// run 2 exercises resolveRuntimeNode and execDotGeneral when inputs[1] == nil.
+		// run 2 exercises specializeNode and execDotGeneral when inputs[1] == nil.
 		for _, m := range []int{4, 7} {
 			lhsFlat := make([]float32, m*K)
 			for i := range lhsFlat {
