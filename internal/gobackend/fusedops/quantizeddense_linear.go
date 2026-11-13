@@ -8,6 +8,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/shapeinference"
 )
 
@@ -17,38 +18,47 @@ func execQuantizedDenseLinearOrNF4Core(
 	in unpackedQDInputs,
 	M, K, N int,
 	outF32 []float32,
-) error {
+	inTileAct activations.KernelFn[float32],
+) (bool, error) {
 	wScales, releaseWScale, err := bufferToFloat32Slice(backend, in.wScale)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer releaseWScale()
 
 	// Case 1: Pre-quantized XQuantization (QuantLinear Int32 matmul).
 	if data.hasXQuant {
-		return execQuantizedDenseLinearIntMatmul(backend, data, in, wScales, M, K, N, outF32)
+		return false, execQuantizedDenseLinearIntMatmul(backend, data, in, wScales, M, K, N, outF32)
 	}
-
-	// Float x input.
-	xF32, releaseX, err := bufferToFloat32Slice(backend, in.x)
-	if err != nil {
-		return err
-	}
-	defer releaseX()
 
 	var biasF32 []float32
 	if in.bias != nil {
 		var releaseBias func()
 		biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer releaseBias()
 	}
 
 	// Case 2: On-the-fly dynamic Int8 quantization hint (QuantizedMatmul == true) for QuantLinear.
 	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear {
-		return execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
+		if ok, err := execQuantizedDenseLinearPanelDynamicInt8(backend, data, in.x, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32, inTileAct); err != nil {
+			return false, err
+		} else if ok {
+			return inTileAct != nil, nil
+		}
+	}
+
+	// Float x input (for fallback dynamic Int8 or weight-only float matmul).
+	xF32, releaseX, err := bufferToFloat32Slice(backend, in.x)
+	if err != nil {
+		return false, err
+	}
+	defer releaseX()
+
+	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear {
+		return false, execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
 	}
 
 	// Case 3: Weight-only float matmul (QuantLinear or QuantNF4).
@@ -57,7 +67,7 @@ func execQuantizedDenseLinearOrNF4Core(
 		var releaseWZP func()
 		wZPF32, releaseWZP, err = bufferToZeroPointFloat32Slice(backend, in.wZP)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer releaseWZP()
 	}
@@ -69,7 +79,7 @@ func execQuantizedDenseLinearOrNF4Core(
 		execWeightOnlyOutputsInput(backend, data.weightScheme, xF32, in.weight, wScales, wZPF32, biasF32, outF32, M, K, N,
 			data.info.WeightScaleLayout, data.info.WeightZeroPointLayout)
 	}
-	return nil
+	return false, nil
 }
 
 // weightRowReader provides zero-allocation row access for Int8, Uint8, and sub-byte [D0, D1] weights.

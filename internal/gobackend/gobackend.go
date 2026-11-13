@@ -108,13 +108,24 @@ func New(config string) (compute.Backend, error) {
 					"invalid value for %q in Go backend config: needs an int, got %q", key, value)
 			}
 			b.NumExecutors = vInt
+		case "quantized_cache":
+			if value == "" {
+				b.QuantizedCache = true
+			} else {
+				vBool, err := strconv.ParseBool(value)
+				if err != nil {
+					return nil, errors.Wrapf(err,
+						"invalid value for %q in Go backend config: needs a bool, got %q", key, value)
+				}
+				b.QuantizedCache = vBool
+			}
 		case "":
 			// No-op, just skip.
 		default:
 			setter, ok := KnownOptionsSetters[key]
 			if !ok {
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, %s; see code for documentation",
+					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache, %s; see code for documentation",
 					key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
 			}
 			err := setter(b, key)
@@ -162,6 +173,11 @@ type Backend struct {
 
 	// NumExecutors is the number of concurrent executor goroutines to launch in executeParallel.
 	NumExecutors int
+
+	// QuantizedCache enables pre-unpacking and caching constant quantized weights as K4-interleaved
+	// panels across executions (configured via "go:quantized_cache"). Defaults to false to preserve
+	// the compressed memory footprint of sub-8-bit (e.g. 4-bit) weights.
+	QuantizedCache bool
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.
@@ -177,8 +193,12 @@ func (b *Backend) String() string { return BackendName }
 
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
-	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d)",
-		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism())
+	extra := ""
+	if b.QuantizedCache {
+		extra = ", quantized_cache"
+	}
+	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d%s)",
+		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism(), extra)
 }
 
 // NumDevices return the number of devices available for this Backend.

@@ -10,6 +10,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/internal/gobackend/activations"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -25,9 +26,8 @@ func execQuantizedDenseGGMLCore(
 	in unpackedQDInputs,
 	M, K, N int,
 	outF32 []float32,
-) error {
-	weights := in.weight.Flat.([]uint8)
-	bytesPerRowW := in.weight.RawShape.Dimensions[1]
+	inTileAct activations.KernelFn[float32],
+) (bool, error) {
 	wType := data.weightGGMLType
 
 	var biasF32 []float32
@@ -36,7 +36,7 @@ func execQuantizedDenseGGMLCore(
 		var err error
 		biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer releaseBias()
 	}
@@ -45,17 +45,35 @@ func execQuantizedDenseGGMLCore(
 	if data.hasXQuant {
 		xBytes := in.x.Flat.([]uint8)
 		bytesPerRowX := in.x.RawShape.Dimensions[in.x.RawShape.Rank()-1]
-		return quantizedDenseGGMLBlockInt(backend, xBytes, bytesPerRowX, weights, bytesPerRowW, biasF32, outF32, M, K, N, wType)
+		if ok, err := execQuantizedDenseGGMLPanel(backend, nil, nil, xBytes, bytesPerRowX, in.weight, data.wConstantData, biasF32, outF32, M, K, N, wType, inTileAct); err != nil {
+			return false, err
+		} else if ok {
+			return inTileAct != nil, nil
+		}
+		weights := in.weight.Flat.([]uint8)
+		bytesPerRowW := in.weight.RawShape.Dimensions[1]
+		return false, quantizedDenseGGMLBlockInt(backend, xBytes, bytesPerRowX, weights, bytesPerRowW, biasF32, outF32, M, K, N, wType)
 	}
 
-	// Float x input.
+	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmul == true.
+	if data.quantizedMatmul {
+		if ok, err := execQuantizedDenseGGMLPanel(backend, in.x, data.actShareGroup, nil, 0, in.weight, data.wConstantData, biasF32, outF32, M, K, N, wType, inTileAct); err != nil {
+			return false, err
+		} else if ok {
+			return inTileAct != nil, nil
+		}
+	}
+
+	// Float x input (for non-panel fallback or Mode A weight-only float matmul).
 	xF32, releaseX, err := bufferToFloat32Slice(backend, in.x)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer releaseX()
 
-	// Mode B2: On-the-fly dynamic Q8_0 / Q8_K quantization when QuantizedMatmul == true.
+	weights := in.weight.Flat.([]uint8)
+	bytesPerRowW := in.weight.RawShape.Dimensions[1]
+
 	if data.quantizedMatmul {
 		var xType compute.GGMLQuantType
 		if wType.ValuesPerBlock() == 32 {
@@ -66,16 +84,16 @@ func execQuantizedDenseGGMLCore(
 		bytesPerRowX := (K / xType.ValuesPerBlock()) * xType.BytesPerBlock()
 		tmpXBuf, err := backend.GetBuffer(shapes.Make(dtypes.Uint8, M, bytesPerRowX))
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer backend.PutBuffer(tmpXBuf)
 		xBytes := tmpXBuf.Flat.([]uint8)
 		quantizeGGMLRows(backend, xF32, xBytes, M, K, bytesPerRowX, xType)
-		return quantizedDenseGGMLBlockInt(backend, xBytes, bytesPerRowX, weights, bytesPerRowW, biasF32, outF32, M, K, N, wType)
+		return false, quantizedDenseGGMLBlockInt(backend, xBytes, bytesPerRowX, weights, bytesPerRowW, biasF32, outF32, M, K, N, wType)
 	}
 
 	// Mode A: Weight-only float dequant + dot product.
-	return quantizedDenseGGMLFloat(backend, xF32, weights, biasF32, outF32, M, K, N, bytesPerRowW, wType)
+	return false, quantizedDenseGGMLFloat(backend, xF32, weights, biasF32, outF32, M, K, N, bytesPerRowW, wType)
 }
 
 func quantizedDenseGGMLFloat(
@@ -324,12 +342,17 @@ func dequantQ8_0Row(data []uint8, output []float32) {
 	const qk = 32
 	nblocks := len(data) / blockSize
 	for b := range nblocks {
-		blockData := data[b*blockSize : (b+1)*blockSize]
+		blockData := data[b*blockSize : b*blockSize+blockSize]
 		d := ggmlFp16LE(blockData[0], blockData[1])
-		qs := blockData[2:]
-		outOff := b * qk
-		for i := range qk {
-			output[outOff+i] = d * float32(int8(qs[i]))
+		qs := blockData[2:34]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[31]
+		_ = outBlock[31]
+		for i := 0; i < 32; i += 4 {
+			outBlock[i] = d * float32(int8(qs[i]))
+			outBlock[i+1] = d * float32(int8(qs[i+1]))
+			outBlock[i+2] = d * float32(int8(qs[i+2]))
+			outBlock[i+3] = d * float32(int8(qs[i+3]))
 		}
 	}
 }
@@ -339,15 +362,17 @@ func dequantQ4_0Row(data []uint8, output []float32) {
 	const qk = 32
 	nblocks := len(data) / blockSize
 	for b := range nblocks {
-		blockData := data[b*blockSize : (b+1)*blockSize]
+		blockData := data[b*blockSize : b*blockSize+blockSize]
 		d := ggmlFp16LE(blockData[0], blockData[1])
-		qs := blockData[2:]
-		outOff := b * qk
+		qs := blockData[2:18]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[15]
+		_ = outBlock[31]
 		for i := range 16 {
 			lo := int(qs[i] & 0x0F)
-			output[outOff+i] = d * float32(lo-8)
+			outBlock[i] = d * float32(lo-8)
 			hi := int((qs[i] >> 4) & 0x0F)
-			output[outOff+16+i] = d * float32(hi-8)
+			outBlock[16+i] = d * float32(hi-8)
 		}
 	}
 }

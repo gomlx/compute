@@ -1,0 +1,660 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
+//go:build amd64 && goexperiment.simd
+
+#include "textflag.h"
+
+// One K4 quad step for 6 rows x 32 columns (2 strips of 16 columns):
+//   SI -> strip0 sub-block weights, DI -> strip1 sub-block weights
+//   R8 -> qx rows 0..2 (stride R9), R10 -> qx rows 3..5 (stride R9)
+//   Z12..Z23 -> int32 accumulators (6 rows x 2 strips)
+//   VPDPBUSD operand order in Go Plan9 asm: VPDPBUSD src2_signed(qx), src1_unsigned(uw), dst_i32
+#define QUAD_STEP_6x32(WOFF, XOFF) \
+	VMOVDQU32 WOFF(SI), Z24; \
+	VMOVDQU32 WOFF(DI), Z25; \
+	VPBROADCASTD XOFF(R8), Z26; \
+	VPBROADCASTD XOFF(R8)(R9*1), Z27; \
+	VPBROADCASTD XOFF(R8)(R9*2), Z28; \
+	VPBROADCASTD XOFF(R10), Z29; \
+	VPBROADCASTD XOFF(R10)(R9*1), Z30; \
+	VPBROADCASTD XOFF(R10)(R9*2), Z31; \
+	VPDPBUSD Z26, Z24, Z12; \
+	VPDPBUSD Z26, Z25, Z13; \
+	VPDPBUSD Z27, Z24, Z14; \
+	VPDPBUSD Z27, Z25, Z15; \
+	VPDPBUSD Z28, Z24, Z16; \
+	VPDPBUSD Z28, Z25, Z17; \
+	VPDPBUSD Z29, Z24, Z18; \
+	VPDPBUSD Z29, Z25, Z19; \
+	VPDPBUSD Z30, Z24, Z20; \
+	VPDPBUSD Z30, Z25, Z21; \
+	VPDPBUSD Z31, Z24, Z22; \
+	VPDPBUSD Z31, Z25, Z23
+
+#define SCALE_ROW_32(ACCI0, ACCI1, ACCF0, ACCF1, DX0, DX1) \
+	VBROADCASTSS DX0, Z28; \
+	VBROADCASTSS DX1, Z29; \
+	VMULPS Z28, ACCI0, ACCI0; \
+	VMULPS Z28, ACCI1, ACCI1; \
+	VFMADD231PS Z24, ACCI0, ACCF0; \
+	VFMADD231PS Z25, ACCI1, ACCF1; \
+	VFMADD231PS Z26, Z29, ACCF0; \
+	VFMADD231PS Z27, Z29, ACCF1
+
+// ============================================================================
+// func quantizedPanelKernel6x32AVX512VNNIAsm(
+//     qxPtr unsafe.Pointer,     // +0(FP)
+//     qxRowBytes int,           // +8(FP)
+//     dxPairPtr unsafe.Pointer, // +16(FP)
+//     dxRowBytes int,           // +24(FP)
+//     strip0Ptr unsafe.Pointer, // +32(FP)
+//     strip1Ptr unsafe.Pointer, // +40(FP)
+//     biasPtr unsafe.Pointer,   // +48(FP)
+//     outPtr unsafe.Pointer,    // +56(FP)
+//     outRowBytes int,          // +64(FP)
+//     numSubBlocks int,         // +72(FP)
+//     quadsPerSubBlk int,       // +80(FP)
+//     numMBlocks int,           // +88(FP)
+// )
+// ============================================================================
+TEXT ·quantizedPanelKernel6x32AVX512VNNIAsm(SB), NOSPLIT, $0-96
+	MOVQ numMBlocks+88(FP), R15
+	TESTQ R15, R15
+	JLE qd6x32_done
+
+qd6x32_mblock_loop:
+	MOVQ qxPtr+0(FP), R8
+	MOVQ qxRowBytes+8(FP), R9
+	LEAQ (R8)(R9*2), R10
+	ADDQ R9, R10                  // R10 = qxRow0 + 3*qxRowBytes
+
+	MOVQ dxPairPtr+16(FP), R11
+	MOVQ dxRowBytes+24(FP), R12
+	LEAQ (R11)(R12*2), R13
+	ADDQ R12, R13                 // R13 = dxRow0 + 3*dxRowBytes
+
+	MOVQ strip0Ptr+32(FP), SI
+	MOVQ strip1Ptr+40(FP), DI
+	MOVQ numSubBlocks+72(FP), CX
+	MOVQ quadsPerSubBlk+80(FP), DX
+
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+	VXORPS Z2, Z2, Z2
+	VXORPS Z3, Z3, Z3
+	VXORPS Z4, Z4, Z4
+	VXORPS Z5, Z5, Z5
+	VXORPS Z6, Z6, Z6
+	VXORPS Z7, Z7, Z7
+	VXORPS Z8, Z8, Z8
+	VXORPS Z9, Z9, Z9
+	VXORPS Z10, Z10, Z10
+	VXORPS Z11, Z11, Z11
+
+	TESTQ CX, CX
+	JLE qd6x32_epilogue
+
+	PCALIGN $32
+qd6x32_subblock_loop:
+	VPXORD Z12, Z12, Z12
+	VPXORD Z13, Z13, Z13
+	VPXORD Z14, Z14, Z14
+	VPXORD Z15, Z15, Z15
+	VPXORD Z16, Z16, Z16
+	VPXORD Z17, Z17, Z17
+	VPXORD Z18, Z18, Z18
+	VPXORD Z19, Z19, Z19
+	VPXORD Z20, Z20, Z20
+	VPXORD Z21, Z21, Z21
+	VPXORD Z22, Z22, Z22
+	VPXORD Z23, Z23, Z23
+
+	CMPQ DX, $8
+	JEQ qd6x32_quads8
+	CMPQ DX, $4
+	JEQ qd6x32_quads4
+
+	MOVQ DX, AX
+	TESTQ AX, AX
+	JLE qd6x32_scale
+
+qd6x32_quad_loop:
+	QUAD_STEP_6x32(0, 0)
+	ADDQ $64, SI
+	ADDQ $64, DI
+	ADDQ $4, R8
+	ADDQ $4, R10
+	DECQ AX
+	JNZ qd6x32_quad_loop
+	JMP qd6x32_scale
+
+qd6x32_quads8:
+	QUAD_STEP_6x32(0, 0)
+	QUAD_STEP_6x32(64, 4)
+	QUAD_STEP_6x32(128, 8)
+	QUAD_STEP_6x32(192, 12)
+	QUAD_STEP_6x32(256, 16)
+	QUAD_STEP_6x32(320, 20)
+	QUAD_STEP_6x32(384, 24)
+	QUAD_STEP_6x32(448, 28)
+	ADDQ $512, SI
+	ADDQ $512, DI
+	ADDQ $32, R8
+	ADDQ $32, R10
+	JMP qd6x32_scale
+
+qd6x32_quads4:
+	QUAD_STEP_6x32(0, 0)
+	QUAD_STEP_6x32(64, 4)
+	QUAD_STEP_6x32(128, 8)
+	QUAD_STEP_6x32(192, 12)
+	ADDQ $256, SI
+	ADDQ $256, DI
+	ADDQ $16, R8
+	ADDQ $16, R10
+
+qd6x32_scale:
+	VCVTDQ2PS Z12, Z12
+	VCVTDQ2PS Z13, Z13
+	VMOVUPS 0(SI), Z24
+	VCVTDQ2PS Z14, Z14
+	VCVTDQ2PS Z15, Z15
+	VMOVUPS 0(DI), Z25
+	VCVTDQ2PS Z16, Z16
+	VCVTDQ2PS Z17, Z17
+	VMOVUPS 64(SI), Z26
+	VCVTDQ2PS Z18, Z18
+	VCVTDQ2PS Z19, Z19
+	VMOVUPS 64(DI), Z27
+	VCVTDQ2PS Z20, Z20
+	VCVTDQ2PS Z21, Z21
+	VCVTDQ2PS Z22, Z22
+	VCVTDQ2PS Z23, Z23
+	ADDQ $128, SI
+	ADDQ $128, DI
+
+	SCALE_ROW_32(Z12, Z13, Z0, Z1, 0(R11), 4(R11))
+	SCALE_ROW_32(Z14, Z15, Z2, Z3, 0(R11)(R12*1), 4(R11)(R12*1))
+	SCALE_ROW_32(Z16, Z17, Z4, Z5, 0(R11)(R12*2), 4(R11)(R12*2))
+	SCALE_ROW_32(Z18, Z19, Z6, Z7, 0(R13), 4(R13))
+	SCALE_ROW_32(Z20, Z21, Z8, Z9, 0(R13)(R12*1), 4(R13)(R12*1))
+	SCALE_ROW_32(Z22, Z23, Z10, Z11, 0(R13)(R12*2), 4(R13)(R12*2))
+
+	ADDQ $8, R11
+	ADDQ $8, R13
+	DECQ CX
+	JNZ qd6x32_subblock_loop
+
+qd6x32_epilogue:
+	MOVQ biasPtr+48(FP), BX
+	MOVQ outPtr+56(FP), R8
+	MOVQ outRowBytes+64(FP), R9
+	LEAQ (R8)(R9*2), R10
+	ADDQ R9, R10
+
+	TESTQ BX, BX
+	JZ qd6x32_store
+
+	VMOVUPS 0(BX), Z24
+	VMOVUPS 64(BX), Z25
+	VADDPS Z24, Z0, Z0
+	VADDPS Z25, Z1, Z1
+	VADDPS Z24, Z2, Z2
+	VADDPS Z25, Z3, Z3
+	VADDPS Z24, Z4, Z4
+	VADDPS Z25, Z5, Z5
+	VADDPS Z24, Z6, Z6
+	VADDPS Z25, Z7, Z7
+	VADDPS Z24, Z8, Z8
+	VADDPS Z25, Z9, Z9
+	VADDPS Z24, Z10, Z10
+	VADDPS Z25, Z11, Z11
+
+qd6x32_store:
+	VMOVUPS Z0, 0(R8)
+	VMOVUPS Z1, 64(R8)
+	VMOVUPS Z2, 0(R8)(R9*1)
+	VMOVUPS Z3, 64(R8)(R9*1)
+	VMOVUPS Z4, 0(R8)(R9*2)
+	VMOVUPS Z5, 64(R8)(R9*2)
+	VMOVUPS Z6, 0(R10)
+	VMOVUPS Z7, 64(R10)
+	VMOVUPS Z8, 0(R10)(R9*1)
+	VMOVUPS Z9, 64(R10)(R9*1)
+	VMOVUPS Z10, 0(R10)(R9*2)
+	VMOVUPS Z11, 64(R10)(R9*2)
+
+	DECQ R15
+	JZ qd6x32_done
+
+	// Advance qxPtr, dxPairPtr, outPtr by 6 rows for the next M-block.
+	LEAQ (R10)(R9*2), R8
+	ADDQ R9, R8
+	MOVQ R8, outPtr+56(FP)
+
+	MOVQ qxRowBytes+8(FP), AX
+	LEAQ (AX)(AX*2), AX
+	ADDQ AX, AX
+	ADDQ AX, qxPtr+0(FP)
+
+	LEAQ (R12)(R12*2), AX
+	ADDQ AX, AX
+	ADDQ AX, dxPairPtr+16(FP)
+	JMP qd6x32_mblock_loop
+
+qd6x32_done:
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// func quantizedPanelKernel1x32AVX512VNNIAsm(
+//     qxPtr unsafe.Pointer,     // +0(FP)
+//     dxPairPtr unsafe.Pointer, // +8(FP)
+//     strip0Ptr unsafe.Pointer, // +16(FP)
+//     strip1Ptr unsafe.Pointer, // +24(FP)
+//     biasPtr unsafe.Pointer,   // +32(FP)
+//     outPtr unsafe.Pointer,    // +40(FP)
+//     numSubBlocks int,         // +48(FP)
+//     quadsPerSubBlk int,       // +56(FP)
+// )
+// ============================================================================
+TEXT ·quantizedPanelKernel1x32AVX512VNNIAsm(SB), NOSPLIT, $0-64
+	MOVQ qxPtr+0(FP), R8
+	MOVQ dxPairPtr+8(FP), R11
+	MOVQ strip0Ptr+16(FP), SI
+	MOVQ strip1Ptr+24(FP), DI
+	MOVQ numSubBlocks+48(FP), CX
+	MOVQ quadsPerSubBlk+56(FP), DX
+
+	VXORPS Z0, Z0, Z0
+	VXORPS Z1, Z1, Z1
+
+	TESTQ CX, CX
+	JLE qd1x32_epilogue
+
+qd1x32_subblock_loop:
+	VPXORD Z12, Z12, Z12
+	VPXORD Z13, Z13, Z13
+
+	MOVQ DX, AX
+	TESTQ AX, AX
+	JLE qd1x32_scale
+
+qd1x32_quad_loop:
+	VMOVDQU32 0(SI), Z24
+	VMOVDQU32 0(DI), Z25
+	VPBROADCASTD 0(R8), Z26
+	VPDPBUSD Z26, Z24, Z12
+	VPDPBUSD Z26, Z25, Z13
+	ADDQ $64, SI
+	ADDQ $64, DI
+	ADDQ $4, R8
+	DECQ AX
+	JNZ qd1x32_quad_loop
+
+qd1x32_scale:
+	VCVTDQ2PS Z12, Z12
+	VCVTDQ2PS Z13, Z13
+	VMOVUPS 0(SI), Z24
+	VMOVUPS 0(DI), Z25
+	VMOVUPS 64(SI), Z26
+	VMOVUPS 64(DI), Z27
+	ADDQ $128, SI
+	ADDQ $128, DI
+
+	SCALE_ROW_32(Z12, Z13, Z0, Z1, 0(R11), 4(R11))
+
+	ADDQ $8, R11
+	DECQ CX
+	JNZ qd1x32_subblock_loop
+
+qd1x32_epilogue:
+	MOVQ biasPtr+32(FP), BX
+	MOVQ outPtr+40(FP), R8
+
+	TESTQ BX, BX
+	JZ qd1x32_store
+
+	VMOVUPS 0(BX), Z24
+	VMOVUPS 64(BX), Z25
+	VADDPS Z24, Z0, Z0
+	VADDPS Z25, Z1, Z1
+
+qd1x32_store:
+	VMOVUPS Z0, 0(R8)
+	VMOVUPS Z1, 64(R8)
+	VZEROUPPER
+	RET
+
+// Reduce 4 ZMM int32 vectors (ZA..ZD, with low-256 aliases YA..YD) to 4 horizontal sums,
+// convert to float32, multiply by broadcasted scale X_D4 = [d, d, d, d], and
+// write 4 interleaved (d, d*sumQ) float32 pairs (32 bytes) to DOFF(DX).
+// Clobbers: Y16..Y19, X16..X19, X22..X24.
+#define STORE_4_SUBBLOCK_DX(ZA, YA, ZB, YB, ZC, YC, ZD, YD, X_D4, DOFF) \
+	VEXTRACTI32X8 $1, ZA, Y16; \
+	VPADDD Y16, YA, Y16; \
+	VEXTRACTI32X4 $1, Y16, X22; \
+	VPADDD X22, X16, X16; \
+	VEXTRACTI32X8 $1, ZB, Y17; \
+	VPADDD Y17, YB, Y17; \
+	VEXTRACTI32X4 $1, Y17, X22; \
+	VPADDD X22, X17, X17; \
+	VEXTRACTI32X8 $1, ZC, Y18; \
+	VPADDD Y18, YC, Y18; \
+	VEXTRACTI32X4 $1, Y18, X22; \
+	VPADDD X22, X18, X18; \
+	VEXTRACTI32X8 $1, ZD, Y19; \
+	VPADDD Y19, YD, Y19; \
+	VEXTRACTI32X4 $1, Y19, X22; \
+	VPADDD X22, X19, X19; \
+	VPUNPCKLDQ X17, X16, X22; \
+	VPUNPCKHDQ X17, X16, X23; \
+	VPADDD X23, X22, X22; \
+	VPUNPCKLDQ X19, X18, X23; \
+	VPUNPCKHDQ X19, X18, X24; \
+	VPADDD X24, X23, X23; \
+	VPUNPCKLQDQ X23, X22, X16; \
+	VPUNPCKHQDQ X23, X22, X17; \
+	VPADDD X17, X16, X16; \
+	VCVTDQ2PS X16, X16; \
+	VMULPS X_D4, X16, X16; \
+	VUNPCKLPS X16, X_D4, X17; \
+	VUNPCKHPS X16, X_D4, X18; \
+	VMOVUPS X17, (DOFF)(DX); \
+	VMOVUPS X18, (DOFF+16)(DX)
+
+// ============================================================================
+// func quantizeGGMLQ8_0RowsAVX512Asm(
+//     xPtr unsafe.Pointer,  // +0(FP)
+//     qxPtr unsafe.Pointer, // +8(FP)
+//     dxPtr unsafe.Pointer, // +16(FP)
+//     numBlocks int,        // +24(FP)
+// )
+// ============================================================================
+TEXT ·quantizeGGMLQ8_0RowsAVX512Asm(SB), NOSPLIT, $0-32
+	MOVQ xPtr+0(FP), SI
+	MOVQ qxPtr+8(FP), DI
+	MOVQ dxPtr+16(FP), DX
+	MOVQ numBlocks+24(FP), CX
+
+	TESTQ CX, CX
+	JLE q80_avx512_done
+
+	MOVL $0x7FFFFFFF, AX
+	VPBROADCASTD AX, Z28          // Z28 = abs mask
+	MOVL $-127, AX
+	VPBROADCASTD AX, Z29          // Z29 = int32(-127)
+	MOVL $127, AX
+	VPBROADCASTD AX, Z30          // Z30 = int32(127)
+	MOVL $0x3F800000, AX
+	VMOVD AX, X27                 // X27 = 1.0f
+	MOVL $0x42FE0000, AX
+	VMOVD AX, X26                 // X26 = 127.0f
+	VDIVSS X26, X27, X31          // X31 = float32(1.0 / 127.0)
+
+	PCALIGN $32
+q80_avx512_loop:
+	VMOVUPS 0(SI), Z0
+	VMOVUPS 64(SI), Z1
+	VPANDD Z28, Z0, Z2
+	VPANDD Z28, Z1, Z3
+	VMAXPS Z3, Z2, Z2
+
+	VEXTRACTF32X8 $1, Z2, Y3
+	VMAXPS Y3, Y2, Y2
+	VEXTRACTF128 $1, Y2, X3
+	VMAXPS X3, X2, X2
+	VSHUFPS $0x4E, X2, X2, X3
+	VMAXPS X3, X2, X2
+	VSHUFPS $0xB1, X2, X2, X3
+	VMAXSS X3, X2, X2
+
+	VXORPS X4, X4, X4
+	VUCOMISS X4, X2
+	JBE q80_avx512_zero
+
+	VMULSS X31, X2, X2
+	VCVTPS2PH $0, X2, X2
+	VCVTPH2PS X2, X2
+	VUCOMISS X4, X2
+	JBE q80_avx512_zero
+
+	VDIVSS X2, X27, X3
+	VBROADCASTSS X3, Z3
+	VMULPS Z3, Z0, Z0
+	VMULPS Z3, Z1, Z1
+	VCVTPS2DQ Z0, Z0
+	VCVTPS2DQ Z1, Z1
+	VPMAXSD Z29, Z0, Z0
+	VPMAXSD Z29, Z1, Z1
+	VPMINSD Z30, Z0, Z0
+	VPMINSD Z30, Z1, Z1
+
+	VPMOVSDB Z0, 0(DI)
+	VPMOVSDB Z1, 16(DI)
+
+	VPADDD Z1, Z0, Z4
+	VEXTRACTI32X8 $1, Z4, Y5
+	VPADDD Y5, Y4, Y4
+	VEXTRACTI128 $1, Y4, X5
+	VPADDD X5, X4, X4
+	VPSHUFD $0x4E, X4, X5
+	VPADDD X5, X4, X4
+	VPSHUFD $0xB1, X4, X5
+	VPADDD X5, X4, X4
+
+	VCVTDQ2PS X4, X4
+	VMULSS X2, X4, X4
+	VUNPCKLPS X4, X2, X2
+	VMOVQ X2, 0(DX)
+
+	ADDQ $128, SI
+	ADDQ $32, DI
+	ADDQ $8, DX
+	DECQ CX
+	JNZ q80_avx512_loop
+
+q80_avx512_done:
+	VZEROUPPER
+	RET
+
+q80_avx512_zero:
+	VPXORD Y4, Y4, Y4
+	VMOVDQU Y4, 0(DI)
+	MOVQ $0, 0(DX)
+	ADDQ $128, SI
+	ADDQ $32, DI
+	ADDQ $8, DX
+	DECQ CX
+	JNZ q80_avx512_loop
+	VZEROUPPER
+	RET
+
+// ============================================================================
+// func quantizeGGMLQ8_KRowsAVX512Asm(
+//     xPtr unsafe.Pointer,  // +0(FP)
+//     qxPtr unsafe.Pointer, // +8(FP)
+//     dxPtr unsafe.Pointer, // +16(FP)
+//     numSuperBlocks int,   // +24(FP)
+//     subBlockSize int,     // +32(FP)
+// )
+// ============================================================================
+TEXT ·quantizeGGMLQ8_KRowsAVX512Asm(SB), NOSPLIT, $0-40
+	MOVQ xPtr+0(FP), SI
+	MOVQ qxPtr+8(FP), DI
+	MOVQ dxPtr+16(FP), DX
+	MOVQ numSuperBlocks+24(FP), CX
+	MOVQ subBlockSize+32(FP), R8
+
+	TESTQ CX, CX
+	JLE q8k_avx512_done
+
+	MOVL $0x7FFFFFFF, AX
+	VPBROADCASTD AX, Z28          // Z28 = abs mask
+	MOVL $-127, AX
+	VPBROADCASTD AX, Z29          // Z29 = int32(-127)
+	MOVL $127, AX
+	VPBROADCASTD AX, Z30          // Z30 = int32(127)
+	MOVL $0x3F800000, AX
+	VMOVD AX, X27                 // X27 = 1.0f
+	MOVL $0x42FE0000, AX
+	VMOVD AX, X26                 // X26 = 127.0f
+	VDIVSS X26, X27, X31          // X31 = float32(1.0 / 127.0)
+
+	PCALIGN $32
+q8k_avx512_loop:
+	// Load all 256 floats (1024 bytes) into Z0..Z15 so they stay in registers.
+	VMOVUPS 0(SI), Z0
+	VMOVUPS 64(SI), Z1
+	VMOVUPS 128(SI), Z2
+	VMOVUPS 192(SI), Z3
+	VMOVUPS 256(SI), Z4
+	VMOVUPS 320(SI), Z5
+	VMOVUPS 384(SI), Z6
+	VMOVUPS 448(SI), Z7
+	VMOVUPS 512(SI), Z8
+	VMOVUPS 576(SI), Z9
+	VMOVUPS 640(SI), Z10
+	VMOVUPS 704(SI), Z11
+	VMOVUPS 768(SI), Z12
+	VMOVUPS 832(SI), Z13
+	VMOVUPS 896(SI), Z14
+	VMOVUPS 960(SI), Z15
+
+	VPANDD Z28, Z0, Z16
+	VPANDD Z28, Z1, Z17
+	VPANDD Z28, Z2, Z18
+	VPANDD Z28, Z3, Z19
+	VPANDD Z28, Z4, Z20
+	VMAXPS Z20, Z16, Z16
+	VPANDD Z28, Z5, Z21
+	VMAXPS Z21, Z17, Z17
+	VPANDD Z28, Z6, Z22
+	VMAXPS Z22, Z18, Z18
+	VPANDD Z28, Z7, Z23
+	VMAXPS Z23, Z19, Z19
+
+	VPANDD Z28, Z8, Z20
+	VMAXPS Z20, Z16, Z16
+	VPANDD Z28, Z9, Z21
+	VMAXPS Z21, Z17, Z17
+	VPANDD Z28, Z10, Z22
+	VMAXPS Z22, Z18, Z18
+	VPANDD Z28, Z11, Z23
+	VMAXPS Z23, Z19, Z19
+
+	VPANDD Z28, Z12, Z20
+	VMAXPS Z20, Z16, Z16
+	VPANDD Z28, Z13, Z21
+	VMAXPS Z21, Z17, Z17
+	VPANDD Z28, Z14, Z22
+	VMAXPS Z22, Z18, Z18
+	VPANDD Z28, Z15, Z23
+	VMAXPS Z23, Z19, Z19
+
+	VMAXPS Z17, Z16, Z16
+	VMAXPS Z19, Z18, Z18
+	VMAXPS Z18, Z16, Z16
+
+	VEXTRACTF32X8 $1, Z16, Y17
+	VMAXPS Y17, Y16, Y16
+	VEXTRACTF32X4 $1, Y16, X17
+	VMAXPS X17, X16, X16
+	VSHUFPS $0x4E, X16, X16, X17
+	VMAXPS X17, X16, X16
+	VSHUFPS $0xB1, X16, X16, X17
+	VMAXSS X17, X16, X16          // X16[0] = maxAbs
+
+	VXORPS X17, X17, X17
+	VUCOMISS X17, X16
+	JBE q8k_avx512_zero
+
+	VMULSS X31, X16, X20
+	VBROADCASTSS X20, X20         // X20 = [d, d, d, d]
+	VDIVSS X16, X26, X21
+	VBROADCASTSS X21, Z21         // Z21 = broadcast(127.0 / maxAbs)
+
+	VMULPS Z21, Z0, Z0;   VCVTPS2DQ Z0, Z0;   VPMAXSD Z29, Z0, Z0;   VPMINSD Z30, Z0, Z0;   VPMOVSDB Z0, 0(DI)
+	VMULPS Z21, Z1, Z1;   VCVTPS2DQ Z1, Z1;   VPMAXSD Z29, Z1, Z1;   VPMINSD Z30, Z1, Z1;   VPMOVSDB Z1, 16(DI)
+	VMULPS Z21, Z2, Z2;   VCVTPS2DQ Z2, Z2;   VPMAXSD Z29, Z2, Z2;   VPMINSD Z30, Z2, Z2;   VPMOVSDB Z2, 32(DI)
+	VMULPS Z21, Z3, Z3;   VCVTPS2DQ Z3, Z3;   VPMAXSD Z29, Z3, Z3;   VPMINSD Z30, Z3, Z3;   VPMOVSDB Z3, 48(DI)
+	VMULPS Z21, Z4, Z4;   VCVTPS2DQ Z4, Z4;   VPMAXSD Z29, Z4, Z4;   VPMINSD Z30, Z4, Z4;   VPMOVSDB Z4, 64(DI)
+	VMULPS Z21, Z5, Z5;   VCVTPS2DQ Z5, Z5;   VPMAXSD Z29, Z5, Z5;   VPMINSD Z30, Z5, Z5;   VPMOVSDB Z5, 80(DI)
+	VMULPS Z21, Z6, Z6;   VCVTPS2DQ Z6, Z6;   VPMAXSD Z29, Z6, Z6;   VPMINSD Z30, Z6, Z6;   VPMOVSDB Z6, 96(DI)
+	VMULPS Z21, Z7, Z7;   VCVTPS2DQ Z7, Z7;   VPMAXSD Z29, Z7, Z7;   VPMINSD Z30, Z7, Z7;   VPMOVSDB Z7, 112(DI)
+	VMULPS Z21, Z8, Z8;   VCVTPS2DQ Z8, Z8;   VPMAXSD Z29, Z8, Z8;   VPMINSD Z30, Z8, Z8;   VPMOVSDB Z8, 128(DI)
+	VMULPS Z21, Z9, Z9;   VCVTPS2DQ Z9, Z9;   VPMAXSD Z29, Z9, Z9;   VPMINSD Z30, Z9, Z9;   VPMOVSDB Z9, 144(DI)
+	VMULPS Z21, Z10, Z10; VCVTPS2DQ Z10, Z10; VPMAXSD Z29, Z10, Z10; VPMINSD Z30, Z10, Z10; VPMOVSDB Z10, 160(DI)
+	VMULPS Z21, Z11, Z11; VCVTPS2DQ Z11, Z11; VPMAXSD Z29, Z11, Z11; VPMINSD Z30, Z11, Z11; VPMOVSDB Z11, 176(DI)
+	VMULPS Z21, Z12, Z12; VCVTPS2DQ Z12, Z12; VPMAXSD Z29, Z12, Z12; VPMINSD Z30, Z12, Z12; VPMOVSDB Z12, 192(DI)
+	VMULPS Z21, Z13, Z13; VCVTPS2DQ Z13, Z13; VPMAXSD Z29, Z13, Z13; VPMINSD Z30, Z13, Z13; VPMOVSDB Z13, 208(DI)
+	VMULPS Z21, Z14, Z14; VCVTPS2DQ Z14, Z14; VPMAXSD Z29, Z14, Z14; VPMINSD Z30, Z14, Z14; VPMOVSDB Z14, 224(DI)
+	VMULPS Z21, Z15, Z15; VCVTPS2DQ Z15, Z15; VPMAXSD Z29, Z15, Z15; VPMINSD Z30, Z15, Z15; VPMOVSDB Z15, 240(DI)
+
+	CMPQ R8, $16
+	JE q8k_avx512_sub16
+
+	// subBlockSize == 32: 8 sub-blocks (pair adjacent ZMMs).
+	VPADDD Z1, Z0, Z0
+	VPADDD Z3, Z2, Z2
+	VPADDD Z5, Z4, Z4
+	VPADDD Z7, Z6, Z6
+	STORE_4_SUBBLOCK_DX(Z0, Y0, Z2, Y2, Z4, Y4, Z6, Y6, X20, 0)
+
+	VPADDD Z9, Z8, Z8
+	VPADDD Z11, Z10, Z10
+	VPADDD Z13, Z12, Z12
+	VPADDD Z15, Z14, Z14
+	STORE_4_SUBBLOCK_DX(Z8, Y8, Z10, Y10, Z12, Y12, Z14, Y14, X20, 32)
+
+	ADDQ $1024, SI
+	ADDQ $256, DI
+	ADDQ $64, DX
+	DECQ CX
+	JNZ q8k_avx512_loop
+	VZEROUPPER
+	RET
+
+q8k_avx512_sub16:
+	// subBlockSize == 16: 16 sub-blocks (1 ZMM each).
+	STORE_4_SUBBLOCK_DX(Z0, Y0, Z1, Y1, Z2, Y2, Z3, Y3, X20, 0)
+	STORE_4_SUBBLOCK_DX(Z4, Y4, Z5, Y5, Z6, Y6, Z7, Y7, X20, 32)
+	STORE_4_SUBBLOCK_DX(Z8, Y8, Z9, Y9, Z10, Y10, Z11, Y11, X20, 64)
+	STORE_4_SUBBLOCK_DX(Z12, Y12, Z13, Y13, Z14, Y14, Z15, Y15, X20, 96)
+
+	ADDQ $1024, SI
+	ADDQ $256, DI
+	ADDQ $128, DX
+	DECQ CX
+	JNZ q8k_avx512_loop
+
+q8k_avx512_done:
+	VZEROUPPER
+	RET
+
+q8k_avx512_zero:
+	VPXORD Z16, Z16, Z16
+	VMOVDQU32 Z16, 0(DI)
+	VMOVDQU32 Z16, 64(DI)
+	VMOVDQU32 Z16, 128(DI)
+	VMOVDQU32 Z16, 192(DI)
+	VMOVUPS Z16, 0(DX)
+	CMPQ R8, $16
+	JE q8k_avx512_zero16
+	ADDQ $1024, SI
+	ADDQ $256, DI
+	ADDQ $64, DX
+	DECQ CX
+	JNZ q8k_avx512_loop
+	VZEROUPPER
+	RET
+
+q8k_avx512_zero16:
+	VMOVUPS Z16, 64(DX)
+	ADDQ $1024, SI
+	ADDQ $256, DI
+	ADDQ $128, DX
+	DECQ CX
+	JNZ q8k_avx512_loop
+	VZEROUPPER
+	RET

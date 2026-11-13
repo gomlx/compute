@@ -191,6 +191,7 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		return nil, err
 	}
 	fn := fnAny.(func(
+		backend *gobackend.Backend,
 		gatherParams *gatherNode,
 		operandBytes, outputBytes []byte, dataSize int,
 		gatherIt *gatherIterator,
@@ -201,6 +202,7 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 		operandDimensions []int,
 	))
 	fn(
+		backend,
 		gatherParams,
 		operandBytes, outputBytes, dataSize,
 		gatherIt, indirectStartIndices, startIndices,
@@ -211,9 +213,32 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	return output, nil
 }
 
+const gatherMinParallelBytes = 16384
+
+// gatherBatchOutputIsContiguous reports whether outputBytesIdx for item b in [0, gatherIt.prefixSize)
+// is strictly b * chunkBytes (true when all non-unit batch axes precede all non-unit offset axes).
+func gatherBatchOutputIsContiguous(gatherIt *gatherIterator, chunkBytes, totalOutputBytes int) bool {
+	if gatherIt.suffixSize != 1 || gatherIt.prefixSize*chunkBytes != totalOutputBytes {
+		return false
+	}
+	expectedStride := chunkBytes
+	for axis := len(gatherIt.outputDimsForBatch) - 1; axis >= 0; axis-- {
+		dim := gatherIt.outputDimsForBatch[axis]
+		if dim <= 1 {
+			continue
+		}
+		if gatherIt.outputStrides[axis] != expectedStride {
+			return false
+		}
+		expectedStride *= dim
+	}
+	return expectedStride == totalOutputBytes
+}
+
 // execGatherGeneric is specialized by startIndices DType: they need to be converted to int.
 // The operand and output dtypes are treated as bytes.
 func execGatherGeneric[T gobackend.PODIntegerConstraints](
+	backend *gobackend.Backend,
 	gatherParams *gatherNode,
 	operandBytes, outputBytes []byte, dataSize int,
 	gatherIt *gatherIterator,
@@ -223,6 +248,9 @@ func execGatherGeneric[T gobackend.PODIntegerConstraints](
 	slicesSize int, sliceOutputBytesStride []int,
 	operandDimensions []int,
 ) {
+	if len(outputBytes) == 0 {
+		return
+	}
 	startIndicesFlat := startIndices.Flat.([]T)
 	sliceSizes := gatherParams.sliceSizes
 	operandRank := len(sliceSizes)
@@ -254,6 +282,45 @@ func execGatherGeneric[T gobackend.PODIntegerConstraints](
 		}
 	}
 	numChunks := slicesSize / chunkElements
+
+	// Fast path for contiguous slice gathers where batch axes lead in both startIndices and output
+	// (e.g., embedding lookup, token/sequence gather, batch row gather).
+	// Double-check startIndexMap has unique axes so direct stride accumulation matches operandStartIndices assignment.
+	uniqueIndexAxes := true
+	for i := 1; i < len(startIndexMap); i++ {
+		for j := range i {
+			if startIndexMap[i] == startIndexMap[j] {
+				uniqueIndexAxes = false
+				break
+			}
+		}
+	}
+	if numChunks == 1 && uniqueIndexAxes && gatherBatchOutputIsContiguous(gatherIt, chunkBytes, len(outputBytes)) {
+		batchCount := gatherIt.prefixSize
+		prefixStride := gatherIt.startIndicesPrefixStride
+		copyRange := func(bStart, bEnd int) {
+			for b := bStart; b < bEnd; b++ {
+				base := b * prefixStride
+				operandBytesIdx := 0
+				for ii, axis := range startIndexMap {
+					idx := int(startIndicesFlat[base+ii])
+					maxIdx := max(0, operandDimensions[axis]-sliceSizes[axis])
+					idx = max(0, min(maxIdx, idx))
+					operandBytesIdx += operandByteStrides[axis] * idx
+				}
+				outOff := b * chunkBytes
+				copy(outputBytes[outOff:outOff+chunkBytes], operandBytes[operandBytesIdx:operandBytesIdx+chunkBytes])
+			}
+		}
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+			len(outputBytes) >= gatherMinParallelBytes && batchCount > 1 {
+			minBatch := max(1, 4096/max(chunkBytes, 1))
+			backend.Scheduler.ParallelizeChunks(batchCount, minBatch, copyRange)
+			return
+		}
+		copyRange(0, batchCount)
+		return
+	}
 
 	// Outer-loop: loop over the start indices and outputBytesIdx to gather from.
 	var operandBytesIdx, outputBytesIdx int
