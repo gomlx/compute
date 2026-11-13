@@ -11,6 +11,7 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
 )
@@ -760,5 +761,267 @@ func TestQuantizedCacheOption(t *testing.T) {
 	}
 	if ok, diff := testutil.IsInDelta(gotDefaultOff, gotCacheExplicitOn, 1e-6); !ok {
 		t.Fatalf("default vs quantized_cache=true mismatch:\n%s", diff)
+	}
+}
+
+func TestQuantizedFloatChunkedMatmul(t *testing.T) {
+	bRaw, err := gobackend.New("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bRaw.Finalize()
+	be := bRaw.(*gobackend.Backend)
+
+	for _, M := range []int{1, 37} {
+		const K, N = 64, 100 // 64*100 = 6400 > maxScratchFloats(256), forcing multi-chunk N and M!
+		xData := make([]float32, M*K)
+		for i := range xData {
+			xData[i] = float32(((i*13+5)%23)-11) * 0.05
+		}
+		biasData := make([]float32, N)
+		for i := range biasData {
+			biasData[i] = float32((i%9)-4) * 0.1
+		}
+
+		// 1. QuantGGML (Q4_0) single-chunk vs multi-chunk (maxScratchFloats=256)
+		wGGML := makeTestGGMLWeightMatrix(N, K, compute.GGMLQ4_0, 11)
+		bpr := (K / compute.GGMLQ4_0.ValuesPerBlock()) * compute.GGMLQ4_0.BytesPerBlock()
+		dataGGML := &nodeFusedQuantizedDense{
+			weightScheme:   compute.QuantGGML,
+			weightGGMLType: compute.GGMLQ4_0,
+			weightLayout:   compute.DenseLayoutOutputsInput,
+			activation:     compute.ActivationConfig{Type: compute.ActivationGelu},
+		}
+		outSingle := make([]float32, M*N)
+		outChunked := make([]float32, M*N)
+		actSingle, err := execQuantizedDenseGGMLFloatMatmul(be, dataGGML, xData, wGGML, biasData, outSingle, M, K, N, bpr, compute.GGMLQ4_0, 0)
+		if err != nil || !actSingle {
+			t.Fatalf("M=%d single GGML float matmul: act=%v, err=%+v", M, actSingle, err)
+		}
+		actChunked, err := execQuantizedDenseGGMLFloatMatmul(be, dataGGML, xData, wGGML, biasData, outChunked, M, K, N, bpr, compute.GGMLQ4_0, 256)
+		if err != nil || !actChunked {
+			t.Fatalf("M=%d chunked GGML float matmul: act=%v, err=%+v", M, actChunked, err)
+		}
+		if ok, diff := testutil.IsInDelta(outSingle, outChunked, 1e-5); !ok {
+			t.Fatalf("M=%d GGML single vs chunked mismatch:\n%s", M, diff)
+		}
+
+		// 2. QuantLinear (Int4, InputOutputs & OutputsInput) + QuantNF4 single vs multi-chunk
+		for _, layout := range []compute.DenseLayout{compute.DenseLayoutInputOutputs, compute.DenseLayoutOutputsInput} {
+			for _, scheme := range []compute.QuantizationScheme{compute.QuantLinear, compute.QuantNF4} {
+				var d0, d1, blockAxis int
+				if layout == compute.DenseLayoutInputOutputs {
+					d0, d1, blockAxis = K, N, 0
+				} else {
+					d0, d1, blockAxis = N, K, 1
+				}
+				const G = 16
+				dt := dtypes.Int4
+				if scheme == compute.QuantNF4 {
+					dt = dtypes.Uint4
+				}
+				packedBytes := make([]byte, (d0*d1+1)/2)
+				for i := range packedBytes {
+					packedBytes[i] = byte((i*37 + 19) & 0xFF)
+				}
+				wBuf := gobackend.NewBuffer(shapes.Make(dt, d0, d1))
+				copy(wBuf.Flat.([]byte), packedBytes)
+
+				var sShape shapes.Shape
+				if layout == compute.DenseLayoutInputOutputs {
+					sShape = shapes.Make(dtypes.Float32, K/G, N)
+				} else {
+					sShape = shapes.Make(dtypes.Float32, N, K/G)
+				}
+				scales := make([]float32, sShape.Size())
+				for i := range scales {
+					scales[i] = 0.02 + float32(i%7)*0.01
+				}
+				var zps []float32
+				var zpShape shapes.Shape
+				if scheme == compute.QuantLinear {
+					zpShape = sShape
+					zps = make([]float32, zpShape.Size())
+					for i := range zps {
+						zps[i] = float32((i % 5) - 2)
+					}
+				}
+				info, err := shapeinference.FusedQuantizedDenseWithInfo(
+					shapes.Make(dtypes.Float32, M, K),
+					wBuf.RawShape,
+					shapes.Make(dtypes.Float32, N),
+					shapeinference.QuantizedDenseConfigShapes{
+						WeightQuantization: &shapeinference.QuantizationShapes{
+							Scheme:         scheme,
+							Scale:          sShape,
+							ZeroPoint:      zpShape,
+							BlockAxis:      blockAxis,
+							BlockSize:      G,
+							QuantizedDType: dt,
+						},
+						Activation:   compute.ActivationConfig{Type: compute.ActivationGelu},
+						WeightLayout: layout,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				nd := &nodeFusedQuantizedDense{
+					weightScheme: scheme,
+					weightLayout: layout,
+					activation:   compute.ActivationConfig{Type: compute.ActivationGelu},
+					info:         info,
+				}
+				linSingle := make([]float32, M*N)
+				linChunked := make([]float32, M*N)
+				if _, err := execQuantizedDenseLinearOrNF4FloatMatmul(be, nd, xData, wBuf, scales, zps, biasData, linSingle, M, K, N, 0); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := execQuantizedDenseLinearOrNF4FloatMatmul(be, nd, xData, wBuf, scales, zps, biasData, linChunked, M, K, N, 256); err != nil {
+					t.Fatal(err)
+				}
+				if ok, diff := testutil.IsInDelta(linSingle, linChunked, 1e-5); !ok {
+					t.Fatalf("M=%d layout=%v scheme=%v single vs chunked mismatch:\n%s", M, layout, scheme, diff)
+				}
+
+				// 3. VJP chunked vs single-chunk
+				if M >= 2 {
+					dZ := make([]float32, M*N)
+					for i := range dZ {
+						dZ[i] = float32(((i*7+3)%19)-9) * 0.04
+					}
+					dxSingle := make([]float32, M*K)
+					dxChunked := make([]float32, M*K)
+					sL := info.WeightScaleLayout
+					zpL := info.WeightZeroPointLayout
+					if layout == compute.DenseLayoutInputOutputs {
+						if err := execQuantizedVJPInputOutputsMatmul(be, dZ, dxSingle, M, K, N, 0, func(k0, k1 int, dst []float32) {
+							dequantLinearOrNF4RowsChunk(be, scheme, wBuf, scales, zps, k0, k1, N, sL, zpL, dst)
+						}); err != nil {
+							t.Fatal(err)
+						}
+						if err := execQuantizedVJPInputOutputsMatmul(be, dZ, dxChunked, M, K, N, 256, func(k0, k1 int, dst []float32) {
+							dequantLinearOrNF4RowsChunk(be, scheme, wBuf, scales, zps, k0, k1, N, sL, zpL, dst)
+						}); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						if err := execQuantizedVJPOutputsInputMatmul(be, dZ, dxSingle, M, K, N, 0, func(n0, n1 int, dst []float32) {
+							dequantLinearOrNF4RowsChunk(be, scheme, wBuf, scales, zps, n0, n1, K, sL, zpL, dst)
+						}); err != nil {
+							t.Fatal(err)
+						}
+						if err := execQuantizedVJPOutputsInputMatmul(be, dZ, dxChunked, M, K, N, 256, func(n0, n1 int, dst []float32) {
+							dequantLinearOrNF4RowsChunk(be, scheme, wBuf, scales, zps, n0, n1, K, sL, zpL, dst)
+						}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if ok, diff := testutil.IsInDelta(dxSingle, dxChunked, 1e-4); !ok {
+						t.Fatalf("VJP M=%d layout=%v scheme=%v single vs chunked mismatch:\n%s", M, layout, scheme, diff)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestQuantizedFloatModeACacheAndDynamic(t *testing.T) {
+	const K, N = 64, 48
+	wBytes := makeTestGGMLWeightMatrix(N, K, compute.GGMLQ4_K, 23)
+	// Wait: Q4_K requires K % 256 == 0! Let's use K = 256 so Q4_K is tested!
+	_ = wBytes
+	const kQ4K = 256
+	wQ4K := makeTestGGMLWeightMatrix(N, kQ4K, compute.GGMLQ4_K, 23)
+	bpr := (kQ4K / compute.GGMLQ4_K.ValuesPerBlock()) * compute.GGMLQ4_K.BytesPerBlock()
+	biasData := make([]float32, N)
+	for i := range biasData {
+		biasData[i] = float32((i%7)-3) * 0.05
+	}
+
+	runModeA := func(t *testing.T, cfgStr string, batchSizes []int) [][]float32 {
+		t.Helper()
+		bRaw, err := gobackend.New(cfgStr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer bRaw.Finalize()
+
+		builder := bRaw.Builder("modea_" + cfgStr)
+		fn := builder.Main()
+		xParam, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, kQ4K}, []string{"batch", ""}), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wConst, err := fn.Constant(wQ4K, N, bpr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bConst, err := fn.Constant(biasData, N)
+		if err != nil {
+			t.Fatal(err)
+		}
+		y, err := fn.FusedQuantizedDense(xParam, wConst, bConst, compute.FusedQuantizedDenseConfig{
+			WeightQuantization: &compute.Quantization{Scheme: compute.QuantGGML, GGMLType: compute.GGMLQ4_K},
+			QuantizedMatmul:    false,
+			Activation:         compute.ActivationConfig{Type: compute.ActivationGelu},
+			WeightLayout:       compute.DenseLayoutOutputsInput,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fn.Return([]compute.Value{y}, nil); err != nil {
+			t.Fatal(err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exec.Finalize()
+
+		outByBatch := make([][]float32, len(batchSizes))
+		for bIdx, M := range batchSizes {
+			xData := make([]float32, M*kQ4K)
+			for i := range xData {
+				xData[i] = float32(((i*17+3)%29)-14) * 0.03
+			}
+
+			// Execute concurrently on cold start + warm path across changing dynamic M.
+			var wg sync.WaitGroup
+			results := make([][]float32, 6)
+			for g := range 6 {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					xBuf, _ := bRaw.BufferFromFlatData(0, xData, shapes.Make(dtypes.Float32, M, kQ4K))
+					outs, exErr := exec.Execute([]compute.Buffer{xBuf}, []bool{true}, 0)
+					if exErr != nil {
+						t.Errorf("Execute: %+v", exErr)
+						return
+					}
+					defer outs[0].Finalize()
+					res := make([]float32, M*N)
+					_ = outs[0].ToFlatData(res)
+					results[idx] = res
+				}(g)
+			}
+			wg.Wait()
+			for g := 1; g < 6; g++ {
+				if ok, diff := testutil.IsInDelta(results[0], results[g], 1e-6); !ok {
+					t.Fatalf("cfg=%q M=%d goroutine %d mismatch:\n%s", cfgStr, M, g, diff)
+				}
+			}
+			outByBatch[bIdx] = results[0]
+		}
+		return outByBatch
+	}
+
+	batchSizes := []int{1, 19, 64}
+	off := runModeA(t, "", batchSizes)
+	on := runModeA(t, "quantized_cache", batchSizes)
+	for i, M := range batchSizes {
+		if ok, diff := testutil.IsInDelta(off[i], on[i], 1e-4); !ok {
+			t.Fatalf("Mode A M=%d cache off vs on mismatch:\n%s", M, diff)
+		}
 	}
 }

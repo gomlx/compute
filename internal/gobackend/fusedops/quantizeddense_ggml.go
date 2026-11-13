@@ -92,46 +92,11 @@ func execQuantizedDenseGGMLCore(
 		return false, quantizedDenseGGMLBlockInt(backend, xBytes, bytesPerRowX, weights, bytesPerRowW, biasF32, outF32, M, K, N, wType)
 	}
 
-	// Mode A: Weight-only float dequant + dot product.
-	return false, quantizedDenseGGMLFloat(backend, xF32, weights, biasF32, outF32, M, K, N, bytesPerRowW, wType)
-}
-
-func quantizedDenseGGMLFloat(
-	backend *gobackend.Backend,
-	x []float32,
-	weights []uint8,
-	bias, out []float32,
-	M, K, N, bytesPerRow int,
-	ggmlType compute.GGMLQuantType,
-) error {
-	dequantFn, err := ggmlDequantFunc(ggmlType)
-	if err != nil {
-		return err
-	}
-
-	numWorkers := quantizedDenseParallelTileCount(backend, M, K, N)
-	scratchBufs := make([][]float32, numWorkers)
-	for i := range scratchBufs {
-		scratchBufs[i] = make([]float32, K)
-	}
-
-	quantizedDenseParallel(backend, M, K, N, func(workerIdx, m, nStart, nEnd int) {
-		dequantRow := scratchBufs[workerIdx]
-		xRow := x[m*K : (m+1)*K]
-		for n := nStart; n < nEnd; n++ {
-			rowData := weights[n*bytesPerRow : (n+1)*bytesPerRow]
-			dequantFn(rowData, dequantRow)
-			var dot float32
-			for k := range K {
-				dot += xRow[k] * dequantRow[k]
-			}
-			if bias != nil {
-				dot += bias[n]
-			}
-			out[m*N+n] = dot
-		}
-	})
-	return nil
+	// Mode A: Weight-only float dequant + SIMD matmul (with bounded pooled weight chunks).
+	return execQuantizedDenseGGMLFloatMatmul(
+		backend, data, xF32, weights, biasF32, outF32,
+		M, K, N, bytesPerRowW, wType, defaultQuantizedFloatMaxScratchFloats,
+	)
 }
 
 func quantizedDenseGGMLBlockInt(
@@ -385,13 +350,14 @@ func dequantQ4_1Row(data []uint8, output []float32) {
 		blockData := data[b*blockSize : (b+1)*blockSize]
 		d := ggmlFp16LE(blockData[0], blockData[1])
 		m := ggmlFp16LE(blockData[2], blockData[3])
-		qs := blockData[4:]
-		outOff := b * qk
+		qs := blockData[4:20]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[15]
+		_ = outBlock[31]
 		for i := range 16 {
-			lo := qs[i] & 0x0F
-			output[outOff+i] = d*float32(lo) + m
-			hi := (qs[i] >> 4) & 0x0F
-			output[outOff+16+i] = d*float32(hi) + m
+			qByte := qs[i]
+			outBlock[i] = d*float32(qByte&0x0F) + m
+			outBlock[16+i] = d*float32(qByte>>4) + m
 		}
 	}
 }
@@ -404,15 +370,18 @@ func dequantQ5_0Row(data []uint8, output []float32) {
 		blockData := data[b*blockSize : (b+1)*blockSize]
 		d := ggmlFp16LE(blockData[0], blockData[1])
 		qh := binary.LittleEndian.Uint32(blockData[2:6])
-		qs := blockData[6:]
-		outOff := b * qk
+		qs := blockData[6:22]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[15]
+		_ = outBlock[31]
 		for i := range 16 {
+			qByte := qs[i]
 			xh0 := ((qh >> uint(i)) << 4) & 0x10
 			xh1 := (qh >> uint(i+12)) & 0x10
-			q0 := int32(uint32(qs[i]&0x0F)|xh0) - 16
-			q1 := int32(uint32(qs[i]>>4)|xh1) - 16
-			output[outOff+i] = d * float32(q0)
-			output[outOff+16+i] = d * float32(q1)
+			q0 := int32(uint32(qByte&0x0F)|xh0) - 16
+			q1 := int32(uint32(qByte>>4)|xh1) - 16
+			outBlock[i] = d * float32(q0)
+			outBlock[16+i] = d * float32(q1)
 		}
 	}
 }
@@ -426,15 +395,18 @@ func dequantQ5_1Row(data []uint8, output []float32) {
 		d := ggmlFp16LE(blockData[0], blockData[1])
 		m := ggmlFp16LE(blockData[2], blockData[3])
 		qh := binary.LittleEndian.Uint32(blockData[4:8])
-		qs := blockData[8:]
-		outOff := b * qk
+		qs := blockData[8:24]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[15]
+		_ = outBlock[31]
 		for i := range 16 {
+			qByte := qs[i]
 			xh0 := ((qh >> uint(i)) << 4) & 0x10
 			xh1 := (qh >> uint(i+12)) & 0x10
-			q0 := uint32(qs[i]&0x0F) | xh0
-			q1 := uint32(qs[i]>>4) | xh1
-			output[outOff+i] = d*float32(q0) + m
-			output[outOff+16+i] = d*float32(q1) + m
+			q0 := uint32(qByte&0x0F) | xh0
+			q1 := uint32(qByte>>4) | xh1
+			outBlock[i] = d*float32(q0) + m
+			outBlock[16+i] = d*float32(q1) + m
 		}
 	}
 }
@@ -447,13 +419,14 @@ func dequantIQ4NLRow(data []uint8, output []float32) {
 	for b := range nblocks {
 		blockData := data[b*blockSize : (b+1)*blockSize]
 		d := ggmlFp16LE(blockData[0], blockData[1])
-		qs := blockData[2:]
-		outOff := b * qk
+		qs := blockData[2:18]
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[15]
+		_ = outBlock[31]
 		for i := range 16 {
-			lo := qs[i] & 0x0F
-			output[outOff+i] = d * lut[lo]
-			hi := (qs[i] >> 4) & 0x0F
-			output[outOff+16+i] = d * lut[hi]
+			qByte := qs[i]
+			outBlock[i] = d * lut[qByte&0x0F]
+			outBlock[16+i] = d * lut[qByte>>4]
 		}
 	}
 }
@@ -591,9 +564,8 @@ func dequantQ4_KRow(data []uint8, output []float32) {
 		d := ggmlFp16LE(blockData[0], blockData[1])
 		dmin := ggmlFp16LE(blockData[2], blockData[3])
 		scales := blockData[4:16]
-		qs := blockData[16:]
-		outOff := b * qk
-		idx := 0
+		qs := blockData[16:144]
+		outBlock := output[b*qk : b*qk+qk]
 		for chunk := range 4 {
 			is := chunk * 2
 			sc1, m1 := getScaleMinK4(is, scales)
@@ -604,14 +576,14 @@ func dequantQ4_KRow(data []uint8, output []float32) {
 			d2 := d * float32(sc2)
 			min2 := dmin * float32(m2)
 
-			qOff := chunk * 32
+			qSub := qs[chunk*32 : chunk*32+32]
+			outSub := outBlock[chunk*64 : chunk*64+64]
+			_ = qSub[31]
+			_ = outSub[63]
 			for l := range 32 {
-				output[outOff+idx] = d1*float32(qs[qOff+l]&0xF) - min1
-				idx++
-			}
-			for l := range 32 {
-				output[outOff+idx] = d2*float32(qs[qOff+l]>>4) - min2
-				idx++
+				qByte := qSub[l]
+				outSub[l] = d1*float32(qByte&0xF) - min1
+				outSub[l+32] = d2*float32(qByte>>4) - min2
 			}
 		}
 	}
@@ -677,27 +649,44 @@ func dequantQ6_KRow(data []uint8, output []float32) {
 		qh := blockData[128:192]
 		sc := blockData[192:208]
 		d := ggmlFp16LE(blockData[208], blockData[209])
-		outOff := b * qk
-		idx := 0
-		qlOff := 0
-		qhOff := 0
-		scOff := 0
-		for range 2 {
-			for l := range 32 {
-				is := l / 16
-				q1 := int8((ql[qlOff+l]&0xF)|((qh[qhOff+l]&3)<<4)) - 32
-				q2 := int8((ql[qlOff+l+32]&0xF)|(((qh[qhOff+l]>>2)&3)<<4)) - 32
-				q3 := int8((ql[qlOff+l]>>4)|(((qh[qhOff+l]>>4)&3)<<4)) - 32
-				q4 := int8((ql[qlOff+l+32]>>4)|(((qh[qhOff+l]>>6)&3)<<4)) - 32
-				output[outOff+idx+l] = d * float32(int8(sc[scOff+is])) * float32(q1)
-				output[outOff+idx+l+32] = d * float32(int8(sc[scOff+is+2])) * float32(q2)
-				output[outOff+idx+l+64] = d * float32(int8(sc[scOff+is+4])) * float32(q3)
-				output[outOff+idx+l+96] = d * float32(int8(sc[scOff+is+6])) * float32(q4)
+		outBlock := output[b*qk : b*qk+qk]
+		for half := range 2 {
+			qlSub := ql[half*64 : half*64+64]
+			qhSub := qh[half*32 : half*32+32]
+			scSub := sc[half*8 : half*8+8]
+			outSub := outBlock[half*128 : half*128+128]
+			_ = qlSub[63]
+			_ = qhSub[31]
+			_ = scSub[7]
+			_ = outSub[127]
+
+			ds0 := d * float32(int8(scSub[0]))
+			ds2 := d * float32(int8(scSub[2]))
+			ds4 := d * float32(int8(scSub[4]))
+			ds6 := d * float32(int8(scSub[6]))
+			for l := range 16 {
+				ql0 := qlSub[l]
+				ql1 := qlSub[l+32]
+				qh0 := qhSub[l]
+				outSub[l] = ds0 * float32(int8((ql0&0xF)|((qh0&3)<<4))-32)
+				outSub[l+32] = ds2 * float32(int8((ql1&0xF)|(((qh0>>2)&3)<<4))-32)
+				outSub[l+64] = ds4 * float32(int8((ql0>>4)|(((qh0>>4)&3)<<4))-32)
+				outSub[l+96] = ds6 * float32(int8((ql1>>4)|(((qh0>>6)&3)<<4))-32)
 			}
-			idx += 128
-			qlOff += 64
-			qhOff += 32
-			scOff += 8
+
+			ds1 := d * float32(int8(scSub[1]))
+			ds3 := d * float32(int8(scSub[3]))
+			ds5 := d * float32(int8(scSub[5]))
+			ds7 := d * float32(int8(scSub[7]))
+			for l := 16; l < 32; l++ {
+				ql0 := qlSub[l]
+				ql1 := qlSub[l+32]
+				qh0 := qhSub[l]
+				outSub[l] = ds1 * float32(int8((ql0&0xF)|((qh0&3)<<4))-32)
+				outSub[l+32] = ds3 * float32(int8((ql1&0xF)|(((qh0>>2)&3)<<4))-32)
+				outSub[l+64] = ds5 * float32(int8((ql0>>4)|(((qh0>>4)&3)<<4))-32)
+				outSub[l+96] = ds7 * float32(int8((ql1>>4)|(((qh0>>6)&3)<<4))-32)
+			}
 		}
 	}
 }
@@ -710,9 +699,11 @@ func dequantQ8_KRow(data []uint8, output []float32) {
 		blockData := data[b*blockSize : (b+1)*blockSize]
 		d := ggmlFp32LE(blockData[0:4])
 		qs := blockData[4:260]
-		outOff := b * qk
+		outBlock := output[b*qk : b*qk+qk]
+		_ = qs[255]
+		_ = outBlock[255]
 		for i := range qk {
-			output[outOff+i] = d * float32(int8(qs[i]))
+			outBlock[i] = d * float32(int8(qs[i]))
 		}
 	}
 }

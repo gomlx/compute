@@ -12,6 +12,7 @@ import (
 	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/activations"
+	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/ops"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
@@ -57,6 +58,7 @@ type nodeFusedQuantizedDense struct {
 
 	wConstantData    *gobackend.ConstantData
 	linearPanelCache *linearConstantPanelCache
+	floatDotNodeData *dot.NodeData
 	actShareGroup    *sharedQuantActGroup
 }
 
@@ -159,7 +161,8 @@ func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparab
 		d.info.XScaleLayout == o.info.XScaleLayout &&
 		d.info.XZeroPointLayout == o.info.XZeroPointLayout &&
 		d.info.OutputScaleLayout == o.info.OutputScaleLayout &&
-		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout
+		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout &&
+		(d.floatDotNodeData != nil) == (o.floatDotNodeData != nil)
 }
 
 // TryFuseActivation implements gobackend.FusedDenseActivationTarget so single-consumer
@@ -325,6 +328,27 @@ func FusedQuantizedDense(
 			(wScaleNode == nil || wScaleNode.IsConstant()) &&
 			(wZPNode == nil || wZPNode.IsConstant()) {
 			data.linearPanelCache = &linearConstantPanelCache{}
+		} else if !data.quantizedMatmul && !data.hasXQuant &&
+			(wScaleNode == nil || wScaleNode.IsConstant()) &&
+			(wZPNode == nil || wZPNode.IsConstant()) {
+			layout := dot.LayoutTransposed
+			if data.weightLayout == compute.DenseLayoutInputOutputs && data.weightScheme != compute.QuantGGML {
+				layout = dot.LayoutNonTransposed
+			}
+			lhsCrossSize := 0
+			if !info.OutputShape.IsDynamic() && info.N > 0 {
+				lhsCrossSize = info.OutputShape.Size() / info.N
+			}
+			data.floatDotNodeData = &dot.NodeData{
+				InputDType:      dtypes.Float32,
+				OutputDType:     dtypes.Float32,
+				Layout:          layout,
+				BatchSize:       1,
+				LHSCrossSize:    lhsCrossSize,
+				RHSCrossSize:    info.N,
+				ContractingSize: info.K,
+				RHSConstantData: gobackend.NewAnonymousConstantData(),
+			}
 		}
 	}
 
@@ -450,20 +474,48 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 	case dtypes.Float32:
 		// Already written directly into output.Flat.
 	case dtypes.Float16:
-		dst := output.Flat.([]float16.Float16)
-		for i, v := range outF32 {
-			dst[i] = float16.FromFloat32(v)
-		}
+		convertFloat32SliceToFloat16(backend, outF32, output.Flat.([]float16.Float16))
 	case dtypes.BFloat16:
-		dst := output.Flat.([]bfloat16.BFloat16)
-		for i, v := range outF32 {
-			dst[i] = bfloat16.FromFloat32(v)
-		}
+		convertFloat32SliceToBFloat16(backend, outF32, output.Flat.([]bfloat16.BFloat16))
 	default:
 		backend.PutBuffer(output)
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedQuantizedDense: unsupported output DType %s", output.RawShape.DType)
 	}
 	return output, nil
+}
+
+func convertFloat32SliceToFloat16(backend *gobackend.Backend, src []float32, dst []float16.Float16) {
+	n := len(src)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+		backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+			s := src[start:end]
+			d := dst[start:end]
+			for i, v := range s {
+				d[i] = float16.FromFloat32(v)
+			}
+		})
+		return
+	}
+	for i, v := range src {
+		dst[i] = float16.FromFloat32(v)
+	}
+}
+
+func convertFloat32SliceToBFloat16(backend *gobackend.Backend, src []float32, dst []bfloat16.BFloat16) {
+	n := len(src)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+		backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+			s := src[start:end]
+			d := dst[start:end]
+			for i, v := range s {
+				d[i] = bfloat16.FromFloat32(v)
+			}
+		})
+		return
+	}
+	for i, v := range src {
+		dst[i] = bfloat16.FromFloat32(v)
+	}
 }
 
 func applyActivationConfigFloat32(backend *gobackend.Backend, cfg compute.ActivationConfig, data []float32) {
@@ -550,25 +602,47 @@ func bufferToFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer) ([]
 	case dtypes.Float32:
 		return buf.Flat.([]float32), func() {}, nil
 	case dtypes.Float16:
-		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n))
 		if err != nil {
 			return nil, nil, err
 		}
-		src := buf.Flat.([]float16.Float16)
-		dst := tmp.Flat.([]float32)
-		for i, v := range src {
-			dst[i] = v.Float32()
+		src := buf.Flat.([]float16.Float16)[:n]
+		dst := tmp.Flat.([]float32)[:n]
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+			backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+				s := src[start:end]
+				d := dst[start:end]
+				for i, v := range s {
+					d[i] = v.Float32()
+				}
+			})
+		} else {
+			for i, v := range src {
+				dst[i] = v.Float32()
+			}
 		}
 		return dst, func() { backend.PutBuffer(tmp) }, nil
 	case dtypes.BFloat16:
-		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, buf.RawShape.Size()))
+		n := buf.RawShape.Size()
+		tmp, err := backend.GetBuffer(shapes.Make(dtypes.Float32, n))
 		if err != nil {
 			return nil, nil, err
 		}
-		src := buf.Flat.([]bfloat16.BFloat16)
-		dst := tmp.Flat.([]float32)
-		for i, v := range src {
-			dst[i] = v.Float32()
+		src := buf.Flat.([]bfloat16.BFloat16)[:n]
+		dst := tmp.Flat.([]float32)[:n]
+		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && n >= 32768 {
+			backend.Scheduler.ParallelizeChunks(n, 16384, func(start, end int) {
+				s := src[start:end]
+				d := dst[start:end]
+				for i, v := range s {
+					d[i] = v.Float32()
+				}
+			})
+		} else {
+			for i, v := range src {
+				dst[i] = v.Float32()
+			}
 		}
 		return dst, func() { backend.PutBuffer(tmp) }, nil
 	default:

@@ -337,6 +337,38 @@ With `FusedQuantizedDense` weight unpacking gone (`0.00s`) and kernel dispatch o
 
 ---
 
+### Step 5: Weight-Only Float Mode A (`quantized_matmul=false`), `QuantNF4`, and `FusedQuantizedDenseVJP` Dispatching
+
+#### Root-Cause Diagnosis (`-set="quantized_matmul=false"`)
+When users run quantized models with `-set="quantized_matmul=false"` (Mode A: exact float activations multiplied by dequantized weights, or `QuantNF4` where integer activation quantization does not apply):
+1. **Redundant $O(M)$ Per-Token Weight Dequantization + Scalar Dot Loop**:
+   - The baseline `quantizedDenseGGMLFloat` and `execWeightOnly{InputOutputs,OutputsInput}` dequantized every weight row inside the `M` loop (`8,192` times per batch!) and accumulated dot products with a scalar `for k := range K` loop, running at **`1.6K tokens/s`** (`25.3s` for `-limit 2`).
+2. **Unpooled Per-Row Scratch Allocation Explosion**:
+   - `quantizedDenseParallelTileCount` returned `M` (`16,384`) when `M > 1`, causing `make([][]float32, 16384)` $\times$ `make([]float32, K)` (`~98 MB` per layer = `1.8 GB` of heap garbage per forward pass!) and inflating Max RSS to **`405.1 MiB`**.
+
+#### Changes Implemented ([quantizeddense_float_matmul.go](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/quantizeddense_float_matmul.go))
+1. **Bounded Pooled Chunk Dequantization + `matmul.ExecuteWithEpilogue` Dispatch**:
+   - Added `execQuantizedFloatChunkedMatmul` covering `QuantGGML` (`dot.LayoutTransposed`), `QuantLinear`, and `QuantNF4` across both `DenseLayoutOutputsInput` (`[N, K]` $\to$ `dot.LayoutTransposed`) and `DenseLayoutInputOutputs` (`[K, N]` $\to$ `dot.LayoutNonTransposed`).
+   - Caps temporary pooled `float32` weight buffers (`backend.GetBuffer`) at `defaultQuantizedFloatMaxScratchFloats = 1M` floats (`4 MiB`, `32`-column aligned). Standard Transformer layers (`N * K <= 1,048,576`, including `[1536, 384]`) dequantize once in parallel across workers (`< 0.5%` CPU) and execute in a **single zero-copy `matmul.ExecuteWithEpilogue` call** with inline L1/L2-tiled `Bias + Activation` epilogues; multi-billion-parameter matrices (`N * K > 1M`) stream bounded `4 MiB` `(chunkN, mChunk)` tiles with zero heap allocations after warmup.
+   - Tightened BCE hints and hoisted sub-block scales in `dequantQ4_1Row`, `dequantQ5_0Row`, `dequantQ5_1Row`, `dequantIQ4NLRow`, `dequantQ4_KRow`, `dequantQ6_KRow`, and `dequantQ8_KRow`, and parallelized `Float16`/`BFloat16 <-> Float32` buffer conversions.
+2. **Opt-In `go:quantized_cache` Support for Mode A**:
+   - When `Backend.QuantizedCache` is enabled on constant weights (`wNode.IsConstant()`), attaches a `*dot.NodeData` with `RHSConstantData = gobackend.NewAnonymousConstantData()` so `matmul` packs and caches the FP32 GEMM panels on cold start and skips both dequantization and RHS packing (`rhs = nil`) on all subsequent calls (including across dynamic `M` shapes).
+3. **`FusedQuantizedDenseVJP` Backward SIMD Matmul (`M >= 2`)**:
+   - Routed `execQuantizedDenseVJPGGML` and `execQuantizedDenseVJPLinearOrNF4` (both `InputOutputs` and `OutputsInput` layouts) for `M >= 2` through `execQuantizedVJPOutputsInputMatmul` / `execQuantizedVJPInputOutputsMatmul` so QLoRA / quantized gradient backpropagation also leverages AVX-512 / AVX2 / NEON `matmul`, while retaining zero-skipping single-row (`[K]float32`) streaming for `M == 1`.
+
+#### Step 5 Mode A Benchmark Results (`-set="quantized_matmul=false"`, `-limit 20`, `57.2K` tok)
+
+| Mode A Configuration (`-set="quantized_matmul=false"`) | Wall Time | Passages/s | Total Tokens/s | Non-Pad Tokens/s | CPU Time | Max RSS Mem | Speedup vs Mode A Baseline |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mode A Baseline (`Q4_K_M`, Scalar) | ~35.7s | 5.6/s | 1.6K tok/s | 389 tok/s | ~1,100s | 405.1 MiB | 1.0× |
+| **Step 5 Mode A — AVX2 (`GOMLX_GO_SIMD_AVX512=0`)** | **700.8ms** | **285/s** | **81.6K tok/s** | **19.9K tok/s** | **16.8s** | **245.7 MiB** | **51.0× (-159 MiB RSS)** |
+| **Step 5 Mode A — AVX-512 (`GOMLX_BACKEND=go`, Default)** | **467.0ms** | **428/s** | **122.4K tok/s** | **29.9K tok/s** | **10.2s** | **255.6 MiB** | **76.5× (-150 MiB RSS)** |
+| **Step 5 Mode A — AVX-512 (`GOMLX_BACKEND="go:quantized_cache"`)** | **438.5ms** | **456/s** | **130.3K tok/s** | **31.8K tok/s** | **9.8s** | **291.8 MiB** | **81.4× (matches FP32, -56 MiB vs FP32)** |
+
+*(Mode A `-limit 50` `pprof` breakdown: `72.2%` `avx512LargeKernelFloat32Asm`, `6.3%` `avx512PackLHSKernelRows8Float32Asm`, `5.9%` `DispatchSDPAAVX512`, `4.6%` `layerNormResidualFloat32AVX512`, `1.4%` `geluApproxBiasTileFloat32AVX512Asm`; dense weight dequantization `dequantQ4_KRow`/`dequantQ6_KRow` accounts for `< 0.4%` of total CPU!)*
+
+---
+
 ## 6. Stopping Rationale & Future Work (ARM64 NEON / SME)
 
 ### Why Stop Here
