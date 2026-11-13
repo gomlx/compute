@@ -82,6 +82,17 @@ func (d *nodeFusedDense) IsInputCached(inputIdx int) bool {
 // Recompute implements gobackend.RecomputableNodeData for nodeFusedDense.
 func (d *nodeFusedDense) Recompute(backend *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
 	resolvedX := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	resolvedW := resolvedNodes[originalNode.Inputs[1].Index].Shape
+	var biasShape shapes.Shape
+	if len(originalNode.Inputs) > 2 {
+		biasShape = resolvedNodes[originalNode.Inputs[2].Index].Shape
+	}
+	outputShape, err := shapeinference.FusedDense(resolvedX, resolvedW, biasShape, d.options)
+	if err != nil {
+		return nil, err
+	}
+	resolvedNodes[originalNode.Index].Shape = outputShape
+
 	inFeatures := resolvedX.Dimensions[resolvedX.Rank()-1]
 	newData := &nodeFusedDense{
 		options:         d.options,
@@ -122,6 +133,7 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	if err != nil {
 		return nil, err
 	}
+	outShape = f.NameAnonymousDynamicAxes(outShape, "#dense")
 
 	if wNode.Shape.IsDynamic() || biasShape.IsDynamic() {
 		return nil, compute.ErrNotImplemented
@@ -193,20 +205,35 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 
 	data := node.Data.(*nodeFusedDense)
 
-	var biasShape shapes.Shape
-	if bias != nil {
-		biasShape = bias.RawShape
-	}
-	outputShape, err := shapeinference.FusedDense(x.RawShape, weight.RawShape, biasShape, data.options)
-	if err != nil {
-		return nil, err
+	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		xShape := node.Inputs[0].Shape
+		if x != nil {
+			xShape = x.RawShape
+		}
+		wShape := node.Inputs[1].Shape
+		if weight != nil {
+			wShape = weight.RawShape
+		}
+		var biasShape shapes.Shape
+		if len(node.Inputs) > 2 {
+			biasShape = node.Inputs[2].Shape
+			if bias != nil {
+				biasShape = bias.RawShape
+			}
+		}
+		var err error
+		outputShape, err = shapeinference.FusedDense(xShape, wShape, biasShape, data.options)
+		if err != nil {
+			return nil, err
+		}
 	}
 	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 

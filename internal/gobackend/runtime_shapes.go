@@ -29,15 +29,15 @@ func resolveRuntimeNode(backend *Backend, node *Node, inputs []*Buffer, spec *Sh
 	bindings := make(shapes.AxisBindings)
 	maxIndex := node.Index
 	for i, input := range node.Inputs {
+		maxIndex = max(maxIndex, input.Index)
 		if inputs[i] == nil {
-			continue
-		} // Cached constant input.
+			continue // Cached constant input.
+		}
 		if input.Shape.IsDynamic() {
 			if err := bindings.Extract(input.Shape, inputs[i].RawShape); err != nil {
 				return nil, err
 			}
 		}
-		maxIndex = max(maxIndex, input.Index)
 	}
 	shape, err := node.Shape.ResolvePartial(bindings)
 	if err != nil {
@@ -66,6 +66,8 @@ func resolveRuntimeNode(backend *Backend, node *Node, inputs []*Buffer, spec *Sh
 		for i, input := range node.Inputs {
 			if inputs[i] != nil {
 				nodes[input.Index] = &Node{Index: input.Index, Shape: inputs[i].RawShape}
+			} else {
+				nodes[input.Index] = input // Cached constant input: static Shape is already concrete.
 			}
 		}
 		resolved.Data, err = recomputable.Recompute(backend, nodes, resolved)

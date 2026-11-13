@@ -194,7 +194,6 @@ func (d *NodeData) Recompute(backend *gobackend.Backend, resolvedNodes []*goback
 	if err != nil {
 		return nil, errors.Wrap(err, "recomputing DotGeneral output shape")
 	}
-	outputShape = originalNode.Function.NameAnonymousDynamicAxes(outputShape, "#dot")
 	outputShape.DType = originalNode.Shape.DType
 	resolvedNodes[originalNode.Index].Shape = outputShape
 
@@ -478,21 +477,32 @@ func convertToAccumulatorDType(f *gobackend.Function, lhs, rhs *gobackend.Node, 
 // so the allocated buffer immediately possesses the target N-dimensional shape without any reshape.
 func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
-	params := *node.Data.(*NodeData)
-
-	// Graph shapes may retain symbolic dimensions. Use the concrete runtime
-	// buffers to resolve both the output shape and the matmul sizes.
-	if err := params.SetSizes(lhs.RawShape, rhs.RawShape); err != nil {
-		return nil, errors.Wrap(err, "resolving runtime DotGeneral sizes")
+	params := node.Data.(*NodeData)
+	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		lhsShape := node.Inputs[0].Shape
+		if lhs != nil {
+			lhsShape = lhs.RawShape
+		}
+		rhsShape := node.Inputs[1].Shape
+		if rhs != nil {
+			rhsShape = rhs.RawShape
+		}
+		localParams := *params
+		if err := localParams.SetSizes(lhsShape, rhsShape); err != nil {
+			return nil, errors.Wrap(err, "resolving runtime DotGeneral sizes")
+		}
+		var err error
+		outputShape, err = shapeinference.DotGeneral(
+			lhsShape, localParams.LHSContractingAxes, localParams.LHSBatchAxes,
+			rhsShape, localParams.RHSContractingAxes, localParams.RHSBatchAxes, localParams.Config,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving runtime DotGeneral output shape")
+		}
+		outputShape.DType = node.Shape.DType
+		params = &localParams
 	}
-	outputShape, err := shapeinference.DotGeneral(
-		lhs.RawShape, params.LHSContractingAxes, params.LHSBatchAxes,
-		rhs.RawShape, params.RHSContractingAxes, params.RHSBatchAxes, params.Config,
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "resolving runtime DotGeneral output shape")
-	}
-	outputShape.DType = node.Shape.DType
 	output, err := backend.GetBuffer(outputShape)
 	if err != nil {
 		return nil, err
@@ -507,8 +517,12 @@ func execDotGeneral(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		return nil, errors.Errorf("no DotGeneral implementation found for layout=%s and dtypes=%s,%s",
 			params.Layout, params.InputDType, params.OutputDType)
 	}
+	if params.ContractingSize == 0 {
+		output.Zeros()
+		return output, nil
+	}
 
-	// Use registered implementation with sizes derived from the runtime buffers.
-	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, &params)
+	// Use registered implementation.
+	CallRegisteredImplementation(backend, params.implementation, lhs, rhs, output, params)
 	return output, nil
 }
