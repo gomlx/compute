@@ -123,6 +123,7 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 				values, indices, err := testutil.Exec2(b, []any{tc.input}, func(f compute.Function, p []compute.Value) (compute.Value, compute.Value, error) {
 					return f.FusedTopK(p[0], 2, tc.cfg)
 				})
+				skipIfFusedNotImplemented(t, b, err)
 				if err != nil {
 					t.Fatalf("FusedTopK failed: %+v", err)
 				}
@@ -134,6 +135,134 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 				}
 			})
 		}
+
+		// All sortable DTypes with duplicate extrema to verify tie-breaking toward lower original index:
+		// values ordered as [mid, max_tie0, min_tie0, max_tie1, min_tie1] ->
+		//   largest  k=3: indices [1, 3, 0]
+		//   smallest k=3: indices [2, 4, 0]
+		t.Run("DTypes", func(t *testing.T) {
+			for _, tc := range []struct {
+				dtype   dtypes.DType
+				input   any
+				wantMax any
+				wantMin any
+			}{
+				{dtypes.Float32, []float32{3, 9, -2, 9, -2}, []float32{9, 9, 3}, []float32{-2, -2, 3}},
+				{dtypes.Float64, []float64{3, 9, -2, 9, -2}, []float64{9, 9, 3}, []float64{-2, -2, 3}},
+				{
+					dtypes.Float16,
+					[]float16.Float16{float16.FromFloat32(3), float16.FromFloat32(9), float16.FromFloat32(-2), float16.FromFloat32(9), float16.FromFloat32(-2)},
+					[]float16.Float16{float16.FromFloat32(9), float16.FromFloat32(9), float16.FromFloat32(3)},
+					[]float16.Float16{float16.FromFloat32(-2), float16.FromFloat32(-2), float16.FromFloat32(3)},
+				},
+				{
+					dtypes.BFloat16,
+					[]bfloat16.BFloat16{bfloat16.FromFloat32(3), bfloat16.FromFloat32(9), bfloat16.FromFloat32(-2), bfloat16.FromFloat32(9), bfloat16.FromFloat32(-2)},
+					[]bfloat16.BFloat16{bfloat16.FromFloat32(9), bfloat16.FromFloat32(9), bfloat16.FromFloat32(3)},
+					[]bfloat16.BFloat16{bfloat16.FromFloat32(-2), bfloat16.FromFloat32(-2), bfloat16.FromFloat32(3)},
+				},
+				{dtypes.Int8, []int8{3, 9, -2, 9, -2}, []int8{9, 9, 3}, []int8{-2, -2, 3}},
+				{dtypes.Int16, []int16{3, 9, -2, 9, -2}, []int16{9, 9, 3}, []int16{-2, -2, 3}},
+				{dtypes.Int32, []int32{3, 9, -2, 9, -2}, []int32{9, 9, 3}, []int32{-2, -2, 3}},
+				{dtypes.Int64, []int64{3, 9, -2, 9, -2}, []int64{9, 9, 3}, []int64{-2, -2, 3}},
+				{dtypes.Uint8, []uint8{5, 200, 1, 200, 1}, []uint8{200, 200, 5}, []uint8{1, 1, 5}},
+				{dtypes.Uint16, []uint16{5, 50000, 1, 50000, 1}, []uint16{50000, 50000, 5}, []uint16{1, 1, 5}},
+				{dtypes.Uint32, []uint32{5, 3000000000, 1, 3000000000, 1}, []uint32{3000000000, 3000000000, 5}, []uint32{1, 1, 5}},
+				{dtypes.Uint64, []uint64{uint64(1)<<63 - 1, ^uint64(0), 0, ^uint64(0), 0}, []uint64{^uint64(0), ^uint64(0), uint64(1)<<63 - 1}, []uint64{0, 0, uint64(1)<<63 - 1}},
+			} {
+				t.Run(tc.dtype.String(), func(t *testing.T) {
+					testutil.SkipIfMissingDType(t, b, tc.dtype)
+					for _, smallest := range []bool{false, true} {
+						values, indices, err := testutil.Exec2(b, []any{tc.input}, func(f compute.Function, p []compute.Value) (compute.Value, compute.Value, error) {
+							return f.FusedTopK(p[0], 3, compute.FusedTopKConfig{Axis: -1, Smallest: smallest})
+						})
+						skipIfFusedNotImplemented(t, b, err)
+						if err != nil {
+							t.Fatalf("FusedTopK(%s, smallest=%v) failed: %+v", tc.dtype, smallest, err)
+						}
+						wantVals := tc.wantMax
+						wantIdxs := []int32{1, 3, 0}
+						if smallest {
+							wantVals = tc.wantMin
+							wantIdxs = []int32{2, 4, 0}
+						}
+						if ok, diff := testutil.IsEqual(wantVals, values); !ok {
+							t.Errorf("FusedTopK(%s, smallest=%v) values mismatch:\n%s", tc.dtype, smallest, diff)
+						}
+						if ok, diff := testutil.IsEqual(wantIdxs, indices); !ok {
+							t.Errorf("FusedTopK(%s, smallest=%v) indices mismatch:\n%s", tc.dtype, smallest, diff)
+						}
+					}
+				})
+			}
+		})
+
+		t.Run("DynamicAndIndicesOnly", func(t *testing.T) {
+			testutil.SkipIfMissingDynamicShapes(t, b)
+			template := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, shapes.DynamicDim}, []string{"batch", "vocab"})
+			runtimeShape := shapes.Make(dtypes.Float32, 3, 4)
+			flatInput := []float32{
+				1, 5, 5, 2,
+				9, 0, 4, 8,
+				-3, -1, -2, -1,
+			}
+			got, err := execWithTemplateInputShape(b, flatInput, runtimeShape, template, func(f compute.Function, p []compute.Value) (compute.Value, error) {
+				vals, idxs, err := f.FusedTopK(p[0], 2, compute.FusedTopKConfig{Axis: 1})
+				if err != nil {
+					return nil, err
+				}
+				valsShape, err := f.Shape(vals)
+				if err != nil {
+					return nil, err
+				}
+				idxsShape, err := f.Shape(idxs)
+				if err != nil {
+					return nil, err
+				}
+				if valsShape.AxisName(0) != "batch" || valsShape.Dimensions[1] != 2 {
+					t.Errorf("unexpected values shape: %s", valsShape)
+				}
+				if idxsShape.DType != dtypes.Int32 || idxsShape.AxisName(0) != "batch" || idxsShape.Dimensions[1] != 2 {
+					t.Errorf("unexpected indices shape: %s", idxsShape)
+				}
+				return idxs, nil
+			})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedTopK dynamic indices-only failed: %+v", err)
+			}
+			want := [][]int32{{1, 2}, {0, 3}, {1, 3}}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("FusedTopK dynamic indices-only mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("Validation", func(t *testing.T) {
+			builder := b.Builder("backendtest-fusedtopk-validation")
+			fn := builder.Main()
+			p, err := fn.Parameter("x", shapes.Make(dtypes.Float32, 4), nil)
+			if err != nil {
+				t.Fatalf("Parameter failed: %+v", err)
+			}
+			if _, _, err := fn.FusedTopK(p, 0, compute.FusedTopKConfig{}); err == nil {
+				t.Error("expected error for k=0")
+			}
+			if _, _, err := fn.FusedTopK(p, 5, compute.FusedTopKConfig{}); err == nil {
+				t.Error("expected error for k > dim")
+			}
+			if _, _, err := fn.FusedTopK(p, 2, compute.FusedTopKConfig{Axis: 1}); err == nil {
+				t.Error("expected error for out-of-range axis")
+			}
+			if b.Capabilities().DTypes[dtypes.Bool] {
+				pBool, err := fn.Parameter("b", shapes.Make(dtypes.Bool, 4), nil)
+				if err != nil {
+					t.Fatalf("Bool Parameter failed: %+v", err)
+				}
+				if _, _, err := fn.FusedTopK(pBool, 2, compute.FusedTopKConfig{}); err == nil {
+					t.Error("expected error for Bool operand")
+				}
+			}
+		})
 	})
 
 	t.Run("ConvAnonymousDynamicAxisDownstream", func(t *testing.T) {
