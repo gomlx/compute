@@ -11,6 +11,8 @@ import (
 	"github.com/gomlx/compute/internal/must"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/klog/v2"
 
 	// Registers all the ops.
@@ -53,4 +55,11 @@ func TestMain(m *testing.M) {
 	code := m.Run() // Run all tests in the file
 	teardown()
 	os.Exit(code)
+}
+
+func TestUnknownBackendOptionError(t *testing.T) {
+	_, err := compute.NewWithConfig("go:help")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quantized_cache")
+	assert.Contains(t, err.Error(), "see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go")
 }

@@ -68,8 +68,8 @@ func NewBackend() (*Backend, error) {
 	return be, nil
 }
 
-// New constructs a new Go backend.
-// There are no configurations, the string is simply ignored.
+// New constructs a new Go backend using the comma-separated configuration options in config.
+// See https://gomlx.github.io/docs/backends/#2-the-go-backend-go for documentation on supported options.
 func New(config string) (compute.Backend, error) {
 	b := newDefaultBackend()
 	parts := strings.SplitSeq(config, ",")
@@ -124,9 +124,14 @@ func New(config string) (compute.Backend, error) {
 		default:
 			setter, ok := KnownOptionsSetters[key]
 			if !ok {
+				extraOptions := ""
+				if len(KnownOptionsSetters) > 0 {
+					extraOptions = ", " + strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", ")
+				}
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache, %s; see code for documentation",
-					key, strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", "))
+					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache%s; "+
+					"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
+					key, extraOptions)
 			}
 			err := setter(b, key)
 			if err != nil {
