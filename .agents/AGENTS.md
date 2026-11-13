@@ -470,9 +470,9 @@ In `internal/gobackend/simdarch` (re-exported in `internal/gobackend/simd.go`, w
   - `internal/gobackend/activations/neon/neon_arm64.go` and `internal/gobackend/activations/neon/neon_arm64.s`: Handwritten ARM64 NEON assembly for `GeluExact`, `GeluApprox`, `Silu`, `SiluVJP`, and fused 2D-tile `Bias + Activation` (`GeluExactBiasTile`, `GeluApproxBiasTile`, `SiluBiasTile`), plus `Float64`, `BFloat16`, and `Float16` vectorized forward/VJP kernels.
   - `internal/gobackend/dot/matmul/epilogue_arm64.go`: Vectorized `addBiasFloat32Arch` and `copyAndAddBiasFloat32Arch`.
 - **Phase 5 — ARM64 Assembly Guidelines**: Documented below.
-- **Future Phases (Fused Ops & `DotGeneral` / `matmul`)**:
-  - `internal/gobackend/fusedops/neon`: Fused LayerNorm, Softmax, GeLU, SDPA (`D=32, 64, 128`), and QuantizedDense (`FEAT_DotProd` `SDOT`/`UDOT`).
-  - `internal/gobackend/dot/matmul/neon` (and optional `sve`/`sme`): Dedicated register-tiled GEMM microkernels (e.g. $8 \times 12$ `Float32x4` tile utilizing 24 of the 32 NEON vector registers `V0`–`V31`), benchmarked across small and large matrix regimes.
+- **Phase 5 — Fused Ops (`fusedops/neon`) & `DotGeneral` (`dot/matmul/neon`)**:
+  - `internal/gobackend/fusedops/neon`: Handwritten ARM64 NEON assembly for `FusedLayerNorm` (`layerNormFloat32NEONAsm`) and `FusedLayerNormResidual` (`layerNormResidualFloat32NEONAsm`), dual-mode NEON $3 \times 16$ / $1 \times 16$ `FusedQuantizedDense` panel microkernels (`quantizedPanelKernel3x16NEONAsm`, `quantizedPanelKernel1x16NEONAsm` supporting `FEAT_I8MM` `USDOT` and `FEAT_DotProd` `SDOT`), NEON `Q8_0`/`Q8_K` and symmetric `Int8` activation quantizers (`quantizeGGMLQ8_{0,K}RowsNEONAsm`, `QuantizeSymmetricInt8ActivationsNEON`), and Apple SME2 $16 \times 16$ outer-product `FusedQuantizedDense` assembly (`smeQuantizedPanelRowsAsm` using `SUMOPA ZA0.S` + `FMOPA ZA1.S` + 4-vector `MOVA`/`SCVTF` with hybrid SME2 + NEON dual-ended queue co-execution).
+  - `internal/gobackend/dot/matmul/neon`: Dedicated register-tiled NEON (`neonLargeKernel*Asm`, $4 \times 16$ / $8 \times 8$ / $8 \times 4$) and Apple SME (`sme_arm64.s`, $32 \times 32$ / $16 \times 64$ / $16 \times 16$ `FMOPA`) GEMM microkernels, plus SME + 4-row NEON `FusedScaledDotProductAttention` (`sdpa_arm64.go`).
 
 ## Guidelines for Writing SIMD Assembly (ARM64 / NEON, SVE & SME)
 

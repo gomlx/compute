@@ -5,6 +5,7 @@ package fusedops
 import (
 	"encoding/binary"
 	"math"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -428,27 +429,31 @@ func unpackGGMLQuantizedActivations(
 }
 
 func writeStripSubBlock32(sb []uint8, col int, u0, u1, u2, u3 uint64, dw, mw float32) {
-	cOff := 4 * col
-	binary.LittleEndian.PutUint32(sb[0*64+cOff:0*64+cOff+4], uint32(u0))
-	binary.LittleEndian.PutUint32(sb[1*64+cOff:1*64+cOff+4], uint32(u0>>32))
-	binary.LittleEndian.PutUint32(sb[2*64+cOff:2*64+cOff+4], uint32(u1))
-	binary.LittleEndian.PutUint32(sb[3*64+cOff:3*64+cOff+4], uint32(u1>>32))
-	binary.LittleEndian.PutUint32(sb[4*64+cOff:4*64+cOff+4], uint32(u2))
-	binary.LittleEndian.PutUint32(sb[5*64+cOff:5*64+cOff+4], uint32(u2>>32))
-	binary.LittleEndian.PutUint32(sb[6*64+cOff:6*64+cOff+4], uint32(u3))
-	binary.LittleEndian.PutUint32(sb[7*64+cOff:7*64+cOff+4], uint32(u3>>32))
-	binary.LittleEndian.PutUint32(sb[512+cOff:512+cOff+4], math.Float32bits(dw))
-	binary.LittleEndian.PutUint32(sb[576+cOff:576+cOff+4], math.Float32bits(mw))
+	_ = sb[639]
+	col &= 15
+	p := (*[160]uint32)(unsafe.Pointer(&sb[0]))
+	p[0*16+col] = uint32(u0)
+	p[1*16+col] = uint32(u0 >> 32)
+	p[2*16+col] = uint32(u1)
+	p[3*16+col] = uint32(u1 >> 32)
+	p[4*16+col] = uint32(u2)
+	p[5*16+col] = uint32(u2 >> 32)
+	p[6*16+col] = uint32(u3)
+	p[7*16+col] = uint32(u3 >> 32)
+	p[128+col] = math.Float32bits(dw)
+	p[144+col] = math.Float32bits(mw)
 }
 
 func writeStripSubBlock16(sb []uint8, col int, u0, u1 uint64, dw, mw float32) {
-	cOff := 4 * col
-	binary.LittleEndian.PutUint32(sb[0*64+cOff:0*64+cOff+4], uint32(u0))
-	binary.LittleEndian.PutUint32(sb[1*64+cOff:1*64+cOff+4], uint32(u0>>32))
-	binary.LittleEndian.PutUint32(sb[2*64+cOff:2*64+cOff+4], uint32(u1))
-	binary.LittleEndian.PutUint32(sb[3*64+cOff:3*64+cOff+4], uint32(u1>>32))
-	binary.LittleEndian.PutUint32(sb[256+cOff:256+cOff+4], math.Float32bits(dw))
-	binary.LittleEndian.PutUint32(sb[320+cOff:320+cOff+4], math.Float32bits(mw))
+	_ = sb[383]
+	col &= 15
+	p := (*[96]uint32)(unsafe.Pointer(&sb[0]))
+	p[0*16+col] = uint32(u0)
+	p[1*16+col] = uint32(u0 >> 32)
+	p[2*16+col] = uint32(u1)
+	p[3*16+col] = uint32(u1 >> 32)
+	p[64+col] = math.Float32bits(dw)
+	p[80+col] = math.Float32bits(mw)
 }
 
 func unpackGGMLWeightStrips(

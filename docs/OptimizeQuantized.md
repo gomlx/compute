@@ -379,7 +379,117 @@ When users run quantized models with `-set="quantized_matmul=false"` (Mode A: ex
    - Nearly ~5–8% of remaining wall/CPU time is now spent in the upstream WordPiece string tokenizer (`runtime.encoderune`, `slicerunetostring`) rather than tensor execution.
 
 ### Plug-In Path for ARM64 NEON (`SDOT`/`UDOT`/`USMMLA`) & Apple SME
-The K4-interleaved panel architecture in [quantizeddense_arch.go](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/quantizeddense_arch.go) (`QuantizedPanelStripCols = 16`, `[quads][16][4]uint8` + `[16]float32` `d'_w` + `[16]float32` `m'_w`), SWAR weight unpackers, constant weight panel cache, and sibling activation quantization sharing are **100% architecture-independent**:
-- **ARM64 NEON (`FEAT_DotProd` / `FEAT_I8MM`)**: One 16-column strip (`[16][4]uint8 = 64 bytes`) loads directly into four 128-bit NEON registers (`V16..V19`, each holding `[4 cols × 4 K-bytes]`), pairing directly with `USDOT` (`FEAT_I8MM`) or sign-flipped `SDOT` (`u_w ^ 0x80` with adjusted `m'_w`) in an $8 \times 16$ (`32`-register `V0..V31`) microkernel via `gobackend.RegisterQuantizedPanelGEMM(gobackend.PriorityNEON, ...)`.
-- **Apple M4+ SME2 (`SMOPA` / `UMOPA` / `SUMOPA`)**: Can register at `gobackend.PrioritySME` using `SUMOPA ZA0.S, P0/M, P1/M, Z_x.B, Z_w.B` (`int8 × uint8 -> int32` outer product) over the exact same pre-unpacked sub-block streams and activation quantizer hooks (`RegisterQuantizeGGMLActivations` / `RegisterQuantizeLinearActivations`).
+The K4-interleaved panel architecture in [quantizeddense_arch.go](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/quantizeddense_arch.go) (`QuantizedPanelStripCols = 16`, `[quads][16][4]uint8` + `[16]float32` `d'_w` + `[16]float32` `m'_w`), SWAR weight unpackers, constant weight panel cache, and sibling activation quantization sharing are **100% architecture-independent**. Section 7 below details the ARM64 NEON (`FEAT_I8MM` `USDOT` / `FEAT_DotProd` `SDOT`) and Apple SME2 (`SUMOPA` + `FMOPA`) implementations built on top of this infrastructure.
+
+---
+
+## 7. ARM64 NEON (`FEAT_I8MM` / `FEAT_DotProd`) & Apple SME2 (`SUMOPA`) Optimization
+
+### 7.1 Target Hardware & Baseline Profile (`darwin/arm64`)
+
+- **Host CPU**: Apple Silicon M-series (`darwin/arm64`, 12 cores across 2 asymmetric L2 cache clusters: `clusterID=1` with 2 Super + 4 Performance cores sharing a 512-bit SME2 coprocessor at ~2.26 TFlops/s, and `clusterID=0` with 6 Efficiency cores sharing a 512-bit SME2 coprocessor at ~0.38 TFlops/s).
+- **Supported ARMv9 Extensions**: `FEAT_DotProd` (`SDOT`/`UDOT`), `FEAT_I8MM` (`USDOT`/`USMMLA`), `FEAT_FP16`, `FEAT_BF16`, `FEAT_SME`, `FEAT_SME2` (`SUMOPA`, multi-vector `MOVA`/`SCVTF`).
+- **ARM64 Baseline Benchmark** (`-limit 20`, `-bucket=8192`, `second-state/All-MiniLM-L6-v2-Embedding-GGUF`):
+  - Before adding `internal/gobackend/fusedops/neon`, `FusedQuantizedDense` fell back to the scalar `NoSIMD` reference path (`execQuantizedDenseGGML` / `ggmlVecDotRow`):
+    - **Default GGUF (`quantized_matmul=true`)**: **`21.5s`** wall time (`9.3 items/s`, **`2.7K tokens/s`**, **`649 non-pad tokens/s`**, CPU time `253.0s`, Max RSS `231.7 MiB`).
+    - **Mode A (`-set="quantized_matmul=false"`)**: **`735.1ms`** wall time (`272 items/s`, **`77.7K tokens/s`**, **`19.0K non-pad tokens/s`**, CPU time `5.6s`, Max RSS `329.1 MiB`), as Mode A already leveraged the Step 5 bounded pooled chunk dequantizer + `matmul.ExecuteWithEpilogue` (which routes to the ARM64 SME/NEON `Float32` GEMM in `internal/gobackend/dot/matmul/neon`).
+    - **Unquantized `Float32` Model**: **`715.3ms`** wall time (`280 items/s`, **`79.9K tokens/s`**, **`19.5K non-pad tokens/s`**, CPU time `5.5s`, Max RSS `390.0 MiB`).
+
+### 7.2 Step 1 (ARM64): Handwritten NEON `USDOT` / `SDOT` Panel Microkernels & `Q8_0` / `Q8_K` Activation Quantizers
+
+Implemented in [quantizeddense.go](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/quantizeddense.go) and [quantizeddense_arm64.s](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/quantizeddense_arm64.s), registered at `gobackend.PriorityNEON`:
+
+1. **Dual-Mode `FEAT_I8MM` (`USDOT`) and `FEAT_DotProd` (`SDOT`) 3×16 & 1×16 Microkernels (`quantizedPanelKernel3x16NEONAsm`, `quantizedPanelKernel1x16NEONAsm`)**:
+   - Consumes the exact same 16-column K4-interleaved weight strip (`[quads][16 cols][4 K-bytes]uint8` + `[16]float32` `d'_w` + `[16]float32` `m'_w`) designed in Step 1.
+   - **Register Allocation (32 × 128-bit NEON registers `V0..V31`)**:
+     - `V0..V11` (12 registers): 3 rows × 16 columns of `float32` accumulators (`3 × 4 × Float32x4`), held in registers across the entire `K` (`numSubBlocks`) loop and written to `Out` once at the end (with fused `Bias` initialization or `Accumulate` read-modify-write in registers).
+     - `V12..V15` (4 registers): Per-sub-block `int32` dot-product accumulators for 1 row × 16 columns (`4 × Int32x4`).
+     - `V16..V19` (4 registers): Weight `u_w` vectors (`[16 cols][4 K-bytes]uint8 = 64 bytes` per quad) and later per-sub-block `d'_w` scales (`[16]float32`).
+     - `V20..V23` (4 registers): Per-sub-block `m'_w` scales (`[16]float32`).
+     - `V24..V26` (3 registers): 3 rows of `Qx` (`[4 quads][4 K-bytes]int8 = 16 bytes` per row).
+     - `V27..V30` (4 registers): Per-sub-block `int32` accumulators for Row 1 (`V27..V30`), while Row 2 uses `V20..V23` during the quad loop before `m'_w` is loaded.
+   - **Inner `numMBlocks` Row Loop**: `quantizedPanelKernel3x16NEONAsm` loops over `numMBlocks` 3-row blocks inside a single assembly call, avoiding Go-to-assembly call overhead per 3-row step, with unrolled `quads == 8` (`subBlockSize = 32`) and `quads == 4` (`subBlockSize = 16`) fast paths.
+   - **Hardware `USDOT` vs Sign-Flipped `SDOT`**:
+     - When `gobackend.IsARM64I8MMAllowed` is true (Apple M2+, ARMv8.6-A+), sets `UseUSDOT: true` so weights remain unsigned `uint8` (`[0, 255]`) and executes indexed `USDOT Vd.4S, Vn.16B, Vm.4B[lane]` (`0x4F809C00`, signed `int8` activation × unsigned `uint8` weight $\to$ `int32`).
+     - On older ARMv8.2-A CPUs with `FEAT_DotProd` only (`IsARM64I8MMAllowed == false`), sets `UseUSDOT: false` so weight unpackers flip `u_w ^ 0x80` and adjust `m'_w += 128 * d'_w`, and the assembly kernel executes indexed `SDOT Vd.4S, Vn.16B, Vm.4B[lane]` (`0x4F80E000`, signed `int8` × signed `int8` $\to$ `int32`).
+2. **Handwritten NEON `Q8_0` & `Q8_K` Activation Quantizers (`quantizeGGMLQ8_0RowsNEONAsm`, `quantizeGGMLQ8_KRowsNEONAsm`)**:
+   - Uses `FMAXV S16, V16.4S` for 32-element sub-block max-abs, hardware `FCVT H18, S17` + `FCVT S18, H18` for exact IEEE-754 FP16 `Q8_0` scale rounding (zero lookup tables or bit-shifts), `FRINTN V.4S` + `FCVTZS V.4S` for round-nearest-even quantization, `ADDV S, V.4S` for `sumQx`, and `SQXTN V.8H, V.4S` + `SQXTN2 V.16B, V.8H` + `SQXTN V.8B, V.8H` + `SQXTN2 V.16B, V.8H` to pack 16 `int32` lanes into 16 `int8` bytes in 4 instructions.
+3. **Concurrent `FRECPE`+`FRECPS` + `FDIV` in `geluApproxFloat32NEONAsm` & Contiguous Tile `ActFn`**:
+   - In [neon_arm64.s](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/activations/neon/neon_arm64.s), replaced the back-to-back `FDIV_4S` instructions in the 8-element `geluApproxFloat32NEONAsm` loop with a 2-step Newton-Raphson `FRECPE_4S` + 2× `FRECPS_4S` on `V0` executing concurrently on the vector FMA pipes while `FDIV_4S` executes on `V1` on the divide pipe, cutting `geluApproxFloat32NEONAsm` CPU time in half (`2.43s -> 1.25s` on `-limit 200`).
+   - Invokes `cfg.ActFn` once on the contiguous slice `cfg.Out[mStart*N : mLimit*N]` per worker tile rather than once per row.
+
+#### Step 1–2 (ARM64 NEON) Benchmark Results (`-limit 20` and `-limit 200`, Apple M-Series 12-Core)
+
+| Configuration (`-limit 20`, `57.2K` total tokens, `14.0K` non-pad) | Wall Time | Passages/s | Total Tokens/s | Non-Pad Tokens/s | CPU Time | Max RSS Mem | Speedup vs Baseline |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline Default GGUF (`Q4_K_M`, Scalar) | 21.5s | 9.3/s | 2.7K tok/s | 649 tok/s | 253.0s | 231.7 MiB | 1.0× |
+| Mode A (`-set="quantized_matmul=false"`, `Q4_K_M`) | 735.1ms | 272/s | 77.7K tok/s | 19.0K tok/s | 5.6s | 329.1 MiB | 29.2× |
+| Unquantized `Float32` Model | 715.3ms | 280/s | 79.9K tok/s | 19.5K tok/s | 5.5s | 390.0 MiB | 30.1× |
+| **Step 1–2 ARM64 NEON (`USDOT` 3×16 + `Q8_0`/`Q8_K` + `GELU`)** | **678.6ms** | **295/s** | **84.2K tok/s** | **20.5K tok/s** | **7.6s** | **233.3 MiB** | **31.7× (faster than FP32, -157 MiB RSS)** |
+
+On **`-limit 200`** (`238.5K` total tokens, `154.6K` non-pad tokens):
+- **Step 1–2 ARM64 NEON**: **`3.0s`** wall time (`663 items/s`, **`78.7K tokens/s`**, **`51.0K non-pad tokens/s`**, CPU time `33.7s`, Max RSS `365.7 MiB`).
+
+---
+
+### 7.3 Step 3–4 (ARM64 SME2 + NEON): Hybrid SME2 `SUMOPA` + `FMOPA` Panel GEMM & Handwritten NEON `FusedLayerNorm` / `FusedLayerNormResidual`
+
+Implemented in [quantizeddense_sme.go](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/quantizeddense_sme.go), [quantizeddense_sme_arm64.s](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/quantizeddense_sme_arm64.s), [layernorm.go](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/layernorm.go), and [layernorm_arm64.s](file:///Users/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/neon/layernorm_arm64.s):
+
+1. **SME2 `SUMOPA` + `FMOPA` 16×16 Outer-Product Kernel with Zero-Repack Weight Strips (`smeQuantizedPanelRowsAsm`, registered at `gobackend.PrioritySME`)**:
+   - **Zero-Repack Compatibility**: Because each 16-column K4-interleaved weight strip stores `u_w` as `[quads][16 cols][4 K-bytes]uint8` (`64 bytes` per quad = one 512-bit SVE `Z` register) followed by `d'_w` (`[16]float32` = `64 bytes`) and `m'_w` (`[16]float32` = `64 bytes`), SME2's 512-bit `SUMOPA ZA0.S, P0/M, P0/M, Z_qx.B, Z_uw.B` (`0xA080A000`, signed `int8` LHS × unsigned `uint8` RHS 4-way outer product) and `FMOPA ZA1.S, P1/M, P1/M, Z_dxSumQx.S, Z_mw.S` (`0x80800000`, FP32 outer product) consume the exact same `WeightPanels` buffer as the 128-bit NEON `USDOT` kernel with **zero weight repacking**!
+   - **Single `SMSTART`..`SMSTOP` Session with In-`ZA` Hardware LHS Transposition**:
+     - **Phase 0 (Hardware `ZA0.S` 16×16 Matrix Transpose of `Qx` and `DxPairs`)**: Inside `SMSTART`, transposes 16 rows of `Qx` (`[activeRows, totalQuads]uint32` $\to$ `[totalQuads, 16]uint32`) and `DxPairs` (`[activeRows, numSubBlocks*2]float32` $\to$ `[numSubBlocks*2, 16]float32`, placing `dx[0..15]` at `#0, MUL VL` and `(dx*sumQx)[0..15]` at `#1, MUL VL`) in 16×16 blocks via `LD1W {ZA0H.S[W12, 0]}` + `ST1W {ZA0V.S[W12, 0]}` into a 64 KB `sync.Pool` scratch buffer.
+     - **Phase 1 (Dual-Tile `SUMOPA ZA0.S` + `FMOPA ZA1.S` + Multi-Vector `MOVA`/`SCVTF`)**:
+       - `ZA1.S` accumulates `Bias` (or zero when `Accumulate`) plus $\sum_{sb} (d_{x,m,sb} \cdot \text{sum}_{q_x,m,sb}) \cdot m'_{w,sb,n}$ via one `FMOPA ZA1.S` instruction (256 FP32 FMAs) per sub-block across all sub-blocks without ever extracting `ZA1.S` inside the $K$-loop.
+       - For each sub-block, zeroes only `ZA0.S` (`ZERO {ZA0.S}`, `0xC0080011`), executes 8 (`subBlockSize=32`) or 4 (`subBlockSize=16`) `SUMOPA ZA0.S` instructions (**1,024 INT8 MACs per instruction**), extracts 4 rows at a time via SME2 4-vector `MOVA {Z0.S-Z3.S}, ZA0H.S[W12, 0:3]` + 4-vector `SCVTF {Z0.S-Z3.S}, {Z0.S-Z3.S}`, and accumulates $\sum_{sb} \text{float32}(ZA0_{m,n}) \cdot d_{x,m,sb} \cdot d'_{w,sb,n}$ into 16 streaming `Z` registers (`Z12..Z27`, arranged in four 4-vector aligned groups `{Z12..Z15}`, `{Z16..Z19}`, `{Z20..Z23}`, `{Z24..Z27}`).
+       - After all sub-blocks complete, extracts `ZA1H.S` (`Bias + sum_{sb} (dx*sumQx)*m'_w`), adds `Z12..Z27`, stores the completed 16×16 tile into `ZA0H.S`, and verifies the `Z31` upper-lane hardware canary (`LASTB W11, P7, Z31.S`) before touching `Out` memory (protecting against macOS `SIGURG` `sigreturn` upper-bit zeroing of streaming `Z` registers).
+     - **Phase 2 (Predicated Store from `ZA0.S`)**: Writes `activeRows × activeCols` to `Out` using column predicate `P2` (`WHILELT P2.S, Xzr, X16`) and verifies the `Z31` canary once more.
+2. **Heterogeneous SME2 + NEON Co-Execution over Dual-Ended Atomic Row Queue**:
+   - Coordinates workers via a 64-bit `bounds atomic.Uint64` (`(headRow << 32) | tailRow`) queue under `Scheduler.AcquireWholeChip()` FIFO gating:
+     - **SME Workers (`headRow` $\to$ up)**: Workers that acquire their L2 cluster's SME lock (`simdarch.AcquireSMEWithLimit(cfg.MaxWorkers, 1)`) claim 16/32-row chunks from `headRow` and execute `smeQuantizedPanelRowsAsm` across all column strips. If XNU migrates a worker between clusters (`simdarch.CurrentSMECluster() != smeCluster`), it immediately releases the old cluster lock and re-acquires for its new cluster.
+     - **NEON Workers (`tailRow` $\to$ down)**: Workers on cores whose cluster SME unit is busy claim 3/6/12-row chunks from `tailRow`, running `quantizedPanelKernel3x16NEONAsm` on the same shared `WeightPanels` and yielding early (`remRows <= 16 * smeActive`) while spinning until `allClaimed` so Go's scheduler keeps 1 goroutine pinned per physical CPU core.
+3. **Handwritten ARM64 NEON `FusedLayerNorm` & `FusedLayerNormResidual` Assembly (`layerNormFloat32NEONAsm`, `layerNormResidualFloat32NEONAsm`)**:
+   - Registered `DispatchLayerNormNEON` and `DispatchLayerNormResidualNEON` at `gobackend.PriorityNEON`.
+   - Uses 4-way unrolled 16-float (`64-byte`) vector loads/stores (`VLD1.P 64(Rn), [V4.S4, V5.S4, V6.S4, V7.S4]` and `VST1.P [V4.S4, V5.S4, V6.S4, V7.S4], 64(Rn)`), 4 independent accumulator chains (`V0..V3`) reduced via `VFADDP` + `FADDP`, hardware `FSQRT S1, S1`, and fused `in + residual -> out` in Pass 1 of `layerNormResidualFloat32NEONAsm` so Pass 2 and Pass 3 read/write `out` while hot in L1D cache.
+
+---
+
+### 7.4 Final ARM64 (NEON + SME2) Benchmark Results & Progression
+
+#### Table A: Short Run (`-limit 20`, 200 Passages, `57.2K` Total Tokens, `13.9K` Non-Pad Tokens, Apple M-Series 12-Core)
+
+| Configuration (`-bucket=8192 -num_embedders=1 -warmup -dynamic=true`) | Wall Time | Passages/s | Total Tokens/s | Non-Pad Tokens/s | CPU Time | Max RSS Mem | Speedup vs Baseline |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Baseline Default GGUF (`Q4_K_M`, Scalar `NoSIMD`)** | **21.5s** | **9.3/s** | **2.7K tok/s** | **649 tok/s** | **253.0s** | **231.7 MiB** | **1.0×** |
+| Unquantized `Float32` Model (`all-MiniLM-L6-v2`) | 715.3ms | 280/s | 79.9K tok/s | 19.5K tok/s | 5.5s | 390.0 MiB | 30.1× |
+| Mode A (`-set="quantized_matmul=false"`, `GOMLX_BACKEND=go`) | 721.7ms | 277/s | 79.2K tok/s | 19.3K tok/s | 8.1s | 328.6 MiB | 29.8× (-61 MiB vs FP32) |
+| Mode A (`-set="quantized_matmul=false"`, `GOMLX_BACKEND="go:quantized_cache"`) | 705.9ms | 283/s | 81.0K tok/s | 19.8K tok/s | 7.9s | 365.3 MiB | 30.5× (-25 MiB vs FP32) |
+| Step 1–2 ARM64 NEON (`USDOT` 3×16 + `Q8_0`/`Q8_K` + `GELU`) | 678.6ms | 295/s | 84.2K tok/s | 20.5K tok/s | 7.6s | 233.3 MiB | 31.7× (-157 MiB vs FP32) |
+| **Step 3–4 ARM64 Hybrid SME2 (`SUMOPA`+`FMOPA`) + NEON (`USDOT` + `LayerNorm`)** | **635.6ms** | **315/s** | **89.9K tok/s** | **21.9K tok/s** | **7.1s** | **233.7 MiB** | **33.8× (1.13× faster than FP32, -156 MiB RSS)** |
+
+#### Table B: Extended Run (`-limit 200`, 2,000 Passages, `236.7K` Total Tokens, `153.5K` Non-Pad Tokens, Apple M-Series 12-Core)
+
+| Configuration (`-limit 200 -bucket=8192 -num_embedders=1 -warmup -dynamic=true`) | Wall Time | Passages/s | Total Tokens/s | Non-Pad Tokens/s | CPU Time | Max RSS Mem |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mode A (`-set="quantized_matmul=false"`, `GOMLX_BACKEND=go`) | 3.2s | 627/s | 74.4K tok/s | 48.3K tok/s | 35.6s | 451.0 MiB |
+| Step 1–2 ARM64 NEON (`USDOT` 3×16 + `Q8_0`/`Q8_K` + `GELU`) | 3.0s | 663/s | 78.7K tok/s | 51.0K tok/s | 33.7s | 365.7 MiB |
+| **Step 3–4 ARM64 Hybrid SME2 (`SUMOPA`+`FMOPA`) + NEON (`USDOT` + `LayerNorm`)** | **2.9s** | **699/s** | **82.9K tok/s** | **53.7K tok/s** | **32.3s** | **373.0 MiB** |
+
+#### Table C: Unpadded Single-Sentence Multi-Embedder Mode (`-bucket=0 -num_embedders=12 -warmup -dynamic=true`, Apple M-Series 12-Core)
+
+When `-bucket=0 -num_embedders=12` is used (`batchSize = 1`, `seqLen` dynamic with zero padding tokens, 12 concurrent embedders across 12 cores where `Scheduler.EffectiveParallelism() == 1`):
+- In `DispatchQuantizedPanelGEMMSME`, single-worker / small-$M$ invocations (`EffectiveParallelism() <= 1` or `totalWork <= 8M`) bypass `Scheduler.AcquireWholeChip()` and attempt a non-blocking per-cluster SME lock (`simdarch.AcquireSMEWithLimit`). Up to 2 concurrent embedders (one on Cluster 1 SME, one on Cluster 0 SME) execute `smeQuantizedPanelRowsAsm` while the remaining 10 concurrent embedders execute `quantizedPanelKernel3x16NEONAsm` in parallel on their private per-core NEON `USDOT` pipelines (~`11.7` active cores, zero lock contention).
+- Eliminating slice bounds checks in `writeStripSubBlock32` / `writeStripSubBlock16` (`*[160]uint32` / `*[96]uint32` with `col &= 15`) further cut per-sentence weight strip unpacking time by >50%.
+
+| Configuration (`-bucket=0 -num_embedders=12 -warmup -dynamic=true`) | Limit (Passages) | Wall Time | Passages/s | Non-Pad Tokens/s | CPU Time | ~Cores | Max RSS Mem |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Default GGUF (`GOMLX_BACKEND=go`)** | `-limit 20` (200) | **198.7ms** | **1,000/s** | **70.2K tok/s** | **2.3s** | **11.4** | **179.5 MiB** |
+| **Default GGUF (`GOMLX_BACKEND=go`)** | `-limit 200` (2,000) | **2.1s** | **952/s** | **73.2K tok/s** | **24.6s** | **11.7** | **321.9 MiB** |
+| **Default GGUF (`GOMLX_BACKEND="go:quantized_cache"`)** | `-limit 200` (2,000) | **1.8s** | **1,100/s** | **85.8K tok/s** | **21.0s** | **11.7** | **319.6 MiB** |
+| Mode A (`-set="quantized_matmul=false"`, `GOMLX_BACKEND=go`) | `-limit 200` (2,000) | 4.9s | 406/s | 31.3K tok/s | 47.6s | 9.7 | 413.1 MiB |
+| Mode A (`-set="quantized_matmul=false"`, `GOMLX_BACKEND="go:quantized_cache"`) | `-limit 200` (2,000) | 2.9s | 685/s | 52.7K tok/s | 25.7s | 8.8 | 488.1 MiB |
+
+
+
 
