@@ -1,6 +1,7 @@
 package dtypes
 
 import (
+	"slices"
 	"strconv"
 	"unsafe"
 
@@ -211,6 +212,51 @@ func CopyAnySlice(dst, src any) {
 	default:
 		panicf("unsupported dtype for CopyAnySlices: %T", dst)
 	}
+}
+
+// CloneAnySlice returns a shallow copy of src, which must be nil or a slice of a supported Go type.
+// It panics if src is not nil and not a slice of a supported DType.
+func CloneAnySlice(src any) any {
+	if src == nil {
+		return nil
+	}
+	switch s := src.(type) {
+	case []float64:
+		return slices.Clone(s)
+	case []float32:
+		return slices.Clone(s)
+	case []float16.Float16:
+		return slices.Clone(s)
+	case []bfloat16.BFloat16:
+		return slices.Clone(s)
+	case []int:
+		return slices.Clone(s)
+	case []int64:
+		return slices.Clone(s)
+	case []int32:
+		return slices.Clone(s)
+	case []int16:
+		return slices.Clone(s)
+	case []int8:
+		return slices.Clone(s)
+	case []uint64:
+		return slices.Clone(s)
+	case []uint32:
+		return slices.Clone(s)
+	case []uint16:
+		return slices.Clone(s)
+	case []uint8:
+		return slices.Clone(s)
+	case []bool:
+		return slices.Clone(s)
+	case []complex64:
+		return slices.Clone(s)
+	case []complex128:
+		return slices.Clone(s)
+	default:
+		panicf("unsupported dtype for CloneAnySlice: %T", src)
+	}
+	panic(nil)
 }
 
 // FromAnySlice returns the DType and length of a flat slice of any supported Go type without reflection.

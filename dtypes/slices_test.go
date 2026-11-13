@@ -168,6 +168,43 @@ func TestCopyAnySlice(t *testing.T) {
 	})
 }
 
+func TestCloneAnySlice(t *testing.T) {
+	if CloneAnySlice(nil) != nil {
+		t.Fatal("CloneAnySlice(nil): expected nil")
+	}
+
+	srcF32 := []float32{1.0, 2.0, 3.0}
+	clonedAny := CloneAnySlice(srcF32)
+	clonedF32, ok := clonedAny.([]float32)
+	if !ok {
+		t.Fatalf("CloneAnySlice([]float32): expected []float32, got %T", clonedAny)
+	}
+	if !slices.Equal(srcF32, clonedF32) {
+		t.Fatalf("CloneAnySlice([]float32): expected %v, got %v", srcF32, clonedF32)
+	}
+	srcF32[0] = 99.0
+	if clonedF32[0] != 1.0 {
+		t.Fatalf("CloneAnySlice([]float32) aliased source slice: got %v", clonedF32)
+	}
+
+	srcInt := []int{10, 20}
+	clonedInt := CloneAnySlice(srcInt).([]int)
+	srcInt[1] = -5
+	if !slices.Equal(clonedInt, []int{10, 20}) {
+		t.Fatalf("CloneAnySlice([]int): got %v, want [10 20]", clonedInt)
+	}
+
+	emptyBool := []bool{}
+	clonedEmpty := CloneAnySlice(emptyBool).([]bool)
+	if clonedEmpty == nil || len(clonedEmpty) != 0 {
+		t.Fatalf("CloneAnySlice(empty []bool): expected non-nil empty slice, got %#v", clonedEmpty)
+	}
+
+	assertPanics(t, "TestCloneAnySlice (unsupported)", func() {
+		CloneAnySlice([]string{"a"})
+	})
+}
+
 func TestFromAnySliceAndSafeCopy(t *testing.T) {
 	dt, length, err := FromAnySlice([]float32{1, 2, 3, 4})
 	if err != nil || dt != Float32 || length != 4 {
