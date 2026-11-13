@@ -549,12 +549,6 @@ type FusedTopKConfig struct {
 // Like with standard ops, if the backend doesn't implement the fused op, return
 // ErrNotImplemented (wrapped with a stack).
 type FusedOps interface {
-	// FusedTopK returns sorted values and Int32 indices of the k largest (or
-	// smallest when cfg.Smallest is true) elements along cfg.Axis. Ties prefer the
-	// lower original index. k must be positive and no larger than the axis.
-	// Backends may return ErrNotImplemented to use GoMLX's stable sort fallback.
-	FusedTopK(operand Value, k int, cfg FusedTopKConfig) (values, indices Value, err error)
-
 	// FusedActivation applies the configured activation function.
 	// cfg.Type is obligatory, other fields are optional and specific for activations.
 	FusedActivation(x Value, cfg ActivationConfig) (Value, error)
@@ -796,4 +790,9 @@ type FusedOps interface {
 		x, wQKV, biasQ, biasK, biasV Value,
 		queryDim, keyValueDim int) (
 		query, key, value Value, err error)
+
+	// FusedTopK returns sorted values and Int32 indices of the k largest (or
+	// smallest when cfg.Smallest is true) elements along cfg.Axis. Ties prefer the
+	// lower original index. k must be positive and no larger than the axis.
+	FusedTopK(operand Value, k int, cfg FusedTopKConfig) (values, indices Value, err error)
 }
