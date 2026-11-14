@@ -59,7 +59,7 @@ func ArgMinMax(f *gobackend.Function,
 	return node, nil
 }
 
-const MaxArgMinMaxReductionSize = 0x8000_0000
+const MaxArgMinMaxReductionSize int64 = 0x8000_0000
 
 // execArgMinMax is the executor function registered for compute.OpTypeArgMinMax.
 func execArgMinMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
@@ -83,7 +83,7 @@ func execArgMinMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 		prefixSize *= operand.RawShape.Dimensions[axis]
 	}
 	reduceSize := operandDims[reduceAxis]
-	if reduceSize >= MaxArgMinMaxReductionSize {
+	if int64(reduceSize) >= MaxArgMinMaxReductionSize {
 		// If we need larger, change buildArgMinMax to use int64 instead of int32.
 		return nil, errors.Errorf("ArgMaxMin implementation only supports reduction on dimensions < %d, got operand shaped %s and reduce axis is %d",
 			MaxArgMinMaxReductionSize, operand.RawShape, reduceAxis)
