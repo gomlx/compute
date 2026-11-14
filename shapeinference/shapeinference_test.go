@@ -1585,15 +1585,27 @@ func TestDotGeneral_DynamicAndNames(t *testing.T) {
 		}
 	})
 
-	t.Run("AnonymousBatchAxes", func(t *testing.T) {
-		lhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
-		rhs := SD(F32, []int{-1, 512}, []string{shapes.AnonymousAxis, ""})
+	t.Run("GeneratedBatchAxes", func(t *testing.T) {
+		genA := shapes.UniqueAxisName("a")
+		genB := shapes.UniqueAxisName("b")
+		lhs := SD(F32, []int{-1, 512}, []string{genA, ""})
+		rhs := SD(F32, []int{-1, 512}, []string{genB, ""})
 		output, err := DotGeneral(lhs, []int{1}, []int{0}, rhs, []int{1}, []int{0}, DotGeneralConfig{})
 		if err != nil {
-			t.Fatalf("anonymous batch axes: %+v", err)
+			t.Fatalf("generated batch axes: %+v", err)
 		}
-		if output.Dim(0) != shapes.DynamicDim || output.AxisName(0) != shapes.AnonymousAxis {
-			t.Fatalf("expected an anonymous dynamic output axis, got %s", output)
+		if output.Dim(0) != shapes.DynamicDim || output.AxisName(0) != genA {
+			t.Fatalf("expected unified generated dynamic output axis %q, got %s", genA, output)
+		}
+
+		// Generated + user-named unifies to user-named.
+		rhsNamed := SD(F32, []int{-1, 512}, []string{"batch", ""})
+		outputNamed, err := DotGeneral(lhs, []int{1}, []int{0}, rhsNamed, []int{1}, []int{0}, DotGeneralConfig{})
+		if err != nil {
+			t.Fatalf("generated + user batch axes: %+v", err)
+		}
+		if outputNamed.Dim(0) != shapes.DynamicDim || outputNamed.AxisName(0) != "batch" {
+			t.Fatalf("expected unified user dynamic output axis \"batch\", got %s", outputNamed)
 		}
 	})
 }

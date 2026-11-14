@@ -868,7 +868,7 @@ func resolveActivationParamLayout(
 			pd := param.Dimensions[i]
 			td := tensor.Dimensions[i]
 			if pd == shapes.DynamicDim && td == shapes.DynamicDim {
-				if !shapes.AxisNameEqual(param.AxisName(i), tensor.AxisName(i)) {
+				if !shapes.AxisNamesCompatible(param.AxisName(i), tensor.AxisName(i)) {
 					batchMatches = false
 					break
 				}

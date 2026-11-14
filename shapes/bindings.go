@@ -137,10 +137,6 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 
 		if templateDim == DynamicDim {
 			name := template.AxisName(i)
-			// Anonymous axes are independent runtime dimensions, not bindings.
-			if name == AnonymousAxis {
-				continue
-			}
 			if name == "" {
 				return errors.Errorf(
 					"ExtractBindings: template %s has dynamic dimension at axis %d but no axis name",
@@ -164,15 +160,15 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 //
 // Rules:
 //   - "" + "" = "" (both unnamed → unnamed)
-//   - "name" + "" = "name" (one named → keep the name, provided name != AnonymousAxis)
-//   - "" + "name" = "name" (one named → keep the name, provided name != AnonymousAxis)
-//   - "name" + "name" = "name" (same name → keep it, provided name != AnonymousAxis)
-//   - AnonymousAxis + any = error (AnonymousAxis never unifies/matches with anything)
-//   - "a" + "b" = error (different names → conflict)
+//   - "name" + "" = "name" (one named → keep the name)
+//   - "" + "name" = "name" (one named → keep the name)
+//   - "name" + "name" = "name" (same name → keep it)
+//   - "#gen" + "user" = "user" and "user" + "#gen" = "user" (non-generated name wins over generated "#..." name;
+//     concrete dimension compatibility is verified at runtime)
+//   - "#gen1" + "#gen2" = "#gen1" (two generated "#..." names unify to the first;
+//     concrete dimension compatibility is verified at runtime)
+//   - "a" + "b" = error (different non-generated names → conflict)
 func UnifyAxisName(name1, name2 string) (string, error) {
-	if name1 == AnonymousAxis || name2 == AnonymousAxis {
-		return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
-	}
 	if name1 == "" {
 		return name2, nil
 	}
@@ -182,7 +178,24 @@ func UnifyAxisName(name1, name2 string) (string, error) {
 	if name1 == name2 {
 		return name1, nil
 	}
+	gen1 := IsGeneratedAxisName(name1)
+	gen2 := IsGeneratedAxisName(name2)
+	if gen1 && !gen2 {
+		return name2, nil
+	}
+	if !gen1 && gen2 {
+		return name1, nil
+	}
+	if gen1 && gen2 {
+		return name1, nil
+	}
 	return "", errors.Errorf("incompatible axis names: %q vs %q", name1, name2)
+}
+
+// AxisNamesCompatible reports whether two axis names can be unified (see UnifyAxisName).
+func AxisNamesCompatible(name1, name2 string) bool {
+	_, err := UnifyAxisName(name1, name2)
+	return err == nil
 }
 
 // UnifyAxisNames unifies axis names from two shapes of the same rank.

@@ -348,6 +348,15 @@ func TestDynamicPad(t *testing.T) {
 		if got.AxisName(0) != "batch" || got.AxisName(1) != "" {
 			t.Fatalf("expected axis names [\"batch\", \"\"], got %q", got.AxisNames)
 		}
+
+		// Non-zero net padding on a dynamic axis without TargetAxisName mints a "#pad_<n>" name.
+		gotChanged, err := DynamicPad(operand, compute.DynamicPadAxis{Start: 1, End: 1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !gotChanged.IsAxisDynamic(0) || !shapes.IsGeneratedAxisName(gotChanged.AxisName(0)) {
+			t.Fatalf("expected generated #pad_* axis name on axis 0, got %s", gotChanged)
+		}
 	})
 
 	t.Run("Errors", func(t *testing.T) {

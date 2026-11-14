@@ -27,7 +27,7 @@ func NonZero(f *gobackend.Function, operand compute.Value, cfg compute.NonZeroCo
 	knownAxisNames := f.KnownDynamicAxisNames()
 	if cfg.CountAxisName == "" {
 		for {
-			cfg.CountAxisName = f.RawBuilder.Backend.UniqueAxisName("#nonzeros")
+			cfg.CountAxisName = shapes.UniqueAxisName("#nonzeros")
 			if !knownAxisNames.Has(cfg.CountAxisName) {
 				break
 			}

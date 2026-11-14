@@ -6,6 +6,7 @@ import (
 
 	"github.com/gomlx/compute/internal/exceptions"
 	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
 )
 
 // BroadcastIterator allows iteration over the flat indices of the target shape of a broadcast (where some axis
@@ -271,9 +272,37 @@ func (c *BroadcastConfig) EqualNodeData(other NodeDataComparable) bool {
 
 // Recompute implements RecomputableNodeData.
 func (c *BroadcastConfig) Recompute(backend *Backend, resolvedNodes []*Node, originalNode *Node) (any, error) {
-	lhs := resolvedNodes[originalNode.Inputs[0].Index]
-	rhs := resolvedNodes[originalNode.Inputs[1].Index]
-	cfg := DetermineBroadcastConfig(lhs.Shape, rhs.Shape, originalNode.Shape)
+	lhsShape := resolvedNodes[originalNode.Inputs[0].Index].Shape
+	rhsShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
+
+	var outShape shapes.Shape
+	switch {
+	case lhsShape.IsScalar():
+		outShape = rhsShape.Clone()
+	case rhsShape.IsScalar():
+		outShape = lhsShape.Clone()
+	default:
+		if lhsShape.Rank() != rhsShape.Rank() {
+			return nil, errors.Errorf("BinaryOp (%s) rank mismatch at runtime: %s vs %s", originalNode.OpType, lhsShape, rhsShape)
+		}
+		outShape = originalNode.Shape.Clone()
+		for axis := range lhsShape.Rank() {
+			lDim := lhsShape.Dimensions[axis]
+			rDim := rhsShape.Dimensions[axis]
+			if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim {
+				if lDim != 1 && rDim != 1 && lDim != rDim {
+					return nil, errors.Errorf(
+						"dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got concrete shapes %s and %s",
+						axis, originalNode.OpType, lhsShape, rhsShape)
+				}
+				outShape.Dimensions[axis] = max(lDim, rDim)
+			}
+		}
+	}
+	outShape.DType = originalNode.Shape.DType
+	originalNode.Shape = outShape
+
+	cfg := DetermineBroadcastConfig(lhsShape, rhsShape, outShape)
 	return &cfg, nil
 }
 
@@ -283,7 +312,7 @@ func DetermineBroadcastConfig(lhsShape, rhsShape, tgtShape shapes.Shape) Broadca
 		return BroadcastConfig{Pattern: BroadcastGeneral}
 	}
 
-	if lhsShape.Equal(rhsShape) {
+	if lhsShape.EqualDimensions(rhsShape) {
 		return BroadcastConfig{Pattern: BroadcastNone}
 	}
 

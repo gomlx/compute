@@ -133,7 +133,6 @@ func FusedDense(f *gobackend.Function, x, weight, bias compute.Value, options co
 	if err != nil {
 		return nil, err
 	}
-	outShape = f.NameAnonymousDynamicAxes(outShape, "#dense")
 
 	if wNode.Shape.IsDynamic() || biasShape.IsDynamic() {
 		return nil, compute.ErrNotImplemented

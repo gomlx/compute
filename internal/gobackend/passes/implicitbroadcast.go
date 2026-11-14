@@ -108,7 +108,7 @@ func (p *ImplicitBroadcastFusion) Apply(b *gobackend.Builder) (bool, error) {
 					}
 					requiresDAGSort = true
 				}
-				if isBinary && !node.Inputs[0].Shape.IsDynamic() && !node.Inputs[1].Shape.IsDynamic() && !node.Shape.IsDynamic() {
+				if isBinary {
 					cfg := gobackend.DetermineBroadcastConfig(node.Inputs[0].Shape, node.Inputs[1].Shape, node.Shape)
 					node.Data = &cfg
 				}

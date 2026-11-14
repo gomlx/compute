@@ -149,7 +149,7 @@ func validateDenseBias(bias shapes.Shape, outFeatureDims []int, outFeatureNames 
 				if len(outFeatureNames) > i {
 					oName = outFeatureNames[i]
 				}
-				if !shapes.AxisNameEqual(bName, oName) {
+				if !shapes.AxisNamesCompatible(bName, oName) {
 					return errors.Errorf("FusedDense: bias axis %d dynamic axis name (%q) does not match output feature axis name (%q)",
 						i, bName, oName)
 				}
@@ -272,7 +272,7 @@ func shapesMatch(s1, s2 shapes.Shape) bool {
 		d1 := s1.Dimensions[i]
 		d2 := s2.Dimensions[i]
 		if d1 == shapes.DynamicDim && d2 == shapes.DynamicDim {
-			if !shapes.AxisNameEqual(s1.AxisName(i), s2.AxisName(i)) {
+			if !shapes.AxisNamesCompatible(s1.AxisName(i), s2.AxisName(i)) {
 				return false
 			}
 		} else if d1 != shapes.DynamicDim && d2 != shapes.DynamicDim && d1 != d2 {

@@ -235,13 +235,32 @@ func TestBindings(t *testing.T) {
 			t.Fatalf("Expected %v, got %v", "batch", name)
 		}
 
-		// Different names.
+		// Different non-generated names.
 		_, err = UnifyAxisName("batch", "time")
 		if err == nil {
 			t.Fatalf("Expected error, got nil")
 		}
 		if !strings.Contains(err.Error(), "incompatible") {
 			t.Fatalf("Expected %v to contain %v", err.Error(), "incompatible")
+		}
+
+		// Generated "#" axis names unify permissively (Option B).
+		gen1 := UniqueAxisName("a")
+		gen2 := UniqueAxisName("b")
+		if name, err = UnifyAxisName(gen1, gen1); err != nil || name != gen1 {
+			t.Fatalf("Expected %q, got %q (err=%v)", gen1, name, err)
+		}
+		if name, err = UnifyAxisName(gen1, gen2); err != nil || name != gen1 {
+			t.Fatalf("Expected %q, got %q (err=%v)", gen1, name, err)
+		}
+		if name, err = UnifyAxisName(gen1, "batch"); err != nil || name != "batch" {
+			t.Fatalf("Expected \"batch\", got %q (err=%v)", name, err)
+		}
+		if name, err = UnifyAxisName("batch", gen1); err != nil || name != "batch" {
+			t.Fatalf("Expected \"batch\", got %q (err=%v)", name, err)
+		}
+		if !AxisNamesCompatible(gen1, gen2) || !AxisNamesCompatible(gen1, "batch") || AxisNamesCompatible("batch", "time") {
+			t.Fatalf("Unexpected AxisNamesCompatible results")
 		}
 	})
 
@@ -287,12 +306,18 @@ func TestBindings(t *testing.T) {
 			t.Fatalf("Expected error, got nil")
 		}
 
-		// AnonymousAxis conflict.
-		s9 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{AnonymousAxis, ""})
-		s10 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{AnonymousAxis, ""})
-		_, err = UnifyAxisNames(s9, s10)
-		if err == nil {
-			t.Fatalf("Expected error for AnonymousAxis, got nil")
+		// Generated "#" axis names unify without conflict; user-named wins over generated.
+		gen1 := UniqueAxisName("a")
+		gen2 := UniqueAxisName("b")
+		s9 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{gen1, ""})
+		s10 := MakeDynamic(dtypes.Float32, []int{-1, 512}, []string{gen2, ""})
+		names, err = UnifyAxisNames(s9, s10)
+		if err != nil || !reflect.DeepEqual([]string{gen1, ""}, names) {
+			t.Fatalf("Expected [%q, \"\"], got %v (err=%v)", gen1, names, err)
+		}
+		names, err = UnifyAxisNames(s9, s7)
+		if err != nil || !reflect.DeepEqual([]string{"batch", ""}, names) {
+			t.Fatalf("Expected [\"batch\", \"\"], got %v (err=%v)", names, err)
 		}
 	})
 

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gomlx/compute/dtypes"
@@ -387,11 +388,29 @@ func TestAxisNamesEqual(t *testing.T) {
 	if axisNamesEqual([]string{"a"}, []string{"a", "b"}) {
 		t.Fatalf("Condition expected to be false")
 	}
-	if axisNamesEqual([]string{AnonymousAxis}, []string{AnonymousAxis}) {
-		t.Fatalf("Condition expected to be false for AnonymousAxis")
+	genA := UniqueAxisName("a")
+	genB := UniqueAxisName("#b")
+	if !IsGeneratedAxisName(genA) || !strings.HasPrefix(genA, "#a_") {
+		t.Fatalf("Expected generated name starting with #a_, got %q", genA)
 	}
-	if axisNamesEqual([]string{"a"}, []string{AnonymousAxis}) {
-		t.Fatalf("Condition expected to be false for AnonymousAxis")
+	if !IsGeneratedAxisName(genB) || !strings.HasPrefix(genB, "#b_") {
+		t.Fatalf("Expected generated name starting with #b_, got %q", genB)
+	}
+	genEmpty := UniqueAxisName("")
+	if !strings.HasPrefix(genEmpty, "#anon_") {
+		t.Fatalf("Expected generated name starting with #anon_, got %q", genEmpty)
+	}
+	if genA == genB || genA == UniqueAxisName("a") {
+		t.Fatalf("Expected UniqueAxisName calls to return distinct names")
+	}
+	if !axisNamesEqual([]string{genA}, []string{genA}) {
+		t.Fatalf("Expected generated axis name %q to equal itself", genA)
+	}
+	if axisNamesEqual([]string{genA}, []string{genB}) {
+		t.Fatalf("Expected distinct generated axis names %q and %q not to be equal", genA, genB)
+	}
+	if axisNamesEqual([]string{"a"}, []string{genA}) {
+		t.Fatalf("Expected user axis name \"a\" and generated axis name %q not to be equal", genA)
 	}
 }
 

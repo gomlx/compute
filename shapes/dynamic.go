@@ -3,7 +3,10 @@
 package shapes
 
 import (
+	"fmt"
 	"slices"
+	"strings"
+	"sync/atomic"
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/pkg/errors"
@@ -25,8 +28,8 @@ const DynamicDim = -1
 // axisNames must have the same length as dimensions. Use "" for unnamed axes.
 //
 // Axis name reserved characters/strings:
-// - Names starting with "=" or "#" are reserved for internal (backend implementation) use.
-// - "?" (AnonymousAxis) represents a dynamic axis that should never match anything, including itself.
+// - Names starting with "=" (SymbolicAxisPrefix) are reserved for symbolic sum expressions (e.g. "=10+batch").
+// - Names starting with "#" (GeneratedAxisPrefix) are reserved for auto-generated unique axis names (see UniqueAxisName).
 // - "*" is reserved for future wildcard matching.
 //
 // Example:
@@ -91,8 +94,8 @@ func (s Shape) AxisName(axis int) string {
 // The number of names must equal the rank.
 //
 // Axis name reserved characters/strings:
-// - Names starting with "=" or "#" are reserved for internal (backend implementation) use.
-// - "?" (AnonymousAxis) represents a dynamic axis that should never match anything, including itself.
+// - Names starting with "=" (SymbolicAxisPrefix) are reserved for symbolic sum expressions (e.g. "=10+batch").
+// - Names starting with "#" (GeneratedAxisPrefix) are reserved for auto-generated unique axis names (see UniqueAxisName).
 // - "*" is reserved for future wildcard matching.
 func (s Shape) WithAxisNames(names ...string) Shape {
 	if len(names) != s.Rank() {
@@ -103,19 +106,43 @@ func (s Shape) WithAxisNames(names ...string) Shape {
 	return s2
 }
 
-// AnonymousAxis is a special-cased axis name for dynamic dimensions that should never match anything,
-// including itself, in axis comparison helper functions.
-const AnonymousAxis = "?"
+// GeneratedAxisPrefix is the prefix used for auto-generated unique dynamic axis names (e.g., "#anon_1", "#conv_2").
+// See UniqueAxisName and UnifyAxisName for their matching and unification semantics.
+const GeneratedAxisPrefix = "#"
 
 // SymbolicAxisPrefix is the prefix used for dynamic composite axis names (e.g., "=10+a").
 const SymbolicAxisPrefix = "="
 
-// AxisNameEqual checks whether two individual axis names are equal.
-// If either axis name is AnonymousAxis, it returns false (it never matches anything, including itself).
-func AxisNameEqual(a, b string) bool {
-	if a == AnonymousAxis || b == AnonymousAxis {
-		return false
+var uniqueAxisCounter atomic.Uint64
+
+// IsGeneratedAxisName reports whether name starts with GeneratedAxisPrefix ("#").
+func IsGeneratedAxisName(name string) bool {
+	return strings.HasPrefix(name, GeneratedAxisPrefix)
+}
+
+// UniqueAxisName returns a globally unique axis name prefixed with "#" (GeneratedAxisPrefix)
+// and suffixed with "_<n>" where <n> is a monotonically increasing atomic counter.
+//
+// If prefix already starts with "#", the leading "#" is not duplicated.
+// If prefix is empty (or "#"), "anon" is used as the base name (producing "#anon_<n>").
+//
+// Generated "#" axis names represent non-user-named dynamic dimensions:
+//   - A generated axis name equals itself in Shape.Equal and AxisNameEqual (e.g. "#a_1" == "#a_1"),
+//     allowing derived values such as x * (x + 1) and execution caches to match statically.
+//   - Different generated axis names (e.g. "#a_1" vs "#b_2") remain independent in AxisBindings.Extract.
+//   - In operations requiring dimension compatibility (UnifyAxisName / AxisNamesCompatible),
+//     generated "#" axes unify permissively at graph-build time (yielding to user-named or "=" symbolic
+//     axes, or keeping the first "#" name when both are generated), deferring dimension verification to runtime.
+func UniqueAxisName(prefix string) string {
+	prefix = strings.TrimPrefix(prefix, GeneratedAxisPrefix)
+	if prefix == "" {
+		prefix = "anon"
 	}
+	return fmt.Sprintf("%s%s_%d", GeneratedAxisPrefix, prefix, uniqueAxisCounter.Add(1))
+}
+
+// AxisNameEqual checks whether two individual axis names are identical.
+func AxisNameEqual(a, b string) bool {
 	return a == b
 }
 
