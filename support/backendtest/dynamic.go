@@ -1632,4 +1632,72 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			}
 		})
 	})
+
+	t.Run("DynamicRNGBitGenerator", func(t *testing.T) {
+		testutil.SkipIfMissingDynamicShapes(t, b)
+		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
+		testutil.SkipIfMissing(t, b, compute.OpTypeConstant)
+		testutil.SkipIfMissing(t, b, compute.OpTypeRNGBitGenerator)
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint64)
+		testutil.SkipIfMissingDType(t, b, dtypes.Uint32)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+
+		builder := b.Builder("test_dyn_rng")
+		fn := builder.Main()
+
+		xShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+		_, err := fn.Parameter("x", xShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter x failed: %v", err)
+		}
+		stateParam, err := fn.Parameter("state", compute.RNGStateShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter state failed: %v", err)
+		}
+		rngOutShape := shapes.MakeDynamic(dtypes.Uint32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
+		newState, bits, err := fn.RNGBitGenerator(stateParam, rngOutShape)
+		if err != nil {
+			t.Fatalf("RNGBitGenerator with dynamic shape failed: %v", err)
+		}
+		if err := fn.Return([]compute.Value{newState, bits}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		defer exec.Finalize()
+
+		for _, batch := range []int{2, 5, 0} {
+			inX, err := b.BufferFromFlatData(0, make([]float32, batch*3), shapes.Make(dtypes.Float32, batch, 3))
+			if err != nil {
+				t.Fatalf("BufferFromFlatData x(batch=%d) failed: %v", batch, err)
+			}
+			inState, err := b.BufferFromFlatData(0, []uint64{42, 1, 0}, compute.RNGStateShape)
+			if err != nil {
+				inX.Finalize()
+				t.Fatalf("BufferFromFlatData state failed: %v", err)
+			}
+			outs, err := exec.Execute([]compute.Buffer{inX, inState}, nil, 0)
+			inX.Finalize()
+			inState.Finalize()
+			if err != nil {
+				t.Fatalf("Execute(batch=%d) failed: %v", batch, err)
+			}
+			gotShape, err := outs[1].Shape()
+			if err != nil {
+				outs[0].Finalize()
+				outs[1].Finalize()
+				t.Fatalf("Shape(batch=%d) failed: %v", batch, err)
+			}
+			wantShape := shapes.Make(dtypes.Uint32, batch, 3)
+			if !gotShape.Equal(wantShape) {
+				outs[0].Finalize()
+				outs[1].Finalize()
+				t.Fatalf("batch=%d: got shape %s, want %s", batch, gotShape, wantShape)
+			}
+			outs[0].Finalize()
+			outs[1].Finalize()
+		}
+	})
 }
