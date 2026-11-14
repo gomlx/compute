@@ -375,6 +375,9 @@ func (b *Builder) OpShape(op compute.Value) (shapes.Shape, error) {
 // checkFlat returns an error if flat is not a slice of one of the dtypes supported.
 // It returns the supported dtype and the length of the flat slice.
 func checkFlat(flat any) (dtype dtypes.DType, flatLen int, err error) {
+	if flat == nil {
+		return dtype, 0, errors.New("flat data cannot be nil")
+	}
 	flatType := reflect.TypeOf(flat)
 	if flatType.Kind() != reflect.Slice {
 		return dtype, 0, errors.Errorf("flat data should be a slice, not %s", flatType.Kind())

@@ -1,3 +1,11 @@
+- 2026-11-14:
+  - Added `TestDynamicOps` backend compliance suite (`support/backendtest/dynamic.go`, wired into `backendtest.RunAll`) covering `DynamicShape`/`DynamicDimensionSize`, `DynamicReshape` (including dynamic-to-static), `DynamicBroadcastInDim`, `DynamicIota`, `DynamicPad`, `AnonymousAxis` (`"?"`) concatenation, `ReduceWindow`+`ArgMinMax` on dynamic batches, `NonZero` across all DTypes and scalars plus minted `#nonzeros_*` / `#conv_*` axis propagation, `Constant` slice-mutation isolation, `IsNaN`, `Where` (`Bool` + `"?"`), `ConvGeneral` `inputDilations` / negative paddings, `Gather` windows, and zero-sized broadcasts.
+  - Fixed dynamic-shape and edge-case bugs uncovered in `shapeinference` and `gobackend`:
+    - Fixed out-of-bounds panic in `shapeinference.Gather` (`shapeinference/shapeinference.go`) when `indexVectorAxis == startIndices.Rank()`.
+    - Fixed nil-slice panic in `gobackend.checkFlat` (`internal/gobackend/builder.go`).
+    - Replaced `f.NotEqual(x, x)` lowering in `gobackend` `IsNaN` (`internal/gobackend/ops/isnan.go`) with a native unary `execIsNaN` kernel (and resolved concrete runtime output shapes in `execIsFinite` and `execWhere`) so `shapes.AnonymousAxis` (`"?"`) inputs work without binary axis-name unification errors or dynamic-shape buffer panics.
+    - Tracked dynamic axis source `(node, axis)` pairs in `gobackend.Function` (`internal/gobackend/function.go`, `internal/gobackend/ops/{iota,broadcastindim}.go`) so `BroadcastInDim`, `DynamicBroadcastInDim`, and `DynamicIota` resolve minted/data-dependent axis names (such as `#nonzeros_*`) without explicit dimension `Value` operands.
+
 - 2026-11-13:
   - Added `dtypes.CloneAnySlice` (`dtypes/slices.go`) for cloning flat slices of any supported Go DType without reflection.
   - Expanded `FusedTopK` backend compliance tests in `support/backendtest/data_dependent.go` across all sortable DTypes (with largest/smallest tie-breaking), dynamic input dimensions with single-output (`indices`-only) execution, and invalid parameter/axis/dtype validation.
