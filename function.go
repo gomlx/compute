@@ -65,8 +65,10 @@ type Function interface {
 	// The flat value must be a slice of a basic type supported (that can be
 	// converted to a DType).
 	//
-	// The value is copied into the graph. It's recommended that for very large
-	// tensors, even if constants, that they are passed as parameters instead.
+	// The value is copied into the graph.
+	//
+	// Very large constants (like the weights of a model, or large constants) they are usually passed as
+	// parameters instead -- except if the backend sets Capabilities.PreferConstantsForVariables.
 	Constant(flat any, dims ...int) (Value, error)
 
 	// Shape returns the shape of the given Value.
