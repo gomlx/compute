@@ -169,9 +169,12 @@ func DynamicBroadcastInDim(operand shapes.Shape, broadcastAxes []int, specs []co
 			}
 			nameOperand := operand.AxisName(axisInOperand)
 			nameOutput := axisNames[axisInOutput]
-			if nameOperand != nameOutput {
-				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve its axis name %q, got %q",
+			if !shapes.AxisNamesCompatible(nameOperand, nameOutput) {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve or unify its axis name %q, got %q",
 					axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, nameOutput)
+			}
+			if nameOutput != nameOperand && spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(nameOutput)) {
+				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", nameOutput)
 			}
 		} else if inDim != 1 {
 			if outDim == shapes.DynamicDim {
@@ -328,9 +331,9 @@ func DynamicPad(operand shapes.Shape, axesConfig ...compute.DynamicPadAxis) (out
 			output.Dimensions[axis] = shapes.DynamicDim
 			if targetAxisName != "" {
 				output.AxisNames[axis] = targetAxisName
-			} else if dim != shapes.DynamicDim {
-				// Static dimension became dynamic without targetAxisName -> anonymous.
-				output.AxisNames[axis] = shapes.AnonymousAxis
+			} else if dim != shapes.DynamicDim || isDynamicPad || config.Start+config.End != 0 || config.Interior != 0 {
+				// Output size differs from operand's dynamic axis (or static dim became dynamic) without targetAxisName -> mint a unique "#pad_<n>" axis name.
+				output.AxisNames[axis] = shapes.UniqueAxisName("#pad")
 			}
 			continue
 		}

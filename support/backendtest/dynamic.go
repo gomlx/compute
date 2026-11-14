@@ -425,13 +425,12 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 		builder := b.Builder("test_anon_dyn_concat")
 		mainFn := builder.Main()
 
-		// Two independent anonymous axes at index 0 must not be unified into the same runtime length.
-		anonShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.AnonymousAxis})
-		p0, err := mainFn.Parameter("a", anonShape, nil)
+		// Two independent generated "#" axes at index 0 must not be forced to the same runtime length.
+		p0, err := mainFn.Parameter("a", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("a")}), nil)
 		if err != nil {
 			t.Fatalf("Parameter a failed: %v", err)
 		}
-		p1, err := mainFn.Parameter("b", anonShape, nil)
+		p1, err := mainFn.Parameter("b", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("b")}), nil)
 		if err != nil {
 			t.Fatalf("Parameter b failed: %v", err)
 		}
@@ -798,7 +797,7 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 		builder := b.Builder("test_conv_named_anon")
 		fn := builder.Main()
 
-		inShape := shapes.MakeDynamic(dtypes.Float32, []int{1, shapes.DynamicDim, 1}, []string{"", shapes.AnonymousAxis, ""})
+		inShape := shapes.MakeDynamic(dtypes.Float32, []int{1, shapes.DynamicDim, 1}, []string{"", shapes.UniqueAxisName("spatial"), ""})
 		x, err := fn.Parameter("x", inShape, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -990,7 +989,7 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 
 			builder := b.Builder("isnan_dyn_anon")
 			fn := builder.Main()
-			p, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.AnonymousAxis}), nil)
+			p, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("x")}), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1063,7 +1062,7 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			// Anonymous dynamic axis "?" on condition with Bool branches (triggers failure if decomposed via BinaryOp on two "?" tensors).
 			builder := b.Builder("where_bool_anon")
 			fn := builder.Main()
-			condP, err := fn.Parameter("cond", shapes.MakeDynamic(dtypes.Bool, []int{shapes.DynamicDim, 2}, []string{shapes.AnonymousAxis, ""}), nil)
+			condP, err := fn.Parameter("cond", shapes.MakeDynamic(dtypes.Bool, []int{shapes.DynamicDim, 2}, []string{shapes.UniqueAxisName("cond"), ""}), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1329,7 +1328,7 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			idxP, err := fn.Parameter("idx", shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim}, []string{shapes.AnonymousAxis}), nil)
+			idxP, err := fn.Parameter("idx", shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("idx")}), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1505,6 +1504,131 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			}
 			if !slices.Equal(sh1.Dimensions, []int{0, 0, 3}) {
 				t.Fatalf("bcStaticZero: expected [0, 0, 3], got %v", sh1.Dimensions)
+			}
+		})
+	})
+
+	t.Run("GeneratedAxisSelfAndRuntimeCheck", func(t *testing.T) {
+		testutil.SkipIfMissingDynamicShapes(t, b)
+		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
+		testutil.SkipIfMissing(t, b, compute.OpTypeConstant)
+		testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
+		testutil.SkipIfMissing(t, b, compute.OpTypeMul)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+
+		t.Run("SelfDerivedBinaryOp", func(t *testing.T) {
+			// x * (x + 1) on a generated "#..." axis must build and execute across varying sizes.
+			builder := b.Builder("gen_axis_self_derived")
+			fn := builder.Main()
+			x, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("x")}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			one, err := fn.Constant([]float32{1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			xPlusOne, err := fn.Add(x, one)
+			if err != nil {
+				t.Fatalf("Add(x, 1) failed: %v", err)
+			}
+			prod, err := fn.Mul(x, xPlusOne)
+			if err != nil {
+				t.Fatalf("Mul(x, x+1) failed: %v", err)
+			}
+			if err := fn.Return([]compute.Value{prod}, nil); err != nil {
+				t.Fatal(err)
+			}
+			ex, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ex.Finalize()
+
+			for _, tc := range []struct {
+				in   []float32
+				want []float32
+			}{
+				{[]float32{2, 3, 4}, []float32{6, 12, 20}},
+				{[]float32{5, 6}, []float32{30, 42}},
+			} {
+				buf, err := b.BufferFromFlatData(0, tc.in, shapes.Make(dtypes.Float32, len(tc.in)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outs, err := ex.Execute([]compute.Buffer{buf}, nil, 0)
+				buf.Finalize()
+				if err != nil {
+					t.Fatalf("Execute(%v) failed: %v", tc.in, err)
+				}
+				got, err := testutil.FromBuffer(b, outs[0])
+				outs[0].Finalize()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ok, diff := testutil.IsEqual(tc.want, got); !ok {
+					t.Fatalf("Mul(x, x+1) mismatch:\n%s", diff)
+				}
+			}
+		})
+
+		t.Run("DistinctGeneratedAxesRuntimeCheck", func(t *testing.T) {
+			// Two distinct generated "#" axes unify at build time and check compatibility at runtime.
+			builder := b.Builder("gen_axis_runtime_check")
+			fn := builder.Main()
+			a, err := fn.Parameter("a", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("a")}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bParam, err := fn.Parameter("b", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim}, []string{shapes.UniqueAxisName("b")}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum, err := fn.Add(a, bParam)
+			if err != nil {
+				t.Fatalf("Add(#a, #b) should succeed at build time, got: %v", err)
+			}
+			if err := fn.Return([]compute.Value{sum}, nil); err != nil {
+				t.Fatal(err)
+			}
+			ex, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ex.Finalize()
+
+			// Matching runtime sizes succeed.
+			bufA, err := b.BufferFromFlatData(0, []float32{1, 2, 3}, shapes.Make(dtypes.Float32, 3))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bufA.Finalize()
+			bufBMatch, err := b.BufferFromFlatData(0, []float32{10, 20, 30}, shapes.Make(dtypes.Float32, 3))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bufBMatch.Finalize()
+			outs, err := ex.Execute([]compute.Buffer{bufA, bufBMatch}, nil, 0)
+			if err != nil {
+				t.Fatalf("Execute with matching runtime dims failed: %v", err)
+			}
+			got, err := testutil.FromBuffer(b, outs[0])
+			outs[0].Finalize()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ok, diff := testutil.IsEqual([]float32{11, 22, 33}, got); !ok {
+				t.Fatalf("Add(#a, #b) mismatch:\n%s", diff)
+			}
+
+			// Mismatched runtime sizes must return an error.
+			bufBMismatch, err := b.BufferFromFlatData(0, []float32{10, 20}, shapes.Make(dtypes.Float32, 2))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bufBMismatch.Finalize()
+			if _, err := ex.Execute([]compute.Buffer{bufA, bufBMismatch}, nil, 0); err == nil {
+				t.Fatal("expected runtime error when distinct generated axes have incompatible sizes 3 vs 2")
 			}
 		})
 	})

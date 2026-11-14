@@ -67,9 +67,18 @@ func execConcatenate(backend *gobackend.Backend, node *gobackend.Node, inputs []
 		}
 		outputShape = concreteShape
 	}
+	rank := outputShape.Rank()
+	for i, inputBuf := range inputs {
+		for d := range rank {
+			if d != axis && inputBuf.RawShape.Dimensions[d] != outputShape.Dimensions[d] {
+				return nil, errors.Errorf(
+					"Concatenate runtime dimension mismatch at axis %d: expected %d, input #%d has %d (shapes %s vs %s)",
+					d, outputShape.Dimensions[d], i, inputBuf.RawShape.Dimensions[d], outputShape, inputBuf.RawShape)
+			}
+		}
+	}
 	dtype := outputShape.DType
 	elemSize := dtype.Size()
-	rank := outputShape.Rank()
 	_ = inputsOwned // We don't reuse the inputs.
 
 	// Allocate output buffer.

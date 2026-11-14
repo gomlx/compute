@@ -16,8 +16,8 @@ import (
 //  2. Node-level (specializeNode): specializes individual nodes just before op dispatch
 //     when dimensions could not be resolved from parameter bindings alone — such as
 //     outputs of data-dependent operations (NonZero, DynamicReshape, DynamicIota,
-//     DynamicBroadcastInDim) or unspecialized intermediate/anonymous axes (e.g. strided
-//     ConvGeneral outputs or AnonymousAxis parameters).
+//     DynamicBroadcastInDim) or unspecialized intermediate dynamic axes (e.g. strided
+//     ConvGeneral or DynamicPad outputs with generated "#..." axis names).
 //
 // The resolvedNodes are shallow copies of the original Function.Nodes.
 // Only the Shape field (and MultiOutputsShapes / RecomputableNodeData)
@@ -205,8 +205,8 @@ func (e *Executable) getOrCreateSpecialization(bindings shapes.AxisBindings) (*S
 // parameter-bound dynamic axes once at Execute entry, specializeNode handles
 // dimensions that are only known during execution — such as outputs of
 // data-dependent operations (NonZero, DynamicReshape, DynamicIota,
-// DynamicBroadcastInDim) as well as unspecialized intermediate or anonymous
-// dynamic axes (e.g., strided ConvGeneral outputs or AnonymousAxis parameters).
+// DynamicBroadcastInDim) as well as unspecialized intermediate dynamic axes
+// (e.g., strided ConvGeneral or DynamicPad outputs with generated "#..." axis names).
 // All returned copies are private to the current node execution.
 func specializeNode(backend *Backend, node *Node, inputs []*Buffer, spec *ShapeSpecialization) (*Node, error) {
 	needs := node.Shape.IsDynamic()

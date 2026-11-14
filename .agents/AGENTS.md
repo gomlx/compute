@@ -87,6 +87,7 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 - Shape can be dynamic -- dynamic axes are represented by the sentinel value `shapes.DynamicDim` (-1).
   If they are dynamic, they must be named (see `shapes.MakeDynamic`), and the dynamic axes must have a name != "".
   Non-dynamic axes can also be named, but it's not required (the shape.AxisNames can be nil, or their name == "").
+  - **User-named vs. `#`-prefixed generated axes**: User-supplied axis names (e.g. `"batch"`, `"seq"`) and symbolic `"=..."` expressions are strictly checked at graph-build time (`"batch"` vs `"seq"` is a build-time error). Non-user-named dynamic dimensions use globally unique `#<prefix>_<n>` names minted by `shapes.UniqueAxisName(prefix)` (`shapes.GeneratedAxisPrefix = "#"`, `shapes.IsGeneratedAxisName`): `#a_1` matches `#a_1` statically (`AxisNameEqual` is `a == b`), while distinct generated axes (or a generated axis paired with a user-named axis) unify permissively via `shapes.UnifyAxisName` / `shapes.AxisNamesCompatible` and must be checked for concrete dimension equality by backends at runtime.
 
 ### Modern Go Style
 

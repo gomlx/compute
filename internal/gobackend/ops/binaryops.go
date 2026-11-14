@@ -153,12 +153,8 @@ func addBinaryOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp comp
 		return nil, err
 	}
 
-	var data any
-	if !lhs.Shape.IsDynamic() && !rhs.Shape.IsDynamic() && !shape.IsDynamic() {
-		cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
-		data = &cfg
-	}
-	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, data)
+	cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
+	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, &cfg)
 	return node, nil
 }
 
@@ -174,12 +170,8 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 		return nil, err
 	}
 
-	var data any
-	if !lhs.Shape.IsDynamic() && !rhs.Shape.IsDynamic() && !shape.IsDynamic() {
-		cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
-		data = &cfg
-	}
-	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, data)
+	cfg := gobackend.DetermineBroadcastConfig(lhs.Shape, rhs.Shape, shape)
+	node, _ := f.GetOrCreateNode(opType, shape, []*gobackend.Node{lhs, rhs}, &cfg)
 	return node, nil
 }
 
@@ -223,10 +215,10 @@ func binaryOperandsAndOutputForExecution(backend *gobackend.Backend, node *gobac
 		outputShape = concreteOutputShape
 	}
 	switch {
-	case inputsOwned[1] && rhs.RawShape.Equal(outputShape):
+	case inputsOwned[1] && rhs.RawShape.DType == outputShape.DType && rhs.RawShape.EqualDimensions(outputShape):
 		output = rhs
 		inputs[1] = nil
-	case inputsOwned[0] && lhs.RawShape.Equal(outputShape):
+	case inputsOwned[0] && lhs.RawShape.DType == outputShape.DType && lhs.RawShape.EqualDimensions(outputShape):
 		output = lhs
 		inputs[0] = nil
 	default:

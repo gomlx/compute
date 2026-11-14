@@ -350,7 +350,7 @@ func isSDPABatchOrHeadCompatible(dim int, name string, targetDim int, targetName
 	}
 	if dim < 0 && targetDim < 0 {
 		if name != "" && targetName != "" {
-			return name == targetName
+			return shapes.AxisNamesCompatible(name, targetName)
 		}
 		return true
 	}
@@ -373,7 +373,7 @@ func isSDPASeqDimCompatible(dim int, name string, targetDim int, targetName stri
 	}
 	if dim < 0 && targetDim < 0 {
 		if name != "" && targetName != "" {
-			return name == targetName
+			return shapes.AxisNamesCompatible(name, targetName)
 		}
 		return true
 	}

@@ -298,7 +298,6 @@ func DotGeneral(f *gobackend.Function,
 	if err != nil {
 		return nil, err
 	}
-	outputShape = f.NameAnonymousDynamicAxes(outputShape, "#dot")
 
 	// Create node params or the "normalized" dot-general, after all reshaping/transposition.
 	// - LayoutNonTransposed: lhs=[batch, lhsCross, contracting], rhs=[batch, contracting, rhsCross]

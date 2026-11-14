@@ -308,6 +308,7 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	buf.InUse = true
 	buf.isUserFed = false
 	buf.RawShape = shape
+	buf.RawShape.AxisNames = nil
 	rank := len(shape.Dimensions)
 	if rank <= len(buf.ShapeDimensionsBuffer) {
 		buf.RawShape.Dimensions = buf.ShapeDimensionsBuffer[:rank]

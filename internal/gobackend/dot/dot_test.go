@@ -124,8 +124,8 @@ func TestDotGeneralAnonymousRuntimeAxes(t *testing.T) {
 	}
 	builder := backend.Builder("TestDotGeneralAnonymousRuntimeAxes")
 	fn := builder.Main()
-	lhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, 2, -1}, []string{shapes.AnonymousAxis, "", shapes.AnonymousAxis})
-	rhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, -1, 3}, []string{shapes.AnonymousAxis, shapes.AnonymousAxis, ""})
+	lhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, 2, -1}, []string{shapes.UniqueAxisName("lhs_b"), "", shapes.UniqueAxisName("lhs_k")})
+	rhsShape := shapes.MakeDynamic(dtypes.Float32, []int{-1, -1, 3}, []string{shapes.UniqueAxisName("rhs_b"), shapes.UniqueAxisName("rhs_k"), ""})
 	lhs, err := fn.Parameter("lhs", lhsShape, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestDotGeneralAnonymousRuntimeAxes(t *testing.T) {
 		b2 := backend.Builder("TestDotGeneralAnonymousCachedConstantRHS")
 		fn2 := b2.Main()
 		const K, N = 128, 64
-		lhsParam, err := fn2.Parameter("lhs", shapes.MakeDynamic(dtypes.Float32, []int{-1, K}, []string{shapes.AnonymousAxis, ""}), nil)
+		lhsParam, err := fn2.Parameter("lhs", shapes.MakeDynamic(dtypes.Float32, []int{-1, K}, []string{shapes.UniqueAxisName("lhs_m"), ""}), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

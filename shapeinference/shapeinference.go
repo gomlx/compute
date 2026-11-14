@@ -299,8 +299,8 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 					output.AxisNames[axis] = lhsShape.AxisName(axis)
 				}
 			} else if lhsDim == rhsDim {
-				// Both dynamic: they must have matching symbolic value.
-				if !shapes.AxisNameEqual(lhsShape.AxisName(axis), rhsShape.AxisName(axis)) {
+				// Both dynamic: they must have compatible axis names.
+				if !shapes.AxisNamesCompatible(lhsShape.AxisName(axis), rhsShape.AxisName(axis)) {
 					err = errors.Errorf(
 						"axis #%d is dynamic for both operands, but have different axis names for BinaryOp (%s), "+
 							"they cannot be implicitly broadcast; got shapes %s and %s",
@@ -480,11 +480,15 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 				hasDynamic = true
 				if dynamicName == "" {
 					dynamicName = s.AxisName(axis)
-				} else if !shapes.AxisNameEqual(dynamicName, s.AxisName(axis)) {
-					err = errors.Errorf("axis #%d is dynamic for multiple operands, but have different axis names for Where(), "+
-						"they cannot be implicitly broadcast; got shapes condition=%s, onTrue=%s and onFalse=%s",
-						axis, condition, onTrue, onFalse)
-					return shapes.Invalid(), err
+				} else {
+					unified, nameErr := shapes.UnifyAxisName(dynamicName, s.AxisName(axis))
+					if nameErr != nil {
+						err = errors.Errorf("axis #%d is dynamic for multiple operands, but have different axis names for Where(), "+
+							"they cannot be implicitly broadcast; got shapes condition=%s, onTrue=%s and onFalse=%s",
+							axis, condition, onTrue, onFalse)
+						return shapes.Invalid(), err
+					}
+					dynamicName = unified
 				}
 			} else if d != 1 {
 				if targetDim != 1 && targetDim != d {
@@ -627,8 +631,11 @@ func BroadcastInDim(operand, outputShape shapes.Shape, broadcastAxes []int,
 			if outputShape.AxisNames != nil {
 				nameOutput = outputShape.AxisNames[axisInOutput]
 			}
-			if nameOperand != nameOutput {
-				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve its axis name %q, but output shape %s has axis name %q", axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, outputShape, nameOutput)
+			if nameOutput == "" || !shapes.AxisNamesCompatible(nameOperand, nameOutput) {
+				return errors.Errorf("dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve or unify its axis name %q, but output shape %s has axis name %q", axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, outputShape, nameOutput)
+			}
+			if nameOutput != nameOperand && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(nameOutput)) {
+				return errors.Errorf("cannot introduce an unknown dynamic axis name -- the dynamic axis must be known from the input parameters (axis %d with name %q, known: %v)", axisInOutput, nameOutput, knownDynamicAxisNames)
 			}
 		} else if inDim != 1 && inDim != outDim {
 			return errors.Errorf("the values of outputShape (%v) that are being broadcast (listed in broadcastAxes) "+
@@ -964,15 +971,10 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 
 	// Calculate axis name for the concatenation axis if dynamic or named.
 	if output.Dimensions[axis] == shapes.DynamicDim {
-		hasAnonymous := false
 		var parts []string
 		for _, inp := range inputs {
 			dim := inp.Dimensions[axis]
 			name := inp.AxisName(axis)
-			if name == shapes.AnonymousAxis {
-				hasAnonymous = true
-				break
-			}
 			if dim != shapes.DynamicDim {
 				parts = append(parts, strconv.Itoa(dim))
 			} else if name != "" {
@@ -981,36 +983,21 @@ func Concatenate(inputs []shapes.Shape, axis int) (output shapes.Shape, err erro
 					subParts := strings.Split(subExpr, "+")
 					for _, p := range subParts {
 						p = strings.TrimSpace(p)
-						if p == shapes.AnonymousAxis {
-							hasAnonymous = true
-							break
-						}
 						if p != "" {
 							parts = append(parts, p)
 						}
-					}
-					if hasAnonymous {
-						break
 					}
 				} else {
 					parts = append(parts, name)
 				}
 			} else {
-				// Dynamic axis without a name behaves as anonymous
-				hasAnonymous = true
-				break
+				parts = append(parts, shapes.UniqueAxisName("#concat"))
 			}
 		}
 
-		var concatAxisName string
-		if hasAnonymous {
-			concatAxisName = shapes.AnonymousAxis
-		} else if len(parts) > 0 {
+		if len(parts) > 0 {
 			sort.Strings(parts)
-			concatAxisName = shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
-		}
-
-		if concatAxisName != "" {
+			concatAxisName := shapes.SymbolicAxisPrefix + strings.Join(parts, "+")
 			if output.AxisNames == nil {
 				output.AxisNames = make([]string, rank)
 			}
@@ -1626,7 +1613,7 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 				if output.AxisNames == nil {
 					output.AxisNames = make([]string, output.Rank())
 				}
-				output.AxisNames[outputAxis] = shapes.AnonymousAxis
+				output.AxisNames[outputAxis] = shapes.UniqueAxisName("#conv")
 			}
 			continue
 		}
@@ -1673,11 +1660,8 @@ func NonZero(operand shapes.Shape, cfg compute.NonZeroConfig) (shapes.Shape, err
 	}
 	countAxisName := cfg.CountAxisName
 	if countAxisName == "" {
-		countAxisName = shapes.AnonymousAxis
-	} else if countAxisName == shapes.AnonymousAxis {
-		return shapes.Invalid(), errors.Errorf("NonZero count axis name %q is reserved for anonymous dimensions", countAxisName)
-	}
-	if cfg.CountAxisName != "" {
+		countAxisName = shapes.UniqueAxisName("#nonzeros")
+	} else {
 		for axis := range operand.Rank() {
 			if operand.AxisName(axis) == countAxisName {
 				return shapes.Invalid(), errors.Errorf("NonZero count axis name %q conflicts with operand axis %d", countAxisName, axis)

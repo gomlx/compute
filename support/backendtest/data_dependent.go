@@ -269,7 +269,7 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeConvGeneral)
 		testutil.SkipIfMissing(t, b, compute.OpTypeNeg)
 		testutil.SkipIfMissingDynamicShapes(t, b)
-		template := shapes.MakeDynamic(dtypes.Float32, []int{1, shapes.DynamicDim, 1}, []string{"", shapes.AnonymousAxis, ""})
+		template := shapes.MakeDynamic(dtypes.Float32, []int{1, shapes.DynamicDim, 1}, []string{"", shapes.UniqueAxisName("spatial"), ""})
 		runtimeShape := shapes.Make(dtypes.Float32, 1, 5, 1)
 		got, err := execWithTemplateInputShape(b, []float32{1, 2, 3, 4, 5}, runtimeShape, template, func(f compute.Function, p []compute.Value) (compute.Value, error) {
 			kernel, err := f.Constant([]float32{1, 1}, 2, 1, 1)

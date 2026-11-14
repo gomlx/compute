@@ -100,7 +100,7 @@ func DynamicBroadcastInDim(
 		if spec.Name != "" && spec.Value == nil {
 			mappedFromOperand := false
 			for operandAxis, outputAxis := range broadcastAxes {
-				if outputAxis == i && operand.Shape.Dimensions[operandAxis] != 1 {
+				if outputAxis == i && operand.Shape.Dimensions[operandAxis] != 1 && operand.Shape.AxisName(operandAxis) == spec.Name {
 					mappedFromOperand = true
 					break
 				}
@@ -173,6 +173,15 @@ func buildBroadcastPlan(operandShape, outputShape shapes.Shape, broadcastAxes []
 }
 
 func broadcastToShape(backend *gobackend.Backend, targetShape shapes.Shape, broadcastAxes []int, operand *gobackend.Buffer) (*gobackend.Buffer, error) {
+	for operandAxis, outputAxis := range broadcastAxes {
+		inDim := operand.RawShape.Dimensions[operandAxis]
+		outDim := targetShape.Dimensions[outputAxis]
+		if inDim != 1 && inDim != outDim {
+			return nil, errors.Errorf(
+				"BroadcastInDim runtime dimension mismatch: operand axis %d has size %d, cannot broadcast to target axis %d of size %d (operand=%s, target=%s)",
+				operandAxis, inDim, outputAxis, outDim, operand.RawShape, targetShape)
+		}
+	}
 	output, err := backend.GetBuffer(targetShape)
 	if err != nil {
 		return nil, err

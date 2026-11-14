@@ -88,9 +88,9 @@ func Where(f *gobackend.Function, conditionOp, onTrueOp, onFalseOp compute.Value
 func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	condition, onTrue, onFalse := inputs[0], inputs[1], inputs[2]
 
-	// Figure out what the outputBuffer is going to be.
+	// Figure out and validate concrete outputShape (including when distinct "#..." axes meet at runtime).
 	outputShape := node.Shape
-	if outputShape.IsDynamic() {
+	if outputShape.IsDynamic() || outputShape.AxisNames != nil {
 		var err error
 		outputShape, err = shapeinference.Where(condition.RawShape, onTrue.RawShape, onFalse.RawShape)
 		if err != nil {
@@ -101,10 +101,10 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	var output *gobackend.Buffer
 	var err error
 	switch {
-	case onTrue.RawShape.Equal(outputShape) && inputsOwned[1]:
+	case onTrue.RawShape.DType == outputShape.DType && onTrue.RawShape.EqualDimensions(outputShape) && inputsOwned[1]:
 		output = onTrue
 		inputs[1] = nil
-	case onFalse.RawShape.Equal(outputShape) && inputsOwned[2]:
+	case onFalse.RawShape.DType == outputShape.DType && onFalse.RawShape.EqualDimensions(outputShape) && inputsOwned[2]:
 		output = onFalse
 		inputs[2] = nil
 	default:
