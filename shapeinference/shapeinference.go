@@ -1449,6 +1449,12 @@ func ConvGeneral(input, kernel shapes.Shape, axes compute.ConvolveAxesConfig,
 	if !kernel.Ok() {
 		return errorf("invalid kernel shape %s", kernel)
 	}
+	if input.DType != kernel.DType {
+		return errorf("input (operand) and kernel have different dtypes: input=%s, kernel=%s", input, kernel)
+	}
+	if (!input.DType.IsFloat() && !input.DType.IsComplex() && !input.DType.IsInt()) || input.DType.IsPacked() {
+		return errorf("unsupported dtype %s for input %s", input.DType, input)
+	}
 
 	// Check ranks.
 	rank := input.Rank()

@@ -35,11 +35,50 @@ func RNGBitGenerator(f *gobackend.Function, stateOp compute.Value, shape shapes.
 		)
 		return nil, nil, err
 	}
+
+	allInputs := []*gobackend.Node{state}
+	var axisInputIndices []int
+	if shape.IsDynamic() {
+		axisInputIndices = make([]int, shape.Rank())
+		var dynValues []compute.Value
+		knownAxes := f.KnownDynamicAxisNames()
+		for i, dim := range shape.Dimensions {
+			axisInputIndices[i] = -1
+			if dim != shapes.DynamicDim {
+				continue
+			}
+			axisName := shape.AxisName(i)
+			if axisName == "" {
+				return nil, nil, errors.Errorf("RNGBitGenerator: dynamic axis %d of shape %s must have an axis name", i, shape)
+			}
+			dimVal, ok, err := f.DynamicAxisValue(axisName)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
+				axisInputIndices[i] = 1 + len(dynValues)
+				dynValues = append(dynValues, dimVal)
+			} else if !knownAxes.Has(axisName) {
+				return nil, nil, errors.Errorf("RNGBitGenerator: unknown dynamic axis %q at axis %d of shape %s", axisName, i, shape)
+			}
+		}
+		if len(dynValues) > 0 {
+			dynNodes, err := f.VerifyAndCastValues(opType.String(), dynValues...)
+			if err != nil {
+				return nil, nil, err
+			}
+			allInputs = append(allInputs, dynNodes...)
+		}
+	}
+
 	outputShapes := []shapes.Shape{
 		state.Shape.Clone(),
 		shape.Clone(),
 	}
-	node := f.NewMultiOutputsNode(opType, outputShapes, state)
+	node := f.NewMultiOutputsNode(opType, outputShapes, allInputs...)
+	if axisInputIndices != nil {
+		node.Data = axisInputIndices
+	}
 	newState = node.MultiOutputsNodes[0]
 	values = node.MultiOutputsNodes[1]
 	return
@@ -50,8 +89,32 @@ func execRNGBitGenerator(backend *gobackend.Backend, node *gobackend.Node, input
 	state := inputs[0]
 	stateFlat := state.Flat.([]uint64)
 
+	targetShape := node.MultiOutputsShapes[1]
+	if targetShape.IsDynamic() {
+		axisInputIndices, _ := node.Data.([]int)
+		concreteDims := make([]int, targetShape.Rank())
+		for i, dim := range targetShape.Dimensions {
+			if dim != shapes.DynamicDim {
+				concreteDims[i] = dim
+				continue
+			}
+			if i >= len(axisInputIndices) || axisInputIndices[i] < 0 || axisInputIndices[i] >= len(inputs) {
+				return nil, errors.Errorf("execRNGBitGenerator: unresolved dynamic axis %d (%q) in shape %s", i, targetShape.AxisName(i), targetShape)
+			}
+			valSize, err := readScalarInt(inputs[axisInputIndices[i]])
+			if err != nil {
+				return nil, errors.Wrapf(err, "execRNGBitGenerator: reading dynamic dimension for axis %d (%q)", i, targetShape.AxisName(i))
+			}
+			if valSize < 0 {
+				return nil, errors.Errorf("execRNGBitGenerator: dynamic dimension for axis %d (%q) must be nonnegative, got %d", i, targetShape.AxisName(i), valSize)
+			}
+			concreteDims[i] = valSize
+		}
+		targetShape = shapes.Make(targetShape.DType, concreteDims...)
+	}
+
 	// Reserved outputs:
-	rngData, err := backend.GetBuffer(node.MultiOutputsShapes[1])
+	rngData, err := backend.GetBuffer(targetShape)
 	if err != nil {
 		return nil, err
 	}

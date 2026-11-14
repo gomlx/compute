@@ -8,7 +8,8 @@
     - Fixed out-of-bounds panic in `shapeinference.Gather` (`shapeinference/shapeinference.go`) when `indexVectorAxis == startIndices.Rank()`.
     - Fixed nil-slice panic in `gobackend.checkFlat` (`internal/gobackend/builder.go`).
     - Replaced `f.NotEqual(x, x)` lowering in `gobackend` `IsNaN` (`internal/gobackend/ops/isnan.go`) with a native unary `execIsNaN` kernel (and resolved concrete runtime output shapes in `execIsFinite` and `execWhere`) so `shapes.AnonymousAxis` (`"?"`) inputs work without binary axis-name unification errors or dynamic-shape buffer panics.
-    - Tracked dynamic axis source `(node, axis)` pairs in `gobackend.Function` (`internal/gobackend/function.go`, `internal/gobackend/ops/{iota,broadcastindim}.go`) so `BroadcastInDim`, `DynamicBroadcastInDim`, and `DynamicIota` resolve minted/data-dependent axis names (such as `#nonzeros_*`) without explicit dimension `Value` operands.
+    - Tracked dynamic axis source `(node, axis)` pairs in `gobackend.Function` (`internal/gobackend/function.go`, `internal/gobackend/ops/{iota,broadcastindim,rngbitgenerator}.go`) so `BroadcastInDim`, `DynamicBroadcastInDim`, `DynamicIota`, and `RNGBitGenerator` resolve known and minted/data-dependent dynamic axis names without explicit dimension `Value` operands.
+    - Added input/kernel `DType` matching and numeric `DType` validation in `shapeinference.ConvGeneral` (`shapeinference/shapeinference.go`).
 
 - 2026-11-13:
   - Added `dtypes.CloneAnySlice` (`dtypes/slices.go`) for cloning flat slices of any supported Go DType without reflection.
