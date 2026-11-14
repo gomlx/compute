@@ -184,4 +184,115 @@ func TestExec(t *testing.T, b compute.Backend) {
 			t.Errorf("Expected output data buffer to be different from input data buffer when input buffer not donated")
 		}
 	})
+
+	t.Run("ConstantFromBuffer", func(t *testing.T) {
+		for _, donate := range []bool{false, true} {
+			name := "share"
+			if donate {
+				name = "donate"
+			}
+			t.Run(name, func(t *testing.T) {
+				buf, err := testutil.ToBuffer(b, [][]float32{{1, 2, 3}, {4, 5, 6}})
+				if err != nil {
+					t.Fatalf("ToBuffer failed: %+v", err)
+				}
+				builder := b.Builder("test_const_from_buffer_" + name)
+				fn := builder.Main()
+				c, err := fn.ConstantFromBuffer(buf, donate)
+				if err != nil {
+					_ = buf.Finalize()
+					if compute.IsNotImplemented(err) {
+						t.Skipf("ConstantFromBuffer not implemented: %v", err)
+					}
+					t.Fatalf("ConstantFromBuffer failed: %+v", err)
+				}
+				if donate {
+					if err := buf.Finalize(); err != nil {
+						t.Fatalf("Finalize after donate should succeed as no-op, got: %+v", err)
+					}
+				} else {
+					defer buf.Finalize()
+				}
+				p, err := fn.Parameter("x", shapes.Make(dtypes.Float32, 2, 3), nil)
+				if err != nil {
+					t.Fatalf("Parameter failed: %+v", err)
+				}
+				out, err := fn.Add(c, p)
+				if err != nil {
+					t.Fatalf("Add failed: %+v", err)
+				}
+				if err := fn.Return([]compute.Value{out}, nil); err != nil {
+					t.Fatalf("Return failed: %+v", err)
+				}
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Compile failed: %+v", err)
+				}
+				defer exec.Finalize()
+
+				inBuf, err := testutil.ToBuffer(b, [][]float32{{10, 20, 30}, {40, 50, 60}})
+				if err != nil {
+					t.Fatalf("ToBuffer input failed: %+v", err)
+				}
+				defer inBuf.Finalize()
+
+				outputs, err := exec.Execute([]compute.Buffer{inBuf}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %+v", err)
+				}
+				defer outputs[0].Finalize()
+
+				got, err := testutil.FromBuffer(b, outputs[0])
+				if err != nil {
+					t.Fatalf("FromBuffer failed: %+v", err)
+				}
+				want := [][]float32{{11, 22, 33}, {44, 55, 66}}
+				if ok, diff := testutil.IsEqual(want, got); !ok {
+					t.Errorf("ConstantFromBuffer(%s) mismatch:\n%s", name, diff)
+				}
+			})
+		}
+
+		// Verify packed sub-byte dtypes if supported.
+		if b.Capabilities().DTypes[dtypes.Int4] {
+			t.Run("Int4", func(t *testing.T) {
+				shape := shapes.Make(dtypes.Int4, 4)
+				buf, err := b.BufferFromFlatData(0, []byte{0x21, 0x43}, shape)
+				if err != nil {
+					t.Fatalf("BufferFromFlatData Int4 failed: %+v", err)
+				}
+				builder := b.Builder("test_const_from_buffer_int4")
+				fn := builder.Main()
+				c, err := fn.ConstantFromBuffer(buf, true)
+				if err != nil {
+					_ = buf.Finalize()
+					if compute.IsNotImplemented(err) {
+						t.Skipf("ConstantFromBuffer not implemented: %v", err)
+					}
+					t.Fatalf("ConstantFromBuffer(Int4) failed: %+v", err)
+				}
+				if err := fn.Return([]compute.Value{c}, nil); err != nil {
+					t.Fatalf("Return failed: %+v", err)
+				}
+				exec, err := builder.Compile()
+				if err != nil {
+					t.Fatalf("Compile failed: %+v", err)
+				}
+				defer exec.Finalize()
+
+				outputs, err := exec.Execute(nil, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %+v", err)
+				}
+				defer outputs[0].Finalize()
+				got := make([]byte, 2)
+				if err := outputs[0].ToFlatData(got); err != nil {
+					t.Fatalf("ToFlatData failed: %+v", err)
+				}
+				if got[0] != 0x21 || got[1] != 0x43 {
+					t.Errorf("Int4 ConstantFromBuffer got %#x, want [0x21 0x43]", got)
+				}
+			})
+		}
+	})
 }

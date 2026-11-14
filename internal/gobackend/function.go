@@ -397,6 +397,35 @@ func (f *Function) Constant(flat any, dims ...int) (compute.Value, error) {
 	return n, nil
 }
 
+// ConstantFromBuffer creates a constant in the function backed by buf without copying its data.
+func (f *Function) ConstantFromBuffer(buf compute.Buffer, donate bool) (compute.Value, error) {
+	if _, err := f.VerifyAndCastValues("ConstantFromBuffer"); err != nil {
+		return nil, err
+	}
+	if buf == nil {
+		return nil, errors.Errorf("ConstantFromBuffer: buffer is nil")
+	}
+	goBuf, ok := buf.(*Buffer)
+	if !ok {
+		return nil, errors.Errorf("ConstantFromBuffer: buffer (%T) does not belong to backend %q",
+			buf, f.RawBuilder.Backend.Name())
+	}
+	if goBuf.RawBackend != nil && goBuf.RawBackend != f.RawBuilder.Backend {
+		return nil, errors.Errorf("ConstantFromBuffer: buffer belongs to a different backend instance")
+	}
+	dtype := goBuf.RawShape.DType
+	if supported, ok := Capabilities.DTypes[dtype]; !ok || !supported {
+		return nil, errors.Errorf("ConstantFromBuffer: data type (DType) %s not supported for backend %q",
+			dtype, f.RawBuilder.Backend.Name())
+	}
+	cd, err := NewConstantDataFromBuffer(f.RawBuilder.Backend, goBuf, donate)
+	if err != nil {
+		return nil, err
+	}
+	n, _ := f.GetOrCreateNode(compute.OpTypeConstant, cd.shape, nil, cd)
+	return n, nil
+}
+
 // Return marks the outputs of this function.
 func (f *Function) Return(outputs []compute.Value, shardings []*compute.ShardingSpec) error {
 	if err := f.CheckValid(); err != nil {

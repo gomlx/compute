@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/internal/gobackend"
@@ -138,6 +139,42 @@ func TestBufferPool_LIFOAndConcurrent(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
+}
+
+func TestBuffers_Alignment64(t *testing.T) {
+	be, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("NewBackend failed: %+v", err)
+	}
+	defer be.Finalize()
+
+	// Small buffers (< 64 bytes) skip alignment padding; verify both < 64B (no crash/length mismatch)
+	// and >= 64B (including exact 8 KiB / 32 KiB / 64 KiB page multiples from TwoBitBucketLen).
+	for _, size := range []int{1, 3, 7, 15, 16, 17, 64, 1023, 8192, 16384} {
+		shape := shapes.Make(dtypes.Float32, size)
+		wantAligned := size*4 >= 64
+
+		pooledBuf, err := be.GetBuffer(shape)
+		if err != nil {
+			t.Fatalf("GetBuffer(%s) failed: %+v", shape, err)
+		}
+		if len(pooledBuf.RawBytes) < size*4 {
+			t.Errorf("GetBuffer(%s): RawBytes len %d < %d", shape, len(pooledBuf.RawBytes), size*4)
+		}
+		if ptr := uintptr(unsafe.Pointer(unsafe.SliceData(pooledBuf.RawBytes))); wantAligned && ptr%64 != 0 {
+			t.Errorf("GetBuffer(%s): RawBytes ptr 0x%x is not 64-byte aligned (mod=%d)", shape, ptr, ptr%64)
+		}
+		be.PutBuffer(pooledBuf)
+
+		exactBuf := gobackend.NewBuffer(shape)
+		if len(exactBuf.RawBytes) != size*4 {
+			t.Errorf("NewBuffer(%s): RawBytes len %d != %d", shape, len(exactBuf.RawBytes), size*4)
+		}
+		if ptr := uintptr(unsafe.Pointer(unsafe.SliceData(exactBuf.RawBytes))); wantAligned && ptr%64 != 0 {
+			t.Errorf("NewBuffer(%s): RawBytes ptr 0x%x is not 64-byte aligned (mod=%d)", shape, ptr, ptr%64)
+		}
+		_ = exactBuf.Finalize()
+	}
 }
 
 func BenchmarkBufferPoolSequential(b *testing.B) {

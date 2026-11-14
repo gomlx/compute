@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -65,6 +66,35 @@ func NewConstantData(backend *Backend, shape shapes.Shape, flat any) (*ConstantD
 		shape:   shape.Clone(),
 	}
 	cd.rawBuffer.Store(buf)
+	return cd, nil
+}
+
+// NewConstantDataFromBuffer creates a ConstantData backed by buf without copying its data.
+//
+// If donate is true, ownership of buf's backing storage is transferred to ConstantData and buf is
+// invalidated via markDonated. If donate is false, ConstantData shares the backing slice while keeping
+// its own Buffer descriptor (so neither caller buf.Finalize() nor ConstantData raw-buffer release
+// mutates the other's handle).
+func NewConstantDataFromBuffer(backend *Backend, buf *Buffer, donate bool) (*ConstantData, error) {
+	if backend.isFinalized {
+		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
+	}
+	if err := buf.Check(); err != nil {
+		return nil, errors.WithMessage(err, "ConstantFromBuffer")
+	}
+	adopted := buf.shallowClone()
+	adopted.RawBackend = backend
+	adopted.InUse = true
+	adopted.isUserFed = true
+	adopted.isDonated = false
+	if donate {
+		buf.markDonated()
+	}
+	cd := &ConstantData{
+		backend: backend,
+		shape:   adopted.RawShape.Clone(),
+	}
+	cd.rawBuffer.Store(adopted)
 	return cd, nil
 }
 
@@ -169,7 +199,13 @@ func (cd *ConstantData) EqualNodeData(other NodeDataComparable) bool {
 		return false
 	}
 	byteSize := int(cd.shape.ByteSize())
-	if byteSize > 0 && len(b1.RawBytes) >= byteSize && len(b2.RawBytes) >= byteSize {
+	if byteSize == 0 {
+		return true
+	}
+	if len(b1.RawBytes) >= byteSize && len(b2.RawBytes) >= byteSize {
+		if unsafe.SliceData(b1.RawBytes) == unsafe.SliceData(b2.RawBytes) {
+			return true
+		}
 		return bytes.Equal(b1.RawBytes[:byteSize], b2.RawBytes[:byteSize])
 	}
 	return compareFlatData(b1.Flat, b2.Flat)

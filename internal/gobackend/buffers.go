@@ -55,6 +55,10 @@ type Buffer struct {
 	// to avoid unbounded pool growth when iterating over large datasets.
 	isUserFed bool
 
+	// isDonated is set to true when the buffer's backing memory ownership has been donated
+	// (e.g., via ConstantFromBuffer(..., donate=true)), making one subsequent Finalize() call a no-op.
+	isDonated bool
+
 	// poolSlot is the 1-based slot index of this Buffer in its size-bucket's bufferPool
 	// (0 if not yet registered in a bufferPool).
 	poolSlot uint32
@@ -280,6 +284,41 @@ func (b *Buffer) recast(dtype dtypes.DType, length int) {
 	b.Flat = dtypes.UnsafeAnySliceFromBytes(unsafe.Pointer(unsafe.SliceData(b.RawBytes)), dtype, length)
 }
 
+const bufferAlignment = 64
+
+// allocAlignedBytes allocates n bytes, aligning the backing slice to bufferAlignment (64 bytes,
+// cache-line / AVX-512 width) when beneficial while avoiding wasted RAM on small-memory targets
+// (such as Raspberry Pi / embedded devices):
+//
+//  1. Buffers smaller than bufferAlignment (< 64 bytes, e.g., scalars or tiny vectors) are
+//     allocated with plain make([]byte, n): unconditional +63 padding would inflate a 4-byte scalar
+//     from Go's 8B size class into the 80B size class (~10x overhead), and no 64-byte vector
+//     kernel can operate on fewer than 64 bytes anyway.
+//  2. For n >= bufferAlignment, we probe make([]byte, n) first. In Go's allocator, objects > 32 KiB
+//     are page-aligned (8 KiB) spans and are already 64-byte aligned; buffer pools also bucket
+//     sizes via TwoBitBucketLen (powers of 2 and 1.5*2^k, exact multiples of 8 KiB at >= 8 KiB).
+//     Unconditionally requesting n+63 would cross the 8 KiB span boundary and waste an extra 8 KiB
+//     page on every large buffer. Only if the initial allocation happens not to be 64-byte aligned
+//     (small/medium size classes) do we fall back to n+bufferAlignment-1 and slice at the aligned
+//     offset.
+func allocAlignedBytes(n int) []byte {
+	if n <= 0 {
+		return nil
+	}
+	if n < bufferAlignment {
+		return make([]byte, n)
+	}
+	raw := make([]byte, n)
+	addr := uintptr(unsafe.Pointer(unsafe.SliceData(raw)))
+	if addr&(bufferAlignment-1) == 0 {
+		return raw
+	}
+	padded := make([]byte, n+bufferAlignment-1)
+	addr = uintptr(unsafe.Pointer(unsafe.SliceData(padded)))
+	offset := int((bufferAlignment - (addr & (bufferAlignment - 1))) & (bufferAlignment - 1))
+	return padded[offset : offset+n : offset+n]
+}
+
 // GetBuffer with the corresponding shape from the backend pool of buffers if possible, or it allocates a new one.
 //
 // It returns ErrBackendAlreadyFinalized if the backend is already finalized.
@@ -301,12 +340,13 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 		buf = pool.Get()
 	}
 	if buf == nil {
-		buf = &Buffer{RawBytes: make([]byte, bucketedSize)}
+		buf = &Buffer{RawBytes: allocAlignedBytes(bucketedSize)}
 		// fmt.Printf("> Creating buffer:\t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
 	}
 	buf.RawBackend = b
 	buf.InUse = true
 	buf.isUserFed = false
+	buf.isDonated = false
 	buf.RawShape = shape
 	buf.RawShape.AxisNames = nil
 	rank := len(shape.Dimensions)
@@ -553,13 +593,25 @@ func NewBuffer(shape shapes.Shape) *Buffer {
 	length := shape.Size()
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	buf := &Buffer{
-		RawBytes:  make([]byte, requestedSizeInBytes),
+		RawBytes:  allocAlignedBytes(requestedSizeInBytes),
 		InUse:     true,
 		isUserFed: true,
 		RawShape:  shape,
 	}
 	buf.recast(dtype, length)
 	return buf
+}
+
+// markDonated invalidates this Buffer handle after transferring ownership of its backing memory elsewhere.
+// It allows one subsequent Finalize() call to succeed as a no-op.
+func (buffer *Buffer) markDonated() {
+	buffer.InUse = false
+	buffer.isDonated = true
+	buffer.Flat = nil
+	buffer.flatDType = dtypes.InvalidDType
+	buffer.flatLen = 0
+	buffer.RawBytes = nil
+	buffer.RawShape = shapes.Invalid()
 }
 
 // Finalize allows the client to inform the backend that the buffer is no longer needed and associated resources
@@ -571,6 +623,10 @@ func NewBuffer(shape shapes.Shape) *Buffer {
 func (buffer *Buffer) Finalize() error {
 	if buffer == nil {
 		return errors.Errorf("Finalize(%p): buffer was nil", buffer)
+	}
+	if buffer.isDonated {
+		buffer.isDonated = false
+		return nil
 	}
 	if buffer.RawBackend != nil && buffer.RawBackend.isFinalized {
 		buffer.Flat = nil // Accelerates GC.
@@ -734,8 +790,14 @@ func (buffer *Buffer) Check() error {
 	if !buffer.InUse {
 		issues = append(issues, "buffer was marked as not in use")
 	}
-	if buffer.Flat != nil && buffer.RawShape.Ok() && buffer.RawShape.Size() != reflect.ValueOf(buffer.Flat).Len() {
-		issues = append(issues, fmt.Sprintf("buffer.RawShape.Size() != len(buffer.Flat): %d != %d", buffer.RawShape.Size(), reflect.ValueOf(buffer.Flat).Len()))
+	if buffer.Flat != nil && buffer.RawShape.Ok() {
+		expectedFlatLen := buffer.RawShape.Size()
+		if buffer.RawShape.DType.IsPacked() {
+			expectedFlatLen = int(buffer.RawShape.ByteSize())
+		}
+		if expectedFlatLen != reflect.ValueOf(buffer.Flat).Len() {
+			issues = append(issues, fmt.Sprintf("expected flat len %d != len(buffer.Flat): %d", expectedFlatLen, reflect.ValueOf(buffer.Flat).Len()))
+		}
 	}
 	if len(issues) > 0 {
 		return errors.Errorf("Check(%p, shape=%s): %s",
