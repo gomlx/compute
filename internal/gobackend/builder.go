@@ -178,7 +178,11 @@ func (node *Node) Finalize() {
 	if withFinalize, ok := node.Data.(WithFinalize); ok {
 		withFinalize.Finalize()
 	}
-	node.Data = nil
+	// Preserve *ConstantData so shared OpTypeConstant nodes remain usable across
+	// builders even after the creating Builder/Graph is finalized (e.g., CompileStandalone).
+	if _, isConst := node.Data.(*ConstantData); !isConst {
+		node.Data = nil
+	}
 	node.Inputs = nil
 	node.CapturedInputs = nil
 	node.MultiOutputsNodes = nil

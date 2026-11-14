@@ -71,6 +71,19 @@ type Function interface {
 	// parameters instead -- except if the backend sets Capabilities.PreferConstantsForVariables.
 	Constant(flat any, dims ...int) (Value, error)
 
+	// ConstantFromBuffer creates a constant in the function backed by the given backend buffer,
+	// avoiding the host slice copy of Constant when supported by the backend.
+	//
+	// The buffer must belong to the same backend as the function.
+	//
+	// If donate is true, ownership of buf is transferred to the function (the caller must not use buf
+	// afterwards, and the backend may reuse or free the buffer).
+	// If donate is false, the caller retains ownership of buf and must ensure it remains valid and unmodified
+	// for the lifetime of any executable built from this function (or copy/pin it as needed by the backend).
+	//
+	// Backends that do not support adopting a Buffer as a constant return ErrNotImplemented.
+	ConstantFromBuffer(buf Buffer, donate bool) (Value, error)
+
 	// Shape returns the shape of the given Value.
 	//
 	// Notice, this doesn't create an op on the graph, it's purely for reporting/introspection.

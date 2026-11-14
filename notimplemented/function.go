@@ -56,6 +56,10 @@ func (f Function) Constant(flat any, dims ...int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeConstant)
 }
 
+func (f Function) ConstantFromBuffer(buf compute.Buffer, donate bool) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeConstant)
+}
+
 func (f Function) Return(outputs []compute.Value, shardings []*compute.ShardingSpec) error {
 	return errors.Wrapf(NotImplementedError, "in Return()")
 }

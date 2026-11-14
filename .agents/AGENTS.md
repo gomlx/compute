@@ -612,5 +612,13 @@ In multi-head attention with Grouped Query Attention (GQA) or Multi-Query Attent
 - **Weight-Only Float Mode (`QuantizedMatmul == false`), `QuantNF4`, and `FusedQuantizedDenseVJP` (`internal/gobackend/fusedops/quantizeddense_float_matmul.go`)**:
   - When `QuantizedMatmul == false` (or for `QuantNF4`, non-integer float zero-points, and `M >= 2` `FusedQuantizedDenseVJP`), weights are dequantized once per bounded column/row chunk (`<= 4 MiB` pooled `float32` via `backend.GetBuffer`) in parallel across workers and dispatched to `matmul.ExecuteWithEpilogue` with inline tile `Bias + Activation` epilogues (and `RHSConstantData` pre-packed FP32 panel caching when `go:quantized_cache` is enabled).
 
+### 8. 64-Byte Buffer Alignment & Zero-Copy `ConstantFromBuffer`
+- **64-Byte Aligned Allocations (`internal/gobackend/buffers.go`)**: Both pooled (`GetBuffer`) and non-pooled (`NewBuffer`) Go backend buffers allocate their backing `RawBytes` via `allocAlignedBytes`, which skips padding for `< 64`-byte buffers (avoiding ~10× size-class overhead on scalars on low-RAM devices), fast-paths `make([]byte, n)` when already 64-byte aligned (including Go large spans `> 32 KiB` and `TwoBitBucketLen` multiples, avoiding crossing an extra 8 KiB span page), and falls back to `n+63` slicing with exact `len == cap` only when needed.
+- **Zero-Copy Buffer Constants (`Function.ConstantFromBuffer(buf, donate)`)**:
+  - `NewConstantDataFromBuffer` (`internal/gobackend/constants.go`) wraps a shallow-cloned `*Buffer` descriptor over `buf`'s backing slice without copying data (including packed sub-byte dtypes checked by `Buffer.Check`).
+  - When `donate == true`, `buf.markDonated()` invalidates the caller's `Buffer` handle while allowing one subsequent `buf.Finalize()` call to succeed as a no-op; `ConstantData.EqualNodeData` fast-paths pointer identity before `bytes.Equal`.
+  - `Node.Finalize` (`internal/gobackend/builder.go`) preserves `*ConstantData` on `OpTypeConstant` nodes so shared constants remain usable in new graphs even after the originating `Builder` is finalized (e.g. `CompileStandalone`).
+
+
 
 

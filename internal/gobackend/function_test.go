@@ -5,6 +5,7 @@ package gobackend_test
 import (
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -1790,5 +1791,73 @@ func TestEstimatedTemporaryMemory(t *testing.T) {
 		if estMem != int64(shapes.DynamicDim) {
 			t.Errorf("expected EstimatedTemporaryMemory() == DynamicDim (%d) for dynamic graph, got %d", shapes.DynamicDim, estMem)
 		}
+	}
+}
+
+func TestConstantFromBuffer_ZeroCopyAndReuse(t *testing.T) {
+	be := backend.(*gobackend.Backend)
+	buf, err := be.BufferFromFlatData(0, []float32{1.5, 2.5, 3.5, 4.5}, shapes.Make(dtypes.Float32, 2, 2))
+	if err != nil {
+		t.Fatalf("BufferFromFlatData failed: %+v", err)
+	}
+	goBuf := buf.(*gobackend.Buffer)
+	origPtr := unsafe.SliceData(goBuf.RawBytes)
+
+	b1 := be.Builder("const_buf_b1")
+	fn1 := b1.Main()
+	val1, err := fn1.ConstantFromBuffer(buf, true)
+	if err != nil {
+		t.Fatalf("ConstantFromBuffer failed: %+v", err)
+	}
+	if err := buf.Finalize(); err != nil {
+		t.Fatalf("Finalize after donate failed: %+v", err)
+	}
+	node1 := val1.(*gobackend.Node)
+	cd1 := node1.Data.(*gobackend.ConstantData)
+	adoptedPtr := unsafe.SliceData(cd1.Buffer().RawBytes)
+	if adoptedPtr != origPtr {
+		t.Fatalf("Expected zero-copy adoption: origPtr=%p, adoptedPtr=%p", origPtr, adoptedPtr)
+	}
+	if err := fn1.Return([]compute.Value{val1}, nil); err != nil {
+		t.Fatalf("Return failed: %+v", err)
+	}
+	exec1, err := b1.Compile()
+	if err != nil {
+		t.Fatalf("Compile b1 failed: %+v", err)
+	}
+	// Simulate CompileStandalone finalizing the first builder before a second builder reuses val1.
+	b1.(*gobackend.Builder).Finalize()
+
+	b2 := be.Builder("const_buf_b2")
+	fn2 := b2.Main()
+	p, _ := fn2.Parameter("x", shapes.Make(dtypes.Float32, 2, 2), nil)
+	sum, err := fn2.Add(val1, p)
+	if err != nil {
+		t.Fatalf("Add reusing finalized-builder shared constant failed: %+v", err)
+	}
+	if err := fn2.Return([]compute.Value{sum}, nil); err != nil {
+		t.Fatalf("Return b2 failed: %+v", err)
+	}
+	exec2, err := b2.Compile()
+	if err != nil {
+		t.Fatalf("Compile b2 failed: %+v", err)
+	}
+	defer exec2.Finalize()
+	defer exec1.Finalize()
+
+	inBuf, _ := be.BufferFromFlatData(0, []float32{1, 1, 1, 1}, shapes.Make(dtypes.Float32, 2, 2))
+	defer inBuf.Finalize()
+	outs, err := exec2.Execute([]compute.Buffer{inBuf}, nil, 0)
+	if err != nil {
+		t.Fatalf("Execute b2 failed: %+v", err)
+	}
+	defer outs[0].Finalize()
+	got := make([]float32, 4)
+	if err := outs[0].ToFlatData(got); err != nil {
+		t.Fatalf("ToFlatData failed: %+v", err)
+	}
+	want := []float32{2.5, 3.5, 4.5, 5.5}
+	if ok, diff := testutil.IsEqual(want, got); !ok {
+		t.Errorf("Unexpected result:\n%s", diff)
 	}
 }
