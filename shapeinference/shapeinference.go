@@ -797,9 +797,13 @@ func Gather(operand, startIndices shapes.Shape, indexVectorAxis int, offsetOutpu
 	}
 
 	// Check startIndexMap is set for the dimensions of indexVectorAxis in startIndices.
-	if len(startIndexMap) != startIndices.Dimensions[indexVectorAxis] {
-		return output, errors.Errorf("startIndexMap must have one value per dimension of indexVectorAxis, so it length (%d) must match startIndices.Dimensions[%d] (%d)",
-			len(startIndexMap), indexVectorAxis, startIndices.Dimensions[indexVectorAxis])
+	indexVectorSize := 1
+	if indexVectorAxis < startIndices.Rank() {
+		indexVectorSize = startIndices.Dimensions[indexVectorAxis]
+	}
+	if len(startIndexMap) != indexVectorSize {
+		return output, errors.Errorf("startIndexMap must have one value per dimension of indexVectorAxis, so its length (%d) must match index vector size (%d)",
+			len(startIndexMap), indexVectorSize)
 	}
 	for idx, operandAxis := range startIndexMap {
 		if operandAxis < 0 || operandAxis >= operand.Rank() {

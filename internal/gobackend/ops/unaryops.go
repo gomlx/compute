@@ -1095,7 +1095,9 @@ func IsFinite(f *gobackend.Function, operandOp compute.Value) (compute.Value, er
 func execIsFinite(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	input := inputs[0]
 	// Output has the same shape as the input, but different dtypes: it is a bool.
-	output, err := backend.GetBuffer(node.Shape)
+	outShape := input.RawShape.Clone()
+	outShape.DType = dtypes.Bool
+	output, err := backend.GetBuffer(outShape)
 	if err != nil {
 		return nil, err
 	}

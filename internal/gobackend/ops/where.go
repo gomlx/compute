@@ -90,6 +90,13 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 
 	// Figure out what the outputBuffer is going to be.
 	outputShape := node.Shape
+	if outputShape.IsDynamic() {
+		var err error
+		outputShape, err = shapeinference.Where(condition.RawShape, onTrue.RawShape, onFalse.RawShape)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var output *gobackend.Buffer
 	var err error

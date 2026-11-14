@@ -45,8 +45,25 @@ type dynamicIotaData struct {
 // DynamicIota creates a tensor with the given dynamic dimensions and dtype, filled with
 // increasing numbers (starting from 0) along the specified iotaAxis.
 func DynamicIota(f *gobackend.Function, dtype dtypes.DType, iotaAxis int, specs ...compute.DynamicDimensionSpec) (compute.Value, error) {
+	outputShape, err := shapeinference.DynamicIota(dtype, iotaAxis, specs, f.KnownDynamicAxisNames())
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedSpecs := make([]compute.DynamicDimensionSpec, len(specs))
+	copy(resolvedSpecs, specs)
 	var dynValues []compute.Value
-	for _, spec := range specs {
+	for i := range resolvedSpecs {
+		spec := &resolvedSpecs[i]
+		if spec.Name != "" && spec.Value == nil {
+			dimVal, ok, err := f.DynamicAxisValue(spec.Name)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				spec.Value = dimVal
+			}
+		}
 		if spec.Value != nil {
 			dynValues = append(dynValues, spec.Value)
 		}
@@ -56,14 +73,9 @@ func DynamicIota(f *gobackend.Function, dtype dtypes.DType, iotaAxis int, specs 
 		return nil, err
 	}
 
-	outputShape, err := shapeinference.DynamicIota(dtype, iotaAxis, specs, f.KnownDynamicAxisNames())
-	if err != nil {
-		return nil, err
-	}
-
 	data := dynamicIotaData{
 		iotaAxis: iotaAxis,
-		specs:    specs,
+		specs:    resolvedSpecs,
 	}
 
 	node, _ := f.GetOrCreateNode(compute.OpTypeDynamicIota, outputShape, inputs, data)
@@ -96,6 +108,8 @@ func execDynamicIota(backend *gobackend.Backend, node *gobackend.Node, inputs []
 					return nil, errors.Errorf("execDynamicIota: dynamic dimension size for axis %q must be nonnegative, got %d", spec.Name, valSize)
 				}
 				concreteDims[i] = valSize
+			} else if node.Shape.Dimensions[i] >= 0 {
+				concreteDims[i] = node.Shape.Dimensions[i]
 			} else {
 				return nil, errors.Errorf("execDynamicIota: dynamic dimension size for axis %d (%q) could not be resolved from input or dynamic value", i, spec.Name)
 			}

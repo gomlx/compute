@@ -60,6 +60,17 @@ func BroadcastInDim(
 	if err != nil {
 		return nil, err
 	}
+	if outputShape.IsDynamic() {
+		specs := make([]compute.DynamicDimensionSpec, outputShape.Rank())
+		for i, dim := range outputShape.Dimensions {
+			if dim == shapes.DynamicDim {
+				specs[i] = compute.DynamicDimensionSpec{Name: outputShape.AxisName(i)}
+			} else {
+				specs[i] = compute.DynamicDimensionSpec{Static: dim}
+			}
+		}
+		return DynamicBroadcastInDim(f, operandValue, broadcastAxes, specs...)
+	}
 	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, broadcastAxes)
 	return node, nil
 }
@@ -71,8 +82,39 @@ func DynamicBroadcastInDim(
 	broadcastAxes []int,
 	specs ...compute.DynamicDimensionSpec,
 ) (compute.Value, error) {
-	allValues := []compute.Value{operandValue}
-	for _, spec := range specs {
+	operandNodes, err := f.VerifyAndCastValues("DynamicBroadcastInDim", operandValue)
+	if err != nil {
+		return nil, err
+	}
+	operand := operandNodes[0]
+	opType := compute.OpTypeDynamicBroadcastInDim
+	outputShape, err := shapeinference.DynamicBroadcastInDim(operand.Shape, broadcastAxes, specs, f.KnownDynamicAxisNames())
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedSpecs := slices.Clone(specs)
+	allValues := []compute.Value{operand}
+	for i := range resolvedSpecs {
+		spec := &resolvedSpecs[i]
+		if spec.Name != "" && spec.Value == nil {
+			mappedFromOperand := false
+			for operandAxis, outputAxis := range broadcastAxes {
+				if outputAxis == i && operand.Shape.Dimensions[operandAxis] != 1 {
+					mappedFromOperand = true
+					break
+				}
+			}
+			if !mappedFromOperand {
+				dimVal, ok, err := f.DynamicAxisValue(spec.Name)
+				if err != nil {
+					return nil, err
+				}
+				if ok {
+					spec.Value = dimVal
+				}
+			}
+		}
 		if spec.Value != nil {
 			allValues = append(allValues, spec.Value)
 		}
@@ -81,15 +123,9 @@ func DynamicBroadcastInDim(
 	if err != nil {
 		return nil, err
 	}
-	operand := inputs[0]
-	opType := compute.OpTypeDynamicBroadcastInDim
-	outputShape, err := shapeinference.DynamicBroadcastInDim(operand.Shape, broadcastAxes, specs, f.KnownDynamicAxisNames())
-	if err != nil {
-		return nil, err
-	}
 	data := dynamicBroadcastInDimData{
 		broadcastAxes: slices.Clone(broadcastAxes),
-		specs:         slices.Clone(specs),
+		specs:         resolvedSpecs,
 	}
 	node, _ := f.GetOrCreateNode(opType, outputShape, inputs, data)
 	return node, nil

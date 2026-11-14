@@ -54,8 +54,16 @@ type Function struct {
 	// This is set during Return() to allow efficient execution.
 	Compiled *FunctionExecutable
 
-	// knownDynamicAxisNames holds all dynamic axis names introduced by parameters.
+	// knownDynamicAxisNames holds all dynamic axis names introduced by parameters or data-dependent ops.
 	knownDynamicAxisNames sets.Set[string]
+
+	// dynamicAxisSources maps each known dynamic axis name to the first (node, axis) that produced it.
+	dynamicAxisSources map[string]dynamicAxisSource
+}
+
+type dynamicAxisSource struct {
+	node *Node
+	axis int
 }
 
 // capturedNodeData is the data stored in a captured value node.
@@ -218,6 +226,7 @@ func (f *Function) NewNode(opType compute.OpType, shape shapes.Shape, inputs ...
 		Function: f,
 	}
 	f.Nodes = append(f.Nodes, n)
+	f.registerDynamicAxes(n)
 	return n
 }
 
@@ -236,7 +245,7 @@ func (f *Function) NewMultiOutputsNode(
 	node.MultiOutputsShapes = outputShapes
 	node.MultiOutputsNodes = make([]*Node, len(outputShapes))
 	for i, shape := range outputShapes {
-		node.MultiOutputsNodes[i] = &Node{
+		outNode := &Node{
 			Builder:            f.RawBuilder,
 			OpType:             opType,
 			Index:              len(f.Nodes),
@@ -246,7 +255,9 @@ func (f *Function) NewMultiOutputsNode(
 			SelectOutputIdx:    i,
 			Function:           f,
 		}
-		f.Nodes = append(f.Nodes, node.MultiOutputsNodes[i])
+		node.MultiOutputsNodes[i] = outNode
+		f.Nodes = append(f.Nodes, outNode)
+		f.registerDynamicAxes(outNode)
 	}
 	return node
 }
@@ -438,6 +449,53 @@ func (f *Function) AllReduce(_ []compute.Value, _ compute.ReduceOpType, _ [][]in
 	return nil, errors.Wrapf(
 		notimplemented.NotImplementedError,
 		"AllReduce not supported for %q builder", BackendName)
+}
+
+// registerDynamicAxes records named dynamic axes introduced by n on the root function.
+func (f *Function) registerDynamicAxes(n *Node) {
+	if n == nil || !n.Shape.IsDynamic() {
+		return
+	}
+	rootFn := f
+	for rootFn.RawParent != nil {
+		rootFn = rootFn.RawParent
+	}
+	if rootFn.knownDynamicAxisNames == nil {
+		rootFn.knownDynamicAxisNames = sets.Make[string]()
+	}
+	if rootFn.dynamicAxisSources == nil {
+		rootFn.dynamicAxisSources = make(map[string]dynamicAxisSource)
+	}
+	for axis, dim := range n.Shape.Dimensions {
+		if dim != shapes.DynamicDim {
+			continue
+		}
+		name := n.Shape.AxisName(axis)
+		if name == "" || name == shapes.AnonymousAxis {
+			continue
+		}
+		rootFn.knownDynamicAxisNames.Insert(name)
+		if _, exists := rootFn.dynamicAxisSources[name]; !exists {
+			rootFn.dynamicAxisSources[name] = dynamicAxisSource{node: n, axis: axis}
+		}
+	}
+}
+
+// DynamicAxisValue returns a scalar runtime dimension-size Value for a known named dynamic axis, if available.
+func (f *Function) DynamicAxisValue(name string) (compute.Value, bool, error) {
+	rootFn := f
+	for rootFn.RawParent != nil {
+		rootFn = rootFn.RawParent
+	}
+	src, ok := rootFn.dynamicAxisSources[name]
+	if !ok {
+		return nil, false, nil
+	}
+	dimVal, err := f.DynamicDimensionSize(src.node, src.axis)
+	if err != nil {
+		return nil, false, err
+	}
+	return dimVal, true, nil
 }
 
 // KnownDynamicAxisNames returns the set of dynamically defined axis names known by the function.
