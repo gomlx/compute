@@ -127,7 +127,7 @@ func ActiveHalfSliceConverters() HalfSliceConverters {
 
 // ParallelHalfConvThreshold is the minimum element count before half-precision slice conversions
 // dispatch across worker goroutines.
-const ParallelHalfConvThreshold = 16384
+const ParallelHalfConvThreshold = 65536
 
 // ParallelConvertSlice converts src into dst using fn, parallelizing in 64-element-aligned chunks
 // across backend.Scheduler when the slice length meets ParallelHalfConvThreshold.
@@ -140,7 +140,7 @@ func ParallelConvertSlice[Dst, Src any](backend *Backend, dst []Dst, src []Src, 
 		fn(dst[:n], src[:n])
 		return
 	}
-	backend.Scheduler.ParallelizeChunks(n, 4096, func(start, end int) {
+	backend.Scheduler.ParallelizeChunks(n, 32768, func(start, end int) {
 		fn(dst[start:end], src[start:end])
 	})
 }

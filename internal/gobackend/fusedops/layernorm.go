@@ -170,7 +170,10 @@ func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs
 	return output, nil
 }
 
-const minLayerNormParallelElements = 4096
+const (
+	minLayerNormParallelElements     = 32768
+	minSIMDLayerNormParallelElements = 65536
+)
 
 // layerNorm dispatches to the trailing-axes fast path or the general case.
 func layerNorm[T float32 | float64](backend *gobackend.Backend, input, residual, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {

@@ -82,6 +82,27 @@ func TestBFloat16NEON(t *testing.T) {
 				t.Fatalf("FromFloat32SliceNEON mismatch at %d: got 0x%04x, want 0x%04x", i, outBF16[i].Bits(), want.Bits())
 			}
 		}
+
+		// Also verify RNE rounding on arbitrary unrounded float32 values across all vector lanes.
+		unroundedF32 := make([]float32, len(testFloats)+5)
+		copy(unroundedF32, testFloats)
+		for i := len(testFloats); i < len(unroundedF32); i++ {
+			unroundedF32[i] = float32(math.Sin(float64(i+1)) * 10.0)
+		}
+		gotBF16 := make([]BFloat16, len(unroundedF32))
+		FromFloat32SliceNEON(gotBF16, unroundedF32)
+		for i, f := range unroundedF32 {
+			want := FromFloat32(f)
+			if math.IsNaN(float64(f)) {
+				if !math.IsNaN(float64(gotBF16[i].Float32())) {
+					t.Fatalf("FromFloat32SliceNEON unrounded[%d]: expected NaN, got 0x%04x", i, gotBF16[i].Bits())
+				}
+				continue
+			}
+			if gotBF16[i] != want {
+				t.Fatalf("FromFloat32SliceNEON unrounded[%d] (%v): got 0x%04x, want 0x%04x", i, f, gotBF16[i].Bits(), want.Bits())
+			}
+		}
 	})
 }
 

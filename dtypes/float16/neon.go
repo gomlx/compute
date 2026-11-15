@@ -134,7 +134,7 @@ func ToFloat32SliceNEON(dst []float32, src []Float16) {
 	if n == 0 {
 		return
 	}
-	vecN := n &^ 7
+	vecN := n &^ 3
 	if vecN > 0 {
 		convertF16ToF32NEONAsm(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), vecN)
 	}
@@ -149,7 +149,7 @@ func FromFloat32SliceNEON(dst []Float16, src []float32) {
 	if n == 0 {
 		return
 	}
-	vecN := n &^ 7
+	vecN := n &^ 3
 	if vecN > 0 {
 		convertF32ToF16NEONAsm(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), vecN)
 	}

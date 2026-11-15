@@ -315,6 +315,9 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 		fn(0, totalItems)
 		return
 	}
+	if s.numActiveCalls.Load() > 1 {
+		minChunkSize *= 4
+	}
 
 	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize
 	if maxChunksBySize <= 1 {

@@ -233,7 +233,7 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	return output, nil
 }
 
-const gatherMinParallelBytes = 16384
+const gatherMinParallelBytes = 65536
 
 // gatherBatchOutputIsContiguous reports whether outputBytesIdx for item b in [0, gatherIt.prefixSize)
 // is strictly b * chunkBytes (true when all non-unit batch axes precede all non-unit offset axes).
@@ -334,7 +334,7 @@ func execGatherGeneric[T gobackend.PODIntegerConstraints](
 		}
 		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
 			len(outputBytes) >= gatherMinParallelBytes && batchCount > 1 {
-			minBatch := max(1, 4096/max(chunkBytes, 1))
+			minBatch := max(1, (gatherMinParallelBytes/2)/max(chunkBytes, 1))
 			backend.Scheduler.ParallelizeChunks(batchCount, minBatch, copyRange)
 			return
 		}

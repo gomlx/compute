@@ -154,29 +154,45 @@ func RegisterSMEForTests() {
 func registerNEON(forTests bool) {
 	dot.RegisterImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, neonRouterFloat32, matmul.PriorityNEON, forTests)
 	dot.RegisterImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, neonRouterFloat32, matmul.PriorityNEON, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, neonLargeMultiFloat32)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, neonLargeMultiFloat32)
 
 	dot.RegisterImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, neonRouterBFloat16, matmul.PriorityNEON, forTests)
 	dot.RegisterImplementation("simd:neon", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, neonRouterBFloat16, matmul.PriorityNEON, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, neonLargeMultiBFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, neonLargeMultiBFloat16)
 
 	dot.RegisterImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, neonRouterFloat16, matmul.PriorityNEON, forTests)
 	dot.RegisterImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, neonRouterFloat16, matmul.PriorityNEON, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, neonLargeMultiFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, neonLargeMultiFloat16)
 
 	dot.RegisterImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, neonRouterFloat64, matmul.PriorityNEON, forTests)
 	dot.RegisterImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, neonRouterFloat64, matmul.PriorityNEON, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, neonLargeMultiFloat64)
+	matmul.RegisterMultiRHSImplementation("simd:neon", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, neonLargeMultiFloat64)
 }
 
 func registerSME(forTests bool) {
 	dot.RegisterImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, smeRouterFloat32, matmul.PrioritySME, forTests)
 	dot.RegisterImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, smeRouterFloat32, matmul.PrioritySME, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float32, dtypes.Float32, smeLargeMultiFloat32)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float32, dtypes.Float32, smeLargeMultiFloat32)
 
 	dot.RegisterImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, smeRouterBFloat16, matmul.PrioritySME, forTests)
 	dot.RegisterImplementation("simd:sme", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, smeRouterBFloat16, matmul.PrioritySME, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.BFloat16, dtypes.Float32, smeLargeMultiBFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutTransposed, dtypes.BFloat16, dtypes.Float32, smeLargeMultiBFloat16)
 
 	dot.RegisterImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, smeRouterFloat16, matmul.PrioritySME, forTests)
 	dot.RegisterImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, smeRouterFloat16, matmul.PrioritySME, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float16, dtypes.Float32, smeLargeMultiFloat16)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float16, dtypes.Float32, smeLargeMultiFloat16)
 
 	dot.RegisterImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, smeRouterFloat64, matmul.PrioritySME, forTests)
 	dot.RegisterImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, smeRouterFloat64, matmul.PrioritySME, forTests)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutNonTransposed, dtypes.Float64, dtypes.Float64, smeLargeMultiFloat64)
+	matmul.RegisterMultiRHSImplementation("simd:sme", dot.LayoutTransposed, dtypes.Float64, dtypes.Float64, smeLargeMultiFloat64)
 }
 
 // neonReduceSumFloat32x4 performs a horizontal reduction of a Float32x4 vector.

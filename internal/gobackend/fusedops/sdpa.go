@@ -2,7 +2,6 @@ package fusedops
 
 import (
 	"math"
-	"runtime"
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
@@ -867,7 +866,11 @@ func runSDPATasks[W any](
 	cleanupWorker func(W),
 	runTask func(worker W, batchIdx, kvHeadIdx, qStart, qEnd int),
 ) {
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && info.totalTasks > 1 && info.totalMACs >= 1024*1024 {
+	minParallelMACs := 1024 * 1024
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.EffectiveParallelism() < backend.Scheduler.UnscaledParallelism() {
+		minParallelMACs = 128 * 1024 * 1024
+	}
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && info.totalTasks > 1 && info.totalMACs >= minParallelMACs && backend.Scheduler.EffectiveParallelism() > 1 {
 		numWorkers := backend.Scheduler.EffectiveParallelism()
 		workersToStart := min(info.totalTasks, numWorkers)
 		if info.useSMEPath && simdarch.NumHighPerfSMEUnits > 0 {
@@ -882,8 +885,6 @@ func runSDPATasks[W any](
 
 		backend.Scheduler.SaturateUpTo(workersToStart, func() {
 			if preferFastCluster {
-				runtime.LockOSThread()
-				defer runtime.UnlockOSThread()
 				_, _, isEff := simdarch.CurrentSMECluster()
 				if !isEff {
 					fastWorkers.Add(1)
@@ -899,8 +900,6 @@ func runSDPATasks[W any](
 							}
 						}
 						if taskCounter.Load() >= int64(info.totalTasks) || info.totalTasks-int(taskCounter.Load()) <= 8*int(fastWorkers.Load()) {
-							for taskCounter.Load() < int64(info.totalTasks) && fastWorkers.Load() > 0 {
-							}
 							return
 						}
 					}
@@ -1155,7 +1154,7 @@ func sdpaConvertHalfInputsToF32[T any](
 		}
 		return
 	}
-	minBlocks := max(1, 4096/sdpaHalfConvBlockElems)
+	minBlocks := max(1, 32768/sdpaHalfConvBlockElems)
 	backend.Scheduler.ParallelizeChunks(totalBlocks, minBlocks, func(bStart, bEnd int) {
 		cursor := 0
 		for _, p := range pairs {

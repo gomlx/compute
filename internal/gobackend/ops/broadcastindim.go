@@ -11,7 +11,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-const broadcastMinParallelElems = 16384
+const (
+	broadcastMinParallelElems = 65536
+	broadcastMinChunkElems    = 32768
+)
 
 type dynamicBroadcastInDimData struct {
 	broadcastAxes []int
@@ -295,7 +298,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 	if len(operandFlat) == 1 {
 		val := operandFlat[0]
 		if canParallel {
-			backend.Scheduler.ParallelizeChunks(totalOut, 4096, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalOut, broadcastMinChunkElems, func(start, end int) {
 				xslices.FillSlice(outputFlat[start:end], val)
 			})
 			return
@@ -308,7 +311,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 	case 0, 1:
 		// Pure identity copy [N] -> [N] (since size-1 broadcast was handled above).
 		if canParallel {
-			backend.Scheduler.ParallelizeChunks(totalOut, 4096, func(start, end int) {
+			backend.Scheduler.ParallelizeChunks(totalOut, broadcastMinChunkElems, func(start, end int) {
 				copy(outputFlat[start:end], operandFlat[start:end])
 			})
 			return
@@ -322,7 +325,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 			outer, k := plan.runs[0].size, plan.runs[1].size
 			src := operandFlat[:k]
 			if canParallel && outer > 1 {
-				minOuter := max(1, 4096/k)
+				minOuter := max(1, broadcastMinChunkElems/k)
 				backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
 					repeatSliceDoubling(outputFlat[oStart*k:oEnd*k], src)
 				})
@@ -334,7 +337,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 		// Suffix broadcast: [Outer, 1] -> [Outer, Inner].
 		outer, inner := plan.runs[0].size, plan.runs[1].size
 		if canParallel && outer > 1 {
-			minOuter := max(1, 4096/inner)
+			minOuter := max(1, broadcastMinChunkElems/inner)
 			backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
 				for o := oStart; o < oEnd; o++ {
 					xslices.FillSlice(outputFlat[o*inner:(o+1)*inner], operandFlat[o])
@@ -354,7 +357,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 			outStride := mid * inner
 			if canParallel && outer*mid > 1 {
 				if outer >= backend.Scheduler.EffectiveParallelism() {
-					minOuter := max(1, 4096/outStride)
+					minOuter := max(1, broadcastMinChunkElems/outStride)
 					backend.Scheduler.ParallelizeChunks(outer, minOuter, func(oStart, oEnd int) {
 						for o := oStart; o < oEnd; o++ {
 							repeatSliceDoubling(outputFlat[o*outStride:(o+1)*outStride], operandFlat[o*inner:(o+1)*inner])
@@ -362,7 +365,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 					})
 				} else {
 					totalPairs := outer * mid
-					minPairs := max(1, 4096/inner)
+					minPairs := max(1, broadcastMinChunkElems/inner)
 					backend.Scheduler.ParallelizeChunks(totalPairs, minPairs, func(pStart, pEnd int) {
 						for p := pStart; p < pEnd; {
 							o := p / mid
@@ -392,7 +395,7 @@ func execBroadcastInDimGeneric[T gobackend.SupportedTypesConstraints](
 			if outer > 1 {
 				rest := outputFlat[sliceLen:]
 				if canParallel && outer-1 > 1 {
-					minOuter := max(1, 4096/sliceLen)
+					minOuter := max(1, broadcastMinChunkElems/sliceLen)
 					backend.Scheduler.ParallelizeChunks(outer-1, minOuter, func(oStart, oEnd int) {
 						repeatSliceDoubling(rest[oStart*sliceLen:oEnd*sliceLen], firstSlice)
 					})
