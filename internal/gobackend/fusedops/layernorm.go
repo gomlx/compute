@@ -3,9 +3,12 @@ package fusedops
 import (
 	"math"
 	"sync"
+	"unsafe"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
@@ -164,13 +167,247 @@ func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs
 		layerNorm[float32](backend, input, residual, output, gamma, beta, data.axes, data.epsilon)
 	case dtypes.Float64:
 		layerNorm[float64](backend, input, residual, output, gamma, beta, data.axes, data.epsilon)
+	case dtypes.Float16, dtypes.BFloat16:
+		layerNormHalf(backend, input, residual, output, gamma, beta, data.axes, data.epsilon, layerNormTrailingAxes[float32])
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedLayerNorm: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
 }
 
-const minLayerNormParallelElements = 4096
+func extractLayerNormParamFloat32(buf *gobackend.Buffer, scratch []float32, conv gobackend.HalfSliceConverters) []float32 {
+	if buf == nil {
+		return nil
+	}
+	switch buf.RawShape.DType {
+	case dtypes.Float32:
+		return buf.Flat.([]float32)
+	case dtypes.Float16:
+		src := buf.Flat.([]float16.Float16)
+		if len(scratch) < len(src) {
+			scratch = make([]float32, len(src))
+		} else {
+			scratch = scratch[:len(src)]
+		}
+		conv.Float16ToFloat32(scratch, src)
+		return scratch
+	case dtypes.BFloat16:
+		src := buf.Flat.([]bfloat16.BFloat16)
+		if len(scratch) < len(src) {
+			scratch = make([]float32, len(src))
+		} else {
+			scratch = scratch[:len(src)]
+		}
+		conv.BFloat16ToFloat32(scratch, src)
+		return scratch
+	default:
+		return nil
+	}
+}
+
+func convertHalfToFloat32Slice(buf *gobackend.Buffer, offset, count int, dst []float32, conv gobackend.HalfSliceConverters) {
+	switch buf.RawShape.DType {
+	case dtypes.Float16:
+		conv.Float16ToFloat32(dst[:count], buf.Flat.([]float16.Float16)[offset:offset+count])
+	case dtypes.BFloat16:
+		conv.BFloat16ToFloat32(dst[:count], buf.Flat.([]bfloat16.BFloat16)[offset:offset+count])
+	case dtypes.Float32:
+		copy(dst[:count], buf.Flat.([]float32)[offset:offset+count])
+	}
+}
+
+func convertFloat32ToHalfOrFloat32Slice(src []float32, outBuf *gobackend.Buffer, offset, count int, conv gobackend.HalfSliceConverters) {
+	switch outBuf.RawShape.DType {
+	case dtypes.Float16:
+		conv.Float32ToFloat16(outBuf.Flat.([]float16.Float16)[offset:offset+count], src[:count])
+	case dtypes.BFloat16:
+		conv.Float32ToBFloat16(outBuf.Flat.([]bfloat16.BFloat16)[offset:offset+count], src[:count])
+	case dtypes.Float32:
+		copy(outBuf.Flat.([]float32)[offset:offset+count], src[:count])
+	}
+}
+
+// layerNormTrailingAxesHalf executes trailing-axes LayerNorm on Float16/BFloat16 inputs,
+// accumulating in Float32 in L1-resident row batches and writing to Float16/BFloat16/Float32 output.
+func layerNormTrailingAxesHalf(
+	backend *gobackend.Backend,
+	input, residual, output, gamma, beta *gobackend.Buffer,
+	normSize int,
+	epsilon float64,
+	fallbackTrailingFn func(inData, outData, gammaData, betaData []float32, normSize int, epsilon float64),
+) {
+	totalElements := input.RawShape.Size()
+	if totalElements == 0 || normSize <= 0 {
+		return
+	}
+	outerSize := totalElements / normSize
+	conv := gobackend.ActiveHalfSliceConverters()
+
+	var gScratch, bScratch [2048]float32
+	gammaData := extractLayerNormParamFloat32(gamma, gScratch[:], conv)
+	betaData := extractLayerNormParamFloat32(beta, bScratch[:], conv)
+
+	var gPtr, bPtr unsafe.Pointer
+	if len(gammaData) > 0 {
+		gPtr = unsafe.Pointer(unsafe.SliceData(gammaData))
+	}
+	if len(betaData) > 0 {
+		bPtr = unsafe.Pointer(unsafe.SliceData(betaData))
+	}
+	archFn := gobackend.GetLayerNormTrailingArchDispatcher()
+	resArchFn := gobackend.GetLayerNormResidualTrailingArchDispatcher()
+	outIsF32 := output.RawShape.DType == dtypes.Float32
+
+	runChunk := func(rStart, rEnd int) {
+		const maxBatchElems = 4096
+		batchRows := max(1, min(rEnd-rStart, maxBatchElems/max(1, normSize)))
+		batchCap := batchRows * normSize
+
+		var stack1 [maxBatchElems]float32
+		var buf1 []float32
+		if !outIsF32 || residual != nil {
+			if batchCap <= maxBatchElems {
+				buf1 = stack1[:batchCap]
+			} else {
+				buf1 = make([]float32, batchCap)
+			}
+		}
+
+		var stack2 [maxBatchElems]float32
+		var buf2 []float32
+		if !outIsF32 && residual != nil {
+			if batchCap <= maxBatchElems {
+				buf2 = stack2[:batchCap]
+			} else {
+				buf2 = make([]float32, batchCap)
+			}
+		}
+
+		for r := rStart; r < rEnd; r += batchRows {
+			rows := min(batchRows, rEnd-r)
+			elems := rows * normSize
+			offset := r * normSize
+
+			if outIsF32 {
+				outSlice := output.Flat.([]float32)[offset : offset+elems]
+				outPtr := unsafe.Pointer(unsafe.SliceData(outSlice))
+				if residual == nil {
+					convertHalfToFloat32Slice(input, offset, elems, outSlice, conv)
+					if archFn == nil || !archFn(outPtr, outPtr, gPtr, bPtr, rows, normSize, epsilon, dtypes.Float32) {
+						fallbackTrailingFn(outSlice, outSlice, gammaData, betaData, normSize, epsilon)
+					}
+				} else {
+					inSlice := buf1[:elems]
+					inPtr := unsafe.Pointer(unsafe.SliceData(inSlice))
+					convertHalfToFloat32Slice(input, offset, elems, inSlice, conv)
+					convertHalfToFloat32Slice(residual, offset, elems, outSlice, conv)
+					if resArchFn == nil || !resArchFn(inPtr, outPtr, outPtr, gPtr, bPtr, rows, normSize, epsilon, dtypes.Float32) {
+						for i := range elems {
+							outSlice[i] += inSlice[i]
+						}
+						fallbackTrailingFn(outSlice, outSlice, gammaData, betaData, normSize, epsilon)
+					}
+				}
+			} else {
+				inSlice := buf1[:elems]
+				inPtr := unsafe.Pointer(unsafe.SliceData(inSlice))
+				convertHalfToFloat32Slice(input, offset, elems, inSlice, conv)
+				if residual == nil {
+					if archFn == nil || !archFn(inPtr, inPtr, gPtr, bPtr, rows, normSize, epsilon, dtypes.Float32) {
+						fallbackTrailingFn(inSlice, inSlice, gammaData, betaData, normSize, epsilon)
+					}
+				} else {
+					resSlice := buf2[:elems]
+					resPtr := unsafe.Pointer(unsafe.SliceData(resSlice))
+					convertHalfToFloat32Slice(residual, offset, elems, resSlice, conv)
+					if resArchFn == nil || !resArchFn(inPtr, resPtr, inPtr, gPtr, bPtr, rows, normSize, epsilon, dtypes.Float32) {
+						for i := range elems {
+							inSlice[i] += resSlice[i]
+						}
+						fallbackTrailingFn(inSlice, inSlice, gammaData, betaData, normSize, epsilon)
+					}
+				}
+				convertFloat32ToHalfOrFloat32Slice(inSlice, output, offset, elems, conv)
+			}
+		}
+	}
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		!backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1 &&
+		outerSize > 1 && totalElements > minSIMDLayerNormParallelElements {
+		minOuter := max(1, (minSIMDLayerNormParallelElements/2)/max(1, normSize))
+		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, runChunk)
+		return
+	}
+	runChunk(0, outerSize)
+}
+
+func layerNormHalf(
+	backend *gobackend.Backend,
+	input, residual, output, gamma, beta *gobackend.Buffer,
+	axes []int,
+	epsilon float64,
+	fallbackTrailingFn func(inData, outData, gammaData, betaData []float32, normSize int, epsilon float64),
+) {
+	dims := input.RawShape.Dimensions
+	rank := len(dims)
+	normSize := 1
+	for _, a := range axes {
+		normSize *= dims[a]
+	}
+
+	isTrailingAxes := true
+	for i, a := range axes {
+		if a != rank-len(axes)+i {
+			isTrailingAxes = false
+			break
+		}
+	}
+	if isTrailingAxes {
+		layerNormTrailingAxesHalf(backend, input, residual, output, gamma, beta, normSize, epsilon, fallbackTrailingFn)
+		return
+	}
+
+	totalElements := input.RawShape.Size()
+	if totalElements == 0 {
+		return
+	}
+	conv := gobackend.ActiveHalfSliceConverters()
+	var gScratch, bScratch [2048]float32
+	gammaData := extractLayerNormParamFloat32(gamma, gScratch[:], conv)
+	betaData := extractLayerNormParamFloat32(beta, bScratch[:], conv)
+
+	inF32 := make([]float32, totalElements)
+	convertHalfToFloat32Slice(input, 0, totalElements, inF32, conv)
+	if residual != nil {
+		resF32 := make([]float32, totalElements)
+		convertHalfToFloat32Slice(residual, 0, totalElements, resF32, conv)
+		for i := range inF32 {
+			inF32[i] += resF32[i]
+		}
+	}
+
+	var outF32 []float32
+	if output.RawShape.DType == dtypes.Float32 {
+		outF32 = output.Flat.([]float32)
+	} else {
+		outF32 = inF32
+	}
+
+	if aDim, bDim, cDim, dDim, ok := classifyStridedLayerNormAxes(dims, axes); ok {
+		layerNormStridedAxes(inF32, outF32, gammaData, betaData, aDim, bDim, cDim, dDim, epsilon)
+	} else {
+		layerNormArbitraryAxes(inF32, outF32, gammaData, betaData, dims, axes, normSize, epsilon)
+	}
+	if output.RawShape.DType != dtypes.Float32 {
+		convertFloat32ToHalfOrFloat32Slice(outF32, output, 0, totalElements, conv)
+	}
+}
+
+const (
+	minLayerNormParallelElements     = 32768
+	minSIMDLayerNormParallelElements = 65536
+)
 
 // layerNorm dispatches to the trailing-axes fast path or the general case.
 func layerNorm[T float32 | float64](backend *gobackend.Backend, input, residual, output, gamma, beta *gobackend.Buffer, axes []int, epsilon float64) {

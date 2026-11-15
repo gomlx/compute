@@ -791,11 +791,54 @@ func sdpaSoftmaxRowNEON(scores []float32, kvLenUnmasked int, rowMax float32) {
 	vBias127 := archsimd.BroadcastUint32x4(127 << 23)
 
 	vRowMax := archsimd.BroadcastFloat32x4(rowMax)
-	vSum := archsimd.BroadcastFloat32x4(0)
+	vSum0 := archsimd.BroadcastFloat32x4(0)
+	vSum1 := archsimd.BroadcastFloat32x4(0)
 
 	k := 0
+	for ; k+8 <= kvLenUnmasked; k += 8 {
+		x0 := archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&scores[k]))).Sub(vRowMax)
+		x1 := archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&scores[k+4]))).Sub(vRowMax)
+		x0 = x0.Max(vMinLog).Min(vMaxLog)
+		x1 = x1.Max(vMinLog).Min(vMaxLog)
+
+		zRound0 := x0.MulAdd(vLog2E, vMagic)
+		zRound1 := x1.MulAdd(vLog2E, vMagic)
+		z0 := zRound0.Sub(vMagic)
+		z1 := zRound1.Sub(vMagic)
+		g0 := x0.Sub(z0.Mul(vLn2Hi)).Sub(z0.Mul(vLn2Lo))
+		g1 := x1.Sub(z1.Mul(vLn2Hi)).Sub(z1.Mul(vLn2Lo))
+
+		g2_0 := g0.Mul(g0)
+		g2_1 := g1.Mul(g1)
+		g4_0 := g2_0.Mul(g2_0)
+		g4_1 := g2_1.Mul(g2_1)
+		q67_0 := g0.MulAdd(vP7, vP6)
+		q67_1 := g1.MulAdd(vP7, vP6)
+		q45_0 := g0.MulAdd(vP5, vP4)
+		q45_1 := g1.MulAdd(vP5, vP4)
+		q23_0 := g0.MulAdd(vP3, vP2)
+		q23_1 := g1.MulAdd(vP3, vP2)
+		q01_0 := g0.Add(vOne)
+		q01_1 := g1.Add(vOne)
+		polyHi0 := g2_0.MulAdd(q67_0, q45_0)
+		polyHi1 := g2_1.MulAdd(q67_1, q45_1)
+		polyLo0 := g2_0.MulAdd(q23_0, q01_0)
+		polyLo1 := g2_1.MulAdd(q23_1, q01_1)
+		poly0 := g4_0.MulAdd(polyHi0, polyLo0)
+		poly1 := g4_1.MulAdd(polyHi1, polyLo1)
+
+		scale0 := zRound0.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		scale1 := zRound1.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
+		expV0 := poly0.Mul(scale0)
+		expV1 := poly1.Mul(scale1)
+		expV0.StoreArray((*[4]float32)(unsafe.Pointer(&scores[k])))
+		expV1.StoreArray((*[4]float32)(unsafe.Pointer(&scores[k+4])))
+		vSum0 = vSum0.Add(expV0)
+		vSum1 = vSum1.Add(expV1)
+	}
+	vSum := vSum0.Add(vSum1)
 	for ; k+4 <= kvLenUnmasked; k += 4 {
-		x := archsimd.LoadFloat32x4(scores[k : k+4]).Sub(vRowMax)
+		x := archsimd.LoadFloat32x4Array((*[4]float32)(unsafe.Pointer(&scores[k]))).Sub(vRowMax)
 		x = x.Max(vMinLog).Min(vMaxLog)
 
 		zRound := x.MulAdd(vLog2E, vMagic)
@@ -814,7 +857,7 @@ func sdpaSoftmaxRowNEON(scores []float32, kvLenUnmasked int, rowMax float32) {
 
 		scale := zRound.ToBits().Mul(vShift23).Add(vBias127).BitsToFloat32()
 		expV := poly.Mul(scale)
-		expV.Store(scores[k : k+4])
+		expV.StoreArray((*[4]float32)(unsafe.Pointer(&scores[k])))
 		vSum = vSum.Add(expV)
 	}
 

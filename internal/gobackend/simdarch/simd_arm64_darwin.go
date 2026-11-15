@@ -179,10 +179,37 @@ func AcquireSMEWithSpin(maxFastPerCluster, maxSlowPerCluster int32, maxSpins int
 	if useSME || maxSpins <= 0 {
 		return clusterID, useSME, isEfficiencyCore
 	}
-	for range maxSpins {
-		clusterID, useSME, isEfficiencyCore = AcquireSMEWithLimit(maxFastPerCluster, maxSlowPerCluster)
-		if useSME {
-			return clusterID, true, isEfficiencyCore
+	clusterID, _, isEfficiencyCore = CurrentSMECluster()
+	if clusterID < 0 || clusterID >= MaxSMEUnits {
+		clusterID = int(uint(clusterID) % MaxSMEUnits)
+	}
+	limit := maxFastPerCluster
+	if isEfficiencyCore {
+		limit = maxSlowPerCluster
+	}
+	if limit <= 0 {
+		return -1, false, isEfficiencyCore
+	}
+	for i := range maxSpins {
+		if i&63 == 63 {
+			clusterID, _, isEfficiencyCore = CurrentSMECluster()
+			if clusterID < 0 || clusterID >= MaxSMEUnits {
+				clusterID = int(uint(clusterID) % MaxSMEUnits)
+			}
+			limit = maxFastPerCluster
+			if isEfficiencyCore {
+				limit = maxSlowPerCluster
+			}
+			if limit <= 0 {
+				return -1, false, isEfficiencyCore
+			}
+		}
+		if globalSMEClusterLocks[clusterID].active.Load() < limit {
+			if globalSMEClusterLocks[clusterID].active.Add(1) <= limit {
+				smeActiveTotal.Add(1)
+				return clusterID, true, isEfficiencyCore
+			}
+			globalSMEClusterLocks[clusterID].active.Add(-1)
 		}
 	}
 	return -1, false, isEfficiencyCore

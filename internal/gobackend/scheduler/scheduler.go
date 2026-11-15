@@ -32,6 +32,10 @@ type Scheduler struct {
 	//   < 0: unlimited (uses runtime.GOMAXPROCS(0))
 	maxParallelism int
 
+	// gomaxprocs caches runtime.GOMAXPROCS(0) to avoid acquiring runtime.sched.lock
+	// on every UnscaledParallelism() / EffectiveParallelism() call.
+	gomaxprocs int
+
 	// numActiveCalls tracks the number of concurrent top-level Executable.Execute() calls
 	// for inter-call parallelism scaling.
 	numActiveCalls atomic.Int32
@@ -56,9 +60,20 @@ type Scheduler struct {
 
 // New returns a new Scheduler with the default parallelism set to runtime.GOMAXPROCS(0).
 func New() *Scheduler {
+	procs := max(runtime.GOMAXPROCS(0), 1)
 	return &Scheduler{
-		maxParallelism: runtime.GOMAXPROCS(0),
+		maxParallelism: procs,
+		gomaxprocs:     procs,
 	}
+}
+
+func (s *Scheduler) cachedGOMAXPROCS() int {
+	if s.gomaxprocs > 0 {
+		return s.gomaxprocs
+	}
+	procs := max(runtime.GOMAXPROCS(0), 1)
+	s.gomaxprocs = procs
+	return procs
 }
 
 // ensureWorkersStarted lazily starts the persistent worker goroutines on first parallel use.
@@ -67,7 +82,7 @@ func (s *Scheduler) ensureWorkersStarted() {
 		s.intraOpQueue = make(chan func(), defaultQueueSize)
 		s.interOpQueue = make(chan func(), defaultQueueSize)
 		s.wholeChipGate = make(chan struct{}, 1)
-		numWorkers := max(runtime.GOMAXPROCS(0), s.maxParallelism, 1)
+		numWorkers := max(s.cachedGOMAXPROCS(), s.maxParallelism, 1)
 		if numWorkers > 1 {
 			s.maxInterOpWorkers = int32(numWorkers - 1)
 		} else {
@@ -122,6 +137,7 @@ func (s *Scheduler) MaxParallelism() int {
 // This should be configured before workers start executing.
 func (s *Scheduler) SetMaxParallelism(maxParallelism int) {
 	s.maxParallelism = maxParallelism
+	s.gomaxprocs = max(runtime.GOMAXPROCS(0), 1)
 }
 
 // EnterExecution registers the start of a top-level Executable.Execute() call (inter-call tracking).
@@ -151,10 +167,11 @@ func (s *Scheduler) UnscaledParallelism() int {
 	if s.maxParallelism == 0 {
 		return 1
 	}
+	procs := s.cachedGOMAXPROCS()
 	if s.maxParallelism < 0 {
-		return runtime.GOMAXPROCS(0)
+		return procs
 	}
-	return min(max(s.maxParallelism, 1), runtime.GOMAXPROCS(0))
+	return min(max(s.maxParallelism, 1), procs)
 }
 
 // AcquireWholeChip acquires the fair FIFO whole-chip gate for a large operation so that
@@ -185,6 +202,12 @@ func (s *Scheduler) IsWholeChipHeld() bool {
 	return s.wholeChipHeld.Load() > 0
 }
 
+// IsBusy reports whether multiple top-level Execute() calls are active concurrently
+// or a large operation holds the whole-chip gate.
+func (s *Scheduler) IsBusy() bool {
+	return s.numActiveCalls.Load() > 1 || s.wholeChipHeld.Load() > 0
+}
+
 // AdjustedMaxParallelism returns the effective parallelism for the current execution.
 // It is an alias for EffectiveParallelism() kept for convenience across op implementations.
 func (s *Scheduler) AdjustedMaxParallelism() int {
@@ -211,7 +234,7 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 
 	eff := s.EffectiveParallelism()
 	if s.IsUnlimited() {
-		eff = runtime.GOMAXPROCS(0)
+		eff = s.cachedGOMAXPROCS()
 	}
 	if eff <= 1 {
 		for _, task := range tasks {
@@ -314,6 +337,9 @@ func (s *Scheduler) ParallelizeChunks(totalItems, minChunkSize int, fn func(star
 	if numWorkers <= 1 {
 		fn(0, totalItems)
 		return
+	}
+	if s.numActiveCalls.Load() > 1 {
+		minChunkSize *= 4
 	}
 
 	maxChunksBySize := (totalItems + minChunkSize - 1) / minChunkSize

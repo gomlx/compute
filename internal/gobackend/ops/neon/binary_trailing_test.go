@@ -11,6 +11,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 )
 
@@ -385,6 +387,306 @@ func TestNEONBinaryTrailingCorrectness(t *testing.T) {
 						if out[idx] != expected[idx] {
 							t.Fatalf("Mismatch for %s (isLHS=%v, A=%d, B=%d) at idx %d: got %v, expected %v",
 								op, isLHS, A, B, idx, out[idx], expected[idx])
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("Float16", func(t *testing.T) {
+		for _, op := range ops {
+			for _, isLHS := range []bool{false, true} {
+				for _, tc := range testCases {
+					A, B := tc.A, tc.B
+					lhs := make([]float16.Float16, A*B)
+					rhs := make([]float16.Float16, A)
+					if isLHS {
+						lhs = make([]float16.Float16, A)
+						rhs = make([]float16.Float16, A*B)
+					}
+					out := make([]float16.Float16, A*B)
+					expected := make([]float16.Float16, A*B)
+
+					for i := range lhs {
+						lhs[i] = float16.FromFloat32(float32(i%50+1) * 0.25)
+					}
+					for i := range rhs {
+						rhs[i] = float16.FromFloat32(float32(i%10+1) * 0.5)
+					}
+
+					for a := range A {
+						for b := range B {
+							idx := a*B + b
+							var lVal, rVal float32
+							if !isLHS {
+								lVal = lhs[idx].Float32()
+								rVal = rhs[a].Float32()
+							} else {
+								lVal = lhs[a].Float32()
+								rVal = rhs[idx].Float32()
+							}
+							var res float32
+							switch op {
+							case compute.OpTypeAdd:
+								res = lVal + rVal
+							case compute.OpTypeSub:
+								res = lVal - rVal
+							case compute.OpTypeMul:
+								res = lVal * rVal
+							case compute.OpTypeDiv:
+								res = lVal / rVal
+							case compute.OpTypeMax:
+								res = max(lVal, rVal)
+							case compute.OpTypeMin:
+								res = min(lVal, rVal)
+							}
+							expected[idx] = float16.FromFloat32(res)
+						}
+					}
+
+					ok := DispatchBinaryTrailingNEON(op, isLHS, unsafe.Pointer(&lhs[0]), unsafe.Pointer(&rhs[0]), unsafe.Pointer(&out[0]), A, B, dtypes.Float16)
+					if !ok {
+						t.Fatalf("DispatchBinaryTrailingNEON returned false for %s f16", op)
+					}
+
+					for idx := range A * B {
+						if out[idx] != expected[idx] {
+							t.Fatalf("Mismatch for %s (isLHS=%v, A=%d, B=%d) at idx %d: got %v, expected %v",
+								op, isLHS, A, B, idx, out[idx].Float32(), expected[idx].Float32())
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("BFloat16", func(t *testing.T) {
+		for _, op := range ops {
+			for _, isLHS := range []bool{false, true} {
+				for _, tc := range testCases {
+					A, B := tc.A, tc.B
+					lhs := make([]bfloat16.BFloat16, A*B)
+					rhs := make([]bfloat16.BFloat16, A)
+					if isLHS {
+						lhs = make([]bfloat16.BFloat16, A)
+						rhs = make([]bfloat16.BFloat16, A*B)
+					}
+					out := make([]bfloat16.BFloat16, A*B)
+					expected := make([]bfloat16.BFloat16, A*B)
+
+					for i := range lhs {
+						lhs[i] = bfloat16.FromFloat32(float32(i%50+1) * 0.25)
+					}
+					for i := range rhs {
+						rhs[i] = bfloat16.FromFloat32(float32(i%10+1) * 0.5)
+					}
+
+					for a := range A {
+						for b := range B {
+							idx := a*B + b
+							var lVal, rVal float32
+							if !isLHS {
+								lVal = lhs[idx].Float32()
+								rVal = rhs[a].Float32()
+							} else {
+								lVal = lhs[a].Float32()
+								rVal = rhs[idx].Float32()
+							}
+							var res float32
+							switch op {
+							case compute.OpTypeAdd:
+								res = lVal + rVal
+							case compute.OpTypeSub:
+								res = lVal - rVal
+							case compute.OpTypeMul:
+								res = lVal * rVal
+							case compute.OpTypeDiv:
+								res = lVal / rVal
+							case compute.OpTypeMax:
+								res = max(lVal, rVal)
+							case compute.OpTypeMin:
+								res = min(lVal, rVal)
+							}
+							expected[idx] = bfloat16.FromFloat32(res)
+						}
+					}
+
+					ok := DispatchBinaryTrailingNEON(op, isLHS, unsafe.Pointer(&lhs[0]), unsafe.Pointer(&rhs[0]), unsafe.Pointer(&out[0]), A, B, dtypes.BFloat16)
+					if !ok {
+						t.Fatalf("DispatchBinaryTrailingNEON returned false for %s bf16", op)
+					}
+
+					for idx := range A * B {
+						if out[idx] != expected[idx] {
+							t.Fatalf("Mismatch for %s (isLHS=%v, A=%d, B=%d) at idx %d: got %v, expected %v",
+								op, isLHS, A, B, idx, out[idx].Float32(), expected[idx].Float32())
+						}
+					}
+				}
+			}
+		}
+	})
+}
+
+func TestNEONBinaryMidCorrectness(t *testing.T) {
+	if !gobackend.IsNEONAllowed {
+		t.Skip("ARM64 NEON not allowed or not supported on this host")
+	}
+
+	testCases := []struct {
+		A, B, C int
+	}{
+		{A: 1, B: 1, C: 1},
+		{A: 1, B: 1, C: 7},
+		{A: 1, B: 1, C: 8},
+		{A: 1, B: 1, C: 15},
+		{A: 1, B: 1, C: 32},
+		{A: 1, B: 1, C: 35},
+		{A: 1, B: 4, C: 64},
+		{A: 2, B: 3, C: 19},
+		{A: 3, B: 5, C: 77},
+		{A: 4, B: 2, C: 384},
+	}
+
+	ops := []compute.OpType{
+		compute.OpTypeAdd,
+		compute.OpTypeSub,
+		compute.OpTypeMul,
+		compute.OpTypeDiv,
+		compute.OpTypeMax,
+		compute.OpTypeMin,
+	}
+
+	t.Run("Float16", func(t *testing.T) {
+		for _, op := range ops {
+			for _, isLHS := range []bool{false, true} {
+				for _, tc := range testCases {
+					A, B, C := tc.A, tc.B, tc.C
+					vec := make([]float16.Float16, A*B*C)
+					bcast := make([]float16.Float16, A*C)
+					out := make([]float16.Float16, A*B*C)
+
+					for i := range vec {
+						vec[i] = float16.FromFloat32(float32(i%53+1) * 0.25)
+					}
+					for i := range bcast {
+						bcast[i] = float16.FromFloat32(float32(i%17+1) * 0.5)
+					}
+
+					var lhsPtr, rhsPtr unsafe.Pointer
+					if !isLHS {
+						lhsPtr = unsafe.Pointer(&vec[0])
+						rhsPtr = unsafe.Pointer(&bcast[0])
+					} else {
+						lhsPtr = unsafe.Pointer(&bcast[0])
+						rhsPtr = unsafe.Pointer(&vec[0])
+					}
+
+					ok := DispatchBinaryMidNEON(op, isLHS, lhsPtr, rhsPtr, unsafe.Pointer(&out[0]), A, B, C, dtypes.Float16)
+					if !ok {
+						t.Fatalf("DispatchBinaryMidNEON returned false for %s f16", op)
+					}
+
+					for a := range A {
+						for b := range B {
+							for c := range C {
+								vIdx := (a*B+b)*C + c
+								bIdx := a*C + c
+								lVal := vec[vIdx].Float32()
+								rVal := bcast[bIdx].Float32()
+								if isLHS {
+									lVal, rVal = rVal, lVal
+								}
+								var res float32
+								switch op {
+								case compute.OpTypeAdd:
+									res = lVal + rVal
+								case compute.OpTypeSub:
+									res = lVal - rVal
+								case compute.OpTypeMul:
+									res = lVal * rVal
+								case compute.OpTypeDiv:
+									res = lVal / rVal
+								case compute.OpTypeMax:
+									res = max(lVal, rVal)
+								case compute.OpTypeMin:
+									res = min(lVal, rVal)
+								}
+								want := float16.FromFloat32(res)
+								if out[vIdx] != want {
+									t.Fatalf("Mismatch for %s f16 (isLHS=%v, A=%d, B=%d, C=%d) at %d: got %v, want %v",
+										op, isLHS, A, B, C, vIdx, out[vIdx].Float32(), want.Float32())
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("BFloat16", func(t *testing.T) {
+		for _, op := range ops {
+			for _, isLHS := range []bool{false, true} {
+				for _, tc := range testCases {
+					A, B, C := tc.A, tc.B, tc.C
+					vec := make([]bfloat16.BFloat16, A*B*C)
+					bcast := make([]bfloat16.BFloat16, A*C)
+					out := make([]bfloat16.BFloat16, A*B*C)
+
+					for i := range vec {
+						vec[i] = bfloat16.FromFloat32(float32(i%53+1) * 0.25)
+					}
+					for i := range bcast {
+						bcast[i] = bfloat16.FromFloat32(float32(i%17+1) * 0.5)
+					}
+
+					var lhsPtr, rhsPtr unsafe.Pointer
+					if !isLHS {
+						lhsPtr = unsafe.Pointer(&vec[0])
+						rhsPtr = unsafe.Pointer(&bcast[0])
+					} else {
+						lhsPtr = unsafe.Pointer(&bcast[0])
+						rhsPtr = unsafe.Pointer(&vec[0])
+					}
+
+					ok := DispatchBinaryMidNEON(op, isLHS, lhsPtr, rhsPtr, unsafe.Pointer(&out[0]), A, B, C, dtypes.BFloat16)
+					if !ok {
+						t.Fatalf("DispatchBinaryMidNEON returned false for %s bf16", op)
+					}
+
+					for a := range A {
+						for b := range B {
+							for c := range C {
+								vIdx := (a*B+b)*C + c
+								bIdx := a*C + c
+								lVal := vec[vIdx].Float32()
+								rVal := bcast[bIdx].Float32()
+								if isLHS {
+									lVal, rVal = rVal, lVal
+								}
+								var res float32
+								switch op {
+								case compute.OpTypeAdd:
+									res = lVal + rVal
+								case compute.OpTypeSub:
+									res = lVal - rVal
+								case compute.OpTypeMul:
+									res = lVal * rVal
+								case compute.OpTypeDiv:
+									res = lVal / rVal
+								case compute.OpTypeMax:
+									res = max(lVal, rVal)
+								case compute.OpTypeMin:
+									res = min(lVal, rVal)
+								}
+								want := bfloat16.FromFloat32(res)
+								if out[vIdx] != want {
+									t.Fatalf("Mismatch for %s bf16 (isLHS=%v, A=%d, B=%d, C=%d) at %d: got %v, want %v",
+										op, isLHS, A, B, C, vIdx, out[vIdx].Float32(), want.Float32())
+								}
+							}
 						}
 					}
 				}

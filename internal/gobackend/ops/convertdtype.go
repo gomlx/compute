@@ -33,7 +33,7 @@ func ConvertDType(f *gobackend.Function, operandOp compute.Value, dtype dtypes.D
 }
 
 const (
-	convertDTypeMinParallelElems = 16384
+	convertDTypeMinParallelElems = 262144
 	convertDTypeParallelBlock    = 64
 )
 
@@ -107,11 +107,12 @@ func execConvertDType(backend *gobackend.Backend, node *gobackend.Node, inputs [
 	}
 	convertFn := convertFnAny.(ConvertFnType)
 
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalElems >= convertDTypeMinParallelElems {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		totalElems >= convertDTypeMinParallelElems && !backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1 {
 		if _, okIn := subSliceBufferElements(operand, 0, totalElems); okIn {
 			if _, okOut := subSliceBufferElements(output, 0, totalElems); okOut {
 				numBlocks := (totalElems + convertDTypeParallelBlock - 1) / convertDTypeParallelBlock
-				minBlocks := max(1, 4096/convertDTypeParallelBlock)
+				minBlocks := max(1, 131072/convertDTypeParallelBlock)
 				backend.Scheduler.ParallelizeChunks(numBlocks, minBlocks, func(bStart, bEnd int) {
 					elemStart := bStart * convertDTypeParallelBlock
 					elemEnd := min(bEnd*convertDTypeParallelBlock, totalElems)

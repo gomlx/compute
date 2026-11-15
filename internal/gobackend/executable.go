@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gomlx/compute"
+	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/humanize"
 	"github.com/pkg/errors"
@@ -289,10 +290,14 @@ func (fe *FunctionExecutable) bindSharedQuantizedDenseActivations() {
 	}
 }
 
-// fuseSingleConsumerResidualAddIntoLayerNorm fuses Add(a, b) -> FusedLayerNorm(sum, ...)
-// when Add(a, b) has equal-shaped operands (no broadcasting) and FusedLayerNorm is its
-// sole consumer. It rewires FusedLayerNorm's inputs to [a, gamma?, beta?, b] and returns
-// true if any node was rewired (so NumUses and Dependents can be recomputed, eliminating Add).
+// fuseSingleConsumerResidualAddIntoLayerNorm fuses:
+//  1. Single-consumer ConvertDType(Half -> Float32) feeding FusedLayerNorm(Float32),
+//  2. Single-consumer Add(a, b) feeding FusedLayerNorm (rewiring inputs to [a, gamma?, beta?, b]), and
+//  3. Single-consumer ConvertDType(Float32 -> Half) consuming FusedLayerNorm(Float32) when the
+//     LayerNorm input is already Half.
+//
+// It returns true if any node was rewired (so NumUses and Dependents can be recomputed,
+// eliminating the absorbed ConvertDType and Add nodes).
 func (fe *FunctionExecutable) fuseSingleConsumerResidualAddIntoLayerNorm() bool {
 	rewired := false
 	for nodeIdx := range fe.NumNodesToProcess {
@@ -303,38 +308,73 @@ func (fe *FunctionExecutable) fuseSingleConsumerResidualAddIntoLayerNorm() bool 
 		if lnNode.OpType != compute.OpTypeFusedLayerNorm || len(lnNode.Inputs) < 1 {
 			continue
 		}
-		addNode := lnNode.Inputs[0]
-		if addNode.OpType != compute.OpTypeAdd || len(addNode.Inputs) != 2 {
-			continue
-		}
-		// Ensure lnNode is the sole consumer of addNode (and addNode is not in fe.OutputNodes).
-		if fe.NumUses[addNode.Index] != 1 || len(fe.Dependents[addNode.Index]) != 1 || fe.Dependents[addNode.Index][0] != nodeIdx {
-			continue
-		}
-		in0, in1 := addNode.Inputs[0], addNode.Inputs[1]
-		if in0 == in1 {
-			continue
-		}
-		// Require identical dtype and dimensions (no broadcasting).
-		if in0.Shape.DType != in1.Shape.DType || !in0.Shape.EqualDimensions(in1.Shape) {
-			continue
-		}
-		lnTarget, ok := lnNode.Data.(FusedLayerNormResidualTarget)
-		if !ok || !lnTarget.TryFuseResidualInput() {
-			continue
-		}
-		newInputs := make([]*Node, len(lnNode.Inputs)+1)
-		newInputs[0] = in0
-		copy(newInputs[1:len(lnNode.Inputs)], lnNode.Inputs[1:])
-		newInputs[len(lnNode.Inputs)] = in1
-		lnNode.Inputs = newInputs
 
-		totalCaptured := 0
-		for _, closureCaptures := range lnNode.CapturedInputs {
-			totalCaptured += len(closureCaptures)
+		// 1. If lnNode is Float32 and its input x is a single-consumer ConvertDType from Float16/BFloat16,
+		// bypass the ConvertDType node so FusedLayerNorm reads the half-precision input directly.
+		bypassedConvIdx := -1
+		if lnNode.Shape.DType == dtypes.Float32 {
+			convIn := lnNode.Inputs[0]
+			if convIn.OpType == compute.OpTypeConvertDType && len(convIn.Inputs) == 1 &&
+				fe.NumUses[convIn.Index] == 1 && len(fe.Dependents[convIn.Index]) == 1 && fe.Dependents[convIn.Index][0] == nodeIdx {
+				srcNode := convIn.Inputs[0]
+				if srcNode.Shape.DType == dtypes.Float16 || srcNode.Shape.DType == dtypes.BFloat16 {
+					lnNode.Inputs[0] = srcNode
+					bypassedConvIdx = convIn.Index
+					rewired = true
+				}
+			}
 		}
-		fe.MaxInputs = max(fe.MaxInputs, len(lnNode.Inputs)+totalCaptured)
-		rewired = true
+
+		// 2. If lnNode's input x is a single-consumer equal-shaped Add(a, b), fuse the residual Add
+		// into FusedLayerNorm as an extra trailing input [a, gamma?, beta?, b].
+		addNode := lnNode.Inputs[0]
+		if addNode.OpType == compute.OpTypeAdd && len(addNode.Inputs) == 2 &&
+			fe.NumUses[addNode.Index] == 1 && len(fe.Dependents[addNode.Index]) == 1 &&
+			(fe.Dependents[addNode.Index][0] == nodeIdx || fe.Dependents[addNode.Index][0] == bypassedConvIdx) {
+			in0, in1 := addNode.Inputs[0], addNode.Inputs[1]
+			if in0 != in1 && in0.Shape.DType == in1.Shape.DType && in0.Shape.EqualDimensions(in1.Shape) {
+				if lnTarget, ok := lnNode.Data.(FusedLayerNormResidualTarget); ok && lnTarget.TryFuseResidualInput() {
+					newInputs := make([]*Node, len(lnNode.Inputs)+1)
+					newInputs[0] = in0
+					copy(newInputs[1:len(lnNode.Inputs)], lnNode.Inputs[1:])
+					newInputs[len(lnNode.Inputs)] = in1
+					lnNode.Inputs = newInputs
+
+					totalCaptured := 0
+					for _, closureCaptures := range lnNode.CapturedInputs {
+						totalCaptured += len(closureCaptures)
+					}
+					fe.MaxInputs = max(fe.MaxInputs, len(lnNode.Inputs)+totalCaptured)
+					rewired = true
+				}
+			}
+		}
+
+		// 3. If lnNode (Float32) now reads a Float16/BFloat16 input and its sole consumer is a
+		// ConvertDType back to the same half-precision dtype, fold lnNode into that ConvertDType
+		// node so FusedLayerNorm writes the half-precision output directly (and can reuse an owned
+		// half-precision input buffer in-place).
+		inDType := lnNode.Inputs[0].Shape.DType
+		if lnNode.Shape.DType == dtypes.Float32 &&
+			(inDType == dtypes.Float16 || inDType == dtypes.BFloat16) &&
+			fe.NumUses[nodeIdx] == 1 && len(fe.Dependents[nodeIdx]) == 1 {
+			depIdx := fe.Dependents[nodeIdx][0]
+			if depIdx >= 0 && depIdx < fe.NumNodesToProcess && fe.NumUses[depIdx] > 0 {
+				depNode := fe.Function.Nodes[depIdx]
+				if depNode.OpType == compute.OpTypeConvertDType && len(depNode.Inputs) == 1 &&
+					depNode.Inputs[0] == lnNode && depNode.Shape.DType == inDType {
+					depNode.OpType = compute.OpTypeFusedLayerNorm
+					depNode.Inputs = lnNode.Inputs
+					depNode.Data = lnNode.Data
+					totalCaptured := 0
+					for _, closureCaptures := range depNode.CapturedInputs {
+						totalCaptured += len(closureCaptures)
+					}
+					fe.MaxInputs = max(fe.MaxInputs, len(depNode.Inputs)+totalCaptured)
+					rewired = true
+				}
+			}
+		}
 	}
 	return rewired
 }

@@ -282,7 +282,7 @@ func smeAcquireClusterSingleWorker() (clusterIdx int, useSME bool, isEfficiencyC
 	if !SMEUseHybridNEON || !simdarch.SMEUseHybridNEON {
 		return -1, true, false
 	}
-	return simdarch.AcquireSMEWithSpin(SMEWorkersPerCluster, SMEWorkersPerCluster, 256)
+	return simdarch.AcquireSMEWithSpin(SMEWorkersPerCluster, SMEWorkersPerCluster, 65536)
 }
 
 func smeAcquireClusterForWork(numWorkItems int) (clusterIdx int, useSME bool, isEfficiencyCore bool) {
