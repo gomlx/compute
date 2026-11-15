@@ -1,4 +1,4 @@
-//go:build amd64 && goexperiment.simd
+//go:build amd64 && goexperiment.simd && go1.27
 
 package defaultpkgs
 
@@ -7,6 +7,8 @@ package defaultpkgs
 import (
 	_ "github.com/gomlx/compute/internal/gobackend/activations/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/activations/avx512"
+	_ "github.com/gomlx/compute/internal/gobackend/avx2"
+	_ "github.com/gomlx/compute/internal/gobackend/avx512"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/avx2"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/avx512"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/avx2"

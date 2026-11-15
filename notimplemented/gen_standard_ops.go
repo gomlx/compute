@@ -512,6 +512,12 @@ func (f Function) FusedQuantizedDense(x compute.Value, weight compute.Value, bia
 
 // FusedSoftmax computes softmax along the specified axis.
 //
+// Supported dtypes include Float32, Float64, Float16, and BFloat16 (backends that do not
+// support a given dtype return ErrNotImplemented). The output preserves x's shape and dtype.
+// For half-precision inputs (Float16, BFloat16), internal max-subtraction, exponentials,
+// summation, and normalization are performed in Float32 precision to avoid overflow/underflow
+// before rounding back to x's dtype.
+//
 // Note: unlike the generic softmax in GoMLX's graph package, the fused
 // softmax only accepts one axis. The axis must be non-negative (the caller
 // normalizes negative indices before calling).

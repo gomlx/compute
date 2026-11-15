@@ -127,6 +127,134 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 				t.Errorf("Result not within delta %f:\n%s", fusedTestTolerance, diff)
 			}
 		})
+
+		t.Run("Float16", func(t *testing.T) {
+			f16 := float16.FromFloat32
+			// 1D
+			got, err := testutil.Exec1(b, []any{[]float16.Float16{f16(1), f16(2), f16(3), f16(4)}},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedSoftmax(params[0], 0)
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax Float16 1D failed: %+v", err)
+			}
+			want1D := []float16.Float16{f16(0.0320586), f16(0.0871443), f16(0.2368828), f16(0.6439143)}
+			if ok, diff := testutil.IsInDelta(want1D, got, 1e-2); !ok {
+				t.Errorf("1D mismatch:\n%s", diff)
+			}
+
+			// 2D non-trailing axis 0 + trailing axis 1 + larger SIMD/remainder width (rowSize=37) + large stability values.
+			const numRows, rowSize = 3, 37
+			input2D := make([][]float16.Float16, numRows)
+			for r := range numRows {
+				input2D[r] = make([]float16.Float16, rowSize)
+				for c := range rowSize {
+					input2D[r][c] = f16(float32(1000 + r*3 + c%7))
+				}
+			}
+			got2D, err := testutil.Exec1(b, []any{input2D}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedSoftmax(params[0], 1)
+			})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax Float16 2D axis=1 failed: %+v", err)
+			}
+			got2DSlice := got2D.([][]float16.Float16)
+			for r := range numRows {
+				var sum float32
+				for c := range rowSize {
+					v := got2DSlice[r][c].Float32()
+					if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+						t.Fatalf("Float16 axis=1 produced NaN/Inf at [%d][%d]", r, c)
+					}
+					sum += v
+				}
+				if ok, diff := testutil.IsInDelta(float32(1.0), sum, 1e-2); !ok {
+					t.Errorf("axis=1 row %d sum mismatch:\n%s", r, diff)
+				}
+			}
+
+			gotAxis0, err := testutil.Exec1(b, []any{[][]float16.Float16{{f16(1), f16(2)}, {f16(2), f16(4)}, {f16(3), f16(6)}}},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedSoftmax(params[0], 0)
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax Float16 2D axis=0 failed: %+v", err)
+			}
+			gotAxis0Slice := gotAxis0.([][]float16.Float16)
+			for c := range 2 {
+				sum := gotAxis0Slice[0][c].Float32() + gotAxis0Slice[1][c].Float32() + gotAxis0Slice[2][c].Float32()
+				if ok, diff := testutil.IsInDelta(float32(1.0), sum, 1e-2); !ok {
+					t.Errorf("axis=0 col %d sum mismatch:\n%s", c, diff)
+				}
+			}
+		})
+
+		t.Run("BFloat16", func(t *testing.T) {
+			bf16 := bfloat16.FromFloat32
+			// 1D
+			got, err := testutil.Exec1(b, []any{[]bfloat16.BFloat16{bf16(1), bf16(2), bf16(3), bf16(4)}},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedSoftmax(params[0], 0)
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax BFloat16 1D failed: %+v", err)
+			}
+			want1D := []bfloat16.BFloat16{bf16(0.0320586), bf16(0.0871443), bf16(0.2368828), bf16(0.6439143)}
+			if ok, diff := testutil.IsInDelta(want1D, got, 2e-2); !ok {
+				t.Errorf("1D mismatch:\n%s", diff)
+			}
+
+			// 2D trailing axis=1 with large width (rowSize=37) + large stability values + non-trailing axis=0.
+			const numRows, rowSize = 3, 37
+			input2D := make([][]bfloat16.BFloat16, numRows)
+			for r := range numRows {
+				input2D[r] = make([]bfloat16.BFloat16, rowSize)
+				for c := range rowSize {
+					input2D[r][c] = bf16(float32(1000 + r*3 + c%7))
+				}
+			}
+			got2D, err := testutil.Exec1(b, []any{input2D}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return f.FusedSoftmax(params[0], 1)
+			})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax BFloat16 2D axis=1 failed: %+v", err)
+			}
+			got2DSlice := got2D.([][]bfloat16.BFloat16)
+			for r := range numRows {
+				var sum float32
+				for c := range rowSize {
+					v := got2DSlice[r][c].Float32()
+					if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+						t.Fatalf("BFloat16 axis=1 produced NaN/Inf at [%d][%d]", r, c)
+					}
+					sum += v
+				}
+				if ok, diff := testutil.IsInDelta(float32(1.0), sum, 2e-2); !ok {
+					t.Errorf("axis=1 row %d sum mismatch:\n%s", r, diff)
+				}
+			}
+
+			gotAxis0, err := testutil.Exec1(b, []any{[][]bfloat16.BFloat16{{bf16(1), bf16(2)}, {bf16(2), bf16(4)}, {bf16(3), bf16(6)}}},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					return f.FusedSoftmax(params[0], 0)
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("FusedSoftmax BFloat16 2D axis=0 failed: %+v", err)
+			}
+			gotAxis0Slice := gotAxis0.([][]bfloat16.BFloat16)
+			for c := range 2 {
+				sum := gotAxis0Slice[0][c].Float32() + gotAxis0Slice[1][c].Float32() + gotAxis0Slice[2][c].Float32()
+				if ok, diff := testutil.IsInDelta(float32(1.0), sum, 2e-2); !ok {
+					t.Errorf("axis=0 col %d sum mismatch:\n%s", c, diff)
+				}
+			}
+		})
 	})
 
 	t.Run("FusedActivation", func(t *testing.T) { testFusedActivation(t, b) })
@@ -1026,6 +1154,203 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			if ok, diff := testutil.IsInDelta(want, got, 0.05); !ok {
 				t.Errorf("SDPA bf16 bias mismatch:\n%s", diff)
 			}
+		})
+
+		t.Run("HalfPrecision_GQA_Masks_And_SeqLens", func(t *testing.T) {
+			// Exercise Float16 and BFloat16 with headDim=64, GQA (4 query heads, 2 KV heads),
+			// BHSD/BSHD layouts, boolean mask, additive bias, and QuerySeqLen/KeyValueSeqLen,
+			// cross-checking against a Float32 execution of the same problem.
+			const (
+				batchSize  = 2
+				numHeads   = 4
+				numKVHeads = 2
+				seqLen     = 6
+				kvLen      = 8
+				headDim    = 64
+			)
+			scale := 1.0 / math.Sqrt(headDim)
+			qF32 := make([][][][]float32, batchSize)
+			kF32 := make([][][][]float32, batchSize)
+			vF32 := make([][][][]float32, batchSize)
+			maskBool := make([][][][]bool, batchSize)
+			biasF32 := make([][][][]float32, batchSize)
+			for bi := range batchSize {
+				qF32[bi] = make([][][]float32, numHeads)
+				maskBool[bi] = make([][][]bool, 1)
+				maskBool[bi][0] = make([][]bool, seqLen)
+				biasF32[bi] = make([][][]float32, numHeads)
+				for qi := range seqLen {
+					maskBool[bi][0][qi] = make([]bool, kvLen)
+					for ki := range kvLen {
+						maskBool[bi][0][qi][ki] = ki <= qi+1
+					}
+				}
+				for hi := range numHeads {
+					qF32[bi][hi] = make([][]float32, seqLen)
+					biasF32[bi][hi] = make([][]float32, seqLen)
+					for qi := range seqLen {
+						qF32[bi][hi][qi] = make([]float32, headDim)
+						for di := range headDim {
+							qF32[bi][hi][qi][di] = 0.25 * float32(math.Sin(float64(bi*100+hi*17+qi*5+di)))
+						}
+						biasF32[bi][hi][qi] = make([]float32, kvLen)
+						for ki := range kvLen {
+							biasF32[bi][hi][qi][ki] = 0.2 * float32(math.Cos(float64(hi+qi-ki)))
+						}
+					}
+				}
+				kF32[bi] = make([][][]float32, numKVHeads)
+				vF32[bi] = make([][][]float32, numKVHeads)
+				for kvi := range numKVHeads {
+					kF32[bi][kvi] = make([][]float32, kvLen)
+					vF32[bi][kvi] = make([][]float32, kvLen)
+					for ki := range kvLen {
+						kF32[bi][kvi][ki] = make([]float32, headDim)
+						vF32[bi][kvi][ki] = make([]float32, headDim)
+						for di := range headDim {
+							kF32[bi][kvi][ki][di] = 0.25 * float32(math.Cos(float64(bi*50+kvi*13+ki*7+di)))
+							vF32[bi][kvi][ki][di] = float32(math.Sin(float64(bi*31 + kvi*11 + ki*3 + di)))
+						}
+					}
+				}
+			}
+			qLens := []int32{4, 6}
+			kvLens := []int32{5, 7}
+
+			refBoolGot, err := testutil.Exec1(b, []any{qF32, kF32, vF32, maskBool, qLens, kvLens},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					cfg := &compute.ScaledDotProductAttentionConfig{
+						Scale: scale, Mask: params[3], QuerySeqLen: params[4], KeyValueSeqLen: params[5],
+					}
+					out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+					return out, err
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("SDPA Float32 reference (bool mask + seqlens) failed: %+v", err)
+			}
+
+			refBiasGot, err := testutil.Exec1(b, []any{qF32, kF32, vF32, biasF32},
+				func(f compute.Function, params []compute.Value) (compute.Value, error) {
+					cfg := &compute.ScaledDotProductAttentionConfig{
+						Scale: scale, Causal: true, Bias: params[3],
+					}
+					out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+					return out, err
+				})
+			skipIfFusedNotImplemented(t, b, err)
+			if err != nil {
+				t.Fatalf("SDPA Float32 reference (causal + bias) failed: %+v", err)
+			}
+
+			conv4DF16 := func(src [][][][]float32) [][][][]float16.Float16 {
+				dst := make([][][][]float16.Float16, len(src))
+				for i, a := range src {
+					dst[i] = make([][][]float16.Float16, len(a))
+					for j, bv := range a {
+						dst[i][j] = make([][]float16.Float16, len(bv))
+						for k, c := range bv {
+							dst[i][j][k] = make([]float16.Float16, len(c))
+							for l, v := range c {
+								dst[i][j][k][l] = float16.FromFloat32(v)
+							}
+						}
+					}
+				}
+				return dst
+			}
+			conv4DBF16 := func(src [][][][]float32) [][][][]bfloat16.BFloat16 {
+				dst := make([][][][]bfloat16.BFloat16, len(src))
+				for i, a := range src {
+					dst[i] = make([][][]bfloat16.BFloat16, len(a))
+					for j, bv := range a {
+						dst[i][j] = make([][]bfloat16.BFloat16, len(bv))
+						for k, c := range bv {
+							dst[i][j][k] = make([]bfloat16.BFloat16, len(c))
+							for l, v := range c {
+								dst[i][j][k][l] = bfloat16.FromFloat32(v)
+							}
+						}
+					}
+				}
+				return dst
+			}
+
+			t.Run("Float16_BoolMask_SeqLens", func(t *testing.T) {
+				got, err := testutil.Exec1(b, []any{conv4DF16(qF32), conv4DF16(kF32), conv4DF16(vF32), maskBool, qLens, kvLens},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						cfg := &compute.ScaledDotProductAttentionConfig{
+							Scale: scale, Mask: params[3], QuerySeqLen: params[4], KeyValueSeqLen: params[5],
+						}
+						out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+						return out, err
+					})
+				skipIfFusedNotImplemented(t, b, err)
+				if err != nil {
+					t.Fatalf("SDPA Float16 bool mask + seqlens failed: %+v", err)
+				}
+				want := conv4DF16(refBoolGot.([][][][]float32))
+				if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+					t.Errorf("Float16 bool mask + seqlens mismatch:\n%s", diff)
+				}
+			})
+
+			t.Run("Float16_Causal_Bias", func(t *testing.T) {
+				got, err := testutil.Exec1(b, []any{conv4DF16(qF32), conv4DF16(kF32), conv4DF16(vF32), conv4DF16(biasF32)},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						cfg := &compute.ScaledDotProductAttentionConfig{
+							Scale: scale, Causal: true, Bias: params[3],
+						}
+						out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+						return out, err
+					})
+				skipIfFusedNotImplemented(t, b, err)
+				if err != nil {
+					t.Fatalf("SDPA Float16 causal + bias failed: %+v", err)
+				}
+				want := conv4DF16(refBiasGot.([][][][]float32))
+				if ok, diff := testutil.IsInDelta(want, got, 1e-2); !ok {
+					t.Errorf("Float16 causal + bias mismatch:\n%s", diff)
+				}
+			})
+
+			t.Run("BFloat16_BoolMask_SeqLens", func(t *testing.T) {
+				got, err := testutil.Exec1(b, []any{conv4DBF16(qF32), conv4DBF16(kF32), conv4DBF16(vF32), maskBool, qLens, kvLens},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						cfg := &compute.ScaledDotProductAttentionConfig{
+							Scale: scale, Mask: params[3], QuerySeqLen: params[4], KeyValueSeqLen: params[5],
+						}
+						out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+						return out, err
+					})
+				skipIfFusedNotImplemented(t, b, err)
+				if err != nil {
+					t.Fatalf("SDPA BFloat16 bool mask + seqlens failed: %+v", err)
+				}
+				want := conv4DBF16(refBoolGot.([][][][]float32))
+				if ok, diff := testutil.IsInDelta(want, got, 2e-2); !ok {
+					t.Errorf("BFloat16 bool mask + seqlens mismatch:\n%s", diff)
+				}
+			})
+
+			t.Run("BFloat16_Causal_Bias", func(t *testing.T) {
+				got, err := testutil.Exec1(b, []any{conv4DBF16(qF32), conv4DBF16(kF32), conv4DBF16(vF32), conv4DBF16(biasF32)},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						cfg := &compute.ScaledDotProductAttentionConfig{
+							Scale: scale, Causal: true, Bias: params[3],
+						}
+						out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, cfg)
+						return out, err
+					})
+				skipIfFusedNotImplemented(t, b, err)
+				if err != nil {
+					t.Fatalf("SDPA BFloat16 causal + bias failed: %+v", err)
+				}
+				want := conv4DBF16(refBiasGot.([][][][]float32))
+				if ok, diff := testutil.IsInDelta(want, got, 2e-2); !ok {
+					t.Errorf("BFloat16 causal + bias mismatch:\n%s", diff)
+				}
+			})
 		})
 	})
 

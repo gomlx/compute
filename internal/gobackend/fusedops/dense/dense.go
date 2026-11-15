@@ -326,118 +326,15 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 		}
 
 	case dtypes.BFloat16:
-		var xFlat, wFlat []bfloat16.BFloat16
-		if x != nil && x.Flat != nil {
-			xFlat = x.Flat.([]bfloat16.BFloat16)
-		}
-		if weight != nil && weight.Flat != nil {
-			wFlat = weight.Flat.([]bfloat16.BFloat16)
-		}
-		outBF16 := output.Flat.([]bfloat16.BFloat16)
-
-		// Matmul for BFloat16 accumulates into Float32.
-		tmpF32 := make([]float32, output.RawShape.Size())
-
-		var biasF32 []float32
-		if bias != nil {
-			if biasBF16, ok := bias.Flat.([]bfloat16.BFloat16); ok {
-				biasF32 = make([]float32, len(biasBF16))
-				for i, v := range biasBF16 {
-					biasF32[i] = v.Float32()
-				}
-			} else if bF32, ok := bias.Flat.([]float32); ok {
-				biasF32 = bF32
-			}
-		}
-
-		var actFn activations.InPlaceFn[float32]
-		var biasTileFn activations.BiasTileFn[float32]
-		var actMinChunk int
-		if data.options.Activation.Type != compute.ActivationNone {
-			var actMeta *activations.KernelMetadata
-			actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
-			if actFn == nil {
-				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
-			}
-			actMinChunk = actMeta.EffectiveMinParallelChunk()
-			biasTileFn = activations.GetBiasTile[float32](data.options.Activation.Type)
-		}
-		epilogue := matmul.Epilogue[float32]{
-			Bias:                       biasF32,
-			Activation:                 actFn,
-			BiasTileActivation:         biasTileFn,
-			ActivationMinParallelChunk: actMinChunk,
-		}
-
-		err = matmul.ExecuteWithEpilogue(
-			backend, data.layout, xFlat, wFlat,
-			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
-			tmpF32, epilogue,
-			data.dotNodeData,
-		)
-		if err != nil {
+		conv := gobackend.ActiveHalfSliceConverters()
+		if err := execFusedDenseHalf[bfloat16.BFloat16](backend, data, x, weight, bias, output, conv.BFloat16ToFloat32, conv.Float32ToBFloat16); err != nil {
 			return nil, err
-		}
-
-		for i, v := range tmpF32 {
-			outBF16[i] = bfloat16.FromFloat32(v)
 		}
 
 	case dtypes.Float16:
-		var xFlat, wFlat []float16.Float16
-		if x != nil && x.Flat != nil {
-			xFlat = x.Flat.([]float16.Float16)
-		}
-		if weight != nil && weight.Flat != nil {
-			wFlat = weight.Flat.([]float16.Float16)
-		}
-		outF16 := output.Flat.([]float16.Float16)
-
-		tmpF32 := make([]float32, output.RawShape.Size())
-
-		var biasF32 []float32
-		if bias != nil {
-			if biasF16Slice, ok := bias.Flat.([]float16.Float16); ok {
-				biasF32 = make([]float32, len(biasF16Slice))
-				for i, v := range biasF16Slice {
-					biasF32[i] = v.Float32()
-				}
-			} else if bF32, ok := bias.Flat.([]float32); ok {
-				biasF32 = bF32
-			}
-		}
-
-		var actFn activations.InPlaceFn[float32]
-		var biasTileFn activations.BiasTileFn[float32]
-		var actMinChunk int
-		if data.options.Activation.Type != compute.ActivationNone {
-			var actMeta *activations.KernelMetadata
-			actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
-			if actFn == nil {
-				return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
-			}
-			actMinChunk = actMeta.EffectiveMinParallelChunk()
-			biasTileFn = activations.GetBiasTile[float32](data.options.Activation.Type)
-		}
-		epilogue := matmul.Epilogue[float32]{
-			Bias:                       biasF32,
-			Activation:                 actFn,
-			BiasTileActivation:         biasTileFn,
-			ActivationMinParallelChunk: actMinChunk,
-		}
-
-		err = matmul.ExecuteWithEpilogue(
-			backend, data.layout, xFlat, wFlat,
-			data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
-			tmpF32, epilogue,
-			data.dotNodeData,
-		)
-		if err != nil {
+		conv := gobackend.ActiveHalfSliceConverters()
+		if err := execFusedDenseHalf[float16.Float16](backend, data, x, weight, bias, output, conv.Float16ToFloat32, conv.Float32ToFloat16); err != nil {
 			return nil, err
-		}
-
-		for i, v := range tmpF32 {
-			outF16[i] = float16.FromFloat32(v)
 		}
 
 	default:
@@ -445,4 +342,83 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	}
 
 	return output, nil
+}
+
+// execFusedDenseHalf executes FusedDense for half-precision inputs (Float16 or BFloat16):
+// matmul accumulates into a pooled Float32 buffer with optional bias/activation epilogue
+// before converting back in parallel via SIMD converters.
+func execFusedDenseHalf[T float16.Float16 | bfloat16.BFloat16](
+	backend *gobackend.Backend,
+	data *nodeFusedDense,
+	x, weight, bias, output *gobackend.Buffer,
+	toF32 func([]float32, []T),
+	fromF32 func([]T, []float32),
+) error {
+	var xFlat, wFlat []T
+	if x != nil && x.Flat != nil {
+		xFlat = x.Flat.([]T)
+	}
+	if weight != nil && weight.Flat != nil {
+		wFlat = weight.Flat.([]T)
+	}
+	outHalf := output.Flat.([]T)
+
+	tmpF32Shape := shapes.Make(dtypes.Float32, output.RawShape.Dimensions...)
+	tmpF32Buf, err := backend.GetBuffer(tmpF32Shape)
+	if err != nil {
+		return err
+	}
+	defer backend.PutBuffer(tmpF32Buf)
+	tmpF32 := tmpF32Buf.Flat.([]float32)
+
+	var biasF32 []float32
+	if bias != nil {
+		if biasHalf, ok := bias.Flat.([]T); ok && len(biasHalf) > 0 {
+			var stackBias [2048]float32
+			if len(biasHalf) <= len(stackBias) {
+				biasF32 = stackBias[:len(biasHalf)]
+			} else {
+				biasF32Buf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(biasHalf)))
+				if err != nil {
+					return err
+				}
+				defer backend.PutBuffer(biasF32Buf)
+				biasF32 = biasF32Buf.Flat.([]float32)
+			}
+			toF32(biasF32, biasHalf)
+		} else if bF32, ok := bias.Flat.([]float32); ok {
+			biasF32 = bF32
+		}
+	}
+
+	var actFn activations.InPlaceFn[float32]
+	var biasTileFn activations.BiasTileFn[float32]
+	var actMinChunk int
+	if data.options.Activation.Type != compute.ActivationNone {
+		var actMeta *activations.KernelMetadata
+		actFn, actMeta = activations.GetWithMetadata[float32](data.options.Activation.Type)
+		if actFn == nil {
+			return errors.Wrapf(compute.ErrNotImplemented, "FusedDense: activation %s not implemented for %s", data.options.Activation.Type, output.RawShape.DType)
+		}
+		actMinChunk = actMeta.EffectiveMinParallelChunk()
+		biasTileFn = activations.GetBiasTile[float32](data.options.Activation.Type)
+	}
+	epilogue := matmul.Epilogue[float32]{
+		Bias:                       biasF32,
+		Activation:                 actFn,
+		BiasTileActivation:         biasTileFn,
+		ActivationMinParallelChunk: actMinChunk,
+	}
+
+	if err := matmul.ExecuteWithEpilogue(
+		backend, data.layout, xFlat, wFlat,
+		data.batchSize, data.lhsCrossSize, data.rhsCrossSize, data.contractingSize,
+		tmpF32, epilogue,
+		data.dotNodeData,
+	); err != nil {
+		return err
+	}
+
+	gobackend.ParallelConvertSlice(backend, outHalf, tmpF32, fromF32)
+	return nil
 }

@@ -164,9 +164,9 @@ Go 1.26 introduced experimental SIMD support, and Go 1.27 updated it with the `s
 ### Enabling SIMD
 
 To use Go SIMD, you must:
-1. Use a compatible Go version (1.26+ or 1.27+).
+1. Use Go 1.27+ (Go 1.26 is not compatible because Go 1.27 changed `simd/archsimd` APIs).
 2. Set the environment variable `GOEXPERIMENT=simd` during build and test.
-3. Use the `//go:build goexperiment.simd` build tag in your files (along with architecture tags like `amd64` when using `archsimd`).
+3. Use the `//go:build goexperiment.simd && go1.27` build tag in your files (along with architecture tags like `amd64` when using `archsimd`), and `|| !go1.27` on negated `!goexperiment.simd` fallback files so Go 1.26 builds with `GOEXPERIMENT=simd` cleanly fall back to non-SIMD code.
 
 ### Common Vector Types in `simd/archsimd`
 
@@ -190,7 +190,7 @@ In Go 1.27 `simd/archsimd`:
 ### Basic Usage Example
 
 ```go
-//go:build amd64 && goexperiment.simd
+//go:build amd64 && goexperiment.simd && go1.27
 
 package mypackage
 
@@ -309,7 +309,7 @@ When implementing or modifying assembly routines in `./internal/gobackend/...`, 
 
 All code specific to a SIMD architecture—including Go wrappers, assembly routines, and unit/benchmark tests (`*_test.go`)—must be placed in the corresponding architecture subdirectory, never in the parent generic package directory:
 - **Separate subdirectories**: `avx2/`, `avx512/`, `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/{avx2,avx512,neon}`, `internal/gobackend/activations/{avx2,avx512,neon}`, `internal/gobackend/dot/matmul/{avx2,avx512,neon}`, `internal/gobackend/fusedops/{avx2,avx512}`).
-- **Per-op files for > 100 lines**: Avoid letting architecture files grow into monoliths. Any operation whose Go wrapper + assembly implementation exceeds ~100 lines should live in its own dedicated `<op>.go` and `<op>.s` files (with explicit `//go:build <arch> && goexperiment.simd` tags, e.g., `swiglu.go` and `swiglu.s`), making the directory easy to browse.
+- **Per-op files for > 100 lines**: Avoid letting architecture files grow into monoliths. Any operation whose Go wrapper + assembly implementation exceeds ~100 lines should live in its own dedicated `<op>.go` and `<op>.s` files (with explicit `//go:build <arch> && goexperiment.simd && go1.27` tags, e.g., `swiglu.go` and `swiglu.s`), making the directory easy to browse.
 - **Registration & Default Imports**: Subpackages register their implementations in `init()` (using `gobackend.RegisterPriority`) and are blank-imported in `internal/gobackend/defaultpkgs/defaultpkgs_<arch>_simd.go`. Include an untagged `doc.go` in each subdirectory so the package remains valid across all build configurations.
 - **Tests in Architecture Subdirectories**:
   - Place architecture-specific unit tests and microbenchmarks inside the subdirectory (e.g. `avx2/avx2_test.go`, `avx512/avx512_test.go`, `neon/neon_test.go`).
@@ -320,7 +320,7 @@ All code specific to a SIMD architecture—including Go wrappers, assembly routi
   func layerNormFloat32AVX2(in, out, gamma, beta unsafe.Pointer, outerSize, normSize int, epsilon float32)
   ```
 - **Assembly Implementation (`*_amd64.s` or `*_amd64_<type>.s`)**:
-  - Build tag: `//go:build amd64 && goexperiment.simd` (or `//go:build amd64`).
+  - Build tag: `//go:build amd64 && goexperiment.simd && go1.27` (or `//go:build amd64`).
   - Include `#include "textflag.h"`.
   - Function header: `TEXT ·funcName(SB), NOSPLIT, $0-<frameSize>` (e.g. `$0-52`).
   - Registers follow Go planar assembly names: `X0`–`X15` (128-bit), `Y0`–`Y15` (256-bit AVX2), `Z0`–`Z31` (512-bit AVX-512), and mask registers `K0`–`K7`.
@@ -429,7 +429,7 @@ Handwritten assembly functions (in `*_amd64.s` or `*_arm64.s`) bypass Go compile
 ## ARM64 SIMD Support (NEON, SVE/SVE2 & SME)
 
 ARM64 SIMD acceleration follows the same multi-tier architecture as AMD64:
-1. **Portable `simd` / cross-arch `simd/archsimd` tier**: Shared 128-bit SIMD loops in `internal/gobackend/ops/*_simd.go` (`//go:build (amd64 || arm64) && goexperiment.simd`), `internal/fastmath`, and `internal/gobackend/activations` compile directly to ARM64 NEON via Go 1.27's `simd/archsimd` 128-bit types (`Float32x4`, `Float64x2`, `Int32x4`, `Uint32x4`, `Int16x8`, `Uint16x8`, `Int8x16`, `Uint8x16`, `Int64x2`, `Uint64x2`).
+1. **Portable `simd` / cross-arch `simd/archsimd` tier**: Shared 128-bit SIMD loops in `internal/gobackend/ops/*_simd.go` (`//go:build goexperiment.simd && go1.27`), `internal/fastmath`, and `internal/gobackend/activations` compile directly to ARM64 NEON via Go 1.27's `simd/archsimd` 128-bit types (`Float32x4`, `Float64x2`, `Int32x4`, `Uint32x4`, `Int16x8`, `Uint16x8`, `Int8x16`, `Uint8x16`, `Int64x2`, `Uint64x2`).
 2. **Architecture-specific packages (`neon/`, and optionally `sve/` / `sme/`)**: Dedicated subdirectories under `ops/`, `fusedops/`, and `dot/matmul/` that register at explicit priority levels and fall back cleanly (`gobackend.ErrFallback` or `false` on sub-dispatcher hooks) when dimensions are below thresholds or a layout/dtype is unhandled.
 
 ### 1. Registration Priority Ladder & Sub-Dispatcher Chaining
@@ -484,7 +484,7 @@ When implementing or modifying ARM64 assembly routines in `./internal/gobackend/
 - **Separate subdirectories**: Place all ARM64-specific SIMD code, assembly files, and unit/benchmark tests (`*_test.go`) in `neon/` (and `sve/`, `sme/` where applicable) under the relevant package (e.g. `internal/gobackend/ops/neon`, `internal/gobackend/activations/neon`, `internal/gobackend/fusedops/neon`, `internal/gobackend/dot/matmul/neon`), and blank-import the package in `internal/gobackend/defaultpkgs/defaultpkgs_arm64_simd.go`.
 - **Go Declaration (`*_arm64.go`)**: Forward-declare assembly functions with `//go:noescape`.
 - **Assembly Implementation (`*_arm64.s`)**:
-  - Build tag: `//go:build arm64 && goexperiment.simd` (or `//go:build arm64`).
+  - Build tag: `//go:build arm64 && goexperiment.simd && go1.27` (or `//go:build arm64`).
   - Include `#include "textflag.h"`.
   - Function header: `TEXT ·funcName(SB), NOSPLIT, $0-<frameSize>`.
 
