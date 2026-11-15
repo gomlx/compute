@@ -7,6 +7,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/ops"
@@ -136,7 +138,7 @@ func buildSDPANode(
 		return nil, errors.Errorf("%s: key must have rank 4, got %d", opName, kNode.Shape.Rank())
 	}
 	switch qNode.Shape.DType {
-	case dtypes.Float32, dtypes.Float64:
+	case dtypes.Float32, dtypes.Float64, dtypes.Float16, dtypes.BFloat16:
 		// Supported in go backend.
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented,
@@ -499,14 +501,28 @@ func execFusedScaledDotProductAttention(backend *gobackend.Backend, node *goback
 	if err != nil {
 		return nil, err
 	}
+	if backend.NoOps {
+		return output, nil
+	}
 
 	switch query.RawShape.DType {
 	case dtypes.Float32:
 		sdpaMultiHeadGeneric[float32](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen)
 	case dtypes.Float64:
 		sdpaMultiHeadGeneric[float64](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen)
+	case dtypes.Float16:
+		conv := gobackend.ActiveHalfSliceConverters()
+		err = sdpaMultiHeadHalf[float16.Float16](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen, conv.Float16ToFloat32, conv.Float32ToFloat16)
+	case dtypes.BFloat16:
+		conv := gobackend.ActiveHalfSliceConverters()
+		err = sdpaMultiHeadHalf[bfloat16.BFloat16](backend, query, key, value, mask, bias, output, data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen, querySeqLen, keyValueSeqLen, conv.BFloat16ToFloat32, conv.Float32ToBFloat16)
 	default:
+		backend.PutBuffer(output)
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedScaledDotProductAttention: unsupported dtype %s", query.RawShape.DType)
+	}
+	if err != nil {
+		backend.PutBuffer(output)
+		return nil, err
 	}
 
 	return output, nil
@@ -769,6 +785,215 @@ func sdpaGeneric[T float32 | float64](
 	}
 }
 
+type sdpaLayoutInfo struct {
+	batchSize, numHeads, numKVHeads, groupSize int
+	seqLen, kvLen, headDim                     int
+	qSeqStride, kvSeqStride                    int
+	qBatchStride, kvBatchStride                int
+	qHeadStride, kvHeadStride                  int
+	qBlockSize, numQBlocks, totalTasks         int
+	scratchSize                                int
+	totalMACs                                  int
+	useSMEPath                                 bool
+}
+
+func computeSDPALayout(backend *gobackend.Backend, query, key *gobackend.Buffer, data *nodeScaledDotProductAttention, allowSME bool) sdpaLayoutInfo {
+	dims := query.RawShape.Dimensions
+	info := sdpaLayoutInfo{
+		batchSize:  dims[0],
+		numHeads:   data.numHeads,
+		numKVHeads: data.numKVHeads,
+		groupSize:  data.numHeads / data.numKVHeads,
+	}
+
+	if data.axesLayout == compute.AttentionAxesLayoutBSHD {
+		info.seqLen = dims[1]
+		info.headDim = dims[3]
+		kvDims := key.RawShape.Dimensions
+		info.kvLen = kvDims[1]
+		info.qSeqStride = info.numHeads * info.headDim
+		info.kvSeqStride = info.numKVHeads * info.headDim
+		info.qHeadStride = info.headDim
+		info.kvHeadStride = info.headDim
+		info.qBatchStride = info.seqLen * info.numHeads * info.headDim
+		info.kvBatchStride = info.kvLen * info.numKVHeads * info.headDim
+	} else {
+		info.seqLen = dims[2]
+		info.headDim = dims[3]
+		kvDims := key.RawShape.Dimensions
+		info.kvLen = kvDims[2]
+		info.qSeqStride = info.headDim
+		info.kvSeqStride = info.headDim
+		info.qHeadStride = info.seqLen * info.headDim
+		info.kvHeadStride = info.kvLen * info.headDim
+		info.qBatchStride = info.numHeads * info.seqLen * info.headDim
+		info.kvBatchStride = info.numKVHeads * info.kvLen * info.headDim
+	}
+
+	headTasks := info.batchSize * info.numKVHeads
+	info.totalMACs = info.batchSize * info.numHeads * info.seqLen * info.kvLen * info.headDim * 2
+	info.useSMEPath = allowSME && gobackend.IsSMEAllowed && info.seqLen >= 4 && info.kvLen >= 16 && info.headDim >= 16 && info.headDim <= 256
+	info.qBlockSize = max(info.seqLen, 1)
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
+		numWorkers := backend.Scheduler.EffectiveParallelism()
+		if info.useSMEPath {
+			if numWorkers > 1 && info.seqLen > 64 && info.totalMACs >= 1024*1024 && headTasks < numWorkers {
+				neededQBlocks := (numWorkers + headTasks - 1) / headTasks
+				info.qBlockSize = max(32, ((info.seqLen+neededQBlocks-1)/neededQBlocks+31)&^31)
+			}
+		} else if numWorkers > 1 && info.seqLen >= 8 && info.totalMACs >= 512*1024 && headTasks < 4*numWorkers {
+			targetTasks := 4 * numWorkers
+			neededQBlocks := (targetTasks + headTasks - 1) / headTasks
+			info.qBlockSize = max(8, ((info.seqLen+neededQBlocks-1)/neededQBlocks+3)&^3)
+		}
+	}
+	info.numQBlocks = 1
+	if info.seqLen > 0 {
+		info.numQBlocks = (info.seqLen + info.qBlockSize - 1) / info.qBlockSize
+	}
+	info.totalTasks = headTasks * info.numQBlocks
+	info.scratchSize = max(32*info.kvLen+64, 128)
+	if info.useSMEPath {
+		kvPadded := (info.kvLen + 31) &^ 31
+		info.scratchSize = max(info.scratchSize, 32*info.kvLen+(32+info.headDim)*kvPadded+32*info.headDim+16)
+	}
+	return info
+}
+
+func runSDPATasks[W any](
+	backend *gobackend.Backend,
+	info sdpaLayoutInfo,
+	initWorker func() W,
+	cleanupWorker func(W),
+	runTask func(worker W, batchIdx, kvHeadIdx, qStart, qEnd int),
+) {
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && info.totalTasks > 1 && info.totalMACs >= 1024*1024 {
+		numWorkers := backend.Scheduler.EffectiveParallelism()
+		workersToStart := min(info.totalTasks, numWorkers)
+		if info.useSMEPath && simdarch.NumHighPerfSMEUnits > 0 {
+			// Start up to numWorkers so Go's scheduler populates all Ps on Cluster 1 (Super/Perf cores),
+			// while E-core workers yield tasks to Cluster 1 workers below.
+			workersToStart = numWorkers
+		}
+		var taskCounter atomic.Int64
+		var fastWorkers atomic.Int32
+		var droppedWorkers atomic.Int32
+		preferFastCluster := info.useSMEPath && simdarch.NumHighPerfSMEUnits > 0
+
+		backend.Scheduler.SaturateUpTo(workersToStart, func() {
+			if preferFastCluster {
+				runtime.LockOSThread()
+				defer runtime.UnlockOSThread()
+				_, _, isEff := simdarch.CurrentSMECluster()
+				if !isEff {
+					fastWorkers.Add(1)
+					defer fastWorkers.Add(-1)
+				} else if int(droppedWorkers.Add(1)) < workersToStart {
+					for spins := 0; spins < 2048 && fastWorkers.Load() == 0 && taskCounter.Load() < int64(info.totalTasks); spins++ {
+					}
+					if fastWorkers.Load() > 0 {
+						for taskCounter.Load() < int64(info.totalTasks) && fastWorkers.Load() > 0 {
+							rem := info.totalTasks - int(taskCounter.Load())
+							if rem > 8*int(fastWorkers.Load()) {
+								break
+							}
+						}
+						if taskCounter.Load() >= int64(info.totalTasks) || info.totalTasks-int(taskCounter.Load()) <= 8*int(fastWorkers.Load()) {
+							for taskCounter.Load() < int64(info.totalTasks) && fastWorkers.Load() > 0 {
+							}
+							return
+						}
+					}
+				}
+			}
+
+			w := initWorker()
+			if cleanupWorker != nil {
+				defer cleanupWorker(w)
+			}
+			for {
+				taskIdx := int(taskCounter.Add(1) - 1)
+				if taskIdx >= info.totalTasks {
+					break
+				}
+				headTaskIdx := taskIdx / info.numQBlocks
+				qBlockIdx := taskIdx % info.numQBlocks
+				batchIdx := headTaskIdx / info.numKVHeads
+				kvHeadIdx := headTaskIdx % info.numKVHeads
+				qStart := qBlockIdx * info.qBlockSize
+				qEnd := min(qStart+info.qBlockSize, info.seqLen)
+				runTask(w, batchIdx, kvHeadIdx, qStart, qEnd)
+			}
+		})
+		return
+	}
+
+	w := initWorker()
+	if cleanupWorker != nil {
+		defer cleanupWorker(w)
+	}
+	for batchIdx := range info.batchSize {
+		for kvHeadIdx := range info.numKVHeads {
+			runTask(w, batchIdx, kvHeadIdx, 0, info.seqLen)
+		}
+	}
+}
+
+func sdpaTrimBoolKeyMask(booleanMaskSlice []bool, kvLimit int) ([]bool, int) {
+	if len(booleanMaskSlice) < kvLimit || kvLimit <= 0 {
+		return booleanMaskSlice, kvLimit
+	}
+	lastValid := kvLimit - 1
+	for lastValid >= 0 && !booleanMaskSlice[lastValid] {
+		lastValid--
+	}
+	if lastValid < 0 {
+		return booleanMaskSlice, 0
+	}
+	kvLimit = lastValid + 1
+	for i := range kvLimit {
+		if !booleanMaskSlice[i] {
+			return booleanMaskSlice, kvLimit
+		}
+	}
+	return nil, kvLimit
+}
+
+func sdpaTrimAdditiveKeyMaskFloat[T ~float32 | ~float64](additiveMaskSlice []T, kvLimit int) ([]T, int) {
+	if len(additiveMaskSlice) < kvLimit || kvLimit <= 0 {
+		return additiveMaskSlice, kvLimit
+	}
+	lastValid := kvLimit - 1
+	for lastValid >= 0 && additiveMaskSlice[lastValid] <= -1e4 {
+		lastValid--
+	}
+	if lastValid < 0 {
+		if math.IsInf(float64(additiveMaskSlice[0]), -1) {
+			return additiveMaskSlice, 0
+		}
+		return additiveMaskSlice, kvLimit
+	}
+	for i := 0; i <= lastValid; i++ {
+		if additiveMaskSlice[i] != 0 {
+			return additiveMaskSlice, kvLimit
+		}
+	}
+	return nil, lastValid + 1
+}
+
+func sdpaMaskBiasGroupSlice[T any](data []T, batchIdx, kvHeadIdx, groupSize, batchStride, headStride, sliceLen int) (slice []T, groupStride int) {
+	if len(data) == 0 {
+		return nil, 0
+	}
+	offset := batchIdx*batchStride + kvHeadIdx*groupSize*headStride
+	end := offset + sliceLen
+	if headStride > 0 && groupSize > 1 {
+		end = offset + (groupSize-1)*headStride + sliceLen
+		groupStride = headStride
+	}
+	return data[offset:end], groupStride
+}
+
 func sdpaMultiHeadGeneric[T float32 | float64](
 	backend *gobackend.Backend,
 	query, key, value, mask, bias, output *gobackend.Buffer,
@@ -794,287 +1019,477 @@ func sdpaMultiHeadGeneric[T float32 | float64](
 		additiveBias = bias.Flat.([]T)
 	}
 
-	dims := query.RawShape.Dimensions
-	batchSize := dims[0]
-	numHeads := data.numHeads
-	numKVHeads := data.numKVHeads
+	info := computeSDPALayout(backend, query, key, data, query.RawShape.DType == dtypes.Float32)
 	scale := T(data.scale)
 	causal := data.causal
-	groupSize := numHeads / numKVHeads
+	archFn := gobackend.GetSDPAArchDispatcher()
+	scratchShape := shapes.Make(query.RawShape.DType, info.scratchSize)
 
-	// Layout-dependent axis indices and strides.
-	var seqLen, kvLen, headDim int
-	var qSeqStride, kvSeqStride int     // element stride between consecutive seq positions for one head
-	var qBatchStride, kvBatchStride int // element stride between consecutive batches
-	var qHeadStride, kvHeadStride int   // element stride between consecutive heads at seq=0
-
-	if data.axesLayout == compute.AttentionAxesLayoutBSHD {
-		// [batch, seq, heads, dim]
-		seqLen = dims[1]
-		headDim = dims[3]
-		kvDims := key.RawShape.Dimensions
-		kvLen = kvDims[1]
-		qSeqStride = numHeads * headDim
-		kvSeqStride = numKVHeads * headDim
-		qHeadStride = headDim
-		kvHeadStride = headDim
-		qBatchStride = seqLen * numHeads * headDim
-		kvBatchStride = kvLen * numKVHeads * headDim
-	} else {
-		// BHSD: [batch, heads, seq, dim]
-		seqLen = dims[2]
-		headDim = dims[3]
-		kvDims := key.RawShape.Dimensions
-		kvLen = kvDims[2]
-		qSeqStride = headDim
-		kvSeqStride = headDim
-		qHeadStride = seqLen * headDim
-		kvHeadStride = kvLen * headDim
-		qBatchStride = numHeads * seqLen * headDim
-		kvBatchStride = numKVHeads * kvLen * headDim
+	type genericWorker struct {
+		buf    *gobackend.Buffer
+		scores []T
 	}
 
-	archFn := gobackend.GetSDPAArchDispatcher()
-
-	processHead := func(batchIdx, kvHeadIdx, qStart, qEnd int, scores []T) {
-		qLimit := seqLen
-		kvLimit := kvLen
-		if len(querySeqLen) > 0 {
-			qLimit = max(0, min(int(querySeqLen[batchIdx]), seqLen))
-		}
-		if len(keyValueSeqLen) > 0 {
-			kvLimit = max(0, min(int(keyValueSeqLen[batchIdx]), kvLen))
-		}
-		qOff := batchIdx*qBatchStride + kvHeadIdx*groupSize*qHeadStride
-		kvOff := batchIdx*kvBatchStride + kvHeadIdx*kvHeadStride
-
-		// Compute mask slice and group stride for this KV head group.
-		var additiveMaskSlice []T
-		var booleanMaskSlice []bool
-		maskGroupStride := 0
-		if len(additiveMask) > 0 || len(booleanMask) > 0 {
-			maskOffset := batchIdx*maskBatchStride + kvHeadIdx*groupSize*maskHeadStride
-			maskEnd := maskOffset + maskSliceLen
-			if maskHeadStride > 0 && groupSize > 1 {
-				maskEnd = maskOffset + (groupSize-1)*maskHeadStride + maskSliceLen
-				maskGroupStride = maskHeadStride
+	runSDPATasks(
+		backend,
+		info,
+		func() genericWorker {
+			if backend != nil {
+				if scoreBuf, err := backend.GetBuffer(scratchShape); err == nil && scoreBuf != nil {
+					return genericWorker{buf: scoreBuf, scores: scoreBuf.Flat.([]T)}
+				}
 			}
-			if len(additiveMask) > 0 {
-				additiveMaskSlice = additiveMask[maskOffset:maskEnd]
-			} else {
-				booleanMaskSlice = booleanMask[maskOffset:maskEnd]
+			return genericWorker{scores: make([]T, info.scratchSize)}
+		},
+		func(w genericWorker) {
+			if w.buf != nil && backend != nil {
+				backend.PutBuffer(w.buf)
 			}
-			// Fast path for 1D key-padding masks (broadcast across query sequence and head group):
-			// When valid prefix positions have 0 additive mask (or true boolean mask) and trailing
-			// padded key positions have mask <= -1e4 (or false), trim kvLimit to the active prefix
-			// and elide the zero/true mask slice.
+		},
+		func(w genericWorker, batchIdx, kvHeadIdx, qStart, qEnd int) {
+			qLimit := info.seqLen
+			kvLimit := info.kvLen
+			if len(querySeqLen) > 0 {
+				qLimit = max(0, min(int(querySeqLen[batchIdx]), info.seqLen))
+			}
+			if len(keyValueSeqLen) > 0 {
+				kvLimit = max(0, min(int(keyValueSeqLen[batchIdx]), info.kvLen))
+			}
+			qOff := batchIdx*info.qBatchStride + kvHeadIdx*info.groupSize*info.qHeadStride
+			kvOff := batchIdx*info.kvBatchStride + kvHeadIdx*info.kvHeadStride
+
+			additiveMaskSlice, maskGroupStride := sdpaMaskBiasGroupSlice(additiveMask, batchIdx, kvHeadIdx, info.groupSize, maskBatchStride, maskHeadStride, maskSliceLen)
+			booleanMaskSlice, boolGroupStride := sdpaMaskBiasGroupSlice(booleanMask, batchIdx, kvHeadIdx, info.groupSize, maskBatchStride, maskHeadStride, maskSliceLen)
+			if len(booleanMaskSlice) > 0 {
+				maskGroupStride = boolGroupStride
+			}
 			if maskSeqStride == 0 && maskGroupStride == 0 && kvLimit > 0 {
-				if len(additiveMaskSlice) >= kvLimit {
-					lastValid := kvLimit - 1
-					for lastValid >= 0 && additiveMaskSlice[lastValid] <= -1e4 {
-						lastValid--
-					}
-					if lastValid < 0 {
-						if math.IsInf(float64(additiveMaskSlice[0]), -1) {
-							kvLimit = 0
-						}
-					} else {
-						allZero := true
-						for i := 0; i <= lastValid; i++ {
-							if additiveMaskSlice[i] != 0 {
-								allZero = false
-								break
-							}
-						}
-						if allZero {
-							kvLimit = lastValid + 1
-							additiveMaskSlice = nil
-						}
-					}
-				} else if len(booleanMaskSlice) >= kvLimit {
-					lastValid := kvLimit - 1
-					for lastValid >= 0 && !booleanMaskSlice[lastValid] {
-						lastValid--
-					}
-					if lastValid < 0 {
-						kvLimit = 0
-					} else {
-						kvLimit = lastValid + 1
-						allTrue := true
-						for i := 0; i < kvLimit; i++ {
-							if !booleanMaskSlice[i] {
-								allTrue = false
-								break
-							}
-						}
-						if allTrue {
-							booleanMaskSlice = nil
-						}
-					}
-				}
-			}
-		}
-		// Compute bias slice and group stride for this KV head group.
-		var additiveBiasSlice []T
-		biasGroupStride := 0
-		if len(additiveBias) > 0 {
-			// *groupSize: bias is per-Q-head under GQA; first Q-head of this KV group starts at kvHeadIdx*groupSize.
-			biasOffset := batchIdx*biasBatchStride + kvHeadIdx*groupSize*biasHeadStride
-			biasEnd := biasOffset + biasSliceLen
-			if biasHeadStride > 0 && groupSize > 1 {
-				biasEnd = biasOffset + (groupSize-1)*biasHeadStride + biasSliceLen
-				biasGroupStride = biasHeadStride
-			}
-			additiveBiasSlice = additiveBias[biasOffset:biasEnd]
-		}
-
-		if archFn != nil {
-			if qF32, ok := any(q).([]float32); ok {
-				kF32 := any(k).([]float32)
-				vF32 := any(v).([]float32)
-				outF32 := any(out).([]float32)
-				var addMaskF32 []float32
 				if len(additiveMaskSlice) > 0 {
-					addMaskF32 = any(additiveMaskSlice).([]float32)
-				}
-				var addBiasF32 []float32
-				if len(additiveBiasSlice) > 0 {
-					addBiasF32 = any(additiveBiasSlice).([]float32)
-				}
-				scratchF32 := any(scores).([]float32)
-
-				if archFn(
-					qF32, kF32, vF32, outF32,
-					qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
-					addMaskF32, booleanMaskSlice, maskGroupStride,
-					addBiasF32, biasGroupStride,
-					scratchF32,
-					groupSize, qStart, qEnd, kvLen, headDim,
-					float32(scale), causal,
-					qLimit, kvLimit,
-				) {
-					return
+					additiveMaskSlice, kvLimit = sdpaTrimAdditiveKeyMaskFloat(additiveMaskSlice, kvLimit)
+				} else if len(booleanMaskSlice) > 0 {
+					booleanMaskSlice, kvLimit = sdpaTrimBoolKeyMask(booleanMaskSlice, kvLimit)
 				}
 			}
-		}
 
-		sdpaGeneric(
-			q, k, v, qOff, kvOff, qSeqStride, kvSeqStride, qHeadStride,
-			additiveMaskSlice, booleanMaskSlice, maskGroupStride, maskSeqStride,
-			additiveBiasSlice, biasGroupStride, biasSeqStride,
-			scores,
-			out,
-			groupSize, qStart, qEnd, kvLen, headDim, scale, causal,
-			qLimit, kvLimit,
+			additiveBiasSlice, biasGroupStride := sdpaMaskBiasGroupSlice(additiveBias, batchIdx, kvHeadIdx, info.groupSize, biasBatchStride, biasHeadStride, biasSliceLen)
+
+			if archFn != nil {
+				if qF32, ok := any(q).([]float32); ok {
+					kF32 := any(k).([]float32)
+					vF32 := any(v).([]float32)
+					outF32 := any(out).([]float32)
+					var addMaskF32 []float32
+					if len(additiveMaskSlice) > 0 {
+						addMaskF32 = any(additiveMaskSlice).([]float32)
+					}
+					var addBiasF32 []float32
+					if len(additiveBiasSlice) > 0 {
+						addBiasF32 = any(additiveBiasSlice).([]float32)
+					}
+					scratchF32 := any(w.scores).([]float32)
+
+					if archFn(
+						qF32, kF32, vF32, outF32,
+						qOff, kvOff, info.qSeqStride, info.kvSeqStride, info.qHeadStride,
+						addMaskF32, booleanMaskSlice, maskGroupStride,
+						addBiasF32, biasGroupStride,
+						scratchF32,
+						info.groupSize, qStart, qEnd, info.kvLen, info.headDim,
+						float32(scale), causal,
+						qLimit, kvLimit,
+					) {
+						return
+					}
+				}
+			}
+
+			sdpaGeneric(
+				q, k, v, qOff, kvOff, info.qSeqStride, info.kvSeqStride, info.qHeadStride,
+				additiveMaskSlice, booleanMaskSlice, maskGroupStride, maskSeqStride,
+				additiveBiasSlice, biasGroupStride, biasSeqStride,
+				w.scores,
+				out,
+				info.groupSize, qStart, qEnd, info.kvLen, info.headDim, scale, causal,
+				qLimit, kvLimit,
+			)
+		},
+	)
+}
+
+const (
+	sdpaHalfConvMinParallelElems = gobackend.ParallelHalfConvThreshold
+	sdpaHalfConvBlockElems       = 1024
+)
+
+type sdpaHalfToF32Pair[T any] struct {
+	dst    []float32
+	src    []T
+	blocks int
+}
+
+func sdpaAllocF32Buffer(backend *gobackend.Backend, like *gobackend.Buffer) (*gobackend.Buffer, error) {
+	f32Shape := like.RawShape.Clone()
+	f32Shape.DType = dtypes.Float32
+	return backend.GetBuffer(f32Shape)
+}
+
+func sdpaConvertHalfInputsToF32[T any](
+	backend *gobackend.Backend,
+	toF32 func([]float32, []T),
+	pairs ...sdpaHalfToF32Pair[T],
+) {
+	totalElems := 0
+	totalBlocks := 0
+	for i := range pairs {
+		n := len(pairs[i].src)
+		totalElems += n
+		pairs[i].blocks = (n + sdpaHalfConvBlockElems - 1) / sdpaHalfConvBlockElems
+		totalBlocks += pairs[i].blocks
+	}
+	if totalElems == 0 {
+		return
+	}
+	if backend == nil || backend.Scheduler == nil || !backend.Scheduler.IsEnabled() || totalElems < sdpaHalfConvMinParallelElems {
+		for _, p := range pairs {
+			toF32(p.dst, p.src)
+		}
+		return
+	}
+	minBlocks := max(1, 4096/sdpaHalfConvBlockElems)
+	backend.Scheduler.ParallelizeChunks(totalBlocks, minBlocks, func(bStart, bEnd int) {
+		cursor := 0
+		for _, p := range pairs {
+			pStart := cursor
+			pEnd := cursor + p.blocks
+			cursor = pEnd
+			if bEnd <= pStart || bStart >= pEnd {
+				continue
+			}
+			localStart := max(0, bStart-pStart) * sdpaHalfConvBlockElems
+			localEnd := min(len(p.src), (min(bEnd, pEnd)-pStart)*sdpaHalfConvBlockElems)
+			toF32(p.dst[localStart:localEnd], p.src[localStart:localEnd])
+		}
+	})
+}
+
+func sdpaConvertHeadRowsToF32[T any](dst []float32, src []T, base, seqStride, headStride, groupSize, rows, headDim int, toF32 func([]float32, []T)) {
+	if seqStride == headDim {
+		chunk := rows * headDim
+		for g := range groupSize {
+			s := base + g*headStride
+			toF32(dst[g*chunk:(g+1)*chunk], src[s:s+chunk])
+		}
+		return
+	}
+	for g := range groupSize {
+		gDst := g * rows * headDim
+		gSrc := base + g*headStride
+		for r := range rows {
+			toF32(dst[gDst+r*headDim:gDst+(r+1)*headDim], src[gSrc+r*seqStride:gSrc+r*seqStride+headDim])
+		}
+	}
+}
+
+func sdpaConvertHeadRowsFromF32[T any](dst []T, src []float32, base, seqStride, headStride, groupSize, rows, headDim int, fromF32 func([]T, []float32)) {
+	if seqStride == headDim {
+		chunk := rows * headDim
+		for g := range groupSize {
+			d := base + g*headStride
+			fromF32(dst[d:d+chunk], src[g*chunk:(g+1)*chunk])
+		}
+		return
+	}
+	for g := range groupSize {
+		gSrc := g * rows * headDim
+		gDst := base + g*headStride
+		for r := range rows {
+			fromF32(dst[gDst+r*seqStride:gDst+r*seqStride+headDim], src[gSrc+r*headDim:gSrc+(r+1)*headDim])
+		}
+	}
+}
+
+// sdpaMultiHeadHalf executes Float16/BFloat16 SDPA using hardware-accelerated slice converters.
+// When non-causal or when a single Q-block covers the head (numQBlocks == 1), each task converts its
+// Q/output blocks inside a reusable worker L1/L2 Float32 scratch buffer (skipping global qF32/outF32
+// allocations and the trailing conversion barrier; small KV heads or numQBlocks == 1 also keep K/V
+// conversion per-worker).
+func sdpaMultiHeadHalf[T any](
+	backend *gobackend.Backend,
+	query, key, value, mask, bias, output *gobackend.Buffer,
+	data *nodeScaledDotProductAttention,
+	maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen, biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen int,
+	querySeqLen, keyValueSeqLen []int32,
+	toF32 func([]float32, []T),
+	fromF32 func([]T, []float32),
+) error {
+	info := computeSDPALayout(backend, query, key, data, true)
+	localQOut := !data.causal || info.numQBlocks == 1
+	// Keep K/V conversion inside each worker's L1/L2 scratch when a single Q-block
+	// covers the head, or when each KV head fits comfortably in L1/L2 (<= 128 KB F32)
+	// and fan-out duplication is modest, eliminating global kF32/vF32 allocations
+	// and the upfront conversion barrier.
+	kvHeadElems := info.kvLen * info.headDim
+	localKV := localQOut && (info.numQBlocks == 1 || (info.numQBlocks <= 32 && kvHeadElems <= 32768))
+
+	var qF32, kF32, vF32, outF32 *gobackend.Buffer
+	var err error
+	pairs := make([]sdpaHalfToF32Pair[T], 0, 5)
+
+	if !localQOut {
+		qF32, err = sdpaAllocF32Buffer(backend, query)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(qF32)
+
+		outF32, err = sdpaAllocF32Buffer(backend, output)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(outF32)
+
+		pairs = append(pairs, sdpaHalfToF32Pair[T]{dst: qF32.Flat.([]float32), src: query.Flat.([]T)})
+	}
+
+	if !localKV {
+		kF32, err = sdpaAllocF32Buffer(backend, key)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(kF32)
+
+		vF32, err = sdpaAllocF32Buffer(backend, value)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(vF32)
+
+		pairs = append(pairs,
+			sdpaHalfToF32Pair[T]{dst: kF32.Flat.([]float32), src: key.Flat.([]T)},
+			sdpaHalfToF32Pair[T]{dst: vF32.Flat.([]float32), src: value.Flat.([]T)},
 		)
 	}
 
-	headTasks := batchSize * numKVHeads
-	totalMACs := batchSize * numHeads * seqLen * kvLen * headDim * 2
-	useSMEPath := gobackend.IsSMEAllowed && query.RawShape.DType == dtypes.Float32 && seqLen >= 4 && kvLen >= 16 && headDim >= 16 && headDim <= 256
-	qBlockSize := max(seqLen, 1)
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
-		numWorkers := backend.Scheduler.EffectiveParallelism()
-		if useSMEPath {
-			if numWorkers > 1 && seqLen > 64 && totalMACs >= 1024*1024 && headTasks < numWorkers {
-				neededQBlocks := (numWorkers + headTasks - 1) / headTasks
-				qBlockSize = max(32, ((seqLen+neededQBlocks-1)/neededQBlocks+31)&^31)
+	maskF32 := mask
+	if mask != nil && mask.RawShape.DType != dtypes.Bool && mask.RawShape.DType != dtypes.Float32 {
+		maskF32, err = sdpaAllocF32Buffer(backend, mask)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(maskF32)
+		pairs = append(pairs, sdpaHalfToF32Pair[T]{dst: maskF32.Flat.([]float32), src: mask.Flat.([]T)})
+	}
+
+	biasF32 := bias
+	if bias != nil && bias.RawShape.DType != dtypes.Float32 {
+		biasF32, err = sdpaAllocF32Buffer(backend, bias)
+		if err != nil {
+			return err
+		}
+		defer backend.PutBuffer(biasF32)
+		pairs = append(pairs, sdpaHalfToF32Pair[T]{dst: biasF32.Flat.([]float32), src: bias.Flat.([]T)})
+	}
+
+	if len(pairs) > 0 {
+		sdpaConvertHalfInputsToF32(backend, toF32, pairs...)
+	}
+
+	if !localQOut {
+		sdpaMultiHeadGeneric[float32](
+			backend, qF32, kF32, vF32, maskF32, biasF32, outF32,
+			data, maskBatchStride, maskHeadStride, maskSeqStride, maskSliceLen,
+			biasBatchStride, biasHeadStride, biasSeqStride, biasSliceLen,
+			querySeqLen, keyValueSeqLen,
+		)
+		gobackend.ParallelConvertSlice(backend, output.Flat.([]T), outF32.Flat.([]float32), fromF32)
+		return nil
+	}
+
+	// Local Q/Out (and optional K/V) path: convert each task's slices in reusable worker scratch.
+	qHalf := query.Flat.([]T)
+	kHalf := key.Flat.([]T)
+	vHalf := value.Flat.([]T)
+	outHalf := output.Flat.([]T)
+
+	var kAllF32, vAllF32 []float32
+	if !localKV {
+		kAllF32 = kF32.Flat.([]float32)
+		vAllF32 = vF32.Flat.([]float32)
+	}
+
+	var additiveMask []float32
+	var booleanMask []bool
+	if maskF32 != nil {
+		if maskF32.RawShape.DType == dtypes.Bool {
+			booleanMask = maskF32.Flat.([]bool)
+		} else {
+			additiveMask = maskF32.Flat.([]float32)
+		}
+	}
+	var additiveBias []float32
+	if biasF32 != nil {
+		additiveBias = biasF32.Flat.([]float32)
+	}
+
+	qBlockMaxElems := info.groupSize * info.qBlockSize * info.headDim
+	kvBlockElems := 0
+	if localKV {
+		kvBlockElems = info.kvLen * info.headDim
+	}
+	workerTotalElems := info.scratchSize + 2*qBlockMaxElems + 2*kvBlockElems
+	workerScratchShape := shapes.Make(dtypes.Float32, workerTotalElems)
+	archFn := gobackend.GetSDPAArchDispatcher()
+	scale := float32(data.scale)
+	causal := data.causal
+
+	type halfWorker struct {
+		buf         *gobackend.Buffer
+		scores      []float32
+		qWork       []float32
+		outW        []float32
+		kWork       []float32
+		vWork       []float32
+		lastBatchKV *[2]int
+	}
+
+	runSDPATasks(
+		backend,
+		info,
+		func() halfWorker {
+			var buf *gobackend.Buffer
+			var flat []float32
+			if backend != nil {
+				if b, bErr := backend.GetBuffer(workerScratchShape); bErr == nil && b != nil {
+					buf = b
+					flat = b.Flat.([]float32)
+				}
 			}
-		} else if numWorkers > 1 && seqLen >= 8 && totalMACs >= 512*1024 && headTasks < 4*numWorkers {
-			targetTasks := 4 * numWorkers
-			neededQBlocks := (targetTasks + headTasks - 1) / headTasks
-			qBlockSize = max(8, ((seqLen+neededQBlocks-1)/neededQBlocks+3)&^3)
-		}
-	}
-	numQBlocks := 1
-	if seqLen > 0 {
-		numQBlocks = (seqLen + qBlockSize - 1) / qBlockSize
-	}
-	totalTasks := headTasks * numQBlocks
-	scratchSize := max(32*kvLen+64, 128)
-	if useSMEPath {
-		kvPadded := (kvLen + 31) &^ 31
-		scratchSize = max(scratchSize, 32*kvLen+(32+headDim)*kvPadded+32*headDim+16)
-	}
-	scratchShape := shapes.Make(query.RawShape.DType, scratchSize)
+			if flat == nil {
+				flat = make([]float32, workerTotalElems)
+			}
+			off := 0
+			scores := flat[off : off+info.scratchSize]
+			off += info.scratchSize
+			qWork := flat[off : off+qBlockMaxElems]
+			off += qBlockMaxElems
+			outW := flat[off : off+qBlockMaxElems]
+			off += qBlockMaxElems
+			var kWork, vWork []float32
+			if localKV {
+				kWork = flat[off : off+kvBlockElems]
+				off += kvBlockElems
+				vWork = flat[off : off+kvBlockElems]
+			}
+			return halfWorker{
+				buf:         buf,
+				scores:      scores,
+				qWork:       qWork,
+				outW:        outW,
+				kWork:       kWork,
+				vWork:       vWork,
+				lastBatchKV: &[2]int{-1, -1},
+			}
+		},
+		func(w halfWorker) {
+			if w.buf != nil && backend != nil {
+				backend.PutBuffer(w.buf)
+			}
+		},
+		func(w halfWorker, batchIdx, kvHeadIdx, qStart, qEnd int) {
+			qLen := qEnd - qStart
+			if qLen <= 0 {
+				return
+			}
+			qLimit := info.seqLen
+			kvLimit := info.kvLen
+			if len(querySeqLen) > 0 {
+				qLimit = max(0, min(int(querySeqLen[batchIdx]), info.seqLen))
+			}
+			if len(keyValueSeqLen) > 0 {
+				kvLimit = max(0, min(int(keyValueSeqLen[batchIdx]), info.kvLen))
+			}
+			qLimitWork := max(0, qLimit-qStart)
 
-	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && totalTasks > 1 && totalMACs >= 1024*1024 {
-		numWorkers := backend.Scheduler.EffectiveParallelism()
-		workersToStart := min(totalTasks, numWorkers)
-		if useSMEPath && simdarch.NumHighPerfSMEUnits > 0 {
-			// Start up to numWorkers so Go's scheduler populates all Ps on Cluster 1 (Super/Perf cores),
-			// while E-core workers yield tasks to Cluster 1 workers below.
-			workersToStart = numWorkers
-		}
-		var taskCounter atomic.Int64
-		var fastWorkers atomic.Int32
-		var droppedWorkers atomic.Int32
-		preferFastCluster := useSMEPath && simdarch.NumHighPerfSMEUnits > 0
+			qOff := batchIdx*info.qBatchStride + kvHeadIdx*info.groupSize*info.qHeadStride
+			kvOff := batchIdx*info.kvBatchStride + kvHeadIdx*info.kvHeadStride
 
-		backend.Scheduler.SaturateUpTo(workersToStart, func() {
-			if preferFastCluster {
-				runtime.LockOSThread()
-				defer runtime.UnlockOSThread()
-				_, _, isEff := simdarch.CurrentSMECluster()
-				if !isEff {
-					fastWorkers.Add(1)
-					defer fastWorkers.Add(-1)
-				} else if int(droppedWorkers.Add(1)) < workersToStart {
-					for spins := 0; spins < 2048 && fastWorkers.Load() == 0 && taskCounter.Load() < int64(totalTasks); spins++ {
-					}
-					if fastWorkers.Load() > 0 {
-						for taskCounter.Load() < int64(totalTasks) && fastWorkers.Load() > 0 {
-							rem := totalTasks - int(taskCounter.Load())
-							if rem > 8*int(fastWorkers.Load()) {
-								break
-							}
-						}
-						if taskCounter.Load() >= int64(totalTasks) || totalTasks-int(taskCounter.Load()) <= 8*int(fastWorkers.Load()) {
-							for taskCounter.Load() < int64(totalTasks) && fastWorkers.Load() > 0 {
-							}
-							return
-						}
-					}
+			additiveMaskSlice, maskGroupStride := sdpaMaskBiasGroupSlice(additiveMask, batchIdx, kvHeadIdx, info.groupSize, maskBatchStride, maskHeadStride, maskSliceLen)
+			booleanMaskSlice, boolGroupStride := sdpaMaskBiasGroupSlice(booleanMask, batchIdx, kvHeadIdx, info.groupSize, maskBatchStride, maskHeadStride, maskSliceLen)
+			if len(booleanMaskSlice) > 0 {
+				maskGroupStride = boolGroupStride
+			}
+			if maskSeqStride == 0 && maskGroupStride == 0 && kvLimit > 0 {
+				if len(additiveMaskSlice) > 0 {
+					additiveMaskSlice, kvLimit = sdpaTrimAdditiveKeyMaskFloat(additiveMaskSlice, kvLimit)
+				} else if len(booleanMaskSlice) > 0 {
+					booleanMaskSlice, kvLimit = sdpaTrimBoolKeyMask(booleanMaskSlice, kvLimit)
+				}
+			}
+			if qStart > 0 && maskSeqStride > 0 {
+				if len(additiveMaskSlice) > 0 {
+					additiveMaskSlice = additiveMaskSlice[qStart*maskSeqStride:]
+				}
+				if len(booleanMaskSlice) > 0 {
+					booleanMaskSlice = booleanMaskSlice[qStart*maskSeqStride:]
 				}
 			}
 
-			scoreBuf, err := backend.GetBuffer(scratchShape)
-			var workerScores []T
-			if err == nil && scoreBuf != nil {
-				defer backend.PutBuffer(scoreBuf)
-				workerScores = scoreBuf.Flat.([]T)
+			additiveBiasSlice, biasGroupStride := sdpaMaskBiasGroupSlice(additiveBias, batchIdx, kvHeadIdx, info.groupSize, biasBatchStride, biasHeadStride, biasSliceLen)
+			if qStart > 0 && biasSeqStride > 0 && len(additiveBiasSlice) > 0 {
+				additiveBiasSlice = additiveBiasSlice[qStart*biasSeqStride:]
+			}
+
+			qGroupStrideWork := qLen * info.headDim
+			qWork := w.qWork[:info.groupSize*qGroupStrideWork]
+			outWork := w.outW[:info.groupSize*qGroupStrideWork]
+			sdpaConvertHeadRowsToF32(qWork, qHalf, qOff+qStart*info.qSeqStride, info.qSeqStride, info.qHeadStride, info.groupSize, qLen, info.headDim, toF32)
+
+			var kUse, vUse []float32
+			var kvOffUse, kvSeqStrideUse int
+			if localKV {
+				if w.lastBatchKV[0] != batchIdx || w.lastBatchKV[1] != kvHeadIdx {
+					sdpaConvertHeadRowsToF32(w.kWork, kHalf, kvOff, info.kvSeqStride, 0, 1, info.kvLen, info.headDim, toF32)
+					sdpaConvertHeadRowsToF32(w.vWork, vHalf, kvOff, info.kvSeqStride, 0, 1, info.kvLen, info.headDim, toF32)
+					w.lastBatchKV[0] = batchIdx
+					w.lastBatchKV[1] = kvHeadIdx
+				}
+				kUse = w.kWork
+				vUse = w.vWork
+				kvOffUse = 0
+				kvSeqStrideUse = info.headDim
 			} else {
-				workerScores = make([]T, scratchSize)
+				kUse = kAllF32
+				vUse = vAllF32
+				kvOffUse = kvOff
+				kvSeqStrideUse = info.kvSeqStride
 			}
-			for {
-				taskIdx := int(taskCounter.Add(1) - 1)
-				if taskIdx >= totalTasks {
-					break
-				}
-				headTaskIdx := taskIdx / numQBlocks
-				qBlockIdx := taskIdx % numQBlocks
-				batchIdx := headTaskIdx / numKVHeads
-				kvHeadIdx := headTaskIdx % numKVHeads
-				qStart := qBlockIdx * qBlockSize
-				qEnd := min(qStart+qBlockSize, seqLen)
-				processHead(batchIdx, kvHeadIdx, qStart, qEnd, workerScores)
+
+			handled := false
+			if archFn != nil {
+				handled = archFn(
+					qWork, kUse, vUse, outWork,
+					0, kvOffUse, info.headDim, kvSeqStrideUse, qGroupStrideWork,
+					additiveMaskSlice, booleanMaskSlice, maskGroupStride,
+					additiveBiasSlice, biasGroupStride,
+					w.scores,
+					info.groupSize, 0, qLen, info.kvLen, info.headDim,
+					scale, causal,
+					qLimitWork, kvLimit,
+				)
 			}
-		})
-	} else {
-		var scores []T
-		if backend != nil {
-			if scoreBuf, err := backend.GetBuffer(scratchShape); err == nil && scoreBuf != nil {
-				defer backend.PutBuffer(scoreBuf)
-				scores = scoreBuf.Flat.([]T)
+			if !handled {
+				sdpaGeneric(
+					qWork, kUse, vUse, 0, kvOffUse, info.headDim, kvSeqStrideUse, qGroupStrideWork,
+					additiveMaskSlice, booleanMaskSlice, maskGroupStride, maskSeqStride,
+					additiveBiasSlice, biasGroupStride, biasSeqStride,
+					w.scores,
+					outWork,
+					info.groupSize, 0, qLen, info.kvLen, info.headDim, scale, causal,
+					qLimitWork, kvLimit,
+				)
 			}
-		}
-		if scores == nil {
-			scores = make([]T, scratchSize)
-		}
-		for batchIdx := range batchSize {
-			for kvHeadIdx := range numKVHeads {
-				processHead(batchIdx, kvHeadIdx, 0, seqLen, scores)
-			}
-		}
-	}
+			sdpaConvertHeadRowsFromF32(outHalf, outWork, qOff+qStart*info.qSeqStride, info.qSeqStride, info.qHeadStride, info.groupSize, qLen, info.headDim, fromF32)
+		},
+	)
+	return nil
 }

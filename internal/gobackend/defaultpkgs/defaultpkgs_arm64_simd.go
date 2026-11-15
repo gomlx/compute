@@ -10,5 +10,6 @@ import (
 	_ "github.com/gomlx/compute/internal/gobackend/activations/neon"
 	_ "github.com/gomlx/compute/internal/gobackend/dot/matmul/neon"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops/neon"
+	_ "github.com/gomlx/compute/internal/gobackend/neon"
 	_ "github.com/gomlx/compute/internal/gobackend/ops/neon"
 )

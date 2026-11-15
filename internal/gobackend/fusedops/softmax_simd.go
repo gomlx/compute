@@ -10,8 +10,11 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapes"
 )
 
 func init() {
@@ -21,7 +24,10 @@ func init() {
 func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedSoftmax)
 	input := inputs[0]
-	if input.RawShape.DType != dtypes.Float32 {
+	dtype := input.RawShape.DType
+	switch dtype {
+	case dtypes.Float32, dtypes.Float16, dtypes.BFloat16:
+	default:
 		return nil, gobackend.ErrFallback
 	}
 
@@ -45,12 +51,33 @@ func execFusedSoftmaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inpu
 		return output, nil
 	}
 
-	inFlat := input.Flat.([]float32)
-	outFlat := output.Flat.([]float32)
-
 	totalElements := outerSize * axisSize
 	processOuter := func(start, end int) {
-		fusedSoftmaxRowsFloat32(inFlat, outFlat, start, end, axisSize)
+		var stackTmp [256]float32
+		var tmpF32 []float32
+		if dtype != dtypes.Float32 {
+			if axisSize <= len(stackTmp) {
+				tmpF32 = stackTmp[:axisSize]
+			} else if backend != nil {
+				if tmpBuf, bufErr := backend.GetBuffer(shapes.Make(dtypes.Float32, axisSize)); bufErr == nil {
+					defer backend.PutBuffer(tmpBuf)
+					tmpF32 = tmpBuf.Flat.([]float32)
+				}
+			}
+			if tmpF32 == nil {
+				tmpF32 = make([]float32, axisSize)
+			}
+		}
+
+		conv := gobackend.ActiveHalfSliceConverters()
+		switch dtype {
+		case dtypes.Float32:
+			fusedSoftmaxRowsFloat32(input.Flat.([]float32), output.Flat.([]float32), start, end, axisSize)
+		case dtypes.Float16:
+			fusedSoftmaxRowsHalf(input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), start, end, axisSize, tmpF32, conv.Float16ToFloat32, conv.Float32ToFloat16)
+		case dtypes.BFloat16:
+			fusedSoftmaxRowsHalf(input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), start, end, axisSize, tmpF32, conv.BFloat16ToFloat32, conv.Float32ToBFloat16)
+		}
 	}
 
 	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements >= 8192 {
@@ -258,5 +285,30 @@ func fusedSoftmaxRowsFloat32(inFlat, outFlat []float32, startOuter, endOuter, ax
 		for ; i < n; i++ {
 			outRow[i] *= invSum
 		}
+	}
+}
+
+// fusedSoftmaxRowsHalf executes softmax across outer rows for Float16/BFloat16 inputs
+// by converting each row into the caller-provided Float32 scratch slice via hardware-accelerated
+// slice converters, running fusedSoftmaxRowsFloat32 in L1 cache, and converting back.
+func fusedSoftmaxRowsHalf[T any](
+	inFlat, outFlat []T,
+	startOuter, endOuter, axisSize int,
+	tmpF32 []float32,
+	toF32 func([]float32, []T),
+	fromF32 func([]T, []float32),
+) {
+	if axisSize == 0 || startOuter >= endOuter {
+		return
+	}
+	n := axisSize
+	rowTmp := tmpF32[:n]
+	for outer := startOuter; outer < endOuter; outer++ {
+		rowStart := outer * n
+		inRow := inFlat[rowStart : rowStart+n]
+		outRow := outFlat[rowStart : rowStart+n]
+		toF32(rowTmp, inRow)
+		fusedSoftmaxRowsFloat32(rowTmp, rowTmp, 0, 1, n)
+		fromF32(outRow, rowTmp)
 	}
 }

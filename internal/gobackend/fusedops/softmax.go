@@ -5,6 +5,9 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
+	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/fastmath"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
@@ -72,10 +75,67 @@ func execFusedSoftmax(backend *gobackend.Backend, node *gobackend.Node, inputs [
 		fusedSoftmax(backend, input.Flat.([]float32), output.Flat.([]float32), axis, node.Shape, fastmath.Exp32)
 	case dtypes.Float64:
 		fusedSoftmax(backend, input.Flat.([]float64), output.Flat.([]float64), axis, node.Shape, math.Exp)
+	case dtypes.Float16:
+		fusedSoftmaxHalf[float16.Float16, *float16.Float16](backend, input.Flat.([]float16.Float16), output.Flat.([]float16.Float16), axis, node.Shape)
+	case dtypes.BFloat16:
+		fusedSoftmaxHalf[bfloat16.BFloat16, *bfloat16.BFloat16](backend, input.Flat.([]bfloat16.BFloat16), output.Flat.([]bfloat16.BFloat16), axis, node.Shape)
 	default:
 		return nil, errors.Wrapf(compute.ErrNotImplemented, "FusedSoftmax: dtype %s", input.RawShape.DType)
 	}
 	return output, nil
+}
+
+// fusedSoftmaxHalf executes softmax for half-precision inputs/outputs using Float32
+// for internal max-subtraction, exp, sum, and normalization.
+// Reading the whole row into a per-worker Float32 buffer makes in-place (input == output) execution safe.
+func fusedSoftmaxHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
+	backend *gobackend.Backend, input, output []T, axis int, shape shapes.Shape,
+) {
+	outerSize, axisSize, innerSize := fusedSoftmaxComputeAxisStrides(shape, axis)
+	totalElements := outerSize * axisSize * innerSize
+	if outerSize == 0 || axisSize == 0 || innerSize == 0 {
+		return
+	}
+
+	processOuter := func(start, end int) {
+		rowBuf := make([]float32, axisSize)
+		for outer := start; outer < end; outer++ {
+			for inner := range innerSize {
+				baseIdx := outer*axisSize*innerSize + inner
+
+				// Pass 1: Convert row to Float32 and find max.
+				maxVal := float32(math.Inf(-1))
+				for i := range axisSize {
+					v := input[baseIdx+i*innerSize].Float32()
+					rowBuf[i] = v
+					if v > maxVal {
+						maxVal = v
+					}
+				}
+
+				// Pass 2: Exp and sum in Float32.
+				var sum float32
+				for i := range axisSize {
+					e := fastmath.Exp32(rowBuf[i] - maxVal)
+					rowBuf[i] = e
+					sum += e
+				}
+
+				// Pass 3: Normalize in Float32 and round back to half-precision.
+				invSum := float32(1.0) / sum
+				for i := range axisSize {
+					P(&output[baseIdx+i*innerSize]).SetFloat32(rowBuf[i] * invSum)
+				}
+			}
+		}
+	}
+
+	if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && outerSize > 1 && totalElements > 16384 {
+		minOuter := max(1, 16384/max(1, axisSize*innerSize))
+		backend.Scheduler.ParallelizeChunks(outerSize, minOuter, processOuter)
+	} else {
+		processOuter(0, outerSize)
+	}
 }
 
 // fusedSoftmaxComputeAxisStrides returns the outer size, axis size, and inner size for iterating

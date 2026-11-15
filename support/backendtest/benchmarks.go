@@ -22,6 +22,9 @@ func RunAllBenchmarks(b *testing.B, backend compute.Backend) {
 	b.Run("Softmax", func(b *testing.B) {
 		BenchmarkSoftmax(b, backend)
 	})
+	b.Run("ScaledDotProductAttention", func(b *testing.B) {
+		BenchmarkScaledDotProductAttention(b, backend)
+	})
 	b.Run("FusedActivation", func(b *testing.B) {
 		BenchmarkFusedActivation(b, backend)
 	})
@@ -350,46 +353,130 @@ func BenchmarkSoftmax(b *testing.B, backend compute.Backend) {
 		{"32x128_axis1", []int{32, 128}, 1},
 		{"64x512_axis1", []int{64, 512}, 1},
 		{"8x16x64_axis2", []int{8, 16, 64}, 2},
+		{"12x128x128_axis2", []int{12, 128, 128}, 2},
 		{"4x8x32x128_axis3", []int{4, 8, 32, 128}, 3},
 	}
 
-	for _, sz := range sizes {
-		shape := shapes.Make(dtypes.Float32, sz.dims...)
-		data := randomFloat32(shape.Size())
-		axis := sz.axis
+	dtypeCases := []struct {
+		name  string
+		dtype dtypes.DType
+		gen   func(int) any
+	}{
+		{"Float32", dtypes.Float32, func(n int) any { return randomFloat32(n) }},
+		{"Float16", dtypes.Float16, func(n int) any { return randomFloat16(n) }},
+		{"BFloat16", dtypes.BFloat16, func(n int) any { return randomBFloat16(n) }},
+	}
 
-		b.Run(fmt.Sprintf("Fused/%s", sz.name), func(b *testing.B) {
-			fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					return f.FusedSoftmax(params[0], axis)
-				})
-			if err != nil {
-				if errors.Is(err, compute.ErrNotImplemented) {
-					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
-				}
-				b.Fatalf("Failed to create fused benchmark: %+v", err)
-			}
-			fused.run(b)
-		})
+	for _, dt := range dtypeCases {
+		for _, sz := range sizes {
+			shape := shapes.Make(dt.dtype, sz.dims...)
+			data := dt.gen(shape.Size())
+			axis := sz.axis
 
-		b.Run(fmt.Sprintf("Decomposed/%s", sz.name), func(b *testing.B) {
-			decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
-				func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					x := params[0]
-					maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
-					shifted := benchMust(f.Sub(x, maxVal))
-					exps := benchMust(f.Exp(shifted))
-					sumExps := reduceAndKeep(f, exps, f.ReduceSum, shape, axis)
-					return f.Div(exps, sumExps)
-				})
-			if err != nil {
-				if errors.Is(err, compute.ErrNotImplemented) {
-					b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+			b.Run(fmt.Sprintf("%s/Fused/%s", dt.name, sz.name), func(b *testing.B) {
+				fused, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						return f.FusedSoftmax(params[0], axis)
+					})
+				if err != nil {
+					if errors.Is(err, compute.ErrNotImplemented) {
+						b.Skipf("Skipping benchmark %s/%s: %+v", dt.name, sz.name, err)
+					}
+					b.Fatalf("Failed to create fused benchmark: %+v", err)
 				}
-				b.Fatalf("Failed to create decomposed benchmark: %+v", err)
-			}
-			decomposed.run(b)
-		})
+				fused.run(b)
+			})
+
+			b.Run(fmt.Sprintf("%s/Decomposed/%s", dt.name, sz.name), func(b *testing.B) {
+				decomposed, err := newBenchExec(backend, []shapes.Shape{shape}, []any{data},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						x := params[0]
+						maxVal := reduceAndKeep(f, x, f.ReduceMax, shape, axis)
+						shifted := benchMust(f.Sub(x, maxVal))
+						exps := benchMust(f.Exp(shifted))
+						sumExps := reduceAndKeep(f, exps, f.ReduceSum, shape, axis)
+						return f.Div(exps, sumExps)
+					})
+				if err != nil {
+					if errors.Is(err, compute.ErrNotImplemented) {
+						b.Skipf("Skipping benchmark %s/%s: %+v", dt.name, sz.name, err)
+					}
+					b.Fatalf("Failed to create decomposed benchmark: %+v", err)
+				}
+				decomposed.run(b)
+			})
+		}
+	}
+}
+
+// --- ScaledDotProductAttention Benchmarks ---
+
+func BenchmarkScaledDotProductAttention(b *testing.B, backend compute.Backend) {
+	configs := []struct {
+		name       string
+		batch      int
+		numHeads   int
+		numKVHeads int
+		seqLen     int
+		headDim    int
+		layout     compute.AttentionAxesLayout
+		causal     bool
+	}{
+		{"B1_H12_S128_D64_BHSD", 1, 12, 12, 128, 64, compute.AttentionAxesLayoutBHSD, false},
+		{"B1_H12_S128_D64_BSHD", 1, 12, 12, 128, 64, compute.AttentionAxesLayoutBSHD, false},
+		{"B8_H12_S128_D64_BHSD", 8, 12, 12, 128, 64, compute.AttentionAxesLayoutBHSD, false},
+		{"B1_H6_S384_D64_BHSD", 1, 6, 6, 384, 64, compute.AttentionAxesLayoutBHSD, false},
+		{"B4_H8_KV2_S256_D128_Causal_BHSD", 4, 8, 2, 256, 128, compute.AttentionAxesLayoutBHSD, true},
+	}
+
+	dtypeCases := []struct {
+		name  string
+		dtype dtypes.DType
+		gen   func(int) any
+	}{
+		{"Float32", dtypes.Float32, func(n int) any { return randomFloat32(n) }},
+		{"Float16", dtypes.Float16, func(n int) any { return randomFloat16(n) }},
+		{"BFloat16", dtypes.BFloat16, func(n int) any { return randomBFloat16(n) }},
+	}
+
+	for _, cfg := range configs {
+		var qDims, kvDims []int
+		if cfg.layout == compute.AttentionAxesLayoutBHSD {
+			qDims = []int{cfg.batch, cfg.numHeads, cfg.seqLen, cfg.headDim}
+			kvDims = []int{cfg.batch, cfg.numKVHeads, cfg.seqLen, cfg.headDim}
+		} else {
+			qDims = []int{cfg.batch, cfg.seqLen, cfg.numHeads, cfg.headDim}
+			kvDims = []int{cfg.batch, cfg.seqLen, cfg.numKVHeads, cfg.headDim}
+		}
+
+		for _, dt := range dtypeCases {
+			qShape := shapes.Make(dt.dtype, qDims...)
+			kvShape := shapes.Make(dt.dtype, kvDims...)
+			qData := dt.gen(qShape.Size())
+			kData := dt.gen(kvShape.Size())
+			vData := dt.gen(kvShape.Size())
+			scale := 1.0 / 8.0
+
+			b.Run(fmt.Sprintf("%s/%s", dt.name, cfg.name), func(b *testing.B) {
+				exec, err := newBenchExec(backend, []shapes.Shape{qShape, kvShape, kvShape}, []any{qData, kData, vData},
+					func(f compute.Function, params []compute.Value) (compute.Value, error) {
+						out, _, err := f.FusedScaledDotProductAttention(
+							params[0], params[1], params[2], cfg.layout,
+							&compute.ScaledDotProductAttentionConfig{
+								Scale:  scale,
+								Causal: cfg.causal,
+							})
+						return out, err
+					})
+				if err != nil {
+					if errors.Is(err, compute.ErrNotImplemented) {
+						b.Skipf("Skipping benchmark %s/%s: %+v", dt.name, cfg.name, err)
+					}
+					b.Fatalf("Failed to create SDPA benchmark: %+v", err)
+				}
+				exec.run(b)
+			})
+		}
 	}
 }
 
@@ -575,6 +662,9 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 
 		// Transformer / Large matrix cases
 		{"all-MiniLM/416x384x1152", 416, 384, 1152},
+		{"bge-base/128x768x768", 128, 768, 768},
+		{"bge-base/512x768x768", 512, 768, 768},
+		{"bge-base/128x768x3072", 128, 768, 3072},
 		{"large/1024x1024x1024", 1024, 1024, 1024},
 	}
 
@@ -639,6 +729,38 @@ func BenchmarkDense(b *testing.B, backend compute.Backend) {
 				}
 				decomposed.run(b)
 			})
+
+			// Fused Float16 across activations
+			xShapeF16 := shapes.Make(dtypes.Float16, sz.batch, sz.inFeatures)
+			wShapeF16 := shapes.Make(dtypes.Float16, sz.inFeatures, sz.outFeatures)
+			bShapeF16 := shapes.Make(dtypes.Float16, sz.outFeatures)
+
+			xDataF16 := randomFloat16(xShapeF16.Size())
+			wDataF16 := randomFloat16(wShapeF16.Size())
+			biasDataF16 := randomFloat16(bShapeF16.Size())
+
+			allShapesF16 := []shapes.Shape{xShapeF16, wShapeF16, bShapeF16}
+			allDatasF16 := []any{xDataF16, wDataF16, biasDataF16}
+
+			for _, act := range []string{"None", "Relu"} {
+				actType := compute.ActivationNone
+				if act == "Relu" {
+					actType = compute.ActivationRelu
+				}
+				b.Run(fmt.Sprintf("Float16/Fused/%s", act), func(b *testing.B) {
+					fused, err := newBenchExec(backend, allShapesF16, allDatasF16,
+						func(f compute.Function, params []compute.Value) (compute.Value, error) {
+							return f.FusedDense(params[0], params[1], params[2], compute.DenseConfig{Activation: compute.ActivationConfig{Type: actType}})
+						})
+					if err != nil {
+						if errors.Is(err, compute.ErrNotImplemented) {
+							b.Skipf("Skipping benchmark %s: %+v", sz.name, err)
+						}
+						b.Fatalf("Failed to create fused F16 benchmark: %+v", err)
+					}
+					fused.run(b)
+				})
+			}
 
 			// Fused BFloat16 across activations
 			xShapeBF16 := shapes.Make(dtypes.BFloat16, sz.batch, sz.inFeatures)

@@ -6,6 +6,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapes"
 	"github.com/gomlx/compute/support/testutil"
@@ -366,6 +368,95 @@ func TestSDPADirect_MaskQuerySeqBroadcast(t *testing.T) {
 		}
 		if _, err := builder.Compile(); err != nil {
 			t.Fatalf("Compile dynamic BSHD SDPA: %+v", err)
+		}
+	}
+}
+
+func TestSDPAHalfSliceConverters(t *testing.T) {
+	// Include lengths that exercise 32-element AVX-512, 16/8-element AVX2/NEON, and scalar tails,
+	// as well as special values: 0, -0, subnormals, RNE ties, overflow, +/-Inf, and NaN.
+	f32Vals := []float32{
+		0, float32(math.Copysign(0, -1)), 1.0, -1.0, 0.5, -0.5, 3.1415927, -2.7182817,
+		1e-7, -1e-7, 6e-5, -6e-5, 65504.0, -65504.0, 70000.0, -70000.0,
+		float32(math.Inf(1)), float32(math.Inf(-1)), float32(math.NaN()),
+		1.00048828125,                    // F16 RNE tie -> even
+		1.00146484375,                    // F16 RNE tie -> odd
+		math.Float32frombits(0x3F808000), // BF16 RNE tie -> even
+		math.Float32frombits(0x3F818000), // BF16 RNE tie -> odd
+	}
+	for len(f32Vals) < 41 {
+		i := len(f32Vals)
+		f32Vals = append(f32Vals, float32(math.Sin(float64(i))*10.0))
+	}
+
+	conv := gobackend.ActiveHalfSliceConverters()
+	gotF16 := make([]float16.Float16, len(f32Vals))
+	wantF16 := make([]float16.Float16, len(f32Vals))
+	conv.Float32ToFloat16(gotF16, f32Vals)
+	gobackend.ScalarFloat32ToFloat16Slice(wantF16, f32Vals)
+	for i := range f32Vals {
+		if math.IsNaN(float64(f32Vals[i])) {
+			if !math.IsNaN(float64(gotF16[i].Float32())) {
+				t.Errorf("F32->F16[%d]: expected NaN, got 0x%04x (%v)", i, uint16(gotF16[i]), gotF16[i].Float32())
+			}
+			continue
+		}
+		if gotF16[i] != wantF16[i] {
+			t.Errorf("F32->F16[%d] input=%v: got 0x%04x (%v), want 0x%04x (%v)",
+				i, f32Vals[i], uint16(gotF16[i]), gotF16[i].Float32(), uint16(wantF16[i]), wantF16[i].Float32())
+		}
+	}
+
+	gotF32FromF16 := make([]float32, len(wantF16))
+	wantF32FromF16 := make([]float32, len(wantF16))
+	conv.Float16ToFloat32(gotF32FromF16, wantF16)
+	gobackend.ScalarFloat16ToFloat32Slice(wantF32FromF16, wantF16)
+	for i := range wantF16 {
+		if math.IsNaN(float64(wantF32FromF16[i])) {
+			if !math.IsNaN(float64(gotF32FromF16[i])) {
+				t.Errorf("F16->F32[%d]: expected NaN, got %v", i, gotF32FromF16[i])
+			}
+			continue
+		}
+		if math.Float32bits(gotF32FromF16[i]) != math.Float32bits(wantF32FromF16[i]) {
+			t.Errorf("F16->F32[%d] input=0x%04x: got 0x%08x (%v), want 0x%08x (%v)",
+				i, uint16(wantF16[i]), math.Float32bits(gotF32FromF16[i]), gotF32FromF16[i],
+				math.Float32bits(wantF32FromF16[i]), wantF32FromF16[i])
+		}
+	}
+
+	gotBF16 := make([]bfloat16.BFloat16, len(f32Vals))
+	wantBF16 := make([]bfloat16.BFloat16, len(f32Vals))
+	conv.Float32ToBFloat16(gotBF16, f32Vals)
+	gobackend.ScalarFloat32ToBFloat16Slice(wantBF16, f32Vals)
+	for i := range f32Vals {
+		if math.IsNaN(float64(f32Vals[i])) {
+			if !math.IsNaN(float64(gotBF16[i].Float32())) {
+				t.Errorf("F32->BF16[%d]: expected NaN, got 0x%04x (%v)", i, uint16(gotBF16[i]), gotBF16[i].Float32())
+			}
+			continue
+		}
+		if gotBF16[i] != wantBF16[i] {
+			t.Errorf("F32->BF16[%d] input=%v: got 0x%04x (%v), want 0x%04x (%v)",
+				i, f32Vals[i], uint16(gotBF16[i]), gotBF16[i].Float32(), uint16(wantBF16[i]), wantBF16[i].Float32())
+		}
+	}
+
+	gotF32FromBF16 := make([]float32, len(wantBF16))
+	wantF32FromBF16 := make([]float32, len(wantBF16))
+	conv.BFloat16ToFloat32(gotF32FromBF16, wantBF16)
+	gobackend.ScalarBFloat16ToFloat32Slice(wantF32FromBF16, wantBF16)
+	for i := range wantBF16 {
+		if math.IsNaN(float64(wantF32FromBF16[i])) {
+			if !math.IsNaN(float64(gotF32FromBF16[i])) {
+				t.Errorf("BF16->F32[%d]: expected NaN, got %v", i, gotF32FromBF16[i])
+			}
+			continue
+		}
+		if math.Float32bits(gotF32FromBF16[i]) != math.Float32bits(wantF32FromBF16[i]) {
+			t.Errorf("BF16->F32[%d] input=0x%04x: got 0x%08x (%v), want 0x%08x (%v)",
+				i, uint16(wantBF16[i]), math.Float32bits(gotF32FromBF16[i]), gotF32FromBF16[i],
+				math.Float32bits(wantF32FromBF16[i]), wantF32FromBF16[i])
 		}
 	}
 }

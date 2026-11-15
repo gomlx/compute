@@ -10,7 +10,6 @@ import (
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/float16"
-	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/internal/gobackend/dot"
 	"github.com/gomlx/compute/internal/gobackend/dot/matmul"
@@ -388,7 +387,7 @@ func qkvExecMatmul[T float32 | float64](
 	return runThree(wQ, wK, wV, nil, nil, nil)
 }
 
-func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
+func qkvExecMatmulHalf[T float16.Float16 | bfloat16.BFloat16](
 	backend *gobackend.Backend,
 	xBuf, wQKVBuf, biasQBuf, biasKBuf, biasVBuf, qBuf, kBuf, vBuf *gobackend.Buffer,
 	inFeatures, qDim, kvDim int,
@@ -403,20 +402,58 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 		return nil
 	}
 
-	toFloat32Bias := func(bBuf *gobackend.Buffer) []float32 {
+	conv := gobackend.ActiveHalfSliceConverters()
+	var toF32 func([]float32, []T)
+	var fromF32 func([]T, []float32)
+	switch any(([]T)(nil)).(type) {
+	case []float16.Float16:
+		toF32 = any(conv.Float16ToFloat32).(func([]float32, []T))
+		fromF32 = any(conv.Float32ToFloat16).(func([]T, []float32))
+	case []bfloat16.BFloat16:
+		toF32 = any(conv.BFloat16ToFloat32).(func([]float32, []T))
+		fromF32 = any(conv.Float32ToBFloat16).(func([]T, []float32))
+	}
+
+	var biasStackQ, biasStackK, biasStackV [2048]float32
+	toFloat32Bias := func(bBuf *gobackend.Buffer, stack *[2048]float32) ([]float32, *gobackend.Buffer, error) {
 		if bBuf == nil {
-			return nil
+			return nil, nil, nil
 		}
 		bSlice := bBuf.Flat.([]T)
-		out := make([]float32, len(bSlice))
-		for i, v := range bSlice {
-			out[i] = v.Float32()
+		if len(bSlice) <= len(stack) {
+			out := stack[:len(bSlice)]
+			toF32(out, bSlice)
+			return out, nil, nil
 		}
-		return out
+		poolBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, len(bSlice)))
+		if err != nil {
+			return nil, nil, err
+		}
+		out := poolBuf.Flat.([]float32)
+		toF32(out, bSlice)
+		return out, poolBuf, nil
 	}
-	biasQ := toFloat32Bias(biasQBuf)
-	biasK := toFloat32Bias(biasKBuf)
-	biasV := toFloat32Bias(biasVBuf)
+	biasQ, poolBiasQ, err := toFloat32Bias(biasQBuf, &biasStackQ)
+	if err != nil {
+		return err
+	}
+	if poolBiasQ != nil {
+		defer backend.PutBuffer(poolBiasQ)
+	}
+	biasK, poolBiasK, err := toFloat32Bias(biasKBuf, &biasStackK)
+	if err != nil {
+		return err
+	}
+	if poolBiasK != nil {
+		defer backend.PutBuffer(poolBiasK)
+	}
+	biasV, poolBiasV, err := toFloat32Bias(biasVBuf, &biasStackV)
+	if err != nil {
+		return err
+	}
+	if poolBiasV != nil {
+		defer backend.PutBuffer(poolBiasV)
+	}
 
 	totalOutDim := qDim + 2*kvDim
 	tmpBuf, err := backend.GetBuffer(shapes.Make(dtypes.Float32, lhsCrossSize*totalOutDim))
@@ -460,15 +497,9 @@ func qkvExecMatmulHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 		); err != nil {
 			return err
 		}
-		for i, v := range tmpQ {
-			P(&qFlat[i]).SetFloat32(v)
-		}
-		for i, v := range tmpK {
-			P(&kFlat[i]).SetFloat32(v)
-		}
-		for i, v := range tmpV {
-			P(&vFlat[i]).SetFloat32(v)
-		}
+		gobackend.ParallelConvertSlice(backend, qFlat, tmpQ, fromF32)
+		gobackend.ParallelConvertSlice(backend, kFlat, tmpK, fromF32)
+		gobackend.ParallelConvertSlice(backend, vFlat, tmpV, fromF32)
 		return nil
 	}
 

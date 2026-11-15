@@ -565,6 +565,12 @@ type FusedOps interface {
 
 	// FusedSoftmax computes softmax along the specified axis.
 	//
+	// Supported dtypes include Float32, Float64, Float16, and BFloat16 (backends that do not
+	// support a given dtype return ErrNotImplemented). The output preserves x's shape and dtype.
+	// For half-precision inputs (Float16, BFloat16), internal max-subtraction, exponentials,
+	// summation, and normalization are performed in Float32 precision to avoid overflow/underflow
+	// before rounding back to x's dtype.
+	//
 	// Note: unlike the generic softmax in GoMLX's graph package, the fused
 	// softmax only accepts one axis. The axis must be non-negative (the caller
 	// normalizes negative indices before calling).
@@ -646,16 +652,27 @@ type FusedOps interface {
 	// - "seqLen" refers to the sequence length of the query, and "kvLen" is the sequence length for the key and value.
 	//
 	// Inputs:
-	//   - query, key, value: 4D tensors whose axis ordering is determined by axesLayout.
+	//   - query, key, value: 4D tensors with matching floating-point dtype (Float32, Float64,
+	//     Float16, or BFloat16, as supported by the backend) whose axis ordering is determined
+	//     by axesLayout:
 	//     For AttentionAxesLayoutBHSD: query [batch, numHeads, seqLen, headDim],
 	//                         key/value [batch, numKVHeads, kvLen, headDim].
 	//     For AttentionAxesLayoutBSHD: query [batch, seqLen, numHeads, headDim],
 	//                         key/value [batch, kvLen, numKVHeads, headDim].
 	//   - axesLayout: determines the axis ordering of query/key/value tensors
 	//   - options: optional parameters (nil uses defaults). See ScaledDotProductAttentionConfig.
+	//     When options.Mask (non-Bool additive mask) or options.Bias is provided, its dtype
+	//     must match query's dtype.
+	//
+	// Half-precision behavior:
+	//   - For Float16 and BFloat16 inputs, Q@K^T, scaling, mask/bias addition, softmax
+	//     reductions, and P@V weighted accumulation are performed in Float32 precision (or
+	//     higher) before rounding the final output tensor back to query's dtype. Backends
+	//     that do not support half-precision (or a given options combination) return
+	//     ErrNotImplemented so callers can fall back cleanly.
 	//
 	// Outputs:
-	//   - output: same shape as query.
+	//   - output: same shape and dtype as query.
 	//   - statesForVJP: optional (may be nil/empty). When the backend supports a fused backward
 	//     (FusedScaledDotProductAttentionVJP), it returns whatever backward-pass state that
 	//     backend's fused VJP needs.
