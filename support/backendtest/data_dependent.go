@@ -142,35 +142,48 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 		//   smallest k=3: indices [2, 4, 0]
 		t.Run("DTypes", func(t *testing.T) {
 			for _, tc := range []struct {
-				dtype   dtypes.DType
-				input   any
-				wantMax any
-				wantMin any
+				name      string
+				dtype     dtypes.DType
+				input     any
+				wantMax   any
+				wantMin   any
+				uint64Tol uint64 // Optional per-element absolute tolerance for Uint64 values (see 63-bit test comment).
 			}{
-				{dtypes.Float32, []float32{3, 9, -2, 9, -2}, []float32{9, 9, 3}, []float32{-2, -2, 3}},
-				{dtypes.Float64, []float64{3, 9, -2, 9, -2}, []float64{9, 9, 3}, []float64{-2, -2, 3}},
+				{"Float32", dtypes.Float32, []float32{3, 9, -2, 9, -2}, []float32{9, 9, 3}, []float32{-2, -2, 3}, 0},
+				{"Float64", dtypes.Float64, []float64{3, 9, -2, 9, -2}, []float64{9, 9, 3}, []float64{-2, -2, 3}, 0},
 				{
+					"Float16",
 					dtypes.Float16,
 					[]float16.Float16{float16.FromFloat32(3), float16.FromFloat32(9), float16.FromFloat32(-2), float16.FromFloat32(9), float16.FromFloat32(-2)},
 					[]float16.Float16{float16.FromFloat32(9), float16.FromFloat32(9), float16.FromFloat32(3)},
 					[]float16.Float16{float16.FromFloat32(-2), float16.FromFloat32(-2), float16.FromFloat32(3)},
+					0,
 				},
 				{
+					"BFloat16",
 					dtypes.BFloat16,
 					[]bfloat16.BFloat16{bfloat16.FromFloat32(3), bfloat16.FromFloat32(9), bfloat16.FromFloat32(-2), bfloat16.FromFloat32(9), bfloat16.FromFloat32(-2)},
 					[]bfloat16.BFloat16{bfloat16.FromFloat32(9), bfloat16.FromFloat32(9), bfloat16.FromFloat32(3)},
 					[]bfloat16.BFloat16{bfloat16.FromFloat32(-2), bfloat16.FromFloat32(-2), bfloat16.FromFloat32(3)},
+					0,
 				},
-				{dtypes.Int8, []int8{3, 9, -2, 9, -2}, []int8{9, 9, 3}, []int8{-2, -2, 3}},
-				{dtypes.Int16, []int16{3, 9, -2, 9, -2}, []int16{9, 9, 3}, []int16{-2, -2, 3}},
-				{dtypes.Int32, []int32{3, 9, -2, 9, -2}, []int32{9, 9, 3}, []int32{-2, -2, 3}},
-				{dtypes.Int64, []int64{3, 9, -2, 9, -2}, []int64{9, 9, 3}, []int64{-2, -2, 3}},
-				{dtypes.Uint8, []uint8{5, 200, 1, 200, 1}, []uint8{200, 200, 5}, []uint8{1, 1, 5}},
-				{dtypes.Uint16, []uint16{5, 50000, 1, 50000, 1}, []uint16{50000, 50000, 5}, []uint16{1, 1, 5}},
-				{dtypes.Uint32, []uint32{5, 3000000000, 1, 3000000000, 1}, []uint32{3000000000, 3000000000, 5}, []uint32{1, 1, 5}},
-				{dtypes.Uint64, []uint64{uint64(1)<<63 - 1, ^uint64(0), 0, ^uint64(0), 0}, []uint64{^uint64(0), ^uint64(0), uint64(1)<<63 - 1}, []uint64{0, 0, uint64(1)<<63 - 1}},
+				{"Int8", dtypes.Int8, []int8{3, 9, -2, 9, -2}, []int8{9, 9, 3}, []int8{-2, -2, 3}, 0},
+				{"Int16", dtypes.Int16, []int16{3, 9, -2, 9, -2}, []int16{9, 9, 3}, []int16{-2, -2, 3}, 0},
+				{"Int32", dtypes.Int32, []int32{3, 9, -2, 9, -2}, []int32{9, 9, 3}, []int32{-2, -2, 3}, 0},
+				{"Int64", dtypes.Int64, []int64{3, 9, -2, 9, -2}, []int64{9, 9, 3}, []int64{-2, -2, 3}, 0},
+				{"Uint8", dtypes.Uint8, []uint8{5, 200, 1, 200, 1}, []uint8{200, 200, 5}, []uint8{1, 1, 5}, 0},
+				{"Uint16", dtypes.Uint16, []uint16{5, 50000, 1, 50000, 1}, []uint16{50000, 50000, 5}, []uint16{1, 1, 5}, 0},
+				{"Uint32", dtypes.Uint32, []uint32{5, 3000000000, 1, 3000000000, 1}, []uint32{3000000000, 3000000000, 5}, []uint32{1, 1, 5}, 0},
+				// Uint64 with a 40-bit midpoint (> MaxUint32, exact even on backends that route 64-bit gathers through float).
+				{"Uint64_40bit", dtypes.Uint64, []uint64{uint64(1) << 40, ^uint64(0), 0, ^uint64(0), 0}, []uint64{^uint64(0), ^uint64(0), uint64(1) << 40}, []uint64{0, 0, uint64(1) << 40}, 0},
+				// Uint64 with a 63-bit midpoint ((1<<63) - 1 = 9223372036854775807):
+				// Some GPU backends (notably Apple MPSGraph's gatherAlongAxis/bottomK on macOS 26)
+				// convert 64-bit integer values through floating-point during topK/gather, which rounds
+				// (1<<63)-1 by 1 ULP to 1<<63 (9223372036854775808) while still producing exact indices.
+				// Allow a tolerance of 1 on the returned Uint64 values here while requiring exact indices.
+				{"Uint64", dtypes.Uint64, []uint64{uint64(1)<<63 - 1, ^uint64(0), 0, ^uint64(0), 0}, []uint64{^uint64(0), ^uint64(0), uint64(1)<<63 - 1}, []uint64{0, 0, uint64(1)<<63 - 1}, 1},
 			} {
-				t.Run(tc.dtype.String(), func(t *testing.T) {
+				t.Run(tc.name, func(t *testing.T) {
 					testutil.SkipIfMissingDType(t, b, tc.dtype)
 					for _, smallest := range []bool{false, true} {
 						values, indices, err := testutil.Exec2(b, []any{tc.input}, func(f compute.Function, p []compute.Value) (compute.Value, compute.Value, error) {
@@ -178,7 +191,7 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 						})
 						skipIfFusedNotImplemented(t, b, err)
 						if err != nil {
-							t.Fatalf("FusedTopK(%s, smallest=%v) failed: %+v", tc.dtype, smallest, err)
+							t.Fatalf("FusedTopK(%s, smallest=%v) failed: %+v", tc.name, smallest, err)
 						}
 						wantVals := tc.wantMax
 						wantIdxs := []int32{1, 3, 0}
@@ -186,11 +199,30 @@ func TestDataDependentOps(t *testing.T, b compute.Backend) {
 							wantVals = tc.wantMin
 							wantIdxs = []int32{2, 4, 0}
 						}
-						if ok, diff := testutil.IsEqual(wantVals, values); !ok {
-							t.Errorf("FusedTopK(%s, smallest=%v) values mismatch:\n%s", tc.dtype, smallest, diff)
+						if tc.uint64Tol > 0 {
+							wantU64 := wantVals.([]uint64)
+							gotU64, ok := values.([]uint64)
+							if !ok || len(gotU64) != len(wantU64) {
+								t.Errorf("FusedTopK(%s, smallest=%v) values = %v, want %v", tc.name, smallest, values, wantVals)
+							} else {
+								for i := range wantU64 {
+									var diff uint64
+									if gotU64[i] >= wantU64[i] {
+										diff = gotU64[i] - wantU64[i]
+									} else {
+										diff = wantU64[i] - gotU64[i]
+									}
+									if diff > tc.uint64Tol {
+										t.Errorf("FusedTopK(%s, smallest=%v) values[%d] = %d, want %d (tol=%d)",
+											tc.name, smallest, i, gotU64[i], wantU64[i], tc.uint64Tol)
+									}
+								}
+							}
+						} else if ok, diff := testutil.IsEqual(wantVals, values); !ok {
+							t.Errorf("FusedTopK(%s, smallest=%v) values mismatch:\n%s", tc.name, smallest, diff)
 						}
 						if ok, diff := testutil.IsEqual(wantIdxs, indices); !ok {
-							t.Errorf("FusedTopK(%s, smallest=%v) indices mismatch:\n%s", tc.dtype, smallest, diff)
+							t.Errorf("FusedTopK(%s, smallest=%v) indices mismatch:\n%s", tc.name, smallest, diff)
 						}
 					}
 				})

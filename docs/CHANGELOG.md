@@ -1,3 +1,6 @@
+- Next:
+  - Updated `FusedTopK/DTypes` in `support/backendtest/data_dependent.go` to add an exact `Uint64_40bit` (`1 << 40`) test case and allow a 1-ULP value tolerance on the 63-bit `Uint64` (`(1 << 63) - 1`) test case for GPU backends (such as Apple `MPSGraph` on macOS 26) that convert 64-bit integer values through floating-point during `topK`/`gatherAlongAxis` while keeping `indices` exact.
+
 - 2026-11-14:
   - Added `Function.ConstantFromBuffer(buf Buffer, donate bool) (Value, error)` (`function.go`, `notimplemented/function.go`) to create graph constants backed by existing backend buffers without host-slice copies (supporting optional zero-copy buffer ownership transfer when `donate == true`, aligned memory, and packed sub-byte dtypes), along with `ConstantFromBuffer` compliance tests (`support/backendtest/exec.go`).
   - Updated `"go"` backend (`internal/gobackend/{buffers,constants,function,builder}.go`):
