@@ -10,6 +10,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
 )
 
 // DispatchBinaryTrailingNEON dispatches binary trailing broadcast operations to ARM64 NEON kernels.
@@ -31,6 +32,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 		case dtypes.Float32:
 			binaryTrailingAddFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
 			return true
+		case dtypes.Float16:
+			binaryTrailingAddFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+			return true
+		case dtypes.BFloat16:
+			binaryTrailingAddBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
+			return true
 		case dtypes.Float64:
 			binaryTrailingAddFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
 			return true
@@ -47,6 +54,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 			case dtypes.Float32:
 				binaryTrailingSubRHSFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
 				return true
+			case dtypes.Float16:
+				binaryTrailingSubRHSFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+				return true
+			case dtypes.BFloat16:
+				binaryTrailingSubRHSBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
+				return true
 			case dtypes.Float64:
 				binaryTrailingSubRHSFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
 				return true
@@ -61,6 +74,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 			switch dtype {
 			case dtypes.Float32:
 				binaryTrailingSubLHSFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
+				return true
+			case dtypes.Float16:
+				binaryTrailingSubLHSFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+				return true
+			case dtypes.BFloat16:
+				binaryTrailingSubLHSBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
 				return true
 			case dtypes.Float64:
 				binaryTrailingSubLHSFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
@@ -78,6 +97,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 		case dtypes.Float32:
 			binaryTrailingMulFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
 			return true
+		case dtypes.Float16:
+			binaryTrailingMulFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+			return true
+		case dtypes.BFloat16:
+			binaryTrailingMulBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
+			return true
 		case dtypes.Float64:
 			binaryTrailingMulFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
 			return true
@@ -91,6 +116,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 			case dtypes.Float32:
 				binaryTrailingDivRHSFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
 				return true
+			case dtypes.Float16:
+				binaryTrailingDivRHSFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+				return true
+			case dtypes.BFloat16:
+				binaryTrailingDivRHSBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
+				return true
 			case dtypes.Float64:
 				binaryTrailingDivRHSFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
 				return true
@@ -99,6 +130,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 			switch dtype {
 			case dtypes.Float32:
 				binaryTrailingDivLHSFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
+				return true
+			case dtypes.Float16:
+				binaryTrailingDivLHSFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+				return true
+			case dtypes.BFloat16:
+				binaryTrailingDivLHSBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
 				return true
 			case dtypes.Float64:
 				binaryTrailingDivLHSFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
@@ -109,6 +146,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 		switch dtype {
 		case dtypes.Float32:
 			binaryTrailingMaxFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
+			return true
+		case dtypes.Float16:
+			binaryTrailingMaxFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+			return true
+		case dtypes.BFloat16:
+			binaryTrailingMaxBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
 			return true
 		case dtypes.Float64:
 			binaryTrailingMaxFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)
@@ -124,6 +167,12 @@ func DispatchBinaryTrailingNEON(op compute.OpType, isLHS bool, lhs, rhs, out uns
 		switch dtype {
 		case dtypes.Float32:
 			binaryTrailingMinFloat32NEON(unsafe.Slice((*float32)(vecPtr), A*B), unsafe.Slice((*float32)(scalarPtr), A), unsafe.Slice((*float32)(out), A*B), A, B)
+			return true
+		case dtypes.Float16:
+			binaryTrailingMinFloat16NEONAsm(vecPtr, scalarPtr, out, A, B)
+			return true
+		case dtypes.BFloat16:
+			binaryTrailingMinBFloat16NEON(unsafe.Slice((*bfloat16.BFloat16)(vecPtr), A*B), unsafe.Slice((*bfloat16.BFloat16)(scalarPtr), A), unsafe.Slice((*bfloat16.BFloat16)(out), A*B), A, B)
 			return true
 		case dtypes.Float64:
 			binaryTrailingMinFloat64NEON(unsafe.Slice((*float64)(vecPtr), A*B), unsafe.Slice((*float64)(scalarPtr), A), unsafe.Slice((*float64)(out), A*B), A, B)

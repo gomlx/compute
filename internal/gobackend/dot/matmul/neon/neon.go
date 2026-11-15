@@ -449,44 +449,46 @@ func neonPackLHS[T gotype.ScalarNotComplex](
 	lhsColStartBytes := uintptr(lhsColStart) * bytesPerElement
 
 	fullRows := copyRows & ^(kernelRows - 1)
-	if (NEONUseAsm || kernelRows > 8) && fullRows > 0 {
-		lhsStartPtr := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart)*lhsStrideBytes+lhsColStartBytes)
-		panelStartPtr := panelBasePtr
-		switch kernelRows {
-		case 4:
-			switch bytesPerElement {
+	if NEONUseAsm || kernelRows > 8 {
+		if fullRows > 0 {
+			lhsStartPtr := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart)*lhsStrideBytes+lhsColStartBytes)
+			panelStartPtr := panelBasePtr
+			switch kernelRows {
 			case 4:
-				neonPackLHSKernelRows4Float32Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
-			case 2:
-				neonPackLHSKernelRows4Uint16Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				switch bytesPerElement {
+				case 4:
+					neonPackLHSKernelRows4Float32Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				case 2:
+					neonPackLHSKernelRows4Uint16Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				case 8:
+					neonPackLHSKernelRows4Float64Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				}
 			case 8:
-				neonPackLHSKernelRows4Float64Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
-			}
-		case 8:
-			switch bytesPerElement {
-			case 4:
-				neonPackLHSKernelRows8Float32Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
-			case 2:
-				neonPackLHSKernelRows8Uint16Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
-			case 8:
-				neonPackLHSKernelRows8Float64Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
-			}
-		default:
-			// kernelRows == 16 or 32: pack 8 rows at a time into strided columns of width kernelRows.
-			panelColStrideBytes := uintptr(kernelRows) * bytesPerElement
-			stripPanelBytes := uintptr(contractingCols) * panelColStrideBytes
-			for stripRowIdx := 0; stripRowIdx < fullRows; stripRowIdx += kernelRows {
-				stripPanelOffset := uintptr(stripRowIdx/kernelRows) * stripPanelBytes
-				for subRow := 0; subRow < kernelRows; subRow += 8 {
-					subLhsPtr := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+stripRowIdx+subRow)*lhsStrideBytes+lhsColStartBytes)
-					subPanelPtr := unsafe.Add(panelBasePtr, stripPanelOffset+uintptr(subRow)*bytesPerElement)
-					switch bytesPerElement {
-					case 4:
-						neonPackLHSKernelRows8StridedFloat32Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
-					case 2:
-						neonPackLHSKernelRows8StridedUint16Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
-					case 8:
-						neonPackLHSKernelRows8StridedFloat64Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+				switch bytesPerElement {
+				case 4:
+					neonPackLHSKernelRows8Float32Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				case 2:
+					neonPackLHSKernelRows8Uint16Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				case 8:
+					neonPackLHSKernelRows8Float64Asm(lhsStartPtr, panelStartPtr, lhsStrideBytes, fullRows, contractingCols)
+				}
+			default:
+				// kernelRows == 16 or 32: pack 8 rows at a time into strided columns of width kernelRows.
+				panelColStrideBytes := uintptr(kernelRows) * bytesPerElement
+				stripPanelBytes := uintptr(contractingCols) * panelColStrideBytes
+				for stripRowIdx := 0; stripRowIdx < fullRows; stripRowIdx += kernelRows {
+					stripPanelOffset := uintptr(stripRowIdx/kernelRows) * stripPanelBytes
+					for subRow := 0; subRow < kernelRows; subRow += 8 {
+						subLhsPtr := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+stripRowIdx+subRow)*lhsStrideBytes+lhsColStartBytes)
+						subPanelPtr := unsafe.Add(panelBasePtr, stripPanelOffset+uintptr(subRow)*bytesPerElement)
+						switch bytesPerElement {
+						case 4:
+							neonPackLHSKernelRows8StridedFloat32Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+						case 2:
+							neonPackLHSKernelRows8StridedUint16Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+						case 8:
+							neonPackLHSKernelRows8StridedFloat64Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+						}
 					}
 				}
 			}
@@ -494,8 +496,38 @@ func neonPackLHS[T gotype.ScalarNotComplex](
 		if fullRows == copyRows {
 			return
 		}
+		remRows := copyRows - fullRows
 		panelOffset := fullRows * contractingCols
-		matmul.UnsafePackLHS(lhs, panel[panelOffset:], lhsRowStart+fullRows, lhsColStart, lhsCols, copyRows-fullRows, contractingCols, kernelRows)
+		tailStrip := panel[panelOffset : panelOffset+kernelRows*contractingCols]
+		clear(tailStrip)
+
+		subRow := 0
+		if kernelRows > 8 && remRows >= 8 {
+			panelColStrideBytes := uintptr(kernelRows) * bytesPerElement
+			tailBasePtr := unsafe.Pointer(unsafe.SliceData(tailStrip))
+			for ; subRow+8 <= remRows; subRow += 8 {
+				subLhsPtr := unsafe.Add(lhsBasePtr, uintptr(lhsRowStart+fullRows+subRow)*lhsStrideBytes+lhsColStartBytes)
+				subPanelPtr := unsafe.Add(tailBasePtr, uintptr(subRow)*bytesPerElement)
+				switch bytesPerElement {
+				case 4:
+					neonPackLHSKernelRows8StridedFloat32Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+				case 2:
+					neonPackLHSKernelRows8StridedUint16Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+				case 8:
+					neonPackLHSKernelRows8StridedFloat64Asm(subLhsPtr, subPanelPtr, lhsStrideBytes, panelColStrideBytes, contractingCols)
+				}
+			}
+		}
+		if subRow < remRows {
+			for r := subRow; r < remRows; r++ {
+				srcRow := lhs[(lhsRowStart+fullRows+r)*lhsCols+lhsColStart:]
+				dstIdx := r
+				for c := range contractingCols {
+					tailStrip[dstIdx] = srcRow[c]
+					dstIdx += kernelRows
+				}
+			}
+		}
 		return
 	}
 

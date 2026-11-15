@@ -27,7 +27,7 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 	data := node.Data.(*nodeFusedLayerNorm)
 	input := inputs[0]
 	dtype := input.RawShape.DType
-	if dtype != dtypes.Float32 && dtype != dtypes.Float64 {
+	if dtype != dtypes.Float32 && dtype != dtypes.Float64 && dtype != dtypes.Float16 && dtype != dtypes.BFloat16 {
 		return nil, gobackend.ErrFallback
 	}
 
@@ -140,6 +140,11 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 			}
 			simdLayerNormMiddleAxesFloat32(srcSlice, outData, gData, bData, aDim, bDim, cDim, data.epsilon)
 		}
+		return output, nil
+	}
+
+	if dtype == dtypes.Float16 || dtype == dtypes.BFloat16 {
+		layerNormTrailingAxesHalf(backend, input, residual, output, gamma, beta, normSize, data.epsilon, simdLayerNormTrailingAxesFloat32)
 		return output, nil
 	}
 

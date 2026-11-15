@@ -8,6 +8,8 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
+	"github.com/gomlx/compute/dtypes/float16"
 	"github.com/gomlx/compute/internal/gobackend"
 	_ "github.com/gomlx/compute/internal/gobackend/fusedops"
 	"github.com/gomlx/compute/shapes"
@@ -274,6 +276,131 @@ func TestSIMDLayerNorm(t *testing.T) {
 				}
 				exec.Finalize()
 			}
+		}
+	})
+
+	t.Run("HalfPrecision_DirectAndFusedResidual", func(t *testing.T) {
+		backend, err := gobackend.NewBackend()
+		if err != nil {
+			t.Fatalf("Failed to create backend: %+v", err)
+		}
+		defer backend.Finalize()
+
+		outerSize, normSize := 8, 384
+		total := outerSize * normSize
+		xF32 := make([]float32, total)
+		rF32 := make([]float32, total)
+		xF16 := make([]float16.Float16, total)
+		rF16 := make([]float16.Float16, total)
+		xBF16 := make([]bfloat16.BFloat16, total)
+		rBF16 := make([]bfloat16.BFloat16, total)
+		for i := range total {
+			xv := float32((i%41)-20) * 0.125
+			rv := float32(((i*7)%37)-18) * 0.125
+			xF16[i] = float16.FromFloat32(xv)
+			rF16[i] = float16.FromFloat32(rv)
+			xBF16[i] = bfloat16.FromFloat32(xv)
+			rBF16[i] = bfloat16.FromFloat32(rv)
+			xF32[i] = xF16[i].Float32()
+			rF32[i] = rF16[i].Float32()
+		}
+		gammaF32 := make([]float32, normSize)
+		betaF32 := make([]float32, normSize)
+		for i := range normSize {
+			gammaF32[i] = 0.5 + float32(i%9)*0.125
+			betaF32[i] = -0.25 + float32(i%5)*0.125
+		}
+		eps := 1e-5
+		wantF32 := make([]float32, total)
+		for r := range outerSize {
+			base := r * normSize
+			var sum float32
+			for i := range normSize {
+				sum += xF32[base+i] + rF32[base+i]
+			}
+			mean := sum / float32(normSize)
+			var varSum float32
+			for i := range normSize {
+				d := (xF32[base+i] + rF32[base+i]) - mean
+				varSum += d * d
+			}
+			invStd := float32(1.0 / math.Sqrt(float64(varSum/float32(normSize))+eps))
+			for i := range normSize {
+				val := ((xF32[base+i] + rF32[base+i]) - mean) * invStd
+				wantF32[base+i] = val*gammaF32[i] + betaF32[i]
+			}
+		}
+
+		// Test Float16 Add -> ConvertDType(Float32) -> FusedLayerNorm -> ConvertDType(Float16) fusion
+		shapeF16 := shapes.Make(dtypes.Float16, outerSize, normSize)
+		pShapeF32 := shapes.Make(dtypes.Float32, normSize)
+		builder := backend.Builder("F16FusedResidualLN")
+		mainFn := builder.Main()
+		xNode, _ := mainFn.Parameter("x", shapeF16, nil)
+		rNode, _ := mainFn.Parameter("r", shapeF16, nil)
+		gNode, _ := mainFn.Parameter("g", pShapeF32, nil)
+		bNode, _ := mainFn.Parameter("b", pShapeF32, nil)
+		sumNode, _ := mainFn.Add(xNode, rNode)
+		sumF32, _ := mainFn.ConvertDType(sumNode, dtypes.Float32)
+		lnF32, _ := mainFn.FusedLayerNorm(sumF32, []int{1}, eps, gNode, bNode)
+		outF16, _ := mainFn.ConvertDType(lnF32, dtypes.Float16)
+		_ = mainFn.Return([]compute.Value{outF16}, nil)
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile F16FusedResidualLN failed: %+v", err)
+		}
+		defer exec.Finalize()
+
+		xBuf, _ := backend.BufferFromFlatData(0, xF16, shapeF16)
+		rBuf, _ := backend.BufferFromFlatData(0, rF16, shapeF16)
+		gBuf, _ := backend.BufferFromFlatData(0, gammaF32, pShapeF32)
+		bBuf, _ := backend.BufferFromFlatData(0, betaF32, pShapeF32)
+		outs, err := exec.Execute([]compute.Buffer{xBuf, rBuf, gBuf, bBuf}, nil, 0)
+		if err != nil {
+			t.Fatalf("Execute F16FusedResidualLN failed: %+v", err)
+		}
+		gotF16 := outs[0].(*gobackend.Buffer).Flat.([]float16.Float16)
+		gotF32 := make([]float32, total)
+		for i, v := range gotF16 {
+			gotF32[i] = v.Float32()
+		}
+		if ok, diff := testutil.IsInDelta(wantF32, gotF32, 5e-3); !ok {
+			t.Errorf("F16FusedResidualLN mismatch:\n%s", diff)
+		}
+
+		// Test BFloat16 Add -> ConvertDType(Float32) -> FusedLayerNorm -> ConvertDType(BFloat16) fusion
+		shapeBF16 := shapes.Make(dtypes.BFloat16, outerSize, normSize)
+		builderBF := backend.Builder("BF16FusedResidualLN")
+		mainBF := builderBF.Main()
+		xNodeBF, _ := mainBF.Parameter("x", shapeBF16, nil)
+		rNodeBF, _ := mainBF.Parameter("r", shapeBF16, nil)
+		gNodeBF, _ := mainBF.Parameter("g", pShapeF32, nil)
+		bNodeBF, _ := mainBF.Parameter("b", pShapeF32, nil)
+		sumNodeBF, _ := mainBF.Add(xNodeBF, rNodeBF)
+		sumBF32, _ := mainBF.ConvertDType(sumNodeBF, dtypes.Float32)
+		lnBF32, _ := mainBF.FusedLayerNorm(sumBF32, []int{1}, eps, gNodeBF, bNodeBF)
+		outBF16, _ := mainBF.ConvertDType(lnBF32, dtypes.BFloat16)
+		_ = mainBF.Return([]compute.Value{outBF16}, nil)
+		execBF, err := builderBF.Compile()
+		if err != nil {
+			t.Fatalf("Compile BF16FusedResidualLN failed: %+v", err)
+		}
+		defer execBF.Finalize()
+
+		xBufBF, _ := backend.BufferFromFlatData(0, xBF16, shapeBF16)
+		rBufBF, _ := backend.BufferFromFlatData(0, rBF16, shapeBF16)
+		gBufBF, _ := backend.BufferFromFlatData(0, gammaF32, pShapeF32)
+		bBufBF, _ := backend.BufferFromFlatData(0, betaF32, pShapeF32)
+		outsBF, err := execBF.Execute([]compute.Buffer{xBufBF, rBufBF, gBufBF, bBufBF}, nil, 0)
+		if err != nil {
+			t.Fatalf("Execute BF16FusedResidualLN failed: %+v", err)
+		}
+		gotBF16 := outsBF[0].(*gobackend.Buffer).Flat.([]bfloat16.BFloat16)
+		for i, v := range gotBF16 {
+			gotF32[i] = v.Float32()
+		}
+		if ok, diff := testutil.IsInDelta(wantF32, gotF32, 2e-2); !ok {
+			t.Errorf("BF16FusedResidualLN mismatch:\n%s", diff)
 		}
 	})
 }

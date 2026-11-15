@@ -3685,30 +3685,46 @@ func tryBinaryMidArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, o
 		return false
 	}
 	dtype := lhs.RawShape.DType
-	if dtype != dtypes.Float32 {
+	if dtype != dtypes.Float32 && dtype != dtypes.Float16 && dtype != dtypes.BFloat16 {
 		return false
 	}
-	const elemBytes = 4
+	elemBytes := dtype.Size()
 	total := output.RawShape.Size()
 	if total <= 0 {
 		return false
 	}
 	canParallelize := total >= minBinarySIMDParallelElements &&
-		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled()
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		!backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1
 
 	switch bcastCfg.Pattern {
 	case gobackend.BroadcastNone:
 		if canParallelize {
-			backend.Scheduler.ParallelizeChunks(total, binarySIMDChunkElements, func(start, end int) {
-				var localLhs, localRhs, localOut gobackend.Buffer
-				localLhs.Flat = lhs.Flat
-				localRhs.Flat = rhs.Flat
-				localOut.Flat = output.Flat
-				localLhs.RawBytes = lhs.RawBytes[start*elemBytes : end*elemBytes]
-				localRhs.RawBytes = rhs.RawBytes[start*elemBytes : end*elemBytes]
-				localOut.RawBytes = output.RawBytes[start*elemBytes : end*elemBytes]
-				midFn(op, false, &localLhs, &localRhs, &localOut, 1, 1, end-start, dtype)
-			})
+			firstEnd := min(total, binarySIMDChunkElements)
+			var firstLhs, firstRhs, firstOut gobackend.Buffer
+			firstLhs.Flat = lhs.Flat
+			firstRhs.Flat = rhs.Flat
+			firstOut.Flat = output.Flat
+			firstLhs.RawBytes = lhs.RawBytes[:firstEnd*elemBytes]
+			firstRhs.RawBytes = rhs.RawBytes[:firstEnd*elemBytes]
+			firstOut.RawBytes = output.RawBytes[:firstEnd*elemBytes]
+			if !midFn(op, false, &firstLhs, &firstRhs, &firstOut, 1, 1, firstEnd, dtype) {
+				return false
+			}
+			if firstEnd < total {
+				backend.Scheduler.ParallelizeChunks(total-firstEnd, binarySIMDChunkElements, func(start, end int) {
+					s := firstEnd + start
+					e := firstEnd + end
+					var localLhs, localRhs, localOut gobackend.Buffer
+					localLhs.Flat = lhs.Flat
+					localRhs.Flat = rhs.Flat
+					localOut.Flat = output.Flat
+					localLhs.RawBytes = lhs.RawBytes[s*elemBytes : e*elemBytes]
+					localRhs.RawBytes = rhs.RawBytes[s*elemBytes : e*elemBytes]
+					localOut.RawBytes = output.RawBytes[s*elemBytes : e*elemBytes]
+					midFn(op, false, &localLhs, &localRhs, &localOut, 1, 1, e-s, dtype)
+				})
+			}
 			return true
 		}
 		return midFn(op, false, lhs, rhs, output, 1, 1, total, dtype)
@@ -3719,21 +3735,41 @@ func tryBinaryMidArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, o
 		rowBytes := B * elemBytes
 		if canParallelize && A > 1 {
 			minA := max(1, binarySIMDChunkElements/max(1, B))
-			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
-				var localLhs, localRhs, localOut gobackend.Buffer
-				localLhs.Flat = lhs.Flat
-				localRhs.Flat = rhs.Flat
-				localOut.Flat = output.Flat
-				if isLHS {
-					localLhs.RawBytes = lhs.RawBytes[:rowBytes]
-					localRhs.RawBytes = rhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
-				} else {
-					localLhs.RawBytes = lhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
-					localRhs.RawBytes = rhs.RawBytes[:rowBytes]
-				}
-				localOut.RawBytes = output.RawBytes[aStart*rowBytes : aEnd*rowBytes]
-				midFn(op, isLHS, &localLhs, &localRhs, &localOut, 1, aEnd-aStart, B, dtype)
-			})
+			firstEnd := min(A, minA)
+			var firstLhs, firstRhs, firstOut gobackend.Buffer
+			firstLhs.Flat = lhs.Flat
+			firstRhs.Flat = rhs.Flat
+			firstOut.Flat = output.Flat
+			if isLHS {
+				firstLhs.RawBytes = lhs.RawBytes[:rowBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:firstEnd*rowBytes]
+			} else {
+				firstLhs.RawBytes = lhs.RawBytes[:firstEnd*rowBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:rowBytes]
+			}
+			firstOut.RawBytes = output.RawBytes[:firstEnd*rowBytes]
+			if !midFn(op, isLHS, &firstLhs, &firstRhs, &firstOut, 1, firstEnd, B, dtype) {
+				return false
+			}
+			if firstEnd < A {
+				backend.Scheduler.ParallelizeChunks(A-firstEnd, minA, func(start, end int) {
+					aStart := firstEnd + start
+					aEnd := firstEnd + end
+					var localLhs, localRhs, localOut gobackend.Buffer
+					localLhs.Flat = lhs.Flat
+					localRhs.Flat = rhs.Flat
+					localOut.Flat = output.Flat
+					if isLHS {
+						localLhs.RawBytes = lhs.RawBytes[:rowBytes]
+						localRhs.RawBytes = rhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+					} else {
+						localLhs.RawBytes = lhs.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+						localRhs.RawBytes = rhs.RawBytes[:rowBytes]
+					}
+					localOut.RawBytes = output.RawBytes[aStart*rowBytes : aEnd*rowBytes]
+					midFn(op, isLHS, &localLhs, &localRhs, &localOut, 1, aEnd-aStart, B, dtype)
+				})
+			}
 			return true
 		}
 		return midFn(op, isLHS, lhs, rhs, output, 1, A, B, dtype)
@@ -3745,21 +3781,41 @@ func tryBinaryMidArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, o
 		cBytes := C * elemBytes
 		if canParallelize && A > 1 {
 			minA := max(1, binarySIMDChunkElements/max(1, B*C))
-			backend.Scheduler.ParallelizeChunks(A, minA, func(aStart, aEnd int) {
-				var localLhs, localRhs, localOut gobackend.Buffer
-				localLhs.Flat = lhs.Flat
-				localRhs.Flat = rhs.Flat
-				localOut.Flat = output.Flat
-				if isLHS {
-					localLhs.RawBytes = lhs.RawBytes[aStart*cBytes : aEnd*cBytes]
-					localRhs.RawBytes = rhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
-				} else {
-					localLhs.RawBytes = lhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
-					localRhs.RawBytes = rhs.RawBytes[aStart*cBytes : aEnd*cBytes]
-				}
-				localOut.RawBytes = output.RawBytes[aStart*bcBytes : aEnd*bcBytes]
-				midFn(op, isLHS, &localLhs, &localRhs, &localOut, aEnd-aStart, B, C, dtype)
-			})
+			firstEnd := min(A, minA)
+			var firstLhs, firstRhs, firstOut gobackend.Buffer
+			firstLhs.Flat = lhs.Flat
+			firstRhs.Flat = rhs.Flat
+			firstOut.Flat = output.Flat
+			if isLHS {
+				firstLhs.RawBytes = lhs.RawBytes[:firstEnd*cBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:firstEnd*bcBytes]
+			} else {
+				firstLhs.RawBytes = lhs.RawBytes[:firstEnd*bcBytes]
+				firstRhs.RawBytes = rhs.RawBytes[:firstEnd*cBytes]
+			}
+			firstOut.RawBytes = output.RawBytes[:firstEnd*bcBytes]
+			if !midFn(op, isLHS, &firstLhs, &firstRhs, &firstOut, firstEnd, B, C, dtype) {
+				return false
+			}
+			if firstEnd < A {
+				backend.Scheduler.ParallelizeChunks(A-firstEnd, minA, func(start, end int) {
+					aStart := firstEnd + start
+					aEnd := firstEnd + end
+					var localLhs, localRhs, localOut gobackend.Buffer
+					localLhs.Flat = lhs.Flat
+					localRhs.Flat = rhs.Flat
+					localOut.Flat = output.Flat
+					if isLHS {
+						localLhs.RawBytes = lhs.RawBytes[aStart*cBytes : aEnd*cBytes]
+						localRhs.RawBytes = rhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+					} else {
+						localLhs.RawBytes = lhs.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+						localRhs.RawBytes = rhs.RawBytes[aStart*cBytes : aEnd*cBytes]
+					}
+					localOut.RawBytes = output.RawBytes[aStart*bcBytes : aEnd*bcBytes]
+					midFn(op, isLHS, &localLhs, &localRhs, &localOut, aEnd-aStart, B, C, dtype)
+				})
+			}
 			return true
 		}
 		return midFn(op, isLHS, lhs, rhs, output, A, B, C, dtype)
@@ -3981,7 +4037,8 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(backend, compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeMax, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeMax, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 
@@ -4031,7 +4088,8 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
-	if tryBinaryTrailingArch(backend, compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
+	if tryBinaryTrailingArch(backend, compute.OpTypeMin, lhs, rhs, output, bcastCfg) ||
+		tryBinaryMidArch(backend, compute.OpTypeMin, lhs, rhs, output, bcastCfg) {
 		return output, nil
 	}
 

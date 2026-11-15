@@ -1656,7 +1656,7 @@ func neonLargeMatrixSliceFloat32( //alt:f32
 
 		rhsNextColIdx := rhsPanelColIdx + rhsPanelWidth
 		colsSinceAcquire += rhsPanelWidth
-		if manageSME && smeCluster >= 0 && (rhsNextColIdx >= colEnd || colsSinceAcquire >= 512 || hasHeavyEpilogue) {
+		if manageSME && smeCluster >= 0 && (rhsNextColIdx >= colEnd || colsSinceAcquire >= 256 || hasHeavyEpilogue) {
 			smeReleaseCluster(smeCluster)
 			smeCluster = -1
 			useSME = false

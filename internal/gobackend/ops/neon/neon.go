@@ -51,6 +51,15 @@ func registerNEON() {
 		}
 		return DispatchBinaryTrailingNEON(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, dtype)
 	})
+	gobackend.SetBinaryMidArchDispatcher(gobackend.PriorityNEON, func(op compute.OpType, isLHS bool, lhs, rhs, output *gobackend.Buffer, A, B, C int, dtype dtypes.DType) bool {
+		lhsPtr := lhs.UnsafePointer()
+		rhsPtr := rhs.UnsafePointer()
+		outPtr := output.UnsafePointer()
+		if lhsPtr == nil || rhsPtr == nil || outPtr == nil {
+			return false
+		}
+		return DispatchBinaryMidNEON(op, isLHS, lhsPtr, rhsPtr, outPtr, A, B, C, dtype)
+	})
 	gobackend.SetStridedCopyArchDispatcher(
 		gobackend.PriorityNEON,
 		DispatchCopyStridedBytesNEON,
