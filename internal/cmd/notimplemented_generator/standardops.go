@@ -25,7 +25,7 @@ const (
 var (
 	// methodsNotGenerated because they are maintained manually.
 	methodsNotGenerated = sets.MakeWith(
-		"Constant", "Parameter", "Identity", "ReduceWindow",
+		"Constant", "ConstantFromBuffer", "Parameter", "Identity", "ReduceWindow",
 		"BatchNormForInference", "BatchNormForTraining", "BatchNormGradient",
 		"And", "Or", "Xor", "Not", "ReduceAnd", "ReduceOr", "ReduceXor", "ScatterAdd",
 		"AllReduce",                   // Output is not standard

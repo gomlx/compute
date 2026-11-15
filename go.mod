@@ -1,6 +1,6 @@
 module github.com/gomlx/compute
 
-go 1.27
+go 1.26.0
 
 require (
 	github.com/google/go-cmp v0.7.0
