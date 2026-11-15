@@ -89,15 +89,19 @@ func avx2Float32ToBFloat16Slice(dst []bfloat16.BFloat16, src []float32) {
 		bits1 := archsimd.LoadFloat32x8(src[i+8:]).ToBits()
 		bias0 := c7FFF.Add(bits0.ShiftAllRight(16).And(c1))
 		bias1 := c7FFF.Add(bits1.ShiftAllRight(16).And(c1))
-		packed0 := bits0.Add(bias0).ShiftAllRight(16).TruncToUint16()
-		packed1 := bits1.Add(bias1).ShiftAllRight(16).TruncToUint16()
-		packed0.Store(dstU16[i:])
-		packed1.Store(dstU16[i+8:])
+		r0 := bits0.Add(bias0).ShiftAllRight(16).AsInt64x4()
+		r1 := bits1.Add(bias1).ShiftAllRight(16).AsInt64x4()
+		// VPERM2I128 + AVX2 VPACKUSDW: repack [0..3|4..7] & [8..11|12..15] -> [0..7 | 8..15].
+		lo := r0.ConcatPermute128Scalars(0, 2, r1).AsInt32x8()
+		hi := r0.ConcatPermute128Scalars(1, 3, r1).AsInt32x8()
+		packed := lo.SaturateToUint16ConcatGrouped(hi)
+		packed.Store(dstU16[i:])
 	}
 	if i+8 <= n {
 		bits := archsimd.LoadFloat32x8(src[i:]).ToBits()
 		bias := c7FFF.Add(bits.ShiftAllRight(16).And(c1))
-		packed := bits.Add(bias).ShiftAllRight(16).TruncToUint16()
+		r := bits.Add(bias).ShiftAllRight(16).AsInt32x8()
+		packed := r.GetLo().SaturateToUint16Concat(r.GetHi())
 		packed.Store(dstU16[i:])
 		i += 8
 	}
