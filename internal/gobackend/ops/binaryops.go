@@ -178,14 +178,34 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 // GetBroadcastConfig returns the BroadcastConfig for the binary node, either from its cached Data
 // or computed dynamically.
 func GetBroadcastConfig(node *gobackend.Node, lhs, rhs, output *gobackend.Buffer) gobackend.BroadcastConfig {
-	if node != nil && node.Data != nil {
-		if cfg, ok := node.Data.(*gobackend.BroadcastConfig); ok {
-			return *cfg
+	if lhs == nil || rhs == nil {
+		if node != nil && node.Data != nil {
+			if cfg, ok := node.Data.(*gobackend.BroadcastConfig); ok {
+				return *cfg
+			}
 		}
+		return gobackend.BroadcastConfig{Pattern: gobackend.BroadcastGeneral}
 	}
 	tgtShape := node.Shape
 	if output != nil {
 		tgtShape = output.RawShape
+	} else if tgtShape.IsDynamic() {
+		// The cached graph config was built from symbolic dimensions. Resolve its
+		// output dimensions from the concrete operands before classifying the
+		// runtime broadcast pattern.
+		tgtShape = tgtShape.Clone()
+		for axis, dim := range tgtShape.Dimensions {
+			if dim != shapes.DynamicDim {
+				continue
+			}
+			if axis < lhs.RawShape.Rank() {
+				dim = lhs.RawShape.Dimensions[axis]
+			}
+			if axis < rhs.RawShape.Rank() && (dim == 1 || dim == shapes.DynamicDim) {
+				dim = rhs.RawShape.Dimensions[axis]
+			}
+			tgtShape.Dimensions[axis] = dim
+		}
 	}
 	return gobackend.DetermineBroadcastConfig(lhs.RawShape, rhs.RawShape, tgtShape)
 }

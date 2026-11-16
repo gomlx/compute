@@ -163,25 +163,22 @@ func DynamicBroadcastInDim(operand shapes.Shape, broadcastAxes []int, specs []co
 		spec := specs[axisInOutput]
 
 		if inDim == shapes.DynamicDim {
-			if outDim != shapes.DynamicDim {
-				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must be preserved as dynamic in output",
-					axisInOperand, operand, axisInOperand, axisInOutput)
-			}
-			nameOperand := operand.AxisName(axisInOperand)
-			nameOutput := axisNames[axisInOutput]
-			if !shapes.AxisNamesCompatible(nameOperand, nameOutput) {
-				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve or unify its axis name %q, got %q",
-					axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, nameOutput)
-			}
-			if nameOutput != nameOperand && spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(nameOutput)) {
-				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", nameOutput)
+			if outDim == shapes.DynamicDim {
+				nameOperand := operand.AxisName(axisInOperand)
+				nameOutput := axisNames[axisInOutput]
+				if !shapes.AxisNamesCompatible(nameOperand, nameOutput) {
+					return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: dynamic axis %d in operand shape %s mapped to broadcastAxes[%d]=%d must preserve or unify its axis name %q, got %q",
+						axisInOperand, operand, axisInOperand, axisInOutput, nameOperand, nameOutput)
+				}
+				if nameOutput != nameOperand && spec.Value == nil && (knownDynamicAxisNames == nil || !knownDynamicAxisNames.Has(nameOutput)) {
+					return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot introduce unknown dynamic axis name %q without a dynamic Value or known axis name", nameOutput)
+				}
 			}
 		} else if inDim != 1 {
-			if outDim == shapes.DynamicDim {
-				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: cannot broadcast static dimension %d (> 1) at operand axis %d to dynamic output dimension",
-					inDim, axisInOperand)
-			}
-			if inDim != outDim {
+			// A dynamic output axis may still resolve to this static input size at
+			// runtime. Keep the output axis dynamic and let the backend's broadcast
+			// operation validate the concrete sizes when the graph executes.
+			if outDim != shapes.DynamicDim && inDim != outDim {
 				return shapes.Invalid(), errors.Errorf("DynamicBroadcastInDim: broadcast dimension mismatch: operand axis %d has size %d, but output axis %d has size %d",
 					axisInOperand, inDim, axisInOutput, outDim)
 			}
@@ -359,4 +356,3 @@ func DynamicPad(operand shapes.Shape, axesConfig ...compute.DynamicPadAxis) (out
 	}
 	return output, nil
 }
-
