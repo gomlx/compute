@@ -45,6 +45,9 @@ var (
 // execShiftLeft executes lhs << rhs for integer types.
 func execShiftLeft(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
+	if backend.NoOps || output.RawShape.Size() == 0 {
+		return output, nil
+	}
 	dtype := lhs.RawShape.DType
 	fnAny, err := shiftLeftDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {
@@ -58,6 +61,9 @@ func execShiftLeft(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 // execShiftRightArithmetic executes arithmetic right shift (preserves sign bit for signed types).
 func execShiftRightArithmetic(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
+	if backend.NoOps || output.RawShape.Size() == 0 {
+		return output, nil
+	}
 	dtype := lhs.RawShape.DType
 	fnAny, err := shiftRightArithmeticDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {
@@ -72,6 +78,9 @@ func execShiftRightArithmetic(backend *gobackend.Backend, node *gobackend.Node, 
 // For signed types, we reinterpret as unsigned, shift, then reinterpret back.
 func execShiftRightLogical(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
+	if backend.NoOps || output.RawShape.Size() == 0 {
+		return output, nil
+	}
 	dtype := lhs.RawShape.DType
 	fnAny, err := shiftRightLogicalDTypeMap.Get(dtype) //nolint:errcheck
 	if err != nil {

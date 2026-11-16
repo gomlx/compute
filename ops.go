@@ -124,6 +124,24 @@ type CumSumOptions struct {
 }
 
 // StandardOps lists the bulk of the operations that a backends.Builder must support.
+//
+// # Standard Implicit Broadcasting Rules
+//
+// Element-wise binary operations (such as Add, Sub, Mul, Div, comparisons, logical/bitwise ops, and shifts)
+// and Where follow strict compile-time implicit broadcasting rules:
+//   - Scalar operands (rank 0) are implicitly broadcast to the shape of the other operand(s).
+//   - Non-scalar operands must have the exact same rank (use Reshape / DynamicReshape or BroadcastInDim /
+//     DynamicBroadcastInDim to insert size-1 axes when ranks differ).
+//   - For each axis, operand dimensions must either match or be statically 1. A static dimension of 1 is
+//     broadcast (replicated N times) to the other operand's dimension N — including N == 0, which yields
+//     an empty axis of size 0 (whereas a non-1 dimension such as 0 cannot be broadcast to N > 0).
+//   - Dynamic shapes: Whether an axis broadcasts is strictly a compile-time property. A static dimension of 1
+//     implicitly broadcasts to a dynamic dimension, and two compatible dynamic dimensions (matching user axis
+//     names, or '#'-prefixed generated axis names verified equal at runtime) pair element-wise without
+//     broadcasting. However, an unknown/dynamic dimension will fail to implicitly broadcast with a non-1
+//     static dimension (e.g., pairing ["batch", "#features"] with ["batch", 12] fails at graph-build time);
+//     callers can explicitly assert equality by reshaping the dynamic operand's axis to the known static value
+//     via DynamicReshape (or explicitly request runtime 1-or-match broadcasting via DynamicBroadcastInDim).
 type StandardOps interface {
 
 	// Abs returns the Op that represents the output of the corresponding operation.
@@ -870,9 +888,11 @@ type StandardOps interface {
 	//
 	// Standard implicit broadcasting rules apply across all three operands:
 	// - Scalar operands are implicitly broadcast to the shape of the other operands.
-	// - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be 1.
-	//   Dimension 1 is broadcast to the larger dimension.
-	// - The resulting shape has dimension max(dim_condition, dim_onTrue, dim_onFalse) on each axis, and the dtype of onTrue/onFalse.
+	// - Non-scalar operands must have the same rank, and for each axis, their dimensions must either match or be
+	//   statically 1. A static dimension of 1 broadcasts to the other non-1 dimension (including 0, yielding an empty
+	//   axis of size 0).
+	// - Unknown/dynamic dimensions cannot be implicitly paired with a non-1 static dimension; reshape the dynamic
+	//   operand via DynamicReshape (to assert the static dimension) or broadcast via DynamicBroadcastInDim where needed.
 	Where(condition, onTrue, onFalse Value) (Value, error)
 
 	// OptimizationBarrier introduces an optimization barrier.

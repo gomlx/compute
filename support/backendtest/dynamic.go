@@ -1633,6 +1633,269 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 		})
 	})
 
+	t.Run("DynamicBinaryZeroAndRuntimeBroadcastInDim", func(t *testing.T) {
+		testutil.SkipIfMissingDynamicShapes(t, b)
+		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
+		testutil.SkipIfMissing(t, b, compute.OpTypeConstant)
+		testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
+		testutil.SkipIfMissing(t, b, compute.OpTypeSub)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+
+		t.Run("Static1BroadcastToDynamicZeroAndNonZero", func(t *testing.T) {
+			// Same compiled executable transitions cleanly between non-empty (batch=3, 1) and empty (batch=0)
+			// when broadcasting static [1, 4] against dynamic ["batch", 4].
+			builder := b.Builder("dyn_binary_static1_to_zero")
+			fn := builder.Main()
+			x, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{"batch", ""}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bias, err := fn.Constant([]float32{10, 20, 30, 40}, 1, 4)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum1, err := fn.Add(bias, x)
+			if err != nil {
+				t.Fatal(err)
+			}
+			diff1, err := fn.Sub(bias, x)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fn.Return([]compute.Value{sum1, diff1}, nil); err != nil {
+				t.Fatal(err)
+			}
+			ex, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ex.Finalize()
+
+			for _, batch := range []int{2, 0, 1, 0, 3} {
+				inData := make([]float32, batch*4)
+				for i := range inData {
+					inData[i] = float32(i + 1)
+				}
+				inBuf, err := b.BufferFromFlatData(0, inData, shapes.Make(dtypes.Float32, batch, 4))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outs, err := ex.Execute([]compute.Buffer{inBuf}, nil, 0)
+				inBuf.Finalize()
+				if err != nil {
+					t.Fatalf("Execute(batch=%d) failed: %+v", batch, err)
+				}
+				wantShape := shapes.Make(dtypes.Float32, batch, 4)
+				for outIdx, outBuf := range outs {
+					sh, err := outBuf.Shape()
+					if err != nil {
+						outBuf.Finalize()
+						t.Fatal(err)
+					}
+					if !sh.Equal(wantShape) {
+						outBuf.Finalize()
+						t.Fatalf("batch=%d out[%d]: got shape %s, want %s", batch, outIdx, sh, wantShape)
+					}
+				}
+				if batch > 0 {
+					gotSum := make([]float32, batch*4)
+					if err := outs[0].ToFlatData(gotSum); err != nil {
+						t.Fatal(err)
+					}
+					biases := []float32{10, 20, 30, 40}
+					for i := range gotSum {
+						want := biases[i%4] + float32(i+1)
+						if gotSum[i] != want {
+							t.Fatalf("batch=%d sum[%d] = %v, want %v", batch, i, gotSum[i], want)
+						}
+					}
+				}
+				outs[0].Finalize()
+				outs[1].Finalize()
+			}
+		})
+
+		t.Run("DynamicAxisPairedWithStaticZero", func(t *testing.T) {
+			// Add(["batch", 1], [1, 0]) -> ["batch", 0] propagates concrete batch size with 0 elements.
+			builder := b.Builder("dyn_axis_with_static_zero")
+			fn := builder.Main()
+			x, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 1}, []string{"batch", ""}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			empty, err := fn.Constant([]float32{}, 1, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := fn.Add(x, empty)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatal(err)
+			}
+			ex, err := builder.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ex.Finalize()
+
+			for _, batch := range []int{5, 0, 2} {
+				inBuf, err := b.BufferFromFlatData(0, make([]float32, batch), shapes.Make(dtypes.Float32, batch, 1))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outs, err := ex.Execute([]compute.Buffer{inBuf}, nil, 0)
+				inBuf.Finalize()
+				if err != nil {
+					t.Fatalf("Execute(batch=%d) failed: %+v", batch, err)
+				}
+				sh, _ := outs[0].Shape()
+				outs[0].Finalize()
+				wantShape := shapes.Make(dtypes.Float32, batch, 0)
+				if !sh.Equal(wantShape) {
+					t.Fatalf("batch=%d: got shape %s, want %s", batch, sh, wantShape)
+				}
+			}
+		})
+
+		t.Run("DynamicBroadcastInDim_StaticNarrowingAndRuntime1Broadcast", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeDynamicBroadcastInDim)
+			testutil.SkipIfMissingDType(t, b, dtypes.Int64)
+
+			// Case 1: Static [1, 4] broadcast to runtime [d0, d1] narrows axis 1 to static 4 and validates d1 == 4 at runtime.
+			{
+				builder := b.Builder("dyn_bcast_narrow_static")
+				fn := builder.Main()
+				d0, err := fn.Parameter("d0", shapes.Make(dtypes.Int64), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				d1, err := fn.Parameter("d1", shapes.Make(dtypes.Int64), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				c, err := fn.Constant([]float32{1, 2, 3, 4}, 1, 4)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bcast, err := fn.DynamicBroadcastInDim(c, []int{0, 1},
+					compute.DynamicDimensionSpec{Name: shapes.UniqueAxisName("d0"), Value: d0},
+					compute.DynamicDimensionSpec{Name: shapes.UniqueAxisName("d1"), Value: d1},
+				)
+				if err != nil {
+					t.Fatalf("DynamicBroadcastInDim([1, 4] -> [d0, d1]) build failed: %+v", err)
+				}
+				inferred, err := fn.Shape(bcast)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if inferred.Dimensions[0] != shapes.DynamicDim || inferred.Dimensions[1] != 4 {
+					t.Fatalf("expected inferred shape [-1, 4], got %s", inferred)
+				}
+				if err := fn.Return([]compute.Value{bcast}, nil); err != nil {
+					t.Fatal(err)
+				}
+				ex, err := builder.Compile()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer ex.Finalize()
+
+				for _, rows := range []int64{3, 0, 1} {
+					bD0, _ := b.BufferFromFlatData(0, []int64{rows}, shapes.Make(dtypes.Int64))
+					bD1, _ := b.BufferFromFlatData(0, []int64{4}, shapes.Make(dtypes.Int64))
+					outs, err := ex.Execute([]compute.Buffer{bD0, bD1}, nil, 0)
+					bD0.Finalize()
+					bD1.Finalize()
+					if err != nil {
+						t.Fatalf("Execute(d0=%d, d1=4) failed: %+v", rows, err)
+					}
+					sh, _ := outs[0].Shape()
+					outs[0].Finalize()
+					if !sh.Equal(shapes.Make(dtypes.Float32, int(rows), 4)) {
+						t.Fatalf("d0=%d: got shape %s, want [%d, 4]", rows, sh, rows)
+					}
+				}
+
+				// Runtime mismatch d1=5 != 4 must error.
+				bD0, _ := b.BufferFromFlatData(0, []int64{2}, shapes.Make(dtypes.Int64))
+				bD1Bad, _ := b.BufferFromFlatData(0, []int64{5}, shapes.Make(dtypes.Int64))
+				_, err = ex.Execute([]compute.Buffer{bD0, bD1Bad}, nil, 0)
+				bD0.Finalize()
+				bD1Bad.Finalize()
+				if err == nil {
+					t.Fatal("expected runtime error when d1=5 does not match static axis size 4")
+				}
+			}
+
+			// Case 2: Dynamic [#n, 4] broadcast to static [3, 4] succeeds for #n=1 and #n=3, and errors for #n=2 or #n=0.
+			{
+				builder := b.Builder("dyn_bcast_dyn_to_static")
+				fn := builder.Main()
+				x, err := fn.Parameter("x", shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{shapes.UniqueAxisName("n"), ""}), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bcast, err := fn.DynamicBroadcastInDim(x, []int{0, 1},
+					compute.DynamicDimensionSpec{Static: 3},
+					compute.DynamicDimensionSpec{Static: 4},
+				)
+				if err != nil {
+					t.Fatalf("DynamicBroadcastInDim([#n, 4] -> [3, 4]) build failed: %+v", err)
+				}
+				inferred, _ := fn.Shape(bcast)
+				if inferred.IsDynamic() || !inferred.Equal(shapes.Make(dtypes.Float32, 3, 4)) {
+					t.Fatalf("expected static inferred shape [3, 4], got %s", inferred)
+				}
+				if err := fn.Return([]compute.Value{bcast}, nil); err != nil {
+					t.Fatal(err)
+				}
+				ex, err := builder.Compile()
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer ex.Finalize()
+
+				// #n = 1 -> broadcasts to [3, 4].
+				b1, _ := b.BufferFromFlatData(0, []float32{1, 2, 3, 4}, shapes.Make(dtypes.Float32, 1, 4))
+				outs1, err := ex.Execute([]compute.Buffer{b1}, nil, 0)
+				b1.Finalize()
+				if err != nil {
+					t.Fatalf("Execute(#n=1 -> [3,4]) failed: %+v", err)
+				}
+				got1, _ := testutil.FromBuffer(b, outs1[0])
+				outs1[0].Finalize()
+				want1 := [][]float32{{1, 2, 3, 4}, {1, 2, 3, 4}, {1, 2, 3, 4}}
+				if ok, diff := testutil.IsEqual(want1, got1); !ok {
+					t.Fatalf("#n=1 broadcast mismatch:\n%s", diff)
+				}
+
+				// #n = 3 -> preserves [3, 4].
+				b3, _ := b.BufferFromFlatData(0, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, shapes.Make(dtypes.Float32, 3, 4))
+				outs3, err := ex.Execute([]compute.Buffer{b3}, nil, 0)
+				b3.Finalize()
+				if err != nil {
+					t.Fatalf("Execute(#n=3 -> [3,4]) failed: %+v", err)
+				}
+				got3, _ := testutil.FromBuffer(b, outs3[0])
+				outs3[0].Finalize()
+				want3 := [][]float32{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}
+				if ok, diff := testutil.IsEqual(want3, got3); !ok {
+					t.Fatalf("#n=3 broadcast mismatch:\n%s", diff)
+				}
+
+				// #n = 2 -> runtime error.
+				b2, _ := b.BufferFromFlatData(0, make([]float32, 8), shapes.Make(dtypes.Float32, 2, 4))
+				_, err = ex.Execute([]compute.Buffer{b2}, nil, 0)
+				b2.Finalize()
+				if err == nil {
+					t.Fatal("expected runtime error when #n=2 cannot broadcast to 3")
+				}
+			}
+		})
+	})
+
 	t.Run("DynamicRNGBitGenerator", func(t *testing.T) {
 		testutil.SkipIfMissingDynamicShapes(t, b)
 		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)

@@ -201,6 +201,72 @@ func TestDynamicBroadcastInDim(t *testing.T) {
 			t.Fatalf("expected error for non-increasing broadcastAxes")
 		}
 	})
+
+	t.Run("StaticNonUnitToDynamic_NarrowsToStatic", func(t *testing.T) {
+		operand := shapes.Make(dtypes.Float32, 1, 4)
+		specs := []compute.DynamicDimensionSpec{
+			{Name: shapes.UniqueAxisName("exp0"), Value: fakeVal},
+			{Name: shapes.UniqueAxisName("exp1"), Value: fakeVal},
+		}
+		got, err := DynamicBroadcastInDim(operand, []int{0, 1}, specs, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Dimensions[0] != shapes.DynamicDim || got.Dimensions[1] != 4 || got.AxisName(1) != "" {
+			t.Fatalf("expected [-1, 4] with cleared generated axis name on axis 1, got %s (axisNames=%v)", got, got.AxisNames)
+		}
+
+		// Static 0 on operand also narrows output axis to static 0 (fully static output when other axes are static).
+		zeroOp := shapes.Make(dtypes.Float32, 1, 0)
+		gotZero, err := DynamicBroadcastInDim(zeroOp, []int{0, 1}, []compute.DynamicDimensionSpec{
+			{Static: 3},
+			{Name: shapes.UniqueAxisName("exp1"), Value: fakeVal},
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error for static-0 narrowing: %v", err)
+		}
+		if gotZero.IsDynamic() || !gotZero.Equal(shapes.Make(dtypes.Float32, 3, 0)) {
+			t.Fatalf("expected static [3, 0], got %s", gotZero)
+		}
+	})
+
+	t.Run("DynamicOperandToStaticOrGeneratedTarget", func(t *testing.T) {
+		genIn := shapes.UniqueAxisName("in")
+		operand := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{genIn, ""})
+
+		// Dynamic input axis mapped to static target axis produces a static output shape.
+		gotStatic, err := DynamicBroadcastInDim(operand, []int{0, 1}, []compute.DynamicDimensionSpec{
+			{Static: 3},
+			{Static: 4},
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error mapping dynamic operand axis to static target: %v", err)
+		}
+		if gotStatic.IsDynamic() || !gotStatic.Equal(shapes.Make(dtypes.Float32, 3, 4)) {
+			t.Fatalf("expected static [3, 4], got %s (axisNames=%v)", gotStatic, gotStatic.AxisNames)
+		}
+
+		// Dynamic generated input axis mapped to a different dynamic target axis requires Value or known axis.
+		genOut := shapes.UniqueAxisName("out")
+		if _, err := DynamicBroadcastInDim(operand, []int{0, 1}, []compute.DynamicDimensionSpec{
+			{Name: genOut}, // missing Value and not in knownDynamicAxisNames
+			{Static: 4},
+		}, nil); err == nil {
+			t.Fatalf("expected error when mapping dynamic axis %q to unknown dynamic axis %q without Value", genIn, genOut)
+		}
+
+		gotDyn, err := DynamicBroadcastInDim(operand, []int{0, 1}, []compute.DynamicDimensionSpec{
+			{Name: "batch", Value: fakeVal},
+			{Static: 4},
+		}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error mapping generated axis to named dynamic Value: %v", err)
+		}
+		expectedDyn := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 4}, []string{"batch", ""})
+		if !gotDyn.Equal(expectedDyn) {
+			t.Fatalf("expected %s, got %s", expectedDyn, gotDyn)
+		}
+	})
 }
 
 func TestDynamicIota(t *testing.T) {

@@ -221,6 +221,12 @@ type Node struct {
 	// Data for the specific node type.
 	Data any
 
+	// IsZeroSizeShapeOnly marks a compile-time folded node whose output has IsZeroSize() == true
+	// (at least one axis is statically 0) alongside one or more dynamic axes. Its Inputs have been
+	// rewired directly to the defining source node(s) of those dynamic axes, and execution is a
+	// no-op that returns a pooled 0-byte Buffer carrying the resolved concrete output shape.
+	IsZeroSizeShapeOnly bool
+
 	// cachedExecutorIdx caches the 1-based index (idx + 1) of the winning executor
 	// in nodeExecutors[node.OpType] after the first successful execution.
 	// 0 means uninitialized / not cached.

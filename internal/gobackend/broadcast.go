@@ -285,17 +285,30 @@ func (c *BroadcastConfig) Recompute(backend *Backend, resolvedNodes []*Node, ori
 		if lhsShape.Rank() != rhsShape.Rank() {
 			return nil, errors.Errorf("BinaryOp (%s) rank mismatch at runtime: %s vs %s", originalNode.OpType, lhsShape, rhsShape)
 		}
+		origLhsShape := originalNode.Inputs[0].Shape
+		origRhsShape := originalNode.Inputs[1].Shape
 		outShape = originalNode.Shape.Clone()
 		for axis := range lhsShape.Rank() {
 			lDim := lhsShape.Dimensions[axis]
 			rDim := rhsShape.Dimensions[axis]
 			if lDim != shapes.DynamicDim && rDim != shapes.DynamicDim {
-				if lDim != 1 && rDim != 1 && lDim != rDim {
-					return nil, errors.Errorf(
-						"dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got concrete shapes %s and %s",
-						axis, originalNode.OpType, lhsShape, rhsShape)
+				origLhsDim := origLhsShape.Dimensions[axis]
+				origRhsDim := origRhsShape.Dimensions[axis]
+				switch {
+				case origLhsDim == 1:
+					outShape.Dimensions[axis] = rDim
+				case origRhsDim == 1:
+					outShape.Dimensions[axis] = lDim
+				default:
+					// Neither operand had a compile-time static dimension of 1 on this axis:
+					// concrete dimensions must match exactly at runtime (dynamic axes do not implicitly broadcast).
+					if lDim != rDim {
+						return nil, errors.Errorf(
+							"dimension of axis #%d doesn't match and cannot be broadcast for BinaryOp (%s), got concrete shapes %s and %s (compile-time shapes %s and %s)",
+							axis, originalNode.OpType, lhsShape, rhsShape, origLhsShape, origRhsShape)
+					}
+					outShape.Dimensions[axis] = lDim
 				}
-				outShape.Dimensions[axis] = max(lDim, rDim)
 			}
 		}
 	}

@@ -3824,19 +3824,14 @@ func tryBinaryMidArch(backend *gobackend.Backend, op compute.OpType, lhs, rhs, o
 }
 
 func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	// Avoid consuming/reusing an input before falling back: dynamic-shape graphs
-	// can produce zero-sized operands whose paired shape resolves non-empty.
-	if inputs[0].RawShape.Size() == 0 || inputs[1].RawShape.Size() == 0 {
-		return nil, gobackend.ErrFallback
-	}
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3888,11 +3883,11 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 }
 
 func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedAddSubDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3942,14 +3937,14 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 }
 
 func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3993,11 +3988,11 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 }
 
 func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedDivDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedDivDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -4031,14 +4026,14 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 }
 
 func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -4082,14 +4077,14 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 }
 
 func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
-	if !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
+	if !node.IsExecutorCached() && !canExecuteBinarySIMD(node, inputs[0], inputs[1], supportedMulMaxMinDTypes) {
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)

@@ -143,15 +143,6 @@ func (b AxisBindings) Extract(template, concrete Shape) error {
 					template, i)
 			}
 			if existing, ok := b[name]; ok && existing != concreteDim {
-				// Generated axes may be unified by broadcasting. A concrete size of 1
-				// broadcasts to the other size, including zero; retain the resulting
-				// non-unit size as the binding. Named user axes still require equality.
-				if IsGeneratedAxisName(name) && (existing == 1 || concreteDim == 1) {
-					if existing == 1 {
-						b[name] = concreteDim
-					}
-					continue
-				}
 				return errors.Errorf("ExtractBindings: axis %q has conflicting values: %d vs %d",
 					name, existing, concreteDim)
 			}

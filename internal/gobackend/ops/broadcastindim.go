@@ -63,7 +63,7 @@ func BroadcastInDim(
 	if err != nil {
 		return nil, err
 	}
-	if outputShape.IsDynamic() {
+	if outputShape.IsDynamic() && !outputShape.IsZeroSize() {
 		specs := make([]compute.DynamicDimensionSpec, outputShape.Rank())
 		for i, dim := range outputShape.Dimensions {
 			if dim == shapes.DynamicDim {
@@ -103,7 +103,7 @@ func DynamicBroadcastInDim(
 		if spec.Name != "" && spec.Value == nil {
 			mappedFromOperand := false
 			for operandAxis, outputAxis := range broadcastAxes {
-				if outputAxis == i && operand.Shape.Dimensions[operandAxis] != 1 && operand.Shape.AxisName(operandAxis) == spec.Name {
+				if outputAxis == i && operand.Shape.Dimensions[operandAxis] == shapes.DynamicDim && operand.Shape.AxisName(operandAxis) == spec.Name {
 					mappedFromOperand = true
 					break
 				}

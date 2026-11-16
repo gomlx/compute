@@ -79,6 +79,10 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		Dependents:        make([][]int, numNodesToProcess),
 	}
 
+	// Fold static zero-size ops into OpTypeConstant and rewire dynamic zero-size ops
+	// directly to their dynamic-axis defining nodes before counting uses/dependents (DCE).
+	foldZeroSizeNodes(f, numNodesToProcess)
+
 	// Find max inputs (the maximum number of inputs any single node has),
 	// including for captured inputs, and count uses/dependents
 	for nodeIdx := range numNodesToProcess {
@@ -944,10 +948,17 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	}
 
 	node = specializedNode
-	// Check for closure executor first (If, While, Sort).
-	// Closure executors receive captured inputs separately with explicit ownership tracking.
+	// Check for zero-size shape-dependency nodes and closure executors first.
 	closureExecutor := NodeClosureExecutors[node.OpType]
 	switch {
+	case node.IsZeroSizeShapeOnly:
+		result, err := backend.GetBuffer(node.Shape)
+		if err != nil {
+			return err
+		}
+		execBuf.results[nodeIdx] = result
+		execBuf.owned[nodeIdx] = true
+
 	case closureExecutor != nil:
 		// Build []ClosureInputs from node.capturedInputs (already grouped per closure).
 		closureInputs := make([]ClosureInputs, len(node.CapturedInputs))
