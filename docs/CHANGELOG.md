@@ -1,4 +1,16 @@
-- Next:
+- 2026-11-16:
+  - Fixed zero-dimension (`1 -> 0`) implicit broadcasting, clarified dynamic broadcasting rules, added `DynamicBroadcastInDim` static narrowing and runtime `1`-broadcasting, and added zero-size dead-code elimination (`#83`):
+    - **Implicit Broadcasting & `1 -> 0` Fix (`ops.go`, `shapeinference/shapeinference.go`, `internal/gobackend/broadcast.go`, `internal/gobackend/ops/...`)**:
+      - Fixed `max(lhsDim, rhsDim)` (`max(1, 0) == 1`) bug in `shapeinference.BinaryOp` and `gobackend.BroadcastConfig.Recompute` so broadcasting a static unit dimension (`1`) with `0` correctly yields `0` (empty tensor) instead of `1`.
+      - Documented and enforced strict compile-time implicit broadcasting rules: dynamic dimensions do not implicitly broadcast with non-`1` static dimensions at build time (callers must explicitly assert the static dimension via `DynamicReshape` or request runtime broadcasting via `DynamicBroadcastInDim`) and do not implicitly broadcast when a dynamic dimension happens to evaluate to `1` at runtime (`BroadcastConfig.Recompute`, `execWhere`).
+      - Added early `Size() == 0` no-op guards in `gobackend` binary, SIMD binary, shift, and `Where` executors while preserving cached `node.Data` (`*BroadcastConfig`) and `IsExecutorCached()` fast paths for static shapes.
+    - **`DynamicBroadcastInDim` Runtime `1`-or-Match & Static Narrowing (`ops_dynamic.go`, `shapeinference/dynamic.go`, `internal/gobackend/ops/broadcastindim.go`)**:
+      - Allowed mapping a dynamic operand axis to a static target dimension (`>= 0`) or a compatible dynamic target dimension (with a `Value` or known axis binding), validating `concreteInDim == 1 || concreteInDim == concreteOutDim` at runtime.
+      - Allowed mapping a non-`1` static operand axis (`0` or `>= 2`) to a dynamic target dimension, narrowing the inferred output axis to that static value (the only valid runtime outcome) while preserving runtime validation of the dynamic target spec.
+    - **Zero-Size Compile-Time Folding, Shape-Dependency Rewiring & Zero-Alloc Empty Buffer Pooling (`internal/gobackend/{zero_size,executable,buffers,builder,function,specialization}.go`)**:
+      - Added `foldZeroSizeNodes` during `FunctionExecutable` compilation: static `IsZeroSize()` nodes without pending runtime validation fold into leaf `OpTypeConstant` nodes (`Inputs = nil`), and dynamic `IsZeroSize()` nodes (e.g. `Float32["batch", 0]` or symbolic `"=batch+2"`) become no-op `IsZeroSizeShapeOnly` nodes rewired directly to the earliest defining node(s) in `dynamicAxisSources`, allowing unused upstream compute subgraphs to be dead-code-eliminated.
+      - Pooled 0-byte `Buffer` headers in bucket `0` of `Backend.GetBuffer` / `PutBuffer` (`0 B/op, 0 allocs/op`).
+    - Added compliance and unit tests in `support/backendtest/{binary,dynamic}.go`, `shapeinference/{shapeinference,dynamic}_test.go`, and `internal/gobackend/zero_size_test.go`.
   - Updated `FusedTopK/DTypes` in `support/backendtest/data_dependent.go` to add an exact `Uint64_40bit` (`1 << 40`) test case and allow a 1-ULP value tolerance on the 63-bit `Uint64` (`(1 << 63) - 1`) test case for GPU backends (such as Apple `MPSGraph` on macOS 26) that convert 64-bit integer values through floating-point during `topK`/`gatherAlongAxis` while keeping `indices` exact.
 
 - 2026-11-15:

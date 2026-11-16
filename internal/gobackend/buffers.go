@@ -334,11 +334,8 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 	length := shape.Size()
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	bucketedSize := support.TwoBitBucketLen(requestedSizeInBytes)
-	var buf *Buffer
-	if bucketedSize > 0 {
-		pool := b.getBufferPool(bucketedSize)
-		buf = pool.Get()
-	}
+	pool := b.getBufferPool(bucketedSize)
+	buf := pool.Get()
 	if buf == nil {
 		buf = &Buffer{RawBytes: allocAlignedBytes(bucketedSize)}
 		// fmt.Printf("> Creating buffer:\t(%s) %s\n", humanize.Bytes(bucketedSize), shape)
@@ -393,9 +390,6 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	}
 
 	buffer.InUse = false
-	if len(buffer.RawBytes) == 0 {
-		return
-	}
 	buffer.RawShape = shapes.Invalid()
 	pool := b.getBufferPool(len(buffer.RawBytes))
 	pool.Put(buffer)

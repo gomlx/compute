@@ -106,6 +106,34 @@ func TestBinaryOp(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error, got nil")
 	}
+
+	// Zero-sized static broadcasting: 1 broadcasts to 0 -> 0, whereas >1 vs 0 is invalid.
+	if got := must1(BinaryOp(OpTypeAdd, S(F32, 1, 4), S(F32, 0, 4))); !got.Equal(S(F32, 0, 4)) {
+		t.Fatalf("BinaryOp([1,4], [0,4]) = %s, want [0,4]", got)
+	}
+	if got := must1(BinaryOp(OpTypeSub, S(F32, 0, 4), S(F32, 1, 4))); !got.Equal(S(F32, 0, 4)) {
+		t.Fatalf("BinaryOp([0,4], [1,4]) = %s, want [0,4]", got)
+	}
+	if got := must1(BinaryOp(OpTypeMul, S(F32, 1, 0, 3), S(F32, 2, 1, 3))); !got.Equal(S(F32, 2, 0, 3)) {
+		t.Fatalf("BinaryOp([1,0,3], [2,1,3]) = %s, want [2,0,3]", got)
+	}
+	if got := must1(BinaryOp(OpTypeAdd, S(F32), S(F32, 0, 4))); !got.Equal(S(F32, 0, 4)) {
+		t.Fatalf("BinaryOp([], [0,4]) = %s, want [0,4]", got)
+	}
+	if _, err = BinaryOp(OpTypeAdd, S(F32, 2, 4), S(F32, 0, 4)); err == nil {
+		t.Fatalf("Expected error for BinaryOp([2,4], [0,4]), got nil")
+	}
+
+	// Dynamic dimension paired with non-1 static dimension (including 12 or 0) must fail at build time.
+	dynFeat := SD(F32, []int{shapes.DynamicDim, shapes.DynamicDim}, []string{"batch", shapes.UniqueAxisName("feat")})
+	staticFeat := SD(F32, []int{shapes.DynamicDim, 12}, []string{"batch", ""})
+	if _, err = BinaryOp(OpTypeAdd, staticFeat, dynFeat); err == nil || !strings.Contains(err.Error(), "DynamicReshape") {
+		t.Fatalf("Expected error mentioning DynamicReshape for BinaryOp([batch, 12], [batch, #feat]), got %v", err)
+	}
+	staticZero := SD(F32, []int{shapes.DynamicDim, 0}, []string{"batch", ""})
+	if _, err = BinaryOp(OpTypeAdd, staticZero, dynFeat); err == nil {
+		t.Fatalf("Expected error for BinaryOp([batch, 0], [batch, #feat]), got nil")
+	}
 }
 
 func TestNonZero(t *testing.T) {

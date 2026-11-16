@@ -47,7 +47,7 @@ func execAdd(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -856,7 +856,7 @@ func execMul(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -1661,7 +1661,7 @@ func execSub(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -2498,7 +2498,7 @@ func execDiv(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -3335,7 +3335,7 @@ func execRem(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -4574,7 +4574,7 @@ func execPow(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -5813,7 +5813,7 @@ func execAtan2(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -6630,7 +6630,7 @@ func execMax(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -7439,7 +7439,7 @@ func execMin(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobacke
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -8244,7 +8244,7 @@ func execBitwiseAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -8689,7 +8689,7 @@ func execBitwiseOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -9134,7 +9134,7 @@ func execBitwiseXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -9579,7 +9579,7 @@ func execLogicalAnd(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -10004,7 +10004,7 @@ func execLogicalOr(backend *gobackend.Backend, node *gobackend.Node, inputs []*g
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -10429,7 +10429,7 @@ func execLogicalXor(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	lhs, rhs, output, lhsIsScalarOr1, rhsIsScalarOr1 := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -10853,7 +10853,7 @@ func execLogicalXorBooleanGeneric[T gobackend.PODBooleanConstraints](backend *go
 func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
@@ -10863,7 +10863,7 @@ func execEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -11667,7 +11667,7 @@ func execEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.Floa
 func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	} // Add is commutative, so if any of the two is scalar, make the rhs the scalar one.
@@ -11677,7 +11677,7 @@ func execNotEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*go
 		// lhsIsScalarOr1, rhsIsScalarOr1 = rhsIsScalarOr1, lhsIsScalarOr1
 	}
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -12481,13 +12481,13 @@ func execNotEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float16.F
 func execGreaterOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -13323,13 +13323,13 @@ func execGreaterOrEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []flo
 func execGreaterThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -14165,13 +14165,13 @@ func execGreaterThanNumericFloat16(backend *gobackend.Backend, lhs, rhs []float1
 func execLessOrEqual(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 
@@ -15007,13 +15007,13 @@ func execLessOrEqualNumericFloat16(backend *gobackend.Backend, lhs, rhs []float1
 func execLessThan(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	lhs, rhs := inputs[0], inputs[1]
 	lhsIsScalarOr1, rhsIsScalarOr1 := lhs.RawShape.Size() == 1, rhs.RawShape.Size() == 1
-	output, err := backend.GetBuffer(node.Shape)
+	output, err := backend.GetBuffer(resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, node.Shape))
 	if err != nil {
 		return nil, err
 	}
 	_, _ = lhsIsScalarOr1, rhsIsScalarOr1
 
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 

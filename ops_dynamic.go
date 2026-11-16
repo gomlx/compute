@@ -79,9 +79,15 @@ type DynamicOps interface {
 	// - Static: specified with Static >= 0.
 	// - Dynamic: specified with Name and dynamic scalar Value, or Name only if the dynamic axis is already known from context.
 	//
-	// Dynamic shapes: When broadcasting, an operand axis with a dynamic length cannot be broadcast to a different size
-	// and must be preserved as dynamic in the output with matching axis names. An operand axis with size 1 may be broadcast
-	// to a dynamic dimension.
+	// Dynamic shapes:
+	// - Static operand axis == 1: broadcasts to any static (>= 0) or dynamic output dimension.
+	// - Static operand axis != 1 (0 or >= 2): if mapped to a static output dimension, they must match at build time.
+	//   If mapped to a dynamic output dimension, shape inference narrows the output dimension to that static value
+	//   (the only valid runtime outcome), while still validating at runtime that the dynamic target dimension matches.
+	// - Dynamic operand axis: may map to a static output dimension (>= 0) or a compatible dynamic output dimension
+	//   (with matching/compatible axis names, and either a Value or known axis binding when the target axis name differs
+	//   from the operand's). At runtime, the concrete operand dimension must either equal 1 (broadcasting to the target,
+	//   including 1 -> 0) or equal the concrete target dimension.
 	//
 	// Usually, this operation is only supported if the backend supports dynamic axes (Capabilities.DynamicAxes).
 	DynamicBroadcastInDim(operand Value, broadcastAxes []int, dimensions ...DynamicDimensionSpec) (Value, error)

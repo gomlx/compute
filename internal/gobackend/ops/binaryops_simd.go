@@ -3831,7 +3831,7 @@ func execAddSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3887,7 +3887,7 @@ func execSubSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3944,7 +3944,7 @@ func execMulSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -3992,7 +3992,7 @@ func execDivSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 		return nil, gobackend.ErrFallback
 	}
 	lhs, rhs, output, _, _ := binaryOperandsAndOutputForExecution(backend, node, inputs, inputsOwned, node.Shape)
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -4033,7 +4033,7 @@ func execMaxSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)
@@ -4084,7 +4084,7 @@ func execMinSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	if lhsIsScalarOr1 && !rhsIsScalarOr1 {
 		lhs, rhs = rhs, lhs
 	}
-	if backend.NoOps {
+	if backend.NoOps || output.RawShape.Size() == 0 {
 		return output, nil
 	}
 	bcastCfg := GetBroadcastConfig(node, lhs, rhs, output)

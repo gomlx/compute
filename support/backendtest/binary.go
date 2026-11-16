@@ -553,4 +553,176 @@ func TestBinaryOps(t *testing.T, b compute.Backend) {
 			}
 		})
 	})
+
+	t.Run("ZeroSizedBroadcast", func(t *testing.T) {
+		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
+		testutil.SkipIfMissing(t, b, compute.OpTypeAdd)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+
+		runZeroBinary := func(name string, op compute.OpType, lhsShape, rhsShape, wantShape shapes.Shape,
+			lhsFlat, rhsFlat any, fn func(f compute.Function, l, r compute.Value) (compute.Value, error)) {
+			t.Run(name, func(t *testing.T) {
+				testutil.SkipIfMissing(t, b, op)
+				testutil.SkipIfMissingDType(t, b, lhsShape.DType)
+				testutil.SkipIfMissingDType(t, b, wantShape.DType)
+
+				builder := b.Builder("zero_bcast_" + name)
+				mainFn := builder.Main()
+				p0, err := mainFn.Parameter("lhs", lhsShape, nil)
+				if err != nil {
+					t.Fatalf("Parameter lhs (%s): %+v", lhsShape, err)
+				}
+				p1, err := mainFn.Parameter("rhs", rhsShape, nil)
+				if err != nil {
+					t.Fatalf("Parameter rhs (%s): %+v", rhsShape, err)
+				}
+				out, err := fn(mainFn, p0, p1)
+				if err != nil {
+					t.Fatalf("build %s(%s, %s) failed: %+v", name, lhsShape, rhsShape, err)
+				}
+				gotBuildShape, err := mainFn.Shape(out)
+				if err != nil {
+					t.Fatalf("Shape() failed: %+v", err)
+				}
+				if !gotBuildShape.Equal(wantShape) {
+					t.Fatalf("inferred shape = %s, want %s", gotBuildShape, wantShape)
+				}
+				if err := mainFn.Return([]compute.Value{out}, nil); err != nil {
+					t.Fatalf("Return failed: %+v", err)
+				}
+				exec, err := builder.Compile()
+				if err != nil {
+					if compute.IsNotImplemented(err) {
+						t.Skipf("Skipping %s: %v", name, err)
+					}
+					t.Fatalf("Compile failed: %+v", err)
+				}
+				defer exec.Finalize()
+
+				b0, err := b.BufferFromFlatData(0, lhsFlat, lhsShape)
+				if err != nil {
+					t.Fatalf("BufferFromFlatData lhs: %+v", err)
+				}
+				defer b0.Finalize()
+				b1, err := b.BufferFromFlatData(0, rhsFlat, rhsShape)
+				if err != nil {
+					t.Fatalf("BufferFromFlatData rhs: %+v", err)
+				}
+				defer b1.Finalize()
+
+				outs, err := exec.Execute([]compute.Buffer{b0, b1}, nil, 0)
+				if err != nil {
+					t.Fatalf("Execute failed: %+v", err)
+				}
+				defer outs[0].Finalize()
+				gotShape, err := outs[0].Shape()
+				if err != nil {
+					t.Fatalf("output Shape() failed: %+v", err)
+				}
+				if !gotShape.Equal(wantShape) {
+					t.Fatalf("runtime output shape = %s, want %s", gotShape, wantShape)
+				}
+			})
+		}
+
+		s14 := shapes.Make(dtypes.Float32, 1, 4)
+		s04 := shapes.Make(dtypes.Float32, 0, 4)
+		f14 := []float32{1, 2, 3, 4}
+		f04 := []float32{}
+
+		runZeroBinary("Add_1x4_0x4", compute.OpTypeAdd, s14, s04, s04, f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Add(l, r) })
+		runZeroBinary("Add_0x4_1x4", compute.OpTypeAdd, s04, s14, s04, f04, f14,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Add(l, r) })
+		runZeroBinary("Sub_1x4_0x4", compute.OpTypeSub, s14, s04, s04, f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Sub(l, r) })
+		runZeroBinary("Sub_0x4_1x4", compute.OpTypeSub, s04, s14, s04, f04, f14,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Sub(l, r) })
+		runZeroBinary("Mul_1x4_0x4", compute.OpTypeMul, s14, s04, s04, f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Mul(l, r) })
+		runZeroBinary("Div_1x4_0x4", compute.OpTypeDiv, s14, s04, s04, f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Div(l, r) })
+		runZeroBinary("Max_1x4_0x4", compute.OpTypeMax, s14, s04, s04, f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Max(l, r) })
+		runZeroBinary("Min_0x4_1x4", compute.OpTypeMin, s04, s14, s04, f04, f14,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Min(l, r) })
+		runZeroBinary("Add_Scalar_0x4", compute.OpTypeAdd, shapes.Make(dtypes.Float32), s04, s04, []float32{5}, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Add(l, r) })
+		runZeroBinary("Mul_MidAxis_1x0x3_2x1x3", compute.OpTypeMul,
+			shapes.Make(dtypes.Float32, 1, 0, 3), shapes.Make(dtypes.Float32, 2, 1, 3), shapes.Make(dtypes.Float32, 2, 0, 3),
+			[]float32{}, []float32{1, 2, 3, 4, 5, 6},
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Mul(l, r) })
+		runZeroBinary("Equal_1x4_0x4", compute.OpTypeEqual, s14, s04, shapes.Make(dtypes.Bool, 0, 4), f14, f04,
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.Equal(l, r) })
+		runZeroBinary("ShiftLeft_1x4_0x4", compute.OpTypeShiftLeft,
+			shapes.Make(dtypes.Int32, 1, 4), shapes.Make(dtypes.Int32, 0, 4), shapes.Make(dtypes.Int32, 0, 4),
+			[]int32{1, 2, 3, 4}, []int32{},
+			func(f compute.Function, l, r compute.Value) (compute.Value, error) { return f.ShiftLeft(l, r) })
+
+		t.Run("Where_1x4_0x4_1x4", func(t *testing.T) {
+			testutil.SkipIfMissing(t, b, compute.OpTypeWhere)
+			testutil.SkipIfMissingDType(t, b, dtypes.Bool)
+			builder := b.Builder("zero_bcast_where")
+			fn := builder.Main()
+			cond, err := fn.Parameter("cond", shapes.Make(dtypes.Bool, 1, 4), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			onTrue, err := fn.Parameter("t", s04, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			onFalse, err := fn.Parameter("f", s14, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := fn.Where(cond, onTrue, onFalse)
+			if err != nil {
+				t.Fatalf("Where([1,4], [0,4], [1,4]) build failed: %+v", err)
+			}
+			if err := fn.Return([]compute.Value{out}, nil); err != nil {
+				t.Fatal(err)
+			}
+			exec, err := builder.Compile()
+			if err != nil {
+				if compute.IsNotImplemented(err) {
+					t.Skipf("Skipping Where zero broadcast: %v", err)
+				}
+				t.Fatalf("Compile failed: %+v", err)
+			}
+			defer exec.Finalize()
+			bCond, _ := b.BufferFromFlatData(0, []bool{true, false, true, false}, shapes.Make(dtypes.Bool, 1, 4))
+			defer bCond.Finalize()
+			bTrue, _ := b.BufferFromFlatData(0, f04, s04)
+			defer bTrue.Finalize()
+			bFalse, _ := b.BufferFromFlatData(0, f14, s14)
+			defer bFalse.Finalize()
+			outs, err := exec.Execute([]compute.Buffer{bCond, bTrue, bFalse}, nil, 0)
+			if err != nil {
+				t.Fatalf("Where Execute failed: %+v", err)
+			}
+			defer outs[0].Finalize()
+			gotShape, _ := outs[0].Shape()
+			if !gotShape.Equal(s04) {
+				t.Fatalf("Where output shape = %s, want %s", gotShape, s04)
+			}
+		})
+
+		t.Run("InvalidNonUnitBroadcastToZero", func(t *testing.T) {
+			// Broadcasting a non-1 dimension (2) with 0 must fail at graph-build time.
+			builder := b.Builder("invalid_2x4_0x4")
+			fn := builder.Main()
+			p0, err := fn.Parameter("lhs", shapes.Make(dtypes.Float32, 2, 4), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p1, err := fn.Parameter("rhs", s04, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fn.Add(p0, p1); err == nil {
+				t.Fatal("expected error for Add([2, 4], [0, 4]), got nil")
+			}
+		})
+	})
 }

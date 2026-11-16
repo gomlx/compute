@@ -91,16 +91,17 @@ func specializeFunction(backend *Backend, origNodes []*Node, bindings shapes.Axi
 			}
 		}
 		n := &Node{
-			Index:              orig.Index,
-			Inputs:             orig.Inputs,
-			CapturedInputs:     orig.CapturedInputs,
-			OpType:             orig.OpType,
-			Shape:              resolvedShape,
-			Builder:            orig.Builder,
-			Function:           orig.Function,
-			Data:               orig.Data,
-			IsNodeSelectOutput: orig.IsNodeSelectOutput,
-			SelectOutputIdx:    orig.SelectOutputIdx,
+			Index:               orig.Index,
+			Inputs:              orig.Inputs,
+			CapturedInputs:      orig.CapturedInputs,
+			OpType:              orig.OpType,
+			Shape:               resolvedShape,
+			Builder:             orig.Builder,
+			Function:            orig.Function,
+			Data:                orig.Data,
+			IsZeroSizeShapeOnly: orig.IsZeroSizeShapeOnly,
+			IsNodeSelectOutput:  orig.IsNodeSelectOutput,
+			SelectOutputIdx:     orig.SelectOutputIdx,
 		}
 
 		// Resolve multi-output shapes if present.
@@ -254,10 +255,10 @@ func specializeNode(backend *Backend, node *Node, inputs []*Buffer, spec *ShapeS
 	specialized := &Node{
 		Index: node.Index, Inputs: node.Inputs, CapturedInputs: node.CapturedInputs,
 		OpType: node.OpType, Shape: shape, Builder: node.Builder, Function: node.Function,
-		Data: node.Data, IsNodeSelectOutput: node.IsNodeSelectOutput, SelectOutputIdx: node.SelectOutputIdx,
+		Data: node.Data, IsZeroSizeShapeOnly: node.IsZeroSizeShapeOnly,
+		IsNodeSelectOutput: node.IsNodeSelectOutput, SelectOutputIdx: node.SelectOutputIdx,
 		MultiOutputsShapes: multiOutputsShapes, MultiOutputsNodes: node.MultiOutputsNodes,
 	}
-	specialized.cachedExecutorIdx.Store(node.cachedExecutorIdx.Load())
 	if recomputable, ok := node.Data.(RecomputableNodeData); ok {
 		nodes := make([]*Node, maxIndex+1)
 		nodes[node.Index] = specialized

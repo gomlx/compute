@@ -7,6 +7,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
 )
 
 func init() {
@@ -91,6 +92,26 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 	// Figure out and validate concrete outputShape (including when distinct "#..." axes meet at runtime).
 	outputShape := node.Shape
 	if outputShape.IsDynamic() || outputShape.AxisNames != nil {
+		// Enforce that compile-time dynamic axes do not implicitly broadcast if their runtime size is 1.
+		rank := outputShape.Rank()
+		for axis := range rank {
+			sharedDynDim := -1
+			for k, inpNode := range node.Inputs {
+				if inpNode.Shape.IsScalar() {
+					continue
+				}
+				cDim := inputs[k].RawShape.Dimensions[axis]
+				if inpNode.Shape.Dimensions[axis] == shapes.DynamicDim {
+					if sharedDynDim == -1 {
+						sharedDynDim = cDim
+					} else if cDim != sharedDynDim {
+						return nil, errors.Errorf(
+							"dimension of axis #%d doesn't match and cannot be broadcast for Where(), got concrete shapes condition=%s, onTrue=%s and onFalse=%s",
+							axis, condition.RawShape, onTrue.RawShape, onFalse.RawShape)
+					}
+				}
+			}
+		}
 		var err error
 		outputShape, err = shapeinference.Where(condition.RawShape, onTrue.RawShape, onFalse.RawShape)
 		if err != nil {
@@ -113,7 +134,7 @@ func execWhere(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobac
 			return nil, err
 		}
 	}
-	if backend.NoOps {
+	if backend.NoOps || outputShape.Size() == 0 {
 		return output, nil
 	}
 

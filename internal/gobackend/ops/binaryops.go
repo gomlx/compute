@@ -175,17 +175,44 @@ func addComparisonOp(f *gobackend.Function, opType compute.OpType, lhsOp, rhsOp 
 	return node, nil
 }
 
+// resolveBinaryOutputShape resolves any remaining DynamicDim axes in outputShape from concrete lhs/rhs shapes.
+func resolveBinaryOutputShape(lhsShape, rhsShape, outputShape shapes.Shape) shapes.Shape {
+	if !outputShape.IsDynamic() {
+		return outputShape
+	}
+	concrete := outputShape.Clone()
+	concrete.AxisNames = nil
+	for axis, dim := range concrete.Dimensions {
+		if dim != shapes.DynamicDim {
+			continue
+		}
+		if axis < lhsShape.Rank() {
+			dim = lhsShape.Dimensions[axis]
+		}
+		if axis < rhsShape.Rank() && (dim == 1 || dim == shapes.DynamicDim) {
+			dim = rhsShape.Dimensions[axis]
+		}
+		concrete.Dimensions[axis] = dim
+	}
+	return concrete
+}
+
 // GetBroadcastConfig returns the BroadcastConfig for the binary node, either from its cached Data
-// or computed dynamically.
+// (when the node shape is concrete) or computed dynamically from concrete operand shapes.
 func GetBroadcastConfig(node *gobackend.Node, lhs, rhs, output *gobackend.Buffer) gobackend.BroadcastConfig {
-	if node != nil && node.Data != nil {
+	if node != nil && !node.Shape.IsDynamic() && node.Data != nil {
 		if cfg, ok := node.Data.(*gobackend.BroadcastConfig); ok {
 			return *cfg
 		}
 	}
+	if lhs == nil || rhs == nil {
+		return gobackend.BroadcastConfig{Pattern: gobackend.BroadcastGeneral}
+	}
 	tgtShape := node.Shape
 	if output != nil {
 		tgtShape = output.RawShape
+	} else if tgtShape.IsDynamic() {
+		tgtShape = resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, tgtShape)
 	}
 	return gobackend.DetermineBroadcastConfig(lhs.RawShape, rhs.RawShape, tgtShape)
 }
@@ -199,21 +226,7 @@ func binaryOperandsAndOutputForExecution(backend *gobackend.Backend, node *gobac
 	lhs, rhs = inputs[0], inputs[1]
 	lhsIsScalarOr1 = lhs.RawShape.Size() == 1
 	rhsIsScalarOr1 = rhs.RawShape.Size() == 1
-	if outputShape.IsDynamic() {
-		concreteOutputShape := outputShape.Clone()
-		for axis, dim := range concreteOutputShape.Dimensions {
-			if dim == shapes.DynamicDim {
-				if axis < lhs.RawShape.Rank() {
-					dim = lhs.RawShape.Dimensions[axis]
-				}
-				if axis < rhs.RawShape.Rank() && (dim == 1 || dim == shapes.DynamicDim) {
-					dim = rhs.RawShape.Dimensions[axis]
-				}
-				concreteOutputShape.Dimensions[axis] = dim
-			}
-		}
-		outputShape = concreteOutputShape
-	}
+	outputShape = resolveBinaryOutputShape(lhs.RawShape, rhs.RawShape, outputShape)
 	switch {
 	case inputsOwned[1] && rhs.RawShape.DType == outputShape.DType && rhs.RawShape.EqualDimensions(outputShape):
 		output = rhs

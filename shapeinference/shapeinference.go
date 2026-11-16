@@ -313,7 +313,7 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 				// One side is dynamic and the other is not 1.
 				err = errors.Errorf(
 					"axis #%d is dynamic for one operand, and the other is not 1 for BinaryOp (%s), "+
-						"they can't be implicitly broadcast; got shapes %s and %s",
+						"they can't be implicitly broadcast (use DynamicReshape to assert the static dimension or DynamicBroadcastInDim for runtime broadcasting); got shapes %s and %s",
 					axis, opType, lhsShape, rhsShape)
 				return shapes.Invalid(), err
 			}
@@ -325,7 +325,11 @@ func binaryOpImpl(opType compute.OpType, lhsShape, rhsShape shapes.Shape) (outpu
 				axis, opType, lhsShape, rhsShape)
 			return shapes.Invalid(), err
 		}
-		output.Dimensions[axis] = max(lhsDim, rhsDim)
+		if lhsDim == 1 {
+			output.Dimensions[axis] = rhsDim
+		} else {
+			output.Dimensions[axis] = lhsDim
+		}
 	}
 
 	// Unify axis names.
@@ -503,7 +507,7 @@ func Where(condition, onTrue, onFalse shapes.Shape) (output shapes.Shape, err er
 		if hasDynamic {
 			if targetDim != 1 {
 				err = errors.Errorf("axis #%d is dynamic for one operand and non-1 (%d) for another for Where(), "+
-					"they cannot be implicitly broadcast; got shapes condition=%s, onTrue=%s and onFalse=%s",
+					"they cannot be implicitly broadcast (use DynamicReshape to assert the static dimension or DynamicBroadcastInDim for runtime broadcasting); got shapes condition=%s, onTrue=%s and onFalse=%s",
 					axis, targetDim, condition, onTrue, onFalse)
 				return shapes.Invalid(), err
 			}

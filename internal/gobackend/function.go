@@ -137,7 +137,11 @@ func (f *Function) String() string {
 			w("%s%s", Red, Bold)
 			colored = true
 		}
-		w("    Node #%d: %s (", node.Index, node.OpType)
+		opLabel := node.OpType.String()
+		if node.IsZeroSizeShapeOnly {
+			opLabel = fmt.Sprintf("ZeroSizeShapeDependency[%s]", node.OpType)
+		}
+		w("    Node #%d: %s (", node.Index, opLabel)
 		for i, input := range node.Inputs {
 			if i > 0 {
 				w(", ")
