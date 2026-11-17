@@ -16,23 +16,25 @@ import (
 )
 
 func init() {
-	gobackend.RegisterQuantizedEmbeddingLookup.Register(QuantizedEmbeddingLookup, gobackend.PriorityGeneric)
-	gobackend.SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, gobackend.PriorityTyped, execQuantizedEmbeddingLookup)
+	gobackend.RegisterQuantizedGather.Register(QuantizedGather, gobackend.PriorityGeneric)
+	gobackend.SetNodeExecutor(compute.OpTypeQuantizedGather, gobackend.PriorityTyped, execQuantizedGather)
 }
 
-type nodeQuantizedEmbeddingLookup struct {
+type nodeQuantizedGather struct {
+	noQuant      bool
 	scheme       compute.QuantizationScheme
 	ggmlType     compute.GGMLQuantType
-	info         shapeinference.QuantizedEmbeddingLookupInfo
+	info         shapeinference.QuantizedGatherInfo
 	hasScale     bool
 	hasZeroPoint bool
 }
 
-var _ gobackend.RecomputableNodeData = (*nodeQuantizedEmbeddingLookup)(nil)
+var _ gobackend.RecomputableNodeData = (*nodeQuantizedGather)(nil)
 
-func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	o := other.(*nodeQuantizedEmbeddingLookup)
-	return d.scheme == o.scheme &&
+func (d *nodeQuantizedGather) EqualNodeData(other gobackend.NodeDataComparable) bool {
+	o := other.(*nodeQuantizedGather)
+	return d.noQuant == o.noQuant &&
+		d.scheme == o.scheme &&
 		d.ggmlType == o.ggmlType &&
 		d.info.K == o.info.K &&
 		d.info.OutputShape.DType == o.info.OutputShape.DType &&
@@ -42,7 +44,7 @@ func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other gobackend.NodeDataCom
 		d.hasZeroPoint == o.hasZeroPoint
 }
 
-func (d *nodeQuantizedEmbeddingLookup) Recompute(_ *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
+func (d *nodeQuantizedGather) Recompute(_ *gobackend.Backend, resolvedNodes []*gobackend.Node, originalNode *gobackend.Node) (any, error) {
 	indicesShape := resolvedNodes[originalNode.Inputs[1].Index].Shape
 	if !indicesShape.IsDynamic() {
 		outDims := slices.Clone(indicesShape.Dimensions)
@@ -55,38 +57,36 @@ func (d *nodeQuantizedEmbeddingLookup) Recompute(_ *gobackend.Backend, resolvedN
 	return d, nil
 }
 
-// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
-// with on-the-fly dequantization across QuantGGML, QuantLinear, and QuantNF4.
-func QuantizedEmbeddingLookup(
+// QuantizedGather performs a quantized row gather (embedding lookup) with on-the-fly
+// unpacking / dequantization across nil xQuantization (sub-byte/8-bit unpack to Int8/Uint8),
+// QuantGGML, QuantLinear, and QuantNF4.
+func QuantizedGather(
 	f *gobackend.Function,
-	data, indices compute.Value,
-	wq *compute.Quantization,
+	x, indices compute.Value,
+	xQuantization *compute.Quantization,
 ) (compute.Value, error) {
-	if wq == nil {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
-	}
-	baseInputs, err := f.VerifyAndCastValues("QuantizedEmbeddingLookup", data, indices)
+	baseInputs, err := f.VerifyAndCastValues("QuantizedGather", x, indices)
 	if err != nil {
 		return nil, err
 	}
-	dNode, iNode := baseInputs[0], baseInputs[1]
+	xNode, iNode := baseInputs[0], baseInputs[1]
 
-	wqs, scaleNode, zpNode, err := extractQuantizationShapes(f, "QuantizedEmbeddingLookup", wq)
+	xqs, scaleNode, zpNode, err := extractQuantizationShapes(f, "QuantizedGather", xQuantization)
 	if err != nil {
 		return nil, err
 	}
-	info, err := shapeinference.QuantizedEmbeddingLookupWithInfo(dNode.Shape, iNode.Shape, wqs)
+	info, err := shapeinference.QuantizedGatherWithInfo(xNode.Shape, iNode.Shape, xqs)
 	if err != nil {
 		return nil, err
 	}
-	if wqs.Scheme == compute.QuantGGML {
-		if _, err := ggmlDequantFunc(wq.GGMLType); err != nil {
+	if xqs != nil && xqs.Scheme == compute.QuantGGML {
+		if _, err := ggmlDequantFunc(xqs.GGMLType); err != nil {
 			return nil, err
 		}
 	}
 
 	inputs := make([]*gobackend.Node, 0, 4)
-	inputs = append(inputs, dNode, iNode)
+	inputs = append(inputs, xNode, iNode)
 	if scaleNode != nil {
 		inputs = append(inputs, scaleNode)
 	}
@@ -94,20 +94,23 @@ func QuantizedEmbeddingLookup(
 		inputs = append(inputs, zpNode)
 	}
 
-	nodeData := &nodeQuantizedEmbeddingLookup{
-		scheme:       wq.Scheme,
-		ggmlType:     wq.GGMLType,
+	nodeData := &nodeQuantizedGather{
+		noQuant:      xQuantization == nil,
 		info:         info,
 		hasScale:     scaleNode != nil,
 		hasZeroPoint: zpNode != nil,
 	}
-	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedEmbeddingLookup, info.OutputShape, inputs, nodeData)
+	if xQuantization != nil {
+		nodeData.scheme = xQuantization.Scheme
+		nodeData.ggmlType = xQuantization.GGMLType
+	}
+	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedGather, info.OutputShape, inputs, nodeData)
 	return node, nil
 }
 
-func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
-	nodeData := node.Data.(*nodeQuantizedEmbeddingLookup)
-	dataBuf := inputs[0]
+func execQuantizedGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
+	nodeData := node.Data.(*nodeQuantizedGather)
+	xBuf := inputs[0]
 	indicesBuf := inputs[1]
 	idx := 2
 	var scaleBuf, zpBuf *gobackend.Buffer
@@ -134,8 +137,8 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 	}
 
 	numIndices := indicesBuf.RawShape.Size()
-	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
-	rowAt, releaseIdx, err := resolveEmbeddingIndices(backend, indicesBuf, numIndices, vocabSize)
+	vocabSize := int64(xBuf.RawShape.Dimensions[0])
+	rowAt, releaseIdx, err := resolveGatherIndices(backend, indicesBuf, numIndices, vocabSize)
 	if err != nil {
 		backend.PutBuffer(output)
 		return nil, err
@@ -147,10 +150,15 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 		numIndices*K >= quantizedDenseMinParallelizeChunk && numIndices > 1
 	minChunk := max(1, quantizedDenseMinParallelizeChunk/max(K, 1))
 
+	if nodeData.noQuant {
+		execQuantizedGatherUnpacked(backend, xBuf, output, rowAt, numIndices, K, canParallel, minChunk)
+		return output, nil
+	}
+
 	if nodeData.scheme == compute.QuantGGML {
-		dataBytes := dataBuf.Flat.([]uint8)
+		dataBytes := xBuf.Flat.([]uint8)
 		out := output.Flat.([]float32)
-		bytesPerRow := dataBuf.RawShape.Dimensions[1]
+		bytesPerRow := xBuf.RawShape.Dimensions[1]
 		dequantFn, err := ggmlDequantFunc(nodeData.ggmlType)
 		if err != nil {
 			backend.PutBuffer(output)
@@ -172,11 +180,11 @@ func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.No
 		return output, nil
 	}
 
-	execEmbeddingLookupLinearOrNF4(backend, nodeData, dataBuf, scaleBuf, zpBuf, output, rowAt, numIndices, K, canParallel, minChunk)
+	execQuantizedGatherLinearOrNF4(backend, nodeData, xBuf, scaleBuf, zpBuf, output, rowAt, numIndices, K, canParallel, minChunk)
 	return output, nil
 }
 
-func resolveEmbeddingIndices(
+func resolveGatherIndices(
 	backend *gobackend.Backend,
 	indicesBuf *gobackend.Buffer,
 	numIndices int,
@@ -186,7 +194,7 @@ func resolveEmbeddingIndices(
 		indices := indicesBuf.Flat.([]int32)[:numIndices]
 		for _, rawIdx := range indices {
 			if int64(rawIdx) < 0 || int64(rawIdx) >= vocabSize {
-				return nil, nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rawIdx, vocabSize)
+				return nil, nil, errors.Errorf("QuantizedGather: index %d out of range [0, %d)", rawIdx, vocabSize)
 			}
 		}
 		return func(i int) int { return int(indices[i]) }, func() {}, nil
@@ -194,7 +202,7 @@ func resolveEmbeddingIndices(
 
 	idxBuf, isIdxOwned, err := convertIndicesToInt64(backend, indicesBuf)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "QuantizedEmbeddingLookup")
+		return nil, nil, errors.Wrapf(err, "QuantizedGather")
 	}
 	release := func() {
 		if isIdxOwned {
@@ -205,22 +213,75 @@ func resolveEmbeddingIndices(
 	for _, rowIdx := range indices {
 		if rowIdx < 0 || rowIdx >= vocabSize {
 			release()
-			return nil, nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rowIdx, vocabSize)
+			return nil, nil, errors.Errorf("QuantizedGather: index %d out of range [0, %d)", rowIdx, vocabSize)
 		}
 	}
 	return func(i int) int { return int(indices[i]) }, release, nil
 }
 
-func execEmbeddingLookupLinearOrNF4(
+func execQuantizedGatherUnpacked(
 	backend *gobackend.Backend,
-	nodeData *nodeQuantizedEmbeddingLookup,
-	dataBuf, scaleBuf, zpBuf, output *gobackend.Buffer,
+	xBuf, output *gobackend.Buffer,
 	rowAt func(int) int,
 	numIndices, K int,
 	canParallel bool,
 	minChunk int,
 ) {
-	reader := makeWeightRowReader(dataBuf, K)
+	inDType := xBuf.RawShape.DType
+	processRange := func(start, end int) {
+		switch inDType {
+		case dtypes.Int8:
+			src := xBuf.Flat.([]int8)
+			dst := output.Flat.([]int8)
+			for i := start; i < end; i++ {
+				r := rowAt(i)
+				copy(dst[i*K:(i+1)*K], src[r*K:(r+1)*K])
+			}
+		case dtypes.Uint8:
+			src := xBuf.Flat.([]uint8)
+			dst := output.Flat.([]uint8)
+			for i := start; i < end; i++ {
+				r := rowAt(i)
+				copy(dst[i*K:(i+1)*K], src[r*K:(r+1)*K])
+			}
+		case dtypes.Int2, dtypes.Int4:
+			packed := xBuf.Flat.([]uint8)
+			dst := output.Flat.([]int8)
+			for i := start; i < end; i++ {
+				r := rowAt(i)
+				unpackSubByteSpanInt8(inDType, packed, r*K, K, dst[i*K:(i+1)*K])
+			}
+		case dtypes.Uint2, dtypes.Uint4:
+			packed := xBuf.Flat.([]uint8)
+			dst := output.Flat.([]uint8)
+			scratch := make([]int8, K)
+			for i := start; i < end; i++ {
+				r := rowAt(i)
+				unpackSubByteSpanInt8(inDType, packed, r*K, K, scratch)
+				rowDst := dst[i*K : (i+1)*K]
+				for c, v := range scratch {
+					rowDst[c] = uint8(v)
+				}
+			}
+		}
+	}
+	if canParallel {
+		backend.Scheduler.ParallelizeChunks(numIndices, minChunk, processRange)
+	} else {
+		processRange(0, numIndices)
+	}
+}
+
+func execQuantizedGatherLinearOrNF4(
+	backend *gobackend.Backend,
+	nodeData *nodeQuantizedGather,
+	xBuf, scaleBuf, zpBuf, output *gobackend.Buffer,
+	rowAt func(int) int,
+	numIndices, K int,
+	canParallel bool,
+	minChunk int,
+) {
+	reader := makeWeightRowReader(xBuf, K)
 	scaleReader := makeFloat32ElemReader(scaleBuf)
 	var zpReader func(int) float32
 	if zpBuf != nil {
@@ -229,7 +290,7 @@ func execEmbeddingLookupLinearOrNF4(
 	scaleLayout := nodeData.info.ScaleLayout
 	zpLayout := nodeData.info.ZeroPointLayout
 	isNF4 := nodeData.scheme == compute.QuantNF4
-	isUint8 := dataBuf.RawShape.DType == dtypes.Uint8
+	isUint8 := xBuf.RawShape.DType == dtypes.Uint8
 
 	outDType := output.RawShape.DType
 	var outF32 []float32

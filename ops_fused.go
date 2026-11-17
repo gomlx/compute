@@ -699,30 +699,38 @@ type FusedOps interface {
 		options *ScaledDotProductAttentionConfig,
 		output Value, statesForVJP []Value, dOutput Value) (dQuery, dKey, dValue Value, err error)
 
-	// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
-	// with on-the-fly dequantization.
+	// QuantizedGather performs a quantized row gather (embedding lookup) with on-the-fly
+	// unpacking / dequantization.
 	//
-	// This is the quantized analogue of Gather for embedding lookups, inspired by
-	// llama.cpp's ggml_get_rows. It supports:
-	//   - QuantGGML: data is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
+	// This is the quantized analogue of row-level Gather (inspired by llama.cpp's ggml_get_rows)
+	// and is also the supported way to gather rows from packed sub-byte tables (Int2/Uint2/Int4/Uint4),
+	// which StandardOps.Gather does not support directly.
+	//
+	// Supported modes:
+	//   - xQuantization == nil: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x and
+	//     unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
+	//     Uint2/Uint4/Uint8) without scaling.
+	//   - QuantGGML: x is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
 	//     output is Float32.
-	//   - QuantLinear: data is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
-	//     dataQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
-	//     block-wise) and optional dataQuantization.ZeroPoint; output matches Scale's DType.
-	//   - QuantNF4: data is [vocabSize, K] Int4/Uint4/Int8/Uint8 with dataQuantization.Scale
+	//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
+	//     xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
+	//     block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
+	//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 with xQuantization.Scale
 	//     (Float32/Float16/BFloat16); output matches Scale's DType.
 	//
 	// Inputs:
-	//   - data: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
-	//     (QuantLinear / QuantNF4).
+	//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
+	//     (xQuantization == nil, QuantLinear, or QuantNF4).
 	//   - indices: integer tensor with last dimension = 1 (same as Gather convention).
 	//     For embeddings: [batch, seqLen, 1].
-	//   - dataQuantization: describes how to dequantize the data rows. Must not be nil.
+	//   - xQuantization: describes how to dequantize the rows of x, or nil to gather and unpack
+	//     sub-byte/8-bit integer elements directly to Int8/Uint8.
 	//
-	// Output: floating-point tensor with shape [batch..., K].
+	// Output: tensor with shape [batch..., K] (Float32 for QuantGGML, Scale.DType for
+	// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil).
 	//   For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
-	QuantizedEmbeddingLookup(data, indices Value,
-		dataQuantization *Quantization) (Value, error)
+	QuantizedGather(x, indices Value,
+		xQuantization *Quantization) (Value, error)
 
 	// FusedQuantizedDense performs fused quantized matrix multiplication + optional bias +
 	// optional activation (+ optional output re-quantization), without materializing the full

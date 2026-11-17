@@ -595,6 +595,10 @@ func (f Function) FusedSoftmax(x compute.Value, axis int) (compute.Value, error)
 // Dynamic shapes: Batch axes (from startIndices) and offset axes (from operand) preserve their names
 // in the output. If an offset axis is partially sliced (sliceSize != operand dimension), its name is dropped.
 //
+// Packed sub-byte dtypes (Int4, Uint4, Int2, Uint2, Int1, Uint1) are not supported because arbitrary
+// slices may not be byte-aligned; use [FusedOps.QuantizedGather] for row lookups on sub-byte tables,
+// or [StandardOps.Bitcast] to Uint8 (or [StandardOps.ConvertDType]) first.
+//
 // TODO: Add batch support: operandBatchingAxes and startIndicesBatchingAxes.
 func (f Function) Gather(operand compute.Value, startIndices compute.Value, indexVectorAxis int, offsetOutputAxes []int, collapsedSliceAxes []int, startIndexMap []int, sliceSizes []int, indicesAreSorted bool) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeGather)
@@ -779,25 +783,39 @@ func (f Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 	return nil, f.baseErrFn(compute.OpTypePow)
 }
 
-// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
-// with on-the-fly dequantization.
+// QuantizedGather performs a quantized row gather (embedding lookup) with on-the-fly
+// unpacking / dequantization.
 //
-// This is the quantized analogue of Gather for embedding lookups, inspired by
-// llama.cpp's ggml_get_rows. For now it is only implemented for the GGML
-// quantization scheme, but could be extended for others if/when needed.
+// This is the quantized analogue of row-level Gather (inspired by llama.cpp's ggml_get_rows)
+// and is also the supported way to gather rows from packed sub-byte tables (Int2/Uint2/Int4/Uint4),
+// which StandardOps.Gather does not support directly.
+//
+// Supported modes:
+//   - xQuantization == nil: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x and
+//     unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
+//     Uint2/Uint4/Uint8) without scaling.
+//   - QuantGGML: x is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
+//     output is Float32.
+//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
+//     xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
+//     block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
+//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 with xQuantization.Scale
+//     (Float32/Float16/BFloat16); output matches Scale's DType.
 //
 // Inputs:
-//   - data: [vocabSize, bytesPerRow] Uint8 with native GGML block layout.
+//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
+//     (xQuantization == nil, QuantLinear, or QuantNF4).
 //   - indices: integer tensor with last dimension = 1 (same as Gather convention).
 //     For embeddings: [batch, seqLen, 1].
-//   - dataQuantization: describes how to dequantize the data rows. Must not be nil.
-//     Only QuantGGML scheme is currently supported.
+//   - xQuantization: describes how to dequantize the rows of x, or nil to gather and unpack
+//     sub-byte/8-bit integer elements directly to Int8/Uint8.
 //
-// Output: float32 tensor with shape [batch..., K] where K = (bytesPerRow / bytesPerBlock) * valuesPerBlock.
+// Output: tensor with shape [batch..., K] (Float32 for QuantGGML, Scale.DType for
+// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil).
 //
 //	For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
-func (f Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error) {
-	return nil, f.baseErrFn(compute.OpTypeQuantizedEmbeddingLookup)
+func (f Function) QuantizedGather(x compute.Value, indices compute.Value, xQuantization *compute.Quantization) (compute.Value, error) {
+	return nil, f.baseErrFn(compute.OpTypeQuantizedGather)
 }
 
 // Real return the real part of a complex number. It returns x if the x is a float number.
@@ -1020,6 +1038,9 @@ func (f Function) Sin(x compute.Value) (compute.Value, error) {
 // the dimension. Partial slices of dynamic axes are currently not supported if they result in
 // a dynamic-sized output (requires axis expressions). Slicing a dynamic axis with static
 // bounds (e.g. from 0 to 10) results in a static output size (e.g. 10).
+//
+// Packed sub-byte dtypes (Int4, Uint4, Int2, Uint2, Int1, Uint1) are not supported because arbitrary
+// slices may not be byte-aligned; [StandardOps.Bitcast] to Uint8 or [StandardOps.ConvertDType] first.
 func (f Function) Slice(x compute.Value, starts []int, limits []int, strides []int) (compute.Value, error) {
 	return nil, f.baseErrFn(compute.OpTypeSlice)
 }

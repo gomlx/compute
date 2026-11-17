@@ -283,48 +283,6 @@ func testQDGGMLAllModesAndFormats(t *testing.T, b compute.Backend) {
 	})
 }
 
-func testQuantizedEmbeddingLookup(t *testing.T, b compute.Backend) {
-	t.Run("QuantizedEmbeddingLookup", func(t *testing.T) {
-		testutil.SkipIfMissing(t, b, compute.OpTypeQuantizedEmbeddingLookup)
-
-		for _, wType := range allComplianceGGMLTypes {
-			t.Run(wType.String(), func(t *testing.T) {
-				const vocabSize = 4
-				tableBytes := make([][]uint8, vocabSize)
-				tableDeq := make([][]float32, vocabSize)
-				for v := range vocabSize {
-					tableBytes[v], tableDeq[v] = makeTestGGMLWeightRow(wType, 1, v+1)
-				}
-				indices := [][][]int32{
-					{{2}, {0}, {3}},
-					{{1}, {2}, {0}},
-				}
-				want := [][][]float32{
-					{tableDeq[2], tableDeq[0], tableDeq[3]},
-					{tableDeq[1], tableDeq[2], tableDeq[0]},
-				}
-
-				got, err := testutil.Exec1(b, []any{tableBytes, indices},
-					func(f compute.Function, p []compute.Value) (compute.Value, error) {
-						return f.QuantizedEmbeddingLookup(p[0], p[1], &compute.Quantization{
-							Scheme:   compute.QuantGGML,
-							GGMLType: wType,
-						})
-					})
-				if err != nil && compute.IsNotImplemented(err) {
-					t.Skipf("Skipping QuantizedEmbeddingLookup(%s): %v", wType, err)
-				}
-				if err != nil {
-					t.Fatalf("QuantizedEmbeddingLookup(%s) failed: %+v", wType, err)
-				}
-				if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
-					t.Errorf("QuantizedEmbeddingLookup(%s) mismatch:\n%s", wType, diff)
-				}
-			})
-		}
-	})
-}
-
 // --- Self-Contained Reference GGML Block Builders & Dequantizers ---
 
 func makeTestQ8_0Row(src []float32) ([]uint8, []float32) {

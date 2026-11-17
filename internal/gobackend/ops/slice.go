@@ -83,6 +83,11 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 		return nil, err
 	}
 	operand := inputs[0]
+	if operand.Shape.DType.IsPacked() {
+		return nil, errors.Wrapf(compute.ErrNotImplemented,
+			"Slice: packed sub-byte dtype %s is not supported; Bitcast to Uint8 or ConvertDType first",
+			operand.Shape.DType)
+	}
 	rank := operand.Shape.Rank()
 
 	if len(starts) != rank || len(limits) != rank || (len(strides) != 0 && len(strides) != rank) {
@@ -132,6 +137,11 @@ func Slice(f *gobackend.Function, operandOp compute.Value, starts, limits, strid
 
 func execSlice(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
+	if operand.RawShape.DType.IsPacked() {
+		return nil, errors.Wrapf(compute.ErrNotImplemented,
+			"Slice: packed sub-byte dtype %s is not supported; Bitcast to Uint8 or ConvertDType first",
+			operand.RawShape.DType)
+	}
 	sliceParams, ok := node.Data.(*sliceNode)
 	if !ok {
 		return nil, errors.Errorf("internal error: node.data for Slice op is not *sliceNode, but %T", node.Data)

@@ -165,7 +165,7 @@ const (
 	OpTypeFusedAttentionQKVProjection
 	OpTypeFusedQuantizedDense
 	OpTypeFusedQuantizedDenseVJP
-	OpTypeQuantizedEmbeddingLookup
+	OpTypeQuantizedGather
 
 	OpTypeNonZero
 	OpTypeFusedTopK

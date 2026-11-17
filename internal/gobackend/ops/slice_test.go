@@ -220,3 +220,20 @@ func verifySlice(t *testing.T, inDims, starts, limits, strides []int) {
 		}
 	}
 }
+
+func TestSliceSubByteNotImplemented(t *testing.T) {
+	for _, dt := range []dtypes.DType{dtypes.Int2, dtypes.Uint2, dtypes.Int4, dtypes.Uint4} {
+		t.Run(dt.String(), func(t *testing.T) {
+			builder := backend.Builder("slice_subbyte")
+			fn := builder.Main()
+			x, err := fn.Parameter("x", shapes.Make(dt, 2, 8), nil)
+			if err != nil {
+				t.Fatalf("Parameter(x) failed: %+v", err)
+			}
+			_, err = fn.Slice(x, []int{0, 0}, []int{1, 8}, []int{1, 1})
+			if !compute.IsNotImplemented(err) {
+				t.Fatalf("Slice(%s) expected ErrNotImplemented, got %v", dt, err)
+			}
+		})
+	}
+}
