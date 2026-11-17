@@ -401,37 +401,81 @@ func FusedQuantizedDenseVJP(x, weight, bias, y, dOutput shapes.Shape, options Qu
 	return dx, dBias, nil
 }
 
+// QuantizedEmbeddingLookupInfo holds validated dimensions and resolved parameter block layouts
+// for QuantizedEmbeddingLookup.
+type QuantizedEmbeddingLookupInfo struct {
+	OutputShape     shapes.Shape
+	K               int // Logical embedding dimension
+	ScaleLayout     BlockParamLayout
+	ZeroPointLayout BlockParamLayout
+}
+
 // QuantizedEmbeddingLookup validates inputs and returns the output shape of QuantizedEmbeddingLookup.
 func QuantizedEmbeddingLookup(data, indices shapes.Shape, dataQuantization *QuantizationShapes) (shapes.Shape, error) {
+	info, err := QuantizedEmbeddingLookupWithInfo(data, indices, dataQuantization)
+	if err != nil {
+		return shapes.Invalid(), err
+	}
+	return info.OutputShape, nil
+}
+
+// QuantizedEmbeddingLookupWithInfo validates inputs and returns both the output shape and resolved
+// scale/zero-point layouts for QuantizedEmbeddingLookup.
+func QuantizedEmbeddingLookupWithInfo(data, indices shapes.Shape, dataQuantization *QuantizationShapes) (QuantizedEmbeddingLookupInfo, error) {
+	var info QuantizedEmbeddingLookupInfo
 	if !data.Ok() {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: data shape is invalid")
+		return info, errors.Errorf("QuantizedEmbeddingLookup: data shape is invalid")
 	}
 	if !indices.Ok() {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: indices shape is invalid")
+		return info, errors.Errorf("QuantizedEmbeddingLookup: indices shape is invalid")
 	}
 	if dataQuantization == nil {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
+		return info, errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
 	}
-	if dataQuantization.Scheme != compute.QuantGGML {
-		return shapes.Invalid(), errors.Wrapf(compute.ErrNotImplemented,
-			"QuantizedEmbeddingLookup: only QuantGGML scheme is supported, got %s", dataQuantization.Scheme)
-	}
-	if data.Rank() != 2 || data.DType != dtypes.Uint8 || data.IsDynamic() {
-		return shapes.Invalid(), errors.Errorf(
-			"QuantizedEmbeddingLookup: data must have static shape [vocabSize, bytesPerRow] Uint8, got %s", data)
+	if data.Rank() != 2 || data.IsDynamic() || data.Dimensions[0] <= 0 || data.Dimensions[1] <= 0 {
+		return info, errors.Errorf(
+			"QuantizedEmbeddingLookup: data must have static positive shape [vocabSize, ...], got %s", data)
 	}
 	if !indices.DType.IsInt() {
-		return shapes.Invalid(), errors.Errorf(
+		return info, errors.Errorf(
 			"QuantizedEmbeddingLookup: indices must have integer DType, got %s", indices.DType)
 	}
 	if indices.Rank() < 1 || indices.Dimensions[indices.Rank()-1] != 1 {
-		return shapes.Invalid(), errors.Errorf(
+		return info, errors.Errorf(
 			"QuantizedEmbeddingLookup: indices last dimension must be 1, got %s", indices)
 	}
 
-	K, err := DeriveGGMLK("QuantizedEmbeddingLookup", data.Dimensions[1], dataQuantization.GGMLType)
-	if err != nil {
-		return shapes.Invalid(), err
+	var K int
+	var outDType dtypes.DType
+	switch dataQuantization.Scheme {
+	case compute.QuantGGML:
+		if data.DType != dtypes.Uint8 {
+			return info, errors.Errorf(
+				"QuantizedEmbeddingLookup: QuantGGML data must have DType Uint8, got %s", data.DType)
+		}
+		if dataQuantization.Scale.Ok() || dataQuantization.ZeroPoint.Ok() {
+			return info, errors.Errorf(
+				"QuantizedEmbeddingLookup: QuantGGML dataQuantization must not set Scale or ZeroPoint")
+		}
+		var err error
+		K, err = DeriveGGMLK("QuantizedEmbeddingLookup", data.Dimensions[1], dataQuantization.GGMLType)
+		if err != nil {
+			return info, err
+		}
+		outDType = dtypes.Float32
+
+	case compute.QuantLinear, compute.QuantNF4:
+		var err error
+		K, _, info.ScaleLayout, info.ZeroPointLayout, err = validateQuantizedWeight(
+			"QuantizedEmbeddingLookup", data, dataQuantization, compute.DenseLayoutOutputsInput)
+		if err != nil {
+			return info, err
+		}
+		outDType = dataQuantization.Scale.DType
+
+	default:
+		return info, errors.Wrapf(compute.ErrNotImplemented,
+			"QuantizedEmbeddingLookup: unsupported quantization scheme %s", dataQuantization.Scheme)
 	}
 
 	outDims := make([]int, indices.Rank())
@@ -442,11 +486,13 @@ func QuantizedEmbeddingLookup(data, indices shapes.Shape, dataQuantization *Quan
 		outAxisNames = make([]string, indices.Rank())
 		copy(outAxisNames[:len(outAxisNames)-1], indices.AxisNames[:len(indices.AxisNames)-1])
 	}
-	return shapes.Shape{
-		DType:      dtypes.Float32,
+	info.K = K
+	info.OutputShape = shapes.Shape{
+		DType:      outDType,
 		Dimensions: outDims,
 		AxisNames:  outAxisNames,
-	}, nil
+	}
+	return info, nil
 }
 
 // DeriveGGMLK validates a GGMLQuantType and derives the logical element count K from bytesPerRow.

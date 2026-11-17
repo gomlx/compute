@@ -1,3 +1,6 @@
+- 2026-11-17:
+  - Extended `FusedOps.QuantizedEmbeddingLookup` (`ops_fused.go`, `shapeinference/quantized_dense.go`, `internal/gobackend/fusedops/quantized_embedding_lookup.go`, `support/backendtest/quantized_dense.go`) beyond `QuantGGML` to support `QuantLinear` (`Int2`, `Uint2`, `Int4`, `Uint4`, `Int8`, `Uint8`, optional `ZeroPoint`, `Float32`/`Float16`/`BFloat16` `Scale` and matching output dtype, scalar/1D/2D block scales) and `QuantNF4`, with parallel row-wise dequantization in `"go"` backend and dynamic `indices` support.
+
 - 2026-11-16:
   - Fixed zero-dimension (`1 -> 0`) implicit broadcasting, clarified dynamic broadcasting rules, added `DynamicBroadcastInDim` static narrowing and runtime `1`-broadcasting, and added zero-size dead-code elimination (`#83`):
     - **Implicit Broadcasting & `1 -> 0` Fix (`ops.go`, `shapeinference/shapeinference.go`, `internal/gobackend/broadcast.go`, `internal/gobackend/ops/...`)**:

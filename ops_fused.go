@@ -703,17 +703,23 @@ type FusedOps interface {
 	// with on-the-fly dequantization.
 	//
 	// This is the quantized analogue of Gather for embedding lookups, inspired by
-	// llama.cpp's ggml_get_rows. For now it is only implemented for the GGML
-	// quantization scheme, but could be extended for others if/when needed.
+	// llama.cpp's ggml_get_rows. It supports:
+	//   - QuantGGML: data is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
+	//     output is Float32.
+	//   - QuantLinear: data is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
+	//     dataQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
+	//     block-wise) and optional dataQuantization.ZeroPoint; output matches Scale's DType.
+	//   - QuantNF4: data is [vocabSize, K] Int4/Uint4/Int8/Uint8 with dataQuantization.Scale
+	//     (Float32/Float16/BFloat16); output matches Scale's DType.
 	//
 	// Inputs:
-	//   - data: [vocabSize, bytesPerRow] Uint8 with native GGML block layout.
+	//   - data: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
+	//     (QuantLinear / QuantNF4).
 	//   - indices: integer tensor with last dimension = 1 (same as Gather convention).
 	//     For embeddings: [batch, seqLen, 1].
 	//   - dataQuantization: describes how to dequantize the data rows. Must not be nil.
-	//     Only QuantGGML scheme is currently supported.
 	//
-	// Output: float32 tensor with shape [batch..., K] where K = (bytesPerRow / bytesPerBlock) * valuesPerBlock.
+	// Output: floating-point tensor with shape [batch..., K].
 	//   For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
 	QuantizedEmbeddingLookup(data, indices Value,
 		dataQuantization *Quantization) (Value, error)

@@ -22,11 +22,9 @@ import (
 func init() {
 	gobackend.RegisterFusedQuantizedDense.Register(FusedQuantizedDense, gobackend.PriorityGeneric)
 	gobackend.RegisterFusedQuantizedDenseVJP.Register(FusedQuantizedDenseVJP, gobackend.PriorityGeneric)
-	gobackend.RegisterQuantizedEmbeddingLookup.Register(QuantizedEmbeddingLookup, gobackend.PriorityGeneric)
 
 	gobackend.SetNodeExecutor(compute.OpTypeFusedQuantizedDense, gobackend.PriorityTyped, execFusedQuantizedDense)
 	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedQuantizedDenseVJP] = execFusedQuantizedDenseVJP
-	gobackend.SetNodeExecutor(compute.OpTypeQuantizedEmbeddingLookup, gobackend.PriorityTyped, execQuantizedEmbeddingLookup)
 }
 
 // nodeFusedQuantizedDense stores compile-time validated metadata for FusedQuantizedDense.
@@ -812,139 +810,6 @@ func unpackSubByteSpanInt8(dt dtypes.DType, packed []byte, startElem, count int,
 			dst[i] = int8((packed[idx>>2] >> uint((idx&3)*2)) & 0x03)
 		}
 	}
-}
-
-type nodeQuantizedEmbeddingLookup struct {
-	ggmlType compute.GGMLQuantType
-	ggmlK    int // Logical embedding dimension (valuesPerBlock * numBlocks).
-}
-
-func (d *nodeQuantizedEmbeddingLookup) EqualNodeData(other gobackend.NodeDataComparable) bool {
-	o := other.(*nodeQuantizedEmbeddingLookup)
-	return d.ggmlType == o.ggmlType && d.ggmlK == o.ggmlK
-}
-
-// QuantizedEmbeddingLookup performs a quantized embedding lookup (row gather)
-// with on-the-fly dequantization.
-func QuantizedEmbeddingLookup(
-	f *gobackend.Function,
-	data, indices compute.Value,
-	wq *compute.Quantization,
-) (compute.Value, error) {
-	if wq == nil {
-		return nil, errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
-	}
-	inputs, err := f.VerifyAndCastValues("QuantizedEmbeddingLookup", data, indices)
-	if err != nil {
-		return nil, err
-	}
-	dNode, iNode := inputs[0], inputs[1]
-
-	wqs, _, _, err := extractQuantizationShapes(f, "QuantizedEmbeddingLookup", wq)
-	if err != nil {
-		return nil, err
-	}
-	outShape, err := shapeinference.QuantizedEmbeddingLookup(dNode.Shape, iNode.Shape, wqs)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := ggmlDequantFunc(wq.GGMLType); err != nil {
-		return nil, err
-	}
-
-	nodeData := &nodeQuantizedEmbeddingLookup{
-		ggmlType: wq.GGMLType,
-		ggmlK:    outShape.Dimensions[outShape.Rank()-1],
-	}
-	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedEmbeddingLookup, outShape, inputs, nodeData)
-	return node, nil
-}
-
-// execQuantizedEmbeddingLookup performs quantized embedding lookup.
-func execQuantizedEmbeddingLookup(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, _ []bool) (*gobackend.Buffer, error) {
-	data := node.Data.(*nodeQuantizedEmbeddingLookup)
-	dataBuf := inputs[0]
-	indicesBuf := inputs[1]
-
-	output, err := backend.GetBuffer(node.Shape)
-	if err != nil {
-		return nil, err
-	}
-	if backend.NoOps || node.Shape.Size() == 0 {
-		return output, nil
-	}
-
-	dataBytes := dataBuf.Flat.([]uint8)
-	out := output.Flat.([]float32)
-	K := data.ggmlK
-	bytesPerRow := dataBuf.RawShape.Dimensions[1]
-
-	dequantFn, err := ggmlDequantFunc(data.ggmlType)
-	if err != nil {
-		backend.PutBuffer(output)
-		return nil, err
-	}
-
-	numIndices := indicesBuf.RawShape.Size()
-	vocabSize := int64(dataBuf.RawShape.Dimensions[0])
-	canParallel := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
-		numIndices*K >= quantizedDenseMinParallelizeChunk && numIndices > 1
-	minChunk := max(1, quantizedDenseMinParallelizeChunk/max(K, 1))
-
-	if indicesBuf.RawShape.DType == dtypes.Int32 {
-		indices := indicesBuf.Flat.([]int32)[:numIndices]
-		for _, rawIdx := range indices {
-			if int64(rawIdx) < 0 || int64(rawIdx) >= vocabSize {
-				backend.PutBuffer(output)
-				return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rawIdx, vocabSize)
-			}
-		}
-		if canParallel {
-			backend.Scheduler.ParallelizeChunks(numIndices, minChunk, func(start, end int) {
-				for i := start; i < end; i++ {
-					rowStart := int(indices[i]) * bytesPerRow
-					dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
-				}
-			})
-		} else {
-			for i, rawIdx := range indices {
-				rowStart := int(rawIdx) * bytesPerRow
-				dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
-			}
-		}
-		return output, nil
-	}
-
-	idxBuf, isIdxOwned, err := convertIndicesToInt64(backend, indicesBuf)
-	if err != nil {
-		backend.PutBuffer(output)
-		return nil, errors.Wrapf(err, "QuantizedEmbeddingLookup")
-	}
-	if isIdxOwned {
-		defer backend.PutBuffer(idxBuf)
-	}
-	indices := idxBuf.Flat.([]int64)[:numIndices]
-
-	for _, rowIdx := range indices {
-		if rowIdx < 0 || rowIdx >= vocabSize {
-			backend.PutBuffer(output)
-			return nil, errors.Errorf("QuantizedEmbeddingLookup: index %d out of range [0, %d)", rowIdx, vocabSize)
-		}
-	}
-	if canParallel {
-		backend.Scheduler.ParallelizeChunks(numIndices, minChunk, func(start, end int) {
-			for i := start; i < end; i++ {
-				rowStart := int(indices[i]) * bytesPerRow
-				dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
-			}
-		})
-	} else {
-		for i, rowIdx := range indices {
-			rowStart := int(rowIdx) * bytesPerRow
-			dequantFn(dataBytes[rowStart:rowStart+bytesPerRow], out[i*K:(i+1)*K])
-		}
-	}
-	return output, nil
 }
 
 func convertIndicesToInt64(backend *gobackend.Backend, indicesBuf *gobackend.Buffer) (*gobackend.Buffer, bool, error) {
