@@ -83,6 +83,11 @@ func Gather(
 		return nil, err
 	}
 	operand, startIndices := inputs[0], inputs[1]
+	if operand.Shape.DType.IsPacked() {
+		return nil, errors.Wrapf(compute.ErrNotImplemented,
+			"Gather: packed sub-byte dtype %s is not supported; use QuantizedGather or Bitcast to Uint8 first",
+			operand.Shape.DType)
+	}
 
 	shape, err := shapeinference.Gather(
 		operand.Shape,
@@ -116,6 +121,11 @@ func execGather(backend *gobackend.Backend, node *gobackend.Node, inputs []*goba
 	*gobackend.Buffer, error) {
 	_ = inputsOwned // We don't reuse the inputs.
 	operand, startIndices := inputs[0], inputs[1]
+	if operand.RawShape.DType.IsPacked() {
+		return nil, errors.Wrapf(compute.ErrNotImplemented,
+			"Gather: packed sub-byte dtype %s is not supported; use QuantizedGather or Bitcast to Uint8 first",
+			operand.RawShape.DType)
+	}
 	gatherParams := node.Data.(*gatherNode)
 	outputShape := node.Shape
 	if outputShape.IsDynamic() {

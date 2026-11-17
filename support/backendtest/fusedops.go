@@ -1581,5 +1581,5 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 
 	testFusedQuantizedDense(t, b)
 	testFusedQuantizedDenseVJP(t, b)
-	testQuantizedEmbeddingLookup(t, b)
+	testQuantizedGather(t, b)
 }

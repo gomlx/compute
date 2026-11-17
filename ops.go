@@ -528,6 +528,10 @@ type StandardOps interface {
 	// Dynamic shapes: Batch axes (from startIndices) and offset axes (from operand) preserve their names
 	// in the output. If an offset axis is partially sliced (sliceSize != operand dimension), its name is dropped.
 	//
+	// Packed sub-byte dtypes (Int4, Uint4, Int2, Uint2, Int1, Uint1) are not supported because arbitrary
+	// slices may not be byte-aligned; use [FusedOps.QuantizedGather] for row lookups on sub-byte tables,
+	// or [StandardOps.Bitcast] to Uint8 (or [StandardOps.ConvertDType]) first.
+	//
 	// TODO: Add batch support: operandBatchingAxes and startIndicesBatchingAxes.
 	Gather(
 		operand, startIndices Value,
@@ -865,6 +869,9 @@ type StandardOps interface {
 	// the dimension. Partial slices of dynamic axes are currently not supported if they result in
 	// a dynamic-sized output (requires axis expressions). Slicing a dynamic axis with static
 	// bounds (e.g. from 0 to 10) results in a static output size (e.g. 10).
+	//
+	// Packed sub-byte dtypes (Int4, Uint4, Int2, Uint2, Int1, Uint1) are not supported because arbitrary
+	// slices may not be byte-aligned; [StandardOps.Bitcast] to Uint8 or [StandardOps.ConvertDType] first.
 	Slice(x Value, starts, limits, strides []int) (Value, error)
 
 	// Sqrt returns the Op that represents the output of the corresponding operation.

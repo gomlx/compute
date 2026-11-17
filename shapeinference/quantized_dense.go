@@ -401,54 +401,6 @@ func FusedQuantizedDenseVJP(x, weight, bias, y, dOutput shapes.Shape, options Qu
 	return dx, dBias, nil
 }
 
-// QuantizedEmbeddingLookup validates inputs and returns the output shape of QuantizedEmbeddingLookup.
-func QuantizedEmbeddingLookup(data, indices shapes.Shape, dataQuantization *QuantizationShapes) (shapes.Shape, error) {
-	if !data.Ok() {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: data shape is invalid")
-	}
-	if !indices.Ok() {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: indices shape is invalid")
-	}
-	if dataQuantization == nil {
-		return shapes.Invalid(), errors.Errorf("QuantizedEmbeddingLookup: dataQuantization must not be nil")
-	}
-	if dataQuantization.Scheme != compute.QuantGGML {
-		return shapes.Invalid(), errors.Wrapf(compute.ErrNotImplemented,
-			"QuantizedEmbeddingLookup: only QuantGGML scheme is supported, got %s", dataQuantization.Scheme)
-	}
-	if data.Rank() != 2 || data.DType != dtypes.Uint8 || data.IsDynamic() {
-		return shapes.Invalid(), errors.Errorf(
-			"QuantizedEmbeddingLookup: data must have static shape [vocabSize, bytesPerRow] Uint8, got %s", data)
-	}
-	if !indices.DType.IsInt() {
-		return shapes.Invalid(), errors.Errorf(
-			"QuantizedEmbeddingLookup: indices must have integer DType, got %s", indices.DType)
-	}
-	if indices.Rank() < 1 || indices.Dimensions[indices.Rank()-1] != 1 {
-		return shapes.Invalid(), errors.Errorf(
-			"QuantizedEmbeddingLookup: indices last dimension must be 1, got %s", indices)
-	}
-
-	K, err := DeriveGGMLK("QuantizedEmbeddingLookup", data.Dimensions[1], dataQuantization.GGMLType)
-	if err != nil {
-		return shapes.Invalid(), err
-	}
-
-	outDims := make([]int, indices.Rank())
-	copy(outDims, indices.Dimensions)
-	outDims[len(outDims)-1] = K
-	var outAxisNames []string
-	if indices.AxisNames != nil {
-		outAxisNames = make([]string, indices.Rank())
-		copy(outAxisNames[:len(outAxisNames)-1], indices.AxisNames[:len(indices.AxisNames)-1])
-	}
-	return shapes.Shape{
-		DType:      dtypes.Float32,
-		Dimensions: outDims,
-		AxisNames:  outAxisNames,
-	}, nil
-}
-
 // DeriveGGMLK validates a GGMLQuantType and derives the logical element count K from bytesPerRow.
 func DeriveGGMLK(opName string, bytesPerRow int, ggmlType compute.GGMLQuantType) (int, error) {
 	bpb := ggmlType.BytesPerBlock()

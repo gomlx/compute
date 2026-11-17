@@ -262,7 +262,7 @@ The `compute` backend defines operations across four interfaces in `./ops*.go`:
 | **Selection** | `FusedTopK` |
 | **Dense & Projections** | `FusedDense`, `FusedDenseVJP`, `FusedAttentionQKVProjection` |
 | **Attention** | `FusedScaledDotProductAttention`, `FusedScaledDotProductAttentionVJP` |
-| **Quantized Operations** | `QuantizedEmbeddingLookup`, `FusedQuantizedDense`, `FusedQuantizedDenseVJP` |
+| **Quantized Operations** | `QuantizedGather`, `FusedQuantizedDense`, `FusedQuantizedDenseVJP` |
 
 #### 4. Collective Operations (`CollectiveOps` in [ops_collective.go](./ops_collective.go))
 

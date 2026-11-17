@@ -383,18 +383,3 @@ func TestFusedQuantizedDenseVJP(t *testing.T) {
 		}
 	})
 }
-
-func TestQuantizedEmbeddingLookup(t *testing.T) {
-	data := S(dtypes.Uint8, 1000, 36) // Q4_0: K=64
-	indices := S(dtypes.Int32, 2, 5, 1)
-	out, err := QuantizedEmbeddingLookup(data, indices, &QuantizationShapes{
-		Scheme:   compute.QuantGGML,
-		GGMLType: compute.GGMLQ4_0,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %+v", err)
-	}
-	if !out.Equal(S(F32, 2, 5, 64)) {
-		t.Fatalf("expected F32[2, 5, 64], got %s", out)
-	}
-}

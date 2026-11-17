@@ -713,12 +713,12 @@ func (f *Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, err
 	return RegisterPow.Fn(f, lhs, rhs)
 }
 
-func (f *Function) QuantizedEmbeddingLookup(data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error) {
-	if RegisterQuantizedEmbeddingLookup.Fn == nil {
+func (f *Function) QuantizedGather(x compute.Value, indices compute.Value, xQuantization *compute.Quantization) (compute.Value, error) {
+	if RegisterQuantizedGather.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.QuantizedEmbeddingLookup(data, indices, dataQuantization)
+		return f.Function.QuantizedGather(x, indices, xQuantization)
 	}
-	return RegisterQuantizedEmbeddingLookup.Fn(f, data, indices, dataQuantization)
+	return RegisterQuantizedGather.Fn(f, x, indices, xQuantization)
 }
 
 func (f *Function) Real(x compute.Value) (compute.Value, error) {
@@ -1283,8 +1283,8 @@ var (
 	RegisterPow = OpHandlerRegistration[func(f *Function, lhs compute.Value, rhs compute.Value) (compute.Value, error)]{
 		Method: "Pow",
 	}
-	RegisterQuantizedEmbeddingLookup = OpHandlerRegistration[func(f *Function, data compute.Value, indices compute.Value, dataQuantization *compute.Quantization) (compute.Value, error)]{
-		Method: "QuantizedEmbeddingLookup",
+	RegisterQuantizedGather = OpHandlerRegistration[func(f *Function, x compute.Value, indices compute.Value, xQuantization *compute.Quantization) (compute.Value, error)]{
+		Method: "QuantizedGather",
 	}
 	RegisterReal = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{
 		Method: "Real",
