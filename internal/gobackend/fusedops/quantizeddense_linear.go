@@ -88,14 +88,17 @@ type weightRowReader struct {
 }
 
 func makeWeightRowReader(wBuf *gobackend.Buffer, d1 int) weightRowReader {
-	dt := wBuf.RawShape.DType
+	return makeWeightRowReaderWithDType(wBuf, wBuf.RawShape.DType, d1)
+}
+
+func makeWeightRowReaderWithDType(wBuf *gobackend.Buffer, dt dtypes.DType, d1 int) weightRowReader {
 	switch dt {
 	case dtypes.Int8:
 		return weightRowReader{dtype: dt, int8Data: wBuf.Flat.([]int8), d1: d1}
 	case dtypes.Uint8:
 		return weightRowReader{dtype: dt, isUint8: true, u8Data: wBuf.Flat.([]uint8), d1: d1}
 	default:
-		// Sub-byte packed []byte (Int4, Uint4, Int2, Uint2) unpacks into per-worker []int8 scratch.
+		// Sub-byte packed []byte (Int4, Uint4, Int2, Uint2, or Uint8 with PackedDType) unpacks into []int8 scratch.
 		return weightRowReader{dtype: dt, u8Data: wBuf.Flat.([]uint8), d1: d1}
 	}
 }

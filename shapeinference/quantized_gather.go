@@ -50,32 +50,54 @@ func QuantizedGatherWithInfo(x, indices shapes.Shape, xQuantization *Quantizatio
 			"QuantizedGather: indices last dimension must be 1, got %s", indices)
 	}
 
+	logicalX := x
+	if xQuantization != nil && xQuantization.PackedDType != dtypes.InvalidDType {
+		pdt := xQuantization.PackedDType
+		if !pdt.IsPacked() {
+			return info, errors.Errorf(
+				"QuantizedGather: PackedDType must be a sub-byte integer dtype (Int2/Uint2/Int4/Uint4), got %s", pdt)
+		}
+		if xQuantization.Scheme == compute.QuantGGML {
+			return info, errors.Errorf(
+				"QuantizedGather: PackedDType (%s) cannot be used with QuantGGML", pdt)
+		}
+		if x.DType != dtypes.Uint8 {
+			return info, errors.Errorf(
+				"QuantizedGather: when PackedDType (%s) is set, x must have DType Uint8, got %s", pdt, x.DType)
+		}
+		logicalX = shapes.Make(pdt, x.Dimensions[0], x.Dimensions[1]*pdt.ValuesPerStorageUnit())
+	}
+
 	var K int
 	var outDType dtypes.DType
 	switch {
-	case xQuantization == nil:
-		switch x.DType {
+	case xQuantization == nil || xQuantization.Scheme == compute.QuantNone:
+		if xQuantization != nil && (xQuantization.Scale.Ok() || xQuantization.ZeroPoint.Ok()) {
+			return info, errors.Errorf(
+				"QuantizedGather: QuantNone xQuantization must not set Scale or ZeroPoint")
+		}
+		switch logicalX.DType {
 		case dtypes.Int2, dtypes.Int4, dtypes.Int8:
 			outDType = dtypes.Int8
 		case dtypes.Uint2, dtypes.Uint4, dtypes.Uint8:
 			outDType = dtypes.Uint8
 		default:
 			return info, errors.Errorf(
-				"QuantizedGather: when xQuantization is nil, x must have Int2/Uint2/Int4/Uint4/Int8/Uint8 DType, got %s", x.DType)
+				"QuantizedGather: when xQuantization is nil/QuantNone, x must have Int2/Uint2/Int4/Uint4/Int8/Uint8 DType, got %s", logicalX.DType)
 		}
-		K = x.Dimensions[1]
+		K = logicalX.Dimensions[1]
 
 	case xQuantization.Scheme == compute.QuantGGML:
-		if x.DType != dtypes.Uint8 {
+		if logicalX.DType != dtypes.Uint8 {
 			return info, errors.Errorf(
-				"QuantizedGather: QuantGGML x must have DType Uint8, got %s", x.DType)
+				"QuantizedGather: QuantGGML x must have DType Uint8, got %s", logicalX.DType)
 		}
 		if xQuantization.Scale.Ok() || xQuantization.ZeroPoint.Ok() {
 			return info, errors.Errorf(
 				"QuantizedGather: QuantGGML xQuantization must not set Scale or ZeroPoint")
 		}
 		var err error
-		K, err = DeriveGGMLK("QuantizedGather", x.Dimensions[1], xQuantization.GGMLType)
+		K, err = DeriveGGMLK("QuantizedGather", logicalX.Dimensions[1], xQuantization.GGMLType)
 		if err != nil {
 			return info, err
 		}
@@ -84,7 +106,7 @@ func QuantizedGatherWithInfo(x, indices shapes.Shape, xQuantization *Quantizatio
 	case xQuantization.Scheme == compute.QuantLinear || xQuantization.Scheme == compute.QuantNF4:
 		var err error
 		K, _, info.ScaleLayout, info.ZeroPointLayout, err = validateQuantizedWeight(
-			"QuantizedGather", x, xQuantization, compute.DenseLayoutOutputsInput)
+			"QuantizedGather", logicalX, xQuantization, compute.DenseLayoutOutputsInput)
 		if err != nil {
 			return info, err
 		}

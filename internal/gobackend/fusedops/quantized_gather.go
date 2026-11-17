@@ -24,6 +24,7 @@ type nodeQuantizedGather struct {
 	noQuant      bool
 	scheme       compute.QuantizationScheme
 	ggmlType     compute.GGMLQuantType
+	packedDType  dtypes.DType
 	info         shapeinference.QuantizedGatherInfo
 	hasScale     bool
 	hasZeroPoint bool
@@ -36,6 +37,7 @@ func (d *nodeQuantizedGather) EqualNodeData(other gobackend.NodeDataComparable) 
 	return d.noQuant == o.noQuant &&
 		d.scheme == o.scheme &&
 		d.ggmlType == o.ggmlType &&
+		d.packedDType == o.packedDType &&
 		d.info.K == o.info.K &&
 		d.info.OutputShape.DType == o.info.OutputShape.DType &&
 		d.info.ScaleLayout == o.info.ScaleLayout &&
@@ -95,7 +97,7 @@ func QuantizedGather(
 	}
 
 	nodeData := &nodeQuantizedGather{
-		noQuant:      xQuantization == nil,
+		noQuant:      xQuantization == nil || xQuantization.Scheme == compute.QuantNone,
 		info:         info,
 		hasScale:     scaleNode != nil,
 		hasZeroPoint: zpNode != nil,
@@ -103,6 +105,7 @@ func QuantizedGather(
 	if xQuantization != nil {
 		nodeData.scheme = xQuantization.Scheme
 		nodeData.ggmlType = xQuantization.GGMLType
+		nodeData.packedDType = xQuantization.PackedDType
 	}
 	node, _ := f.GetOrCreateNode(compute.OpTypeQuantizedGather, info.OutputShape, inputs, nodeData)
 	return node, nil
@@ -151,7 +154,7 @@ func execQuantizedGather(backend *gobackend.Backend, node *gobackend.Node, input
 	minChunk := max(1, quantizedDenseMinParallelizeChunk/max(K, 1))
 
 	if nodeData.noQuant {
-		execQuantizedGatherUnpacked(backend, xBuf, output, rowAt, numIndices, K, canParallel, minChunk)
+		execQuantizedGatherUnpacked(backend, effectiveXInDType(nodeData, xBuf), xBuf, output, rowAt, numIndices, K, canParallel, minChunk)
 		return output, nil
 	}
 
@@ -219,15 +222,22 @@ func resolveGatherIndices(
 	return func(i int) int { return int(indices[i]) }, release, nil
 }
 
+func effectiveXInDType(nodeData *nodeQuantizedGather, xBuf *gobackend.Buffer) dtypes.DType {
+	if nodeData.packedDType != dtypes.InvalidDType {
+		return nodeData.packedDType
+	}
+	return xBuf.RawShape.DType
+}
+
 func execQuantizedGatherUnpacked(
 	backend *gobackend.Backend,
+	inDType dtypes.DType,
 	xBuf, output *gobackend.Buffer,
 	rowAt func(int) int,
 	numIndices, K int,
 	canParallel bool,
 	minChunk int,
 ) {
-	inDType := xBuf.RawShape.DType
 	processRange := func(start, end int) {
 		switch inDType {
 		case dtypes.Int8:
@@ -281,7 +291,8 @@ func execQuantizedGatherLinearOrNF4(
 	canParallel bool,
 	minChunk int,
 ) {
-	reader := makeWeightRowReader(xBuf, K)
+	effectiveDType := effectiveXInDType(nodeData, xBuf)
+	reader := makeWeightRowReaderWithDType(xBuf, effectiveDType, K)
 	scaleReader := makeFloat32ElemReader(scaleBuf)
 	var zpReader func(int) float32
 	if zpBuf != nil {
@@ -290,7 +301,7 @@ func execQuantizedGatherLinearOrNF4(
 	scaleLayout := nodeData.info.ScaleLayout
 	zpLayout := nodeData.info.ZeroPointLayout
 	isNF4 := nodeData.scheme == compute.QuantNF4
-	isUint8 := xBuf.RawShape.DType == dtypes.Uint8
+	isUint8 := effectiveDType == dtypes.Uint8
 
 	outDType := output.RawShape.DType
 	var outF32 []float32

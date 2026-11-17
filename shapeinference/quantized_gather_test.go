@@ -37,6 +37,67 @@ func TestQuantizedGather(t *testing.T) {
 		}
 	})
 
+	t.Run("QuantNone_And_PackedDType", func(t *testing.T) {
+		indices := S(dtypes.Int32, 2, 5, 1)
+
+		// Native Int4 with explicit QuantNone.
+		out, err := QuantizedGather(S(dtypes.Int4, 100, 16), indices, &QuantizationShapes{
+			Scheme: compute.QuantNone,
+		})
+		if err != nil || !out.Equal(S(dtypes.Int8, 2, 5, 16)) {
+			t.Fatalf("QuantNone native Int4: got %s, err=%+v", out, err)
+		}
+
+		// Packed Uint8 [100, 4] with PackedDType=Int2 -> [2, 5, 16] Int8.
+		out, err = QuantizedGather(S(dtypes.Uint8, 100, 4), indices, &QuantizationShapes{
+			Scheme:      compute.QuantNone,
+			PackedDType: dtypes.Int2,
+		})
+		if err != nil || !out.Equal(S(dtypes.Int8, 2, 5, 16)) {
+			t.Fatalf("QuantNone PackedDType=Int2: got %s, err=%+v", out, err)
+		}
+
+		// Packed Uint8 [100, 24] with PackedDType=Uint4 + QuantLinear block scale.
+		scale := S(dtypes.Float16, 100, 2) // logical K=48, BlockSize=32 -> 2 blocks
+		out, err = QuantizedGather(S(dtypes.Uint8, 100, 24), indices, &QuantizationShapes{
+			Scheme:      compute.QuantLinear,
+			Scale:       scale,
+			BlockAxis:   1,
+			BlockSize:   32,
+			PackedDType: dtypes.Uint4,
+		})
+		if err != nil || !out.Equal(S(dtypes.Float16, 2, 5, 48)) {
+			t.Fatalf("QuantLinear PackedDType=Uint4: got %s, err=%+v", out, err)
+		}
+
+		// Validation errors.
+		if _, err := QuantizedGather(S(dtypes.Int8, 10, 4), indices, &QuantizationShapes{
+			Scheme:      compute.QuantNone,
+			PackedDType: dtypes.Int4,
+		}); err == nil {
+			t.Fatalf("expected error when PackedDType is used on non-Uint8 x")
+		}
+		if _, err := QuantizedGather(S(dtypes.Uint8, 10, 4), indices, &QuantizationShapes{
+			Scheme:      compute.QuantNone,
+			PackedDType: dtypes.Int8,
+		}); err == nil {
+			t.Fatalf("expected error when PackedDType is non-packed (Int8)")
+		}
+		if _, err := QuantizedGather(S(dtypes.Uint8, 10, 4), indices, &QuantizationShapes{
+			Scheme: compute.QuantNone,
+			Scale:  S(F32, 10),
+		}); err == nil {
+			t.Fatalf("expected error when QuantNone sets Scale")
+		}
+		if _, err := QuantizedGather(S(dtypes.Uint8, 10, 36), indices, &QuantizationShapes{
+			Scheme:      compute.QuantGGML,
+			GGMLType:    compute.GGMLQ4_0,
+			PackedDType: dtypes.Int4,
+		}); err == nil {
+			t.Fatalf("expected error when PackedDType is used with QuantGGML")
+		}
+	})
+
 	t.Run("GGML", func(t *testing.T) {
 		x := S(dtypes.Uint8, 1000, 36) // Q4_0: K=64
 		indices := S(dtypes.Int32, 2, 5, 1)

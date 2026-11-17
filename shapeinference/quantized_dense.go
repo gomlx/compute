@@ -18,6 +18,7 @@ type QuantizationShapes struct {
 	BlockSize      int
 	GGMLType       compute.GGMLQuantType
 	QuantizedDType dtypes.DType
+	PackedDType    dtypes.DType
 }
 
 // QuantizedDenseConfigShapes is the shape-only counterpart of compute.FusedQuantizedDenseConfig.
@@ -124,6 +125,12 @@ func FusedQuantizedDenseWithInfo(x, weight, bias shapes.Shape, options Quantized
 	}
 	if options.WeightQuantization == nil {
 		return info, errors.Errorf("FusedQuantizedDense: options.WeightQuantization must not be nil")
+	}
+	for _, q := range []*QuantizationShapes{options.WeightQuantization, options.XQuantization, options.OutputQuantization} {
+		if q != nil && q.PackedDType != dtypes.InvalidDType {
+			return info, errors.Wrapf(compute.ErrNotImplemented,
+				"FusedQuantizedDense: PackedDType (%s) is not yet supported", q.PackedDType)
+		}
 	}
 
 	// Validate activation.

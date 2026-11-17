@@ -338,5 +338,85 @@ func testQuantizedGather(t *testing.T, b compute.Backend) {
 				t.Errorf("QuantizedGather NF4 mismatch:\n%s", diff)
 			}
 		})
+
+		t.Run("PackedUint8_QuantNone_Int2", func(t *testing.T) {
+			raw := [][]uint8{
+				{0, 1, 2, 3, 3, 2, 1, 0},
+				{1, 2, 0, 3, 2, 1, 3, 0},
+				{3, 3, 1, 0, 0, 1, 2, 2},
+			}
+			want := make([][][]int8, 2)
+			for i := range 2 {
+				want[i] = make([][]int8, 2)
+				for j := range 2 {
+					r := indices[i][j][0]
+					want[i][j] = make([]int8, K)
+					for c := range K {
+						v := raw[r][c]
+						if v >= 2 {
+							want[i][j][c] = int8(v) - 4
+						} else {
+							want[i][j][c] = int8(v)
+						}
+					}
+				}
+			}
+			got, err := testutil.Exec1(b, []any{pack2BitMatrix(raw), indices},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.QuantizedGather(p[0], p[1], &compute.Quantization{
+						Scheme:      compute.QuantNone,
+						PackedDType: dtypes.Int2,
+					})
+				})
+			if err != nil {
+				t.Fatalf("QuantizedGather PackedUint8 QuantNone Int2 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(want, got); !ok {
+				t.Errorf("QuantizedGather PackedUint8 QuantNone Int2 mismatch:\n%s", diff)
+			}
+		})
+
+		t.Run("PackedUint8_QuantLinear_Uint4_Uint8ZP", func(t *testing.T) {
+			vals := [][]uint8{
+				{2, 3, 4, 5, 6, 7, 8, 9},
+				{3, 4, 5, 6, 7, 8, 9, 10},
+				{1, 2, 3, 4, 5, 6, 7, 8},
+			}
+			zpVals := [][]uint8{
+				{1, 2},
+				{3, 4},
+				{0, 5},
+			}
+			scales := [][]float32{{0.5, 2.0}, {1.5, 0.25}, {1.0, 0.5}}
+			want := make([][][]float32, 2)
+			for i := range 2 {
+				want[i] = make([][]float32, 2)
+				for j := range 2 {
+					r := indices[i][j][0]
+					want[i][j] = make([]float32, K)
+					for c := range K {
+						bIdx := c / blockSize
+						want[i][j][c] = (float32(vals[r][c]) - float32(zpVals[r][bIdx])) * scales[r][bIdx]
+					}
+				}
+			}
+			got, err := testutil.Exec1(b, []any{pack4BitMatrix(vals), indices, scales, zpVals},
+				func(f compute.Function, p []compute.Value) (compute.Value, error) {
+					return f.QuantizedGather(p[0], p[1], &compute.Quantization{
+						Scheme:      compute.QuantLinear,
+						Scale:       p[2],
+						ZeroPoint:   p[3],
+						BlockAxis:   1,
+						BlockSize:   blockSize,
+						PackedDType: dtypes.Uint4,
+					})
+				})
+			if err != nil {
+				t.Fatalf("QuantizedGather PackedUint8 QuantLinear Uint4 failed: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(want, got, 1e-5); !ok {
+				t.Errorf("QuantizedGather PackedUint8 QuantLinear Uint4 mismatch:\n%s", diff)
+			}
+		})
 	})
 }

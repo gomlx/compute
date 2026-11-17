@@ -238,9 +238,14 @@ type DenseConfig struct {
 type QuantizationScheme int
 
 const (
+	// QuantNone indicates no scaling/zero-point/GGML dequantization (only optional sub-byte
+	// unpacking to Int8 or Uint8 in QuantizedGather, optionally from a packed Uint8 input
+	// when PackedDType is set). Scale and ZeroPoint must be nil.
+	QuantNone QuantizationScheme = iota
+
 	// QuantLinear is standard affine quantization: real_value = (float(quant_value) - float(zero_point)) * scale.
 	// Used with Int2/Uint2/Int4/Uint4/Int8/Uint8 weights or activations (symmetric when ZeroPoint == nil).
-	QuantLinear QuantizationScheme = iota
+	QuantLinear
 
 	// QuantNF4 is 4-bit NormalFloat from QLoRA: nibble indices are looked up in a fixed
 	// 16-entry table, then multiplied by scale.
@@ -258,6 +263,8 @@ const (
 // String returns the name of the quantization scheme.
 func (q QuantizationScheme) String() string {
 	switch q {
+	case QuantNone:
+		return "None"
 	case QuantLinear:
 		return "Linear"
 	case QuantNF4:
@@ -401,7 +408,7 @@ func (t GGMLQuantType) String() string {
 //   - Scalar [] / [1] and 1D [N] Scale/ZeroPoint tensors can now be passed directly without
 //     broadcasting across K to [K, NumBlocks].
 type Quantization struct {
-	// Scheme selects QuantLinear, QuantNF4, or QuantGGML.
+	// Scheme selects QuantNone, QuantLinear, QuantNF4, or QuantGGML.
 	Scheme QuantizationScheme
 
 	// Scale is the multiplicative scale factor (Float32, Float16, or BFloat16).
@@ -412,13 +419,15 @@ type Quantization struct {
 	//     Note: [1, N] on [K, N] weights is naturally BlockAxis=0, BlockSize=K (or BlockSize=0 meaning full axis).
 	// Supported shapes for activations / outputs ([batch..., features]):
 	//   - Scalar [] or [1] (per-tensor), [features] (per-channel), or broadcast-compatible per-token/per-block shapes.
-	// Unused (must be nil) for QuantGGML.
+	// Unused (must be nil) for QuantNone and QuantGGML.
 	Scale Value
 
 	// ZeroPoint is the pre-scale offset subtracted from quantized values (only for QuantLinear).
 	// May have integer dtype matching the quantized tensor (e.g. Int8, Uint8, Int4, Uint4) or float dtype
 	// matching Scale. Its shape must match Scale (or be broadcast-compatible with Scale).
-	// Unused (must be nil) for QuantNF4 and QuantGGML.
+	// Unused (must be nil) for QuantNone, QuantNF4, and QuantGGML.
+	// Note: PackedDType does not apply to ZeroPoint; ZeroPoint uses its own DType (unpacked integer/float
+	// or native sub-byte when supported).
 	ZeroPoint Value
 
 	// BlockAxis is the axis of the quantized tensor partitioned into blocks of BlockSize elements:
@@ -442,6 +451,13 @@ type Quantization struct {
 	// when Quantization is used as OutputQuantization. If InvalidDType, the dtype is inferred
 	// from ZeroPoint (if ZeroPoint is Int8 or Uint8), or defaults to Int8.
 	QuantizedDType dtypes.DType
+
+	// PackedDType optionally specifies the logical sub-byte integer dtype (Int2, Uint2, Int4, or Uint4)
+	// when the primary quantized tensor (e.g., x in QuantizedGather) is stored bit-packed in Uint8
+	// (shape [vocabSize, K / ValuesPerStorageUnit] with low bits first). Allows backends without native
+	// sub-byte dtype support to store and gather packed Uint8 rows without unpacking the whole table.
+	// Unused (must be InvalidDType) when the tensor already has a sub-byte/8-bit DType or for QuantGGML.
+	PackedDType dtypes.DType
 }
 
 // FusedQuantizedDenseConfig configures FusedQuantizedDense and FusedQuantizedDenseVJP.
@@ -707,27 +723,29 @@ type FusedOps interface {
 	// which StandardOps.Gather does not support directly.
 	//
 	// Supported modes:
-	//   - xQuantization == nil: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x and
-	//     unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
-	//     Uint2/Uint4/Uint8) without scaling.
+	//   - xQuantization == nil or QuantNone: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x
+	//     and unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
+	//     Uint2/Uint4/Uint8) without scaling. When PackedDType is set on QuantNone/QuantLinear/QuantNF4,
+	//     x may be stored bit-packed in Uint8 with shape [vocabSize, K / ValuesPerStorageUnit] and logical
+	//     element dtype PackedDType.
 	//   - QuantGGML: x is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
 	//     output is Float32.
-	//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
-	//     xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
-	//     block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
-	//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 with xQuantization.Scale
-	//     (Float32/Float16/BFloat16); output matches Scale's DType.
+	//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 (or [vocabSize, K/vpb] Uint8
+	//     with PackedDType) with xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or
+	//     2D block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
+	//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 (or [vocabSize, K/2] Uint8 with PackedDType)
+	//     with xQuantization.Scale (Float32/Float16/BFloat16); output matches Scale's DType.
 	//
 	// Inputs:
-	//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
-	//     (xQuantization == nil, QuantLinear, or QuantNF4).
+	//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML), [vocabSize, K/vpb] Uint8 (when PackedDType is set),
+	//     or [vocabSize, K] quantized integer (xQuantization == nil, QuantNone, QuantLinear, or QuantNF4).
 	//   - indices: integer tensor with last dimension = 1 (same as Gather convention).
 	//     For embeddings: [batch, seqLen, 1].
-	//   - xQuantization: describes how to dequantize the rows of x, or nil to gather and unpack
+	//   - xQuantization: describes how to unpack/dequantize the rows of x, or nil to gather and unpack
 	//     sub-byte/8-bit integer elements directly to Int8/Uint8.
 	//
 	// Output: tensor with shape [batch..., K] (Float32 for QuantGGML, Scale.DType for
-	// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil).
+	// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil or QuantNone).
 	//   For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
 	QuantizedGather(x, indices Value,
 		xQuantization *Quantization) (Value, error)
