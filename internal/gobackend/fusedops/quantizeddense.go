@@ -192,6 +192,7 @@ func extractQuantizationShapes(
 		BlockSize:      q.BlockSize,
 		GGMLType:       q.GGMLType,
 		QuantizedDType: q.QuantizedDType,
+		PackedDType:    q.PackedDType,
 	}
 	if q.Scale != nil {
 		nodes, err := f.VerifyAndCastValues(opName, q.Scale)

@@ -791,27 +791,29 @@ func (f Function) Pow(lhs compute.Value, rhs compute.Value) (compute.Value, erro
 // which StandardOps.Gather does not support directly.
 //
 // Supported modes:
-//   - xQuantization == nil: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x and
-//     unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
-//     Uint2/Uint4/Uint8) without scaling.
+//   - xQuantization == nil or QuantNone: gathers rows from Int2/Uint2/Int4/Uint4 (or Int8/Uint8) x
+//     and unpacks them losslessly into Int8 (for signed Int2/Int4/Int8) or Uint8 (for unsigned
+//     Uint2/Uint4/Uint8) without scaling. When PackedDType is set on QuantNone/QuantLinear/QuantNF4,
+//     x may be stored bit-packed in Uint8 with shape [vocabSize, K / ValuesPerStorageUnit] and logical
+//     element dtype PackedDType.
 //   - QuantGGML: x is [vocabSize, bytesPerRow] Uint8 with native GGML block layout;
 //     output is Float32.
-//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 with
-//     xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or 2D
-//     block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
-//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 with xQuantization.Scale
-//     (Float32/Float16/BFloat16); output matches Scale's DType.
+//   - QuantLinear: x is [vocabSize, K] Int2/Uint2/Int4/Uint4/Int8/Uint8 (or [vocabSize, K/vpb] Uint8
+//     with PackedDType) with xQuantization.Scale (Float32/Float16/BFloat16; scalar, 1D [vocabSize], or
+//     2D block-wise) and optional xQuantization.ZeroPoint; output matches Scale's DType.
+//   - QuantNF4: x is [vocabSize, K] Int4/Uint4/Int8/Uint8 (or [vocabSize, K/2] Uint8 with PackedDType)
+//     with xQuantization.Scale (Float32/Float16/BFloat16); output matches Scale's DType.
 //
 // Inputs:
-//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML) or [vocabSize, K] quantized integer
-//     (xQuantization == nil, QuantLinear, or QuantNF4).
+//   - x: [vocabSize, bytesPerRow] Uint8 (QuantGGML), [vocabSize, K/vpb] Uint8 (when PackedDType is set),
+//     or [vocabSize, K] quantized integer (xQuantization == nil, QuantNone, QuantLinear, or QuantNF4).
 //   - indices: integer tensor with last dimension = 1 (same as Gather convention).
 //     For embeddings: [batch, seqLen, 1].
-//   - xQuantization: describes how to dequantize the rows of x, or nil to gather and unpack
+//   - xQuantization: describes how to unpack/dequantize the rows of x, or nil to gather and unpack
 //     sub-byte/8-bit integer elements directly to Int8/Uint8.
 //
 // Output: tensor with shape [batch..., K] (Float32 for QuantGGML, Scale.DType for
-// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil).
+// QuantLinear/QuantNF4, or Int8/Uint8 when xQuantization == nil or QuantNone).
 //
 //	For embeddings with indices [batch, seqLen, 1]: output is [batch, seqLen, K].
 func (f Function) QuantizedGather(x compute.Value, indices compute.Value, xQuantization *compute.Quantization) (compute.Value, error) {
