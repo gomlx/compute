@@ -170,6 +170,8 @@ func normalizeParameterTypes(method *backendparser.Method) {
 				param.Type = "compute.DotGeneralConfig"
 			case "CumSumOptions":
 				param.Type = "compute.CumSumOptions"
+			case "RNGAlgorithm":
+				param.Type = "compute.RNGAlgorithm"
 			case "*Quantization":
 				param.Type = "*compute.Quantization"
 			case "*ScaledDotProductAttentionConfig":

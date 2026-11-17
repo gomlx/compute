@@ -77,7 +77,7 @@ func (f Function) ReduceWindow(input compute.Value, reductionType compute.Reduce
 	return nil, f.baseErrFn(compute.OpTypeReduceWindow)
 }
 
-func (f Function) RNGBitGenerator(state compute.Value, shape shapes.Shape) (newState, values compute.Value, err error) {
+func (f Function) RNGBitGenerator(state compute.Value, shape shapes.Shape, algorithm compute.RNGAlgorithm) (newState, values compute.Value, err error) {
 	return nil, nil, f.baseErrFn(compute.OpTypeRNGBitGenerator)
 }
 

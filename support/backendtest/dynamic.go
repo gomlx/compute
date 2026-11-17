@@ -1901,24 +1901,30 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
 		testutil.SkipIfMissing(t, b, compute.OpTypeConstant)
 		testutil.SkipIfMissing(t, b, compute.OpTypeRNGBitGenerator)
-		testutil.SkipIfMissingDType(t, b, dtypes.Uint64)
 		testutil.SkipIfMissingDType(t, b, dtypes.Uint32)
 		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+
+		caps := b.Capabilities()
+		stateShape, err := caps.RNGStateShape(compute.RNGDefault)
+		if err != nil {
+			t.Fatalf("Capabilities.RNGStateShape(RNGDefault) failed: %v", err)
+		}
+		testutil.SkipIfMissingDType(t, b, stateShape.DType)
 
 		builder := b.Builder("test_dyn_rng")
 		fn := builder.Main()
 
 		xShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
-		_, err := fn.Parameter("x", xShape, nil)
+		_, err = fn.Parameter("x", xShape, nil)
 		if err != nil {
 			t.Fatalf("Parameter x failed: %v", err)
 		}
-		stateParam, err := fn.Parameter("state", compute.RNGStateShape, nil)
+		stateParam, err := fn.Parameter("state", stateShape, nil)
 		if err != nil {
 			t.Fatalf("Parameter state failed: %v", err)
 		}
 		rngOutShape := shapes.MakeDynamic(dtypes.Uint32, []int{shapes.DynamicDim, 3}, []string{"batch", ""})
-		newState, bits, err := fn.RNGBitGenerator(stateParam, rngOutShape)
+		newState, bits, err := fn.RNGBitGenerator(stateParam, rngOutShape, compute.RNGDefault)
 		if err != nil {
 			t.Fatalf("RNGBitGenerator with dynamic shape failed: %v", err)
 		}
@@ -1931,12 +1937,17 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 		}
 		defer exec.Finalize()
 
+		initFlat, _, err := caps.RNGStateFromSeed(compute.RNGDefault, 42)
+		if err != nil {
+			t.Fatalf("Capabilities.RNGStateFromSeed failed: %v", err)
+		}
+
 		for _, batch := range []int{2, 5, 0} {
 			inX, err := b.BufferFromFlatData(0, make([]float32, batch*3), shapes.Make(dtypes.Float32, batch, 3))
 			if err != nil {
 				t.Fatalf("BufferFromFlatData x(batch=%d) failed: %v", batch, err)
 			}
-			inState, err := b.BufferFromFlatData(0, []uint64{42, 1, 0}, compute.RNGStateShape)
+			inState, err := b.BufferFromFlatData(0, initFlat, stateShape)
 			if err != nil {
 				inX.Finalize()
 				t.Fatalf("BufferFromFlatData state failed: %v", err)

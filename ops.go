@@ -87,8 +87,9 @@ const (
 	ReduceOpMin
 )
 
-// RNGStateShape is the default shape for the random number generator state.
-// It dependents on the algorithm, but for now we are using Philox.
+// RNGStateShape is the legacy Philox state shape ([3]uint64).
+//
+// Deprecated: use [RNGPhilox.StateShape] or [Capabilities.RNGStateShape] instead.
 var RNGStateShape = shapes.Make(dtypes.Uint64, 3) //nolint:mnd // This is a constant.
 
 // DotGeneralConfig are optional configurations for the DotGeneral operation.
@@ -778,12 +779,20 @@ type StandardOps interface {
 	// The shape remains the same.
 	Reverse(x Value, axes ...int) (Value, error)
 
-	// RNGBitGenerator generates the given shape filled with random bits.
+	// RNGBitGenerator generates a tensor of the given shape filled with uniformly distributed
+	// random bits using the specified Random Number Generator (RNG) algorithm, returning the
+	// updated state tensor and the generated random bits.
 	//
-	// It takes as input a state (usually [3]uint64) and returns the updated state and the generated values (with random bits).
-	//
-	// Currently, the backend only supports the Philox algorithm. See https://dl.acm.org/doi/10.1145/2063384.2063405
-	RNGBitGenerator(state Value, shape shapes.Shape) (newState Value, values Value, err error)
+	//   - state: 1D state tensor matching backend.Capabilities().RNGStateShape(algorithm)
+	//     (which equals algorithm.StateShape() for all explicit algorithms).
+	//   - shape: target output shape. Its DType must be an unsigned integer type
+	//     (Uint8, Uint16, Uint32, or Uint64). Dimensions may be dynamic on backends
+	//     that support dynamic shapes.
+	//   - algorithm: Pseudo-Random Number Generator (PRNG) algorithm to execute
+	//     ([RNGDefault] for the backend's preferred native generator, or an explicit algorithm
+	//     such as [RNGPhilox] or [RNGThreeFry] for cross-backend reproducibility).
+	//     If unsupported by the backend, returns an error wrapping [ErrNotImplemented].
+	RNGBitGenerator(state Value, shape shapes.Shape, algorithm RNGAlgorithm) (newState Value, values Value, err error)
 
 	// Round returns the Op that represents the output of the corresponding operation.
 	// This operation rounds to the nearest even.

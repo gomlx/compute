@@ -1896,3 +1896,32 @@ func TestWhere(t *testing.T) {
 		t.Fatalf("Expected error for dimension mismatch, got nil")
 	}
 }
+
+func TestRNGBitGenerator(t *testing.T) {
+	expectedState := S(dtypes.Uint64, 3)
+
+	for _, dt := range []dtypes.DType{dtypes.Uint8, dtypes.Uint16, dtypes.Uint32, dtypes.Uint64} {
+		newState, values, err := RNGBitGenerator(expectedState, expectedState, S(dt, 4, 5))
+		if err != nil {
+			t.Fatalf("RNGBitGenerator(%s) failed: %v", dt, err)
+		}
+		if !newState.Equal(expectedState) {
+			t.Errorf("newState = %s, want %s", newState, expectedState)
+		}
+		if !values.Equal(S(dt, 4, 5)) {
+			t.Errorf("values = %s, want %s", values, S(dt, 4, 5))
+		}
+	}
+
+	// Mismatched state shape.
+	if _, _, err := RNGBitGenerator(expectedState, S(dtypes.Uint64, 2), S(dtypes.Uint32, 4)); err == nil {
+		t.Errorf("expected error for mismatched state shape, got nil")
+	}
+
+	// Non-unsigned output dtypes must fail.
+	for _, dt := range []dtypes.DType{dtypes.Float32, dtypes.Float64, dtypes.Int32, dtypes.Bool, dtypes.Uint4} {
+		if _, _, err := RNGBitGenerator(expectedState, expectedState, S(dt, 4)); err == nil {
+			t.Errorf("expected error for output dtype %s, got nil", dt)
+		}
+	}
+}

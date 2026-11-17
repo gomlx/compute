@@ -1,4 +1,10 @@
 - 2026-11-17:
+  - Redesigned `StandardOps.RNGBitGenerator` (`ops.go`, `rng.go`, `capabilities.go`, `docs/RNGDesign.md`) for portable, extensible, and bit-reproducible pseudo-random number generation across backends:
+    - Added `RNGAlgorithm` enum (`RNGDefault`, `RNGPhilox`, `RNGThreeFry`, `RNGSplitMix64`, `RNGPCG`, `RNGChaCha8`) with `StateShape()`, `IsCounterBased()`, and `StateFromSeed(seed)` helpers, plus `BitsToUniformFloat(fn, randomBits, floatDType)` using exact IEEE-754 significand-width shifts.
+    - Added `Capabilities.RNGAlgorithms`, `DefaultRNGAlgorithm`, `DefaultRNGStateShape`, `SupportsRNG`, `ResolveRNGAlgorithm`, `RNGStateShape`, and `RNGStateFromSeed` (deep-copied in `Clone()`). Deprecated `compute.RNGStateShape`.
+    - Updated `RNGBitGenerator(state, shape, algorithm)` signature in `ops.go`, `notimplemented/function.go`, and `internal/cmd/{notimplemented_generator,gobackend_opsregistration}`; added `shapeinference.RNGBitGenerator` (`shapeinference/shapeinference.go`) restricting outputs to unsigned integer bit dtypes (`Uint8`, `Uint16`, `Uint32`, `Uint64`).
+    - Implemented parallelized counter-based `RNGPhilox` (`Philox4x32-10` matching OpenXLA), `RNGThreeFry` (`ThreeFry2x32-20` matching OpenXLA), `RNGSplitMix64`, `RNGChaCha8`, and fixed big-endian `RNGPCG` (`math/rand/v2.PCG`) in `"go"` backend (`internal/gobackend/ops/rngbitgenerator*.go`, `capabilities.go`).
+    - Updated `support/backendtest` (`rng.go`, `special.go`, `dynamic.go`) with statistical, determinism, `BitsToUniformFloat`, `ErrNotImplemented`, and bit-exact golden reference tests across all algorithms.
   - Fixed/hardened dynamic-shape validation for `Scatter` operations:
     - Added batch dimension and dynamic axis name compatibility checks between `indices` and `updates` (and duplicate `updateWindowAxes` checks) in `shapeinference.Scatter` (`shapeinference/shapeinference.go`).
     - Added runtime `shapeinference.Scatter` validation in `"go"` backend `execScatter` (`internal/gobackend/ops/scatter.go`) for dynamic-shape inputs/outputs, plus unit and backend compliance tests (`shapeinference/shapeinference_test.go`, `support/backendtest/dynamic.go`).

@@ -841,12 +841,12 @@ func (f *Function) Reverse(x compute.Value, axes ...int) (compute.Value, error) 
 	return RegisterReverse.Fn(f, x, axes...)
 }
 
-func (f *Function) RNGBitGenerator(state compute.Value, shape shapes.Shape) (newState compute.Value, values compute.Value, err error) {
+func (f *Function) RNGBitGenerator(state compute.Value, shape shapes.Shape, algorithm compute.RNGAlgorithm) (newState compute.Value, values compute.Value, err error) {
 	if RegisterRNGBitGenerator.Fn == nil {
 		// Operation not registered, fallback to notimplemented.Function, which will return the appropriate error.
-		return f.Function.RNGBitGenerator(state, shape)
+		return f.Function.RNGBitGenerator(state, shape, algorithm)
 	}
-	return RegisterRNGBitGenerator.Fn(f, state, shape)
+	return RegisterRNGBitGenerator.Fn(f, state, shape, algorithm)
 }
 
 func (f *Function) Round(x compute.Value) (compute.Value, error) {
@@ -1331,7 +1331,7 @@ var (
 	RegisterReverse = OpHandlerRegistration[func(f *Function, x compute.Value, axes ...int) (compute.Value, error)]{
 		Method: "Reverse",
 	}
-	RegisterRNGBitGenerator = OpHandlerRegistration[func(f *Function, state compute.Value, shape shapes.Shape) (newState compute.Value, values compute.Value, err error)]{
+	RegisterRNGBitGenerator = OpHandlerRegistration[func(f *Function, state compute.Value, shape shapes.Shape, algorithm compute.RNGAlgorithm) (newState compute.Value, values compute.Value, err error)]{
 		Method: "RNGBitGenerator",
 	}
 	RegisterRound = OpHandlerRegistration[func(f *Function, x compute.Value) (compute.Value, error)]{

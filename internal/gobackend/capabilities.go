@@ -204,4 +204,14 @@ var Capabilities = compute.Capabilities{
 		dtypes.Float64:  true,
 		dtypes.BFloat16: true,
 	},
+
+	RNGAlgorithms: map[compute.RNGAlgorithm]bool{
+		compute.RNGDefault:    true,
+		compute.RNGPhilox:     true,
+		compute.RNGThreeFry:   true,
+		compute.RNGSplitMix64: true,
+		compute.RNGPCG:        true,
+		compute.RNGChaCha8:    true,
+	},
+	DefaultRNGAlgorithm: compute.RNGPhilox,
 }
