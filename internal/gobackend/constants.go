@@ -167,10 +167,11 @@ func GetOrSetCachedForm[T any](cd *ConstantData, computeFn func() T) T {
 	if !reflect.ValueOf(&typed).Elem().IsZero() {
 		cd.cachedForm.Store(typed)
 		if !cd.isRawBufferPinned {
-			if oldBuf := cd.rawBuffer.Swap(nil); oldBuf != nil {
-				oldBuf.Flat = nil
-				oldBuf.RawBytes = nil
-			}
+			// Clear the atomic pointer so GC can reclaim the buffer once any
+			// concurrent readers that already loaded it finish; do not mutate
+			// oldBuf fields in place because concurrent first-run readers may
+			// still be reading them.
+			_ = cd.rawBuffer.Swap(nil)
 		}
 	}
 	return typed

@@ -57,10 +57,8 @@ func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, in
 		}
 	}
 
-	if !node.IsExecutorCached() {
-		if (!isTrailingAxes && !isMiddleContiguous) || normSize <= 0 {
-			return nil, gobackend.ErrFallback
-		}
+	if (!isTrailingAxes && !isMiddleContiguous) || normSize <= 0 {
+		return nil, gobackend.ErrFallback
 	}
 
 	paramInputs := inputs
