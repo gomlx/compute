@@ -1,6 +1,7 @@
 package fusedops
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/gomlx/compute"
@@ -125,5 +126,117 @@ func TestQKVProjectionConstantCaching(t *testing.T) {
 	}
 	if ok, diff := testutil.IsInDelta(gotV1, gotV2[:4*kvDim], 1e-5); !ok {
 		t.Errorf("V mismatch on shared constant recompilation:\n%s", diff)
+	}
+}
+
+// TestConcurrentLayerNormFallbackAndConstantCaching verifies that concurrent
+// first-time executions of a non-trailing FusedLayerNorm (falling back from SIMD
+// to generic) and a Constant -> Transpose -> DotGeneral subgraph (releasing the
+// raw constant buffer on first cache population) run race-free and consistently.
+func TestConcurrentLayerNormFallbackAndConstantCaching(t *testing.T) {
+	b, err := NewBackend()
+	if err != nil {
+		t.Fatalf("NewBackend: %+v", err)
+	}
+	defer b.Finalize()
+
+	const (
+		batch = 2
+		seq   = 4
+		feat  = 8
+		numWorkers = 8
+	)
+
+	xShape := shapes.Make(dtypes.Float32, batch, seq, feat)
+	xData := make([]float32, xShape.Size())
+	for i := range xData {
+		xData[i] = float32((i%11)-5) * 0.25
+	}
+	wData := make([]float32, feat*feat)
+	for i := range wData {
+		wData[i] = float32((i%7)-3) * 0.125
+	}
+
+	for iter := range 10 {
+		builder := b.Builder("concurrent_ln_const")
+		fn := builder.Main()
+
+		x, err := fn.Parameter("x", xShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter: %+v", err)
+		}
+		// Axis 0 (non-trailing, non-middle-contiguous when batch*seq*feat has d=seq*feat>1)
+		// triggers FusedLayerNorm SIMD fallback to generic.
+		ln, err := fn.FusedLayerNorm(x, []int{0}, 1e-5, nil, nil)
+		if err != nil {
+			t.Fatalf("FusedLayerNorm: %+v", err)
+		}
+		wConst, err := fn.Constant(wData, feat, feat)
+		if err != nil {
+			t.Fatalf("Constant: %+v", err)
+		}
+		wT, err := fn.Transpose(wConst, 1, 0)
+		if err != nil {
+			t.Fatalf("Transpose: %+v", err)
+		}
+		out, err := fn.DotGeneral(ln, []int{2}, nil, wT, []int{0}, nil, compute.DotGeneralConfig{})
+		if err != nil {
+			t.Fatalf("DotGeneral: %+v", err)
+		}
+		if err := fn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return: %+v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile: %+v", err)
+		}
+
+		// Compute reference result on a fresh single run of an equivalent graph.
+		var startWG, doneWG sync.WaitGroup
+		startWG.Add(1)
+		results := make([][]float32, numWorkers)
+		errs := make(chan error, numWorkers)
+
+		for w := range numWorkers {
+			doneWG.Add(1)
+			go func(workerIdx int) {
+				defer doneWG.Done()
+				xBuf, bufErr := b.BufferFromFlatData(0, xData, xShape)
+				if bufErr != nil {
+					errs <- bufErr
+					return
+				}
+				defer func() { _ = xBuf.Finalize() }()
+
+				startWG.Wait()
+				outs, execErr := exec.Execute([]compute.Buffer{xBuf}, []bool{false}, 0)
+				if execErr != nil {
+					errs <- execErr
+					return
+				}
+				got := make([]float32, xShape.Size())
+				if copyErr := outs[0].ToFlatData(got); copyErr != nil {
+					errs <- copyErr
+					return
+				}
+				_ = outs[0].Finalize()
+				results[workerIdx] = got
+			}(w)
+		}
+
+		startWG.Done()
+		doneWG.Wait()
+		close(errs)
+		for execErr := range errs {
+			exec.Finalize()
+			t.Fatalf("iter %d concurrent Execute failed: %+v", iter, execErr)
+		}
+		exec.Finalize()
+
+		for w := 1; w < numWorkers; w++ {
+			if ok, diff := testutil.IsInDelta(results[0], results[w], 1e-5); !ok {
+				t.Fatalf("iter %d worker %d output mismatch:\n%s", iter, w, diff)
+			}
+		}
 	}
 }
