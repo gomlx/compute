@@ -447,6 +447,35 @@ func TestScatterOp(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error, got nil")
 	}
+
+	// Dynamic Case 1: Mixed static/dynamic and generated "#" batch dims between indices and updates.
+	dynOp := shapes.MakeDynamic(F32, []int{shapes.DynamicDim, 2, 5}, []string{"b0", "", ""})
+	dynIdx := shapes.MakeDynamic(I32, []int{shapes.DynamicDim, 2, 2}, []string{shapes.UniqueAxisName("idx"), "", ""})
+	dynUpd := shapes.MakeDynamic(F32, []int{shapes.DynamicDim, shapes.DynamicDim, 5}, []string{shapes.UniqueAxisName("upd0"), shapes.UniqueAxisName("upd1"), ""})
+	dynOut, err := Scatter(dynOp, dynIdx, dynUpd, 2, []int{2}, []int{0, 1}, []int{0, 1})
+	if err != nil {
+		t.Fatalf("Expected no error for compatible dynamic Scatter, got %v", err)
+	}
+	if !dynOut.Equal(dynOp) {
+		t.Fatalf("Dynamic Scatter output %s != operand %s", dynOut, dynOp)
+	}
+
+	// Error Case 10: Mismatched static batch dimension between indices and updates.
+	_, err = Scatter(S(F32, 4, 5), S(I32, 2, 1), S(F32, 3, 5), 1, []int{1}, []int{0}, []int{0})
+	if err == nil {
+		t.Fatalf("Expected error for batch dimension mismatch, got nil")
+	}
+
+	// Error Case 11: Mismatched user-named dynamic batch axis names between indices and updates.
+	_, err = Scatter(
+		S(F32, 4, 5),
+		shapes.MakeDynamic(I32, []int{shapes.DynamicDim, 1}, []string{"batch_a", ""}),
+		shapes.MakeDynamic(F32, []int{shapes.DynamicDim, 5}, []string{"batch_b", ""}),
+		1, []int{1}, []int{0}, []int{0},
+	)
+	if err == nil {
+		t.Fatalf("Expected error for batch dynamic axis name mismatch, got nil")
+	}
 }
 
 func TestSliceOp(t *testing.T) {

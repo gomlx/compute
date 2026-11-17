@@ -1,4 +1,7 @@
 - 2026-11-17:
+  - Fixed/hardened dynamic-shape validation for `Scatter` operations:
+    - Added batch dimension and dynamic axis name compatibility checks between `indices` and `updates` (and duplicate `updateWindowAxes` checks) in `shapeinference.Scatter` (`shapeinference/shapeinference.go`).
+    - Added runtime `shapeinference.Scatter` validation in `"go"` backend `execScatter` (`internal/gobackend/ops/scatter.go`) for dynamic-shape inputs/outputs, plus unit and backend compliance tests (`shapeinference/shapeinference_test.go`, `support/backendtest/dynamic.go`).
   - Fixed concurrent execution races in `"go"` backend (`internal/gobackend`):
     - Removed unsafe `!node.IsExecutorCached()` shortcuts in SIMD binary (`ops/binaryops_simd.go`), reduce (`ops/reduce_simd.go`), and `FusedLayerNorm` (`fusedops/layernorm_simd.go`) executors: during concurrent first-time execution, another goroutine caching a fallback executor (`node.cachedExecutorIdx > 0`) caused in-flight discovery loops to skip eligibility checks, consume/mutate owned input buffers, and then return `ErrFallback`, leading to nil-pointer dereference panics in the generic fallback (or wrong-layout execution in `FusedLayerNorm`, and pooled buffer leaks in `reduce_simd.go`).
     - Fixed a data race in `ConstantData.GetOrSetCachedForm` (`constants.go`) where clearing `oldBuf.Flat`/`oldBuf.RawBytes` in place raced with concurrent first-run readers of intermediate constant-subgraph nodes; atomically clearing `cd.rawBuffer` alone allows GC once in-flight readers finish.
