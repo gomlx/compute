@@ -2001,6 +2001,9 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			t.Fatalf("Parameter upd failed: %v", err)
 		}
 		out, err := fn.ScatterSum(op, idx, upd, 2, []int{2}, []int{0}, []int{0}, false, false)
+		if compute.IsNotImplemented(err) {
+			t.Skipf("Backend %q does not support dynamic ScatterSum: %v", b.Name(), err)
+		}
 		if err != nil {
 			t.Fatalf("ScatterSum failed: %v", err)
 		}
@@ -2008,6 +2011,9 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			t.Fatalf("Return failed: %v", err)
 		}
 		exec, err := builder.Compile()
+		if compute.IsNotImplemented(err) {
+			t.Skipf("Backend %q does not support dynamic ScatterSum: %v", b.Name(), err)
+		}
 		if err != nil {
 			t.Fatalf("Compile failed: %v", err)
 		}
