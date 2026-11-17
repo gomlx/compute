@@ -6,6 +6,8 @@ import (
 	"maps"
 
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/shapes"
+	"github.com/pkg/errors"
 )
 
 // Capabilities holds mappings of what is supported by a backend.
@@ -65,6 +67,24 @@ type Capabilities struct {
 	// When true, model variables converted to constants (e.g., when donating a model.Store
 	// for inference) can be cached as a compute.Value and shared across graph recompilations.
 	SharedConstants bool
+
+	// RNGAlgorithms lists which Random Number Generator (RNG) algorithms are natively
+	// supported by this backend (paralleling Operations and DTypes).
+	// Backends supporting OpTypeRNGBitGenerator should at least set RNGAlgorithms[RNGDefault] = true.
+	RNGAlgorithms map[RNGAlgorithm]bool
+
+	// DefaultRNGAlgorithm indicates which concrete [RNGAlgorithm] this backend uses when
+	// [RNGDefault] is requested (for example, [RNGPhilox] or [RNGThreeFry]).
+	//
+	// If the backend uses a backend-private native Pseudo-Random Number Generator (PRNG)
+	// that does not correspond to a portable RNGAlgorithm constant, DefaultRNGAlgorithm
+	// remains [RNGDefault] and DefaultRNGStateShape must specify its state tensor shape.
+	DefaultRNGAlgorithm RNGAlgorithm
+
+	// DefaultRNGStateShape specifies the state tensor shape for [RNGDefault] ONLY when
+	// DefaultRNGAlgorithm == RNGDefault (a backend-private native PRNG).
+	// When DefaultRNGAlgorithm != RNGDefault, DefaultRNGAlgorithm.StateShape() is used.
+	DefaultRNGStateShape shapes.Shape
 }
 
 // Clone makes a deep copy of the Capabilities.
@@ -75,7 +95,97 @@ func (c Capabilities) Clone() Capabilities {
 	maps.Copy(c2.Operations, c.Operations)
 	c2.DTypes = make(map[dtypes.DType]bool, len(c.DTypes))
 	maps.Copy(c2.DTypes, c.DTypes)
+	if c.RNGAlgorithms != nil {
+		c2.RNGAlgorithms = make(map[RNGAlgorithm]bool, len(c.RNGAlgorithms))
+		maps.Copy(c2.RNGAlgorithms, c.RNGAlgorithms)
+	}
+	if c.DefaultRNGStateShape.Ok() {
+		c2.DefaultRNGStateShape = c.DefaultRNGStateShape.Clone()
+	}
 	return c2
+}
+
+// SupportsRNG reports whether the backend natively implements the given RNGAlgorithm.
+func (c Capabilities) SupportsRNG(algo RNGAlgorithm) bool {
+	if !c.Operations[OpTypeRNGBitGenerator] {
+		return false
+	}
+	if c.RNGAlgorithms != nil {
+		return c.RNGAlgorithms[algo]
+	}
+	return algo == RNGDefault
+}
+
+// ResolveRNGAlgorithm resolves [RNGDefault] to c.DefaultRNGAlgorithm (which remains
+// [RNGDefault] if the backend uses a backend-private native PRNG), or returns algo unchanged.
+func (c Capabilities) ResolveRNGAlgorithm(algo RNGAlgorithm) RNGAlgorithm {
+	if algo == RNGDefault && c.DefaultRNGAlgorithm != RNGDefault {
+		return c.DefaultRNGAlgorithm
+	}
+	return algo
+}
+
+// RNGStateShape returns the expected state tensor Shape for algo on this backend,
+// or an error wrapping [ErrNotImplemented] if algo is not natively supported.
+func (c Capabilities) RNGStateShape(algo RNGAlgorithm) (shapes.Shape, error) {
+	if !c.SupportsRNG(algo) {
+		return shapes.Invalid(), errors.Wrapf(ErrNotImplemented, "RNG algorithm %s is not natively supported by this backend", algo)
+	}
+	resolved := c.ResolveRNGAlgorithm(algo)
+	if resolved != RNGDefault {
+		shape := resolved.StateShape()
+		if !shape.Ok() {
+			return shapes.Invalid(), errors.Wrapf(ErrNotImplemented, "unsupported RNG algorithm %s", resolved)
+		}
+		return shape, nil
+	}
+	if !c.DefaultRNGStateShape.Ok() {
+		return shapes.Invalid(), errors.Errorf("backend supports RNGDefault with backend-private PRNG but did not configure Capabilities.DefaultRNGStateShape")
+	}
+	return c.DefaultRNGStateShape.Clone(), nil
+}
+
+// RNGStateFromSeed creates an initial host flat slice and state Shape from seed for algo
+// on this backend. Returns an error wrapping [ErrNotImplemented] if algo is not supported.
+func (c Capabilities) RNGStateFromSeed(algo RNGAlgorithm, seed int64) (flat any, shape shapes.Shape, err error) {
+	shape, err = c.RNGStateShape(algo)
+	if err != nil {
+		return nil, shapes.Invalid(), err
+	}
+	resolved := c.ResolveRNGAlgorithm(algo)
+	if resolved != RNGDefault {
+		return resolved.StateFromSeed(seed)
+	}
+	n := shape.Size()
+	s := uint64(seed)
+	switch shape.DType {
+	case dtypes.Uint64:
+		vals := make([]uint64, n)
+		for i := range vals {
+			vals[i] = splitMix64Step(&s)
+		}
+		return vals, shape, nil
+	case dtypes.Int64:
+		vals := make([]int64, n)
+		for i := range vals {
+			vals[i] = int64(splitMix64Step(&s))
+		}
+		return vals, shape, nil
+	case dtypes.Uint32:
+		vals := make([]uint32, n)
+		for i := range vals {
+			vals[i] = uint32(splitMix64Step(&s))
+		}
+		return vals, shape, nil
+	case dtypes.Int32:
+		vals := make([]int32, n)
+		for i := range vals {
+			vals[i] = int32(splitMix64Step(&s))
+		}
+		return vals, shape, nil
+	default:
+		return nil, shapes.Invalid(), errors.Errorf("RNGStateFromSeed: unsupported DefaultRNGStateShape dtype %s", shape.DType)
+	}
 }
 
 // HasDynamicShapes returns true if the backend supports dynamic shapes in any mode.

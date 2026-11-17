@@ -1845,3 +1845,31 @@ func Pad(operand shapes.Shape, axesConfig ...compute.PadAxis) (output shapes.Sha
 	}
 	return output, nil
 }
+
+// RNGBitGenerator validates the state and target output shapes for an RNGBitGenerator
+// operation and returns the expected (newStateShape, valuesShape).
+//
+// targetShape must have an unsigned integer bit dtype (Uint8, Uint16, Uint32, or Uint64).
+func RNGBitGenerator(expectedStateShape, stateShape, targetShape shapes.Shape) (newStateShape, valuesShape shapes.Shape, err error) {
+	if !expectedStateShape.Ok() {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: invalid expected state shape %s", expectedStateShape)
+	}
+	if !stateShape.Ok() {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: invalid state shape %s", stateShape)
+	}
+	if !stateShape.Equal(expectedStateShape) {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: expected state shape %s, got %s", expectedStateShape, stateShape)
+	}
+	if !targetShape.Ok() {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: invalid target shape %s", targetShape)
+	}
+	if !targetShape.DType.IsUnsigned() || targetShape.DType.Bits() < 8 {
+		return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: target shape DType must be an unsigned integer bit type (Uint8, Uint16, Uint32, or Uint64), got %s", targetShape)
+	}
+	for axis, dim := range targetShape.Dimensions {
+		if dim < 0 && dim != shapes.DynamicDim {
+			return shapes.Invalid(), shapes.Invalid(), errors.Errorf("RNGBitGenerator: invalid dimension %d at axis %d of target shape %s", dim, axis, targetShape)
+		}
+	}
+	return stateShape.Clone(), targetShape.Clone(), nil
+}

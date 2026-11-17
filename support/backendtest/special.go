@@ -2216,66 +2216,7 @@ func TestSpecialOps(t *testing.T, b compute.Backend) {
 	})
 
 	t.Run("RNGBitsGenerator", func(t *testing.T) {
-		testutil.SkipIfMissing(t, b, compute.OpTypeRNGBitGenerator)
-		numSamples := 100000
-		numBins := 10
-		tolerance := 0.1 // 10% deviation allowed for randomness
-
-		testCases := []struct {
-			dtype dtypes.DType
-			name  string
-		}{
-			{dtypes.Uint32, "uint32"},
-			{dtypes.Uint64, "uint64"},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				shape := shapes.Make(tc.dtype, numSamples)
-				y, err := testutil.Exec1(b, []any{[]uint64{0, 0, 0}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
-					_, values, err := f.RNGBitGenerator(params[0], shape)
-					return values, err
-				})
-				if err != nil {
-					t.Fatalf("RNGBitGenerator failed: %v", err)
-				}
-
-				// Convert all values to float64 in [0, 1) for histogram computation
-				values := make([]float64, numSamples)
-				switch tc.dtype {
-				case dtypes.Uint32:
-					maxVal := float64(math.MaxUint32)
-					for i, v := range y.([]uint32) {
-						values[i] = float64(v) / maxVal
-					}
-				case dtypes.Uint64:
-					maxVal := float64(math.MaxUint64)
-					for i, v := range y.([]uint64) {
-						values[i] = float64(v) / maxVal
-					}
-				}
-
-				hist := make([]int, numBins)
-				for _, v := range values {
-					bin := int(v * float64(numBins))
-					if bin == numBins {
-						bin--
-					}
-					hist[bin]++
-				}
-
-				expectedPerBin := numSamples / numBins
-				maxDeviation := float64(expectedPerBin) * tolerance
-
-				for bin, count := range hist {
-					deviation := math.Abs(float64(count) - float64(expectedPerBin))
-					if deviation > maxDeviation {
-						t.Errorf("Bin %d count %d deviates too much from expected %d (deviation: %.2f > %.2f)",
-							bin, count, expectedPerBin, deviation, maxDeviation)
-					}
-				}
-			})
-		}
+		runRNGBitGeneratorTests(t, b)
 	})
 
 	t.Run("ArgMinMax", func(t *testing.T) {

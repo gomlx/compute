@@ -1,11 +1,11 @@
+// Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
+
 package ops
 
 import (
-	"encoding/binary"
-	"math/rand/v2"
-
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend"
+	"github.com/gomlx/compute/shapeinference"
 	"github.com/gomlx/compute/shapes"
 	"github.com/pkg/errors"
 )
@@ -15,24 +15,35 @@ func init() {
 	gobackend.MultiOutputsNodeExecutors[compute.OpTypeRNGBitGenerator] = execRNGBitGenerator
 }
 
-// RNGBitGenerator generates the given shape filled with random bits.
-// It takes as input the current random number generator (RNG) state, see RNGState or RNGStateFromSeed.
-// The algorithm is hard-coded to use Philox algorithm for now.
+type rngNodeData struct {
+	algorithm        compute.RNGAlgorithm
+	axisInputIndices []int
+}
+
+// RNGBitGenerator generates a tensor of the given shape filled with uniformly distributed
+// random bits using the specified Pseudo-Random Number Generator (PRNG) algorithm.
 //
-// It returns the new state of the RNG and the generated values (with random bits) with the given shape.
-func RNGBitGenerator(f *gobackend.Function, stateOp compute.Value, shape shapes.Shape) (newState, values compute.Value, err error) {
+// It returns the updated state tensor and the generated random bit values.
+func RNGBitGenerator(
+	f *gobackend.Function,
+	stateOp compute.Value,
+	shape shapes.Shape,
+	algorithm compute.RNGAlgorithm,
+) (newState, values compute.Value, err error) {
 	opType := compute.OpTypeRNGBitGenerator
 	inputs, err := f.VerifyAndCastValues(opType.String(), stateOp)
 	if err != nil {
 		return nil, nil, err
 	}
 	state := inputs[0]
-	if !state.Shape.Equal(compute.RNGStateShape) {
-		err := errors.Errorf(
-			"expected random state to be shaped %s, got state.shape=%s instead for RNGBitGenerator",
-			compute.RNGStateShape,
-			state.Shape,
-		)
+
+	caps := f.RawBuilder.Backend.Capabilities()
+	expectedStateShape, err := caps.RNGStateShape(algorithm)
+	if err != nil {
+		return nil, nil, err
+	}
+	newStateShape, valuesShape, err := shapeinference.RNGBitGenerator(expectedStateShape, state.Shape, shape)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -71,27 +82,39 @@ func RNGBitGenerator(f *gobackend.Function, stateOp compute.Value, shape shapes.
 		}
 	}
 
+	resolved := caps.ResolveRNGAlgorithm(algorithm)
 	outputShapes := []shapes.Shape{
-		state.Shape.Clone(),
-		shape.Clone(),
+		newStateShape,
+		valuesShape,
 	}
 	node := f.NewMultiOutputsNode(opType, outputShapes, allInputs...)
-	if axisInputIndices != nil {
-		node.Data = axisInputIndices
+	node.Data = &rngNodeData{
+		algorithm:        resolved,
+		axisInputIndices: axisInputIndices,
 	}
 	newState = node.MultiOutputsNodes[0]
 	values = node.MultiOutputsNodes[1]
-	return
+	return newState, values, nil
 }
 
-// execRNGBitGenerator is the executor function registered for compute.OpTypeRngBitGenerator.
-func execRNGBitGenerator(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) ([]*gobackend.Buffer, error) {
+// execRNGBitGenerator is the executor function registered for compute.OpTypeRNGBitGenerator.
+func execRNGBitGenerator(
+	backend *gobackend.Backend,
+	node *gobackend.Node,
+	inputs []*gobackend.Buffer,
+	inputsOwned []bool,
+) ([]*gobackend.Buffer, error) {
+	data, ok := node.Data.(*rngNodeData)
+	if !ok || data == nil {
+		return nil, errors.Errorf("execRNGBitGenerator: missing rngNodeData on node")
+	}
+
 	state := inputs[0]
 	stateFlat := state.Flat.([]uint64)
 
 	targetShape := node.MultiOutputsShapes[1]
 	if targetShape.IsDynamic() {
-		axisInputIndices, _ := node.Data.([]int)
+		axisInputIndices := data.axisInputIndices
 		concreteDims := make([]int, targetShape.Rank())
 		for i, dim := range targetShape.Dimensions {
 			if dim != shapes.DynamicDim {
@@ -113,51 +136,30 @@ func execRNGBitGenerator(backend *gobackend.Backend, node *gobackend.Node, input
 		targetShape = shapes.Make(targetShape.DType, concreteDims...)
 	}
 
-	// Reserved outputs:
 	rngData, err := backend.GetBuffer(targetShape)
 	if err != nil {
 		return nil, err
 	}
-	rngDataBytes, err := rngData.MutableBytes()
-	if err != nil {
-		return nil, err
-	}
 
-	// Generate random using rand/v2:
-	rng := rand.NewPCG(stateFlat[0], stateFlat[1]) // Use state and increment as seed
-	var randomBits uint64
-	for idx := range rngDataBytes {
-		if idx%8 == 0 {
-			randomBits = rng.Uint64()
-		}
-		// Take one byte from the randomBits.
-		rngDataBytes[idx] = byte(randomBits & 0xFF)
-		randomBits >>= 8
-	}
-
-	// Update state output - PCG internal state after generating random bytes
+	var outStateBuf *gobackend.Buffer
 	if inputsOwned[0] {
-		// We re-use the current state.
+		outStateBuf = state
 		inputs[0] = nil
 	} else {
-		state, err = backend.GetBuffer(node.MultiOutputsShapes[0])
+		outStateBuf, err = backend.GetBuffer(node.MultiOutputsShapes[0])
 		if err != nil {
 			return nil, err
 		}
+		copy(outStateBuf.Flat.([]uint64), stateFlat)
 	}
-	stateFlat = state.Flat.([]uint64)
+	outStateFlat := outStateBuf.Flat.([]uint64)
 
-	// See details on Go source code src/math/rand/v2/pcg.go:
-	rngState, err := rng.MarshalBinary()
-	if err != nil {
-		panic(errors.Wrapf(err, "cannot update RNGBitGenerator state"))
+	if targetShape.Size() == 0 {
+		return []*gobackend.Buffer{outStateBuf, rngData}, nil
 	}
-	if len(rngState) != 20 && string(rngState[:4]) != "pcg:" {
-		return nil, errors.Errorf("format of PCG random number generator changed (we got %d bytes starting with %q, "+
-			"we wanted 20 and starting with the string 'pcg:'), pls open an issue in GoMLX",
-			len(rngState), rngState[:4])
+
+	if err := runRNGKernel(backend, data.algorithm, targetShape, stateFlat, outStateFlat, rngData); err != nil {
+		return nil, err
 	}
-	stateFlat[0] = binary.LittleEndian.Uint64(rngState[4 : 4+8])
-	stateFlat[1] = binary.LittleEndian.Uint64(rngState[4+8 : 4+16])
-	return []*gobackend.Buffer{state, rngData}, nil
+	return []*gobackend.Buffer{outStateBuf, rngData}, nil
 }
