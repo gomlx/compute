@@ -1094,7 +1094,7 @@ func Scatter(operand, indices, updates shapes.Shape, indexVectorAxis int, update
 		}
 	}
 
-	// Check that the batch axes of indices match the number of axes in the updates.
+	// Check that the batch axes of indices match the number and dimensions of batch axes in updates.
 	numBatchAxes := indices.Rank() - 1
 	if indexVectorAxis == indices.Rank() {
 		numBatchAxes++
@@ -1103,6 +1103,33 @@ func Scatter(operand, indices, updates shapes.Shape, indexVectorAxis int, update
 		return shapes.Invalid(), errors.Errorf("numBatchAxes (%d) + len(updateWindowAxes) (%d) must match updates.Rank() (%d), so it "+
 			"can fully addressed -- where numBatchAxes=indices.Rank() - 1, or if indexVector == indices.Rank(), numBatchAxes=indices.Rank()",
 			numBatchAxes, len(updateWindowAxes), updates.Rank())
+	}
+	updateWindowAxesSet := sets.MakeWith(updateWindowAxes...)
+	if len(updateWindowAxesSet) != len(updateWindowAxes) {
+		return shapes.Invalid(), errors.Errorf("updateWindowAxes (%v) must not contain duplicate axes", updateWindowAxes)
+	}
+	indicesBatchAxis := 0
+	for updatesAxis := range updates.Rank() {
+		if updateWindowAxesSet.Has(updatesAxis) {
+			continue
+		}
+		if indicesBatchAxis == indexVectorAxis {
+			indicesBatchAxis++
+		}
+		iDim := indices.Dimensions[indicesBatchAxis]
+		uDim := updates.Dimensions[updatesAxis]
+		if iDim != shapes.DynamicDim && uDim != shapes.DynamicDim {
+			if iDim != uDim {
+				return shapes.Invalid(), errors.Errorf(
+					"ScatterOp batch dimension mismatch: indices.Dimensions[axis=%d]=%d != updates.Dimensions[axis=%d]=%d (indices=%s, updates=%s)",
+					indicesBatchAxis, iDim, updatesAxis, uDim, indices, updates)
+			}
+		} else if !shapes.AxisNamesCompatible(indices.AxisName(indicesBatchAxis), updates.AxisName(updatesAxis)) {
+			return shapes.Invalid(), errors.Errorf(
+				"ScatterOp batch dynamic axis name mismatch: indices axis %d (%q) vs updates axis %d (%q) (indices=%s, updates=%s)",
+				indicesBatchAxis, indices.AxisName(indicesBatchAxis), updatesAxis, updates.AxisName(updatesAxis), indices, updates)
+		}
+		indicesBatchAxis++
 	}
 
 	// Validate update window dimensions.

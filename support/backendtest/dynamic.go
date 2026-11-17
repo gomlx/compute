@@ -1963,4 +1963,80 @@ func TestDynamicOps(t *testing.T, b compute.Backend) {
 			outs[1].Finalize()
 		}
 	})
+
+	t.Run("ScatterDynamicBatchMismatch", func(t *testing.T) {
+		testutil.SkipIfMissingDynamicShapes(t, b)
+		testutil.SkipIfMissing(t, b, compute.OpTypeParameter)
+		testutil.SkipIfMissing(t, b, compute.OpTypeScatterSum)
+		testutil.SkipIfMissingDType(t, b, dtypes.Float32)
+		testutil.SkipIfMissingDType(t, b, dtypes.Int32)
+
+		builder := b.Builder("test_scatter_dyn_batch")
+		fn := builder.Main()
+
+		opShape := shapes.Make(dtypes.Float32, 4, 3)
+		idxShape := shapes.MakeDynamic(dtypes.Int32, []int{shapes.DynamicDim, 2, 1}, []string{shapes.UniqueAxisName("i0"), "", ""})
+		updShape := shapes.MakeDynamic(dtypes.Float32, []int{shapes.DynamicDim, shapes.DynamicDim, 3}, []string{shapes.UniqueAxisName("u0"), shapes.UniqueAxisName("u1"), ""})
+		op, err := fn.Parameter("op", opShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter op failed: %v", err)
+		}
+		idx, err := fn.Parameter("idx", idxShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter idx failed: %v", err)
+		}
+		upd, err := fn.Parameter("upd", updShape, nil)
+		if err != nil {
+			t.Fatalf("Parameter upd failed: %v", err)
+		}
+		out, err := fn.ScatterSum(op, idx, upd, 2, []int{2}, []int{0}, []int{0}, false, false)
+		if err != nil {
+			t.Fatalf("ScatterSum failed: %v", err)
+		}
+		if err := fn.Return([]compute.Value{out}, nil); err != nil {
+			t.Fatalf("Return failed: %v", err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatalf("Compile failed: %v", err)
+		}
+		defer exec.Finalize()
+
+		opBuf, _ := b.BufferFromFlatData(0, make([]float32, 12), opShape)
+		idxBuf, _ := b.BufferFromFlatData(0, []int32{1, 3}, shapes.Make(dtypes.Int32, 1, 2, 1))
+		updBuf, _ := b.BufferFromFlatData(0, []float32{1, 2, 3, 4, 5, 6}, shapes.Make(dtypes.Float32, 1, 2, 3))
+		outs, err := exec.Execute([]compute.Buffer{opBuf, idxBuf, updBuf}, nil, 0)
+		opBuf.Finalize()
+		idxBuf.Finalize()
+		updBuf.Finalize()
+		if err != nil {
+			t.Fatalf("Execute valid dynamic scatter failed: %v", err)
+		}
+		got, err := testutil.FromBuffer(b, outs[0])
+		outs[0].Finalize()
+		if err != nil {
+			t.Fatalf("FromBuffer failed: %v", err)
+		}
+		want := [][]float32{{0, 0, 0}, {1, 2, 3}, {0, 0, 0}, {4, 5, 6}}
+		if ok, diff := testutil.IsEqual(want, got); !ok {
+			t.Errorf("ScatterSum mismatch:\n%s", diff)
+		}
+
+		// Runtime mismatch on updates batch dim (3 != 2) must return an error, not panic.
+		opBuf2, _ := b.BufferFromFlatData(0, make([]float32, 12), opShape)
+		idxBuf2, _ := b.BufferFromFlatData(0, []int32{1, 3}, shapes.Make(dtypes.Int32, 1, 2, 1))
+		updBuf2, _ := b.BufferFromFlatData(0, make([]float32, 9), shapes.Make(dtypes.Float32, 1, 3, 3))
+		outs2, err := exec.Execute([]compute.Buffer{opBuf2, idxBuf2, updBuf2}, nil, 0)
+		opBuf2.Finalize()
+		idxBuf2.Finalize()
+		updBuf2.Finalize()
+		for _, o := range outs2 {
+			if o != nil {
+				o.Finalize()
+			}
+		}
+		if err == nil {
+			t.Errorf("Expected runtime error when updates batch dim != indices batch dim, got nil")
+		}
+	})
 }

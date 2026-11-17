@@ -156,6 +156,20 @@ func execScatter(backend *gobackend.Backend, node *gobackend.Node, inputs []*gob
 	if !ok {
 		return nil, errors.Errorf("internal error: node.data for Scatter op is not *scatterData, but %T", node.Data)
 	}
+	if node.Shape.IsDynamic() || node.Inputs[0].Shape.IsDynamic() || node.Inputs[1].Shape.IsDynamic() || node.Inputs[2].Shape.IsDynamic() {
+		if _, err := shapeinference.Scatter(
+			operand.RawShape,
+			indices.RawShape,
+			updates.RawShape,
+			scatterParams.indexVectorAxis,
+			scatterParams.updateWindowAxes,
+			scatterParams.insertedWindowAxes,
+			scatterParams.scatterAxesToOperandAxes,
+		); err != nil {
+			return nil, errors.Wrapf(err, "runtime scatter shapes: operand=%s indices=%s updates=%s",
+				operand.RawShape, indices.RawShape, updates.RawShape)
+		}
+	}
 
 	// Output starts as a copy of the operand.
 	// We might be able to reuse the operand buffer if it's owned.
