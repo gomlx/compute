@@ -1,3 +1,6 @@
+- 2026-11-19:
+  - Expanded `TestUnaryOps/IsFinite` and `TestUnaryOps/Expm1` compliance tests (`support/backendtest/unary.go`) to cover negative infinity (`-Inf`), `-0.0`, and all supported float dtypes (`Float32`, `Float64`, `Float16`, `BFloat16`).
+
 - 2026-11-17:
   - Redesigned `StandardOps.RNGBitGenerator` (`ops.go`, `rng.go`, `capabilities.go`, `docs/RNGDesign.md`) for portable, extensible, and bit-reproducible pseudo-random number generation across backends:
     - Added `RNGAlgorithm` enum (`RNGDefault`, `RNGPhilox`, `RNGThreeFry`, `RNGSplitMix64`, `RNGPCG`, `RNGChaCha8`) with `StateShape()`, `IsCounterBased()`, and `StateFromSeed(seed)` helpers, plus `BitsToUniformFloat(fn, randomBits, floatDType)` using exact IEEE-754 significand-width shifts.

@@ -205,6 +205,42 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 		if ok, diff := testutil.IsInDelta(float32(1.71828), y0, 1e-4); !ok {
 			t.Errorf("Expm1 float32 mismatch:\n%s", diff)
 		}
+
+		if b.Capabilities().DTypes[dtypes.Float64] {
+			y64, err := testutil.Exec1(b, []any{float64(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnExpm1(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Expm1 float64: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(math.Expm1(1.0), y64, 1e-6); !ok {
+				t.Errorf("Expm1 float64 mismatch:\n%s", diff)
+			}
+		}
+
+		if b.Capabilities().DTypes[dtypes.Float16] {
+			y16, err := testutil.Exec1(b, []any{f16(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnExpm1(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Expm1 float16: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(float32(1.71828), y16.(float16.Float16).Float32(), 1e-2); !ok {
+				t.Errorf("Expm1 float16 mismatch:\n%s", diff)
+			}
+		}
+
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			ybf16, err := testutil.Exec1(b, []any{bf16(1.0)}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnExpm1(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute Expm1 bfloat16: %+v", err)
+			}
+			if ok, diff := testutil.IsInDelta(float32(1.71828), ybf16.(bfloat16.BFloat16).Float32(), 2e-2); !ok {
+				t.Errorf("Expm1 bfloat16 mismatch:\n%s", diff)
+			}
+		}
 	})
 	t.Run("Log", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeLog)
@@ -352,14 +388,55 @@ func TestUnaryOps(t *testing.T, b compute.Backend) {
 	t.Run("IsFinite", func(t *testing.T) {
 		testutil.SkipIfMissing(t, b, compute.OpTypeIsFinite)
 		buildFnIsFinite := func(f compute.Function, param compute.Value) (compute.Value, error) { return f.IsFinite(param) }
-		y0, err := testutil.Exec1(b, []any{[]float32{1.0, float32(math.NaN()), float32(math.Inf(1))}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+		want := []bool{true, true, false, false, false}
+		y0, err := testutil.Exec1(b, []any{[]float32{1.0, -0.0, float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
 			return buildFnIsFinite(f, params[0])
 		})
 		if err != nil {
 			t.Fatalf("Failed to execute IsFinite: %+v", err)
 		}
-		if ok, diff := testutil.IsEqual([]bool{true, false, false}, y0); !ok {
+		if ok, diff := testutil.IsEqual(want, y0); !ok {
 			t.Errorf("IsFinite float32 mismatch:\n%s", diff)
+		}
+
+		if b.Capabilities().DTypes[dtypes.Float64] {
+			y64, err := testutil.Exec1(b, []any{[]float64{1.0, math.MaxFloat64, math.NaN(), math.Inf(1), math.Inf(-1)}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnIsFinite(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute IsFinite float64: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(want, y64); !ok {
+				t.Errorf("IsFinite float64 mismatch:\n%s", diff)
+			}
+		}
+
+		if b.Capabilities().DTypes[dtypes.Float16] {
+			y16, err := testutil.Exec1(b, []any{[]float16.Float16{
+				f16(1.0), f16(-2.5), f16(float32(math.NaN())), f16(float32(math.Inf(1))), f16(float32(math.Inf(-1))),
+			}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnIsFinite(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute IsFinite float16: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(want, y16); !ok {
+				t.Errorf("IsFinite float16 mismatch:\n%s", diff)
+			}
+		}
+
+		if b.Capabilities().DTypes[dtypes.BFloat16] {
+			ybf16, err := testutil.Exec1(b, []any{[]bfloat16.BFloat16{
+				bf16(1.0), bf16(-2.5), bf16(float32(math.NaN())), bf16(float32(math.Inf(1))), bf16(float32(math.Inf(-1))),
+			}}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				return buildFnIsFinite(f, params[0])
+			})
+			if err != nil {
+				t.Fatalf("Failed to execute IsFinite bfloat16: %+v", err)
+			}
+			if ok, diff := testutil.IsEqual(want, ybf16); !ok {
+				t.Errorf("IsFinite bfloat16 mismatch:\n%s", diff)
+			}
 		}
 	})
 	t.Run("IsNaN", func(t *testing.T) {
