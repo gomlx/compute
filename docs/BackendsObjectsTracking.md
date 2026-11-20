@@ -1,5 +1,21 @@
 # Backend Object Lifecycle Tracking & Safe Teardown
 
+## Summary
+
+This document describes how GoMLX `compute.Backend` implementations manage the lifecycle of a backend and its derived objects (`Executable`, `Builder`, and `Buffer`) so teardown is deterministic, concurrent-safe, and free of crashes—without slowing down hot-path tensor allocation.
+
+At a high level, finalizing a backend (or an individual executable) now guarantees three things:
+
+1. **Wait for in-flight work to finish:** `Backend.Finalize()` (and `Executable.Finalize()`) is goroutine-safe and idempotent, and blocks until all currently running executions, compilations, and buffer transfers have completed before releasing underlying hardware or native resources.
+2. **Automatically finalize related resources:** Before tearing down the backend itself, `Backend.Finalize()` eagerly releases associated child resources—such as compiled executables/sessions, native builders, and (where required by the underlying runtime, such as XLA/PJRT) live native buffers—so GPU/host memory is reclaimed immediately and in the right order rather than leaking or waiting for GC.
+3. **Clean error handling on finalized objects:** Any subsequent call on a finalized `Backend` or on its derived `Executable`, `Builder`, or `Buffer` objects returns a well-defined error (`compute.ErrBackendFinalized`, checked with `compute.IsBackendFinalized(err)`) instead of panicking or causing undefined behavior. Calling `Finalize()` again on a backend or on any derived object after finalization is always a safe no-op.
+
+**Key performance trade-off:** Safe synchronization and post-finalize errors apply uniformly across all backends at negligible cost, whereas active object tracking is reserved for cold objects (`Executable`s and native `Builder`s) and strict native-buffer runtimes (via a zero-allocation intrusive wrapper list in PJRT), intentionally avoiding `weak.Pointer` tracking on hot-path `Buffer`s.
+
+The sections below cover the motivation, exact API contract, implementation design, and per-backend details.
+
+---
+
 ## 1. Motivation
 
 Previously, calling `compute.Backend.Finalize()` put all derived objects (`compute.Buffer`, `compute.Builder`, `compute.Executable`) into an undefined state:
