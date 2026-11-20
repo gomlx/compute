@@ -8,6 +8,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/shapes"
+	"github.com/gomlx/compute/support/xsync"
 	"github.com/pkg/errors"
 )
 
@@ -30,30 +31,39 @@ type Executable struct {
 	// specializations caches resolved-shape versions of the graph for dynamic graphs.
 	// map[string]*ShapeSpecialization where key is bindings.Key()
 	specializations sync.Map
+
+	// lifecycle synchronizes in-flight executions against Executable.Finalize.
+	lifecycle xsync.Lifecycle
 }
 
 // Compile time check.
 var _ compute.Executable = (*Executable)(nil)
 
-// Finalize immediately frees resources associated with the executable.
-//
-// TODO: Race-condition where calling Finalize will make execution crash, if finalized while executing.
-//
-//	Make Finalize wait for all the current executions to exit, before finalizing.
-//	And add a latch indicating Finalize has been called, to tell the executions to exit immediately
-//	without finishing. Finally, remove the `e.builder == nil` checks, that won't be necessary anymore,
-//	since e.builder will never be set to nil while there is an execution alive.
+// Finalize immediately frees resources associated with the executable,
+// waiting for any in-flight executions of this executable to finish first.
 func (e *Executable) Finalize() {
-	if e.builder != nil {
-		e.builder.Finalize()
-		e.builder = nil
+	if e == nil {
+		return
 	}
-	e.mainFn = nil
-	e.specializations.Clear()
+	e.lifecycle.Finalize(func() {
+		if e.builder != nil {
+			e.builder.Finalize()
+			e.builder = nil
+		}
+		e.mainFn = nil
+		e.specializations.Clear()
+	})
 }
 
 // Inputs returns the list of parameters names and shapes, in order created by the Builder.Parameter calls.
 func (e *Executable) Inputs() (names []string, inputShapes []shapes.Shape) {
+	if e == nil || !e.lifecycle.Enter() {
+		return
+	}
+	defer e.lifecycle.Leave()
+	if e.builder == nil || e.builder.MainFn == nil {
+		return
+	}
 	params := e.builder.MainFn.Parameters
 	numInputs := len(params)
 	if numInputs == 0 {
@@ -70,6 +80,13 @@ func (e *Executable) Inputs() (names []string, inputShapes []shapes.Shape) {
 
 // Outputs returns the output shapes of the computation, in order given to the Builder.Compile call.
 func (e *Executable) Outputs() (outputShapes []shapes.Shape) {
+	if e == nil || !e.lifecycle.Enter() {
+		return
+	}
+	defer e.lifecycle.Leave()
+	if e.builder == nil || e.builder.MainFn == nil {
+		return
+	}
 	outputs := e.builder.MainFn.Outputs
 	numOutputs := len(outputs)
 	if numOutputs == 0 {
@@ -214,6 +231,18 @@ const (
 // Donated buffers are no longer valid after the call.
 // If donate is nil, it is assumed to be false for all buffers, and no buffer is donated.
 func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.DeviceNum) ([]compute.Buffer, error) {
+	if e == nil || e.backend == nil {
+		return nil, errors.New("Execute: executable is nil")
+	}
+	if !e.backend.lifecycle.Enter() {
+		return nil, errors.Wrapf(compute.ErrBackendFinalized, "backend %q: Execute", BackendName)
+	}
+	defer e.backend.lifecycle.Leave()
+	if !e.lifecycle.Enter() {
+		return nil, errors.Errorf("backend %q: Execute called on finalized executable", BackendName)
+	}
+	defer e.lifecycle.Leave()
+
 	// Keep the live executions count.
 	e.backend.NumLiveExecutions.Add(1)
 	defer e.backend.NumLiveExecutions.Add(-1)

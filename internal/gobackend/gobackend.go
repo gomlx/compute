@@ -22,6 +22,7 @@ import (
 	"github.com/gomlx/compute/internal/gobackend/scheduler"
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/support/xslices"
+	"github.com/gomlx/compute/support/xsync"
 	"github.com/pkg/errors"
 )
 
@@ -167,8 +168,8 @@ type Backend struct {
 	// OpsExecutionType defines how to execute the ops of a computation.
 	OpsExecutionType OpsExecutionType
 
-	// isFinalized is true if the backend has been isFinalized.
-	isFinalized bool
+	// lifecycle synchronizes in-flight operations against Backend.Finalize.
+	lifecycle xsync.Lifecycle
 
 	// SchedulingStrategy
 	SchedulingStrategy ScheduleStrategy
@@ -253,13 +254,20 @@ func notImplementedError(opType compute.OpType) error {
 
 // Finalize releases all the associated resources immediately, and makes the backend invalid.
 func (b *Backend) Finalize() {
-	b.isFinalized = true
-	for i := range b.bufferPools {
-		b.bufferPools[i].Store(nil)
+	if b == nil {
+		return
 	}
+	b.lifecycle.Finalize(func() {
+		for i := range b.bufferPools {
+			b.bufferPools[i].Store(nil)
+		}
+	})
 }
 
-// IsFinalized returns true if the backend has been isFinalized.
+// IsFinalized returns true if the backend has been finalized.
 func (b *Backend) IsFinalized() bool {
-	return b.isFinalized
+	if b == nil {
+		return true
+	}
+	return b.lifecycle.IsFinalized()
 }

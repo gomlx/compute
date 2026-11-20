@@ -99,7 +99,8 @@ Whenever printing an error, use `"%+v"` format so the full stack is printed.
 - Use generics where possible.
 - Use `slices` and `maps` package for slice operations.
 - Look also into `support/xslices` package for more slice and map helper methods.
-- Look into `support/xsync` package for more syncronization helpers.
+- Look into `support/xsync` package for more syncronization helpers (including `xsync.Lifecycle` for non-reentrant `RWMutex`-based backend/executable teardown coordination and `xsync.WeakTracker[T]` for weak tracking of cold objects like `Executable`s/`Builder`s; see `docs/BackendsObjectsTracking.md`).
+- **Backend Finalization Contract**: `Backend.Finalize()` is goroutine-safe/idempotent, waits for in-flight ops (`xsync.Lifecycle`), and subsequent calls on `Backend`/`Builder`/`Executable`/`Buffer` return errors wrapping `compute.ErrBackendFinalized` (`compute.IsBackendFinalized(err)`). `Buffer.Finalize()` and `Executable.Finalize()` are safe no-ops after `Backend.Finalize()`. Verify every backend with `backendtest.TestFinalize(t, newBackend)`.
 - Look into `support/sets` package for a generic `Set[T]` structure.
 - Use iterators (package `iter`) where it makes sense.
 - Use the `for range` construct for loops over slices, maps, etc.
