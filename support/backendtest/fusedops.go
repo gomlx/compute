@@ -1019,6 +1019,28 @@ func TestFusedOps(t *testing.T, b compute.Backend) {
 			}
 		})
 
+		t.Run("FiniteAdditiveMask", func(t *testing.T) {
+			q := [][][][]float32{{{{1}, {1}}}}
+			k := [][][][]float32{{{{0}, {10000}}}}
+			v := [][][][]float32{{{{2}, {9}}}}
+			mask := [][][][]float32{{{{0, -10000}}}}
+			got, err := testutil.Exec1(b, []any{q, k, v, mask}, func(f compute.Function, params []compute.Value) (compute.Value, error) {
+				out, _, err := f.FusedScaledDotProductAttention(params[0], params[1], params[2], compute.AttentionAxesLayoutBHSD, &compute.ScaledDotProductAttentionConfig{Scale: 1, Mask: params[3]})
+				return out, err
+			})
+			if compute.IsNotImplemented(err) {
+				t.Skipf("Skipping for %q, these parameters not supported: %v", b, err)
+			}
+			if err != nil {
+				t.Fatalf("SDPA failed: %+v", err)
+			}
+			// Scores [0, 10000] plus the mask are [0, 0]: both values have equal weight.
+			want := [][][][]float32{{{{5.5}, {5.5}}}}
+			if ok, diff := testutil.IsInDelta(want, got, fusedTestTolerance); !ok {
+				t.Errorf("SDPA with finite additive mask mismatch:\n%s", diff)
+			}
+		})
+
 		t.Run("WithBooleanMask", func(t *testing.T) {
 			q := [][][][]float32{{{{1}}}}        // [1,1,1,1]
 			k := [][][][]float32{{{{1}, {1}}}}   // [1,1,2,1]
