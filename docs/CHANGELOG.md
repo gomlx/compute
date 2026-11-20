@@ -1,3 +1,10 @@
+- 2026-11-20:
+  - Defined safe backend finalization, lifecycle synchronization, and cold-object tracking across `compute` (see `docs/BackendsObjectsTracking.md`):
+    - Added `compute.ErrBackendFinalized` and `compute.IsBackendFinalized(err)` (`compute.go`), and tightened `Backend.Finalize`, `Buffer.Finalize`, and `Executable.Finalize` contracts so `Backend.Finalize()` is goroutine-safe/idempotent, waits for in-flight operations, and guarantees subsequent calls on derived `Builder`/`Executable`/`Buffer` objects return `ErrBackendFinalized` instead of undefined behavior or crashes.
+    - Added `xsync.Lifecycle` (non-reentrant `sync.RWMutex` + `atomic.Bool` in-flight operation coordinator) and `xsync.WeakTracker[T]` (`weak.Pointer` + `runtime.AddCleanup` tracker for cold objects such as `Executable`s and `Builder`s) in `support/xsync/lifecycle.go` with unit/concurrency tests (`support/xsync/lifecycle_test.go`).
+    - Updated `"go"` backend (`internal/gobackend/{gobackend,buffers,constants,builder,exec}.go`) to use `xsync.Lifecycle` on `Backend` and `Executable` (fixing the race between `Executable.Finalize()` and in-flight `Execute()`, making `Buffer.Finalize()` idempotent, and returning `compute.ErrBackendFinalized` on post-finalize operations without adding hot-path buffer tracking).
+    - Added `backendtest.TestFinalize(t, newBackend)` compliance test (`support/backendtest/finalize.go`) and wired it into `gobackend/gobackend_test.go`.
+
 - 2026-11-19:
   - Expanded `TestUnaryOps/IsFinite` and `TestUnaryOps/Expm1` compliance tests (`support/backendtest/unary.go`) to cover negative infinity (`-Inf`), `-0.0`, and all supported float dtypes (`Float32`, `Float64`, `Float16`, `BFloat16`).
 

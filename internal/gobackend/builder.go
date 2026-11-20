@@ -64,6 +64,9 @@ func (b *Builder) NewFunction(name string) (compute.Function, error) {
 	if b == nil {
 		return nil, errors.Errorf("Builder is nil")
 	}
+	if b.Backend != nil && b.Backend.IsFinalized() {
+		return nil, errors.Wrapf(compute.ErrBackendFinalized, "Builder.NewFunction(%q)", name)
+	}
 	if b.IsCompiled {
 		return nil, errors.Errorf("cannot create new function, builder has already been compiled")
 	}
@@ -85,6 +88,13 @@ func (b *Builder) NewFunction(name string) (compute.Function, error) {
 
 // Compile implements compute.Builder.
 func (b *Builder) Compile() (compute.Executable, error) {
+	if b == nil || b.Backend == nil {
+		return nil, errors.Errorf("Builder is nil")
+	}
+	if !b.Backend.lifecycle.Enter() {
+		return nil, errors.Wrapf(compute.ErrBackendFinalized, "Builder.Compile(%q)", b.name)
+	}
+	defer b.Backend.lifecycle.Leave()
 	if !b.MainFn.IsReturned {
 		return nil, errors.Errorf("Main function must have Return() called before Compile()")
 	}

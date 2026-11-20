@@ -23,6 +23,13 @@ func TestCompliance(t *testing.T) {
 	backendtest.RunAll(t, backend, nil)
 }
 
+// TestFinalize runs the compute.Backend finalization and concurrency compliance tests.
+func TestFinalize(t *testing.T) {
+	backendtest.TestFinalize(t, func() (compute.Backend, error) {
+		return New(*configFlag)
+	})
+}
+
 func init() {
 	klog.InitFlags(nil)
 }

@@ -56,7 +56,7 @@ type ConstantData struct {
 
 // NewConstantData creates a new ConstantData with an exact-sized, non-pooled buffer copied from flat.
 func NewConstantData(backend *Backend, shape shapes.Shape, flat any) (*ConstantData, error) {
-	if backend.isFinalized {
+	if backend.IsFinalized() {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 	buf := NewBuffer(shape)
@@ -76,7 +76,7 @@ func NewConstantData(backend *Backend, shape shapes.Shape, flat any) (*ConstantD
 // its own Buffer descriptor (so neither caller buf.Finalize() nor ConstantData raw-buffer release
 // mutates the other's handle).
 func NewConstantDataFromBuffer(backend *Backend, buf *Buffer, donate bool) (*ConstantData, error) {
-	if backend.isFinalized {
+	if backend.IsFinalized() {
 		return nil, errors.WithStack(ErrBackendAlreadyFinalized)
 	}
 	if err := buf.Check(); err != nil {

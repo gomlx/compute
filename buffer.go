@@ -16,6 +16,8 @@ type Buffer interface {
 	// Finalize allows the client to inform the backend that the buffer is no longer needed and associated
 	// resources can be freed immediately, as opposed to waiting for a garbage collection.
 	//
+	// Finalize is idempotent and safe to call after the buffer has already been finalized, donated, or
+	// after its parent [Backend] has been finalized (returning nil as a no-op).
 	// A finalized buffer should never be used again.
 	Finalize() error
 

@@ -10,9 +10,9 @@ import (
 type Executable interface {
 	// Finalize immediately frees resources associated to the executable.
 	//
-	// It is the responsibility of the caller to guarantee that there are no unfinished executions
-	// (calls to [Executable.Execute]) before calling Finalize. Calling Finalize while an execution
-	// is still running may lead to undefined behavior and potentially crash depending on the backend.
+	// Finalize is idempotent and safe to call after the parent [Backend] has been finalized.
+	// Calling Finalize on the parent [Backend] also waits for any in-flight executions to finish
+	// and releases tracked executables.
 	//
 	// Calling Finalize is optional: one can always leave it to the garbage collector (GC), which will
 	// properly clean up native resources eventually. Alternatively, callers can rely on higher-level

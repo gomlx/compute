@@ -91,14 +91,37 @@ type Backend interface {
 	DataInterface
 
 	// Finalize releases all the associated resources immediately and makes the backend invalid.
-	// Any operation on a Backend after Finalize is called is undefined, except IsFinalized.
+	//
+	// Finalize is goroutine-safe and idempotent. It waits for any in-flight operations
+	// (such as executions, compilations, or buffer transfers) to complete before releasing
+	// backend resources and any tracked child resources (such as executables and native buffers).
+	//
+	// After Finalize is called, subsequent operations on the Backend and its derived Builder,
+	// Executable, and Buffer objects must not crash and must return an error wrapping
+	// [ErrBackendFinalized], except for metadata accessors (Name, String, IsFinalized) and
+	// Finalize methods (which become safe no-ops).
+	//
+	// See [Buffer.Data] for the shared-memory caveat regarding slices already returned prior to Finalize.
 	Finalize()
 
 	// IsFinalized returns true if the backend is finalized.
 	//
-	// Tensors stored on a backend may hold a reference to a finalized backend, and when being garbage collected,
-	// check whether it is finalized before requesting the backend to finalize its buffers.
+	// IsFinalized is goroutine-safe. Tensors stored on a backend may hold a reference to a finalized
+	// backend, and when being garbage collected, check whether it is finalized before requesting the
+	// backend to finalize its buffers.
 	IsFinalized() bool
+}
+
+// ErrBackendFinalized is returned when an operation is attempted on a finalized [Backend] or on
+// a [Builder], [Executable], or [Buffer] whose parent [Backend] has been finalized.
+//
+// Backends should wrap this sentinel error with errors.Wrapf(ErrBackendFinalized, "...") so callers
+// can detect it with [IsBackendFinalized] or errors.Is.
+var ErrBackendFinalized = stderrors.New("backend is finalized")
+
+// IsBackendFinalized reports whether err wraps [ErrBackendFinalized].
+func IsBackendFinalized(err error) bool {
+	return stderrors.Is(err, ErrBackendFinalized)
 }
 
 // ErrNotImplemented indicates an op is not implemented (typically a fused op, but normal ops may return this as well)
