@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
@@ -178,13 +177,22 @@ func TestFinalize(t *testing.T, newBackend func() (compute.Backend, error)) {
 		}
 
 		const numWorkers = 4
+		const warmupIters = 2
 		var completed atomic.Int64
 		var wg sync.WaitGroup
+		var warmupWG sync.WaitGroup
 		wg.Add(numWorkers)
+		warmupWG.Add(numWorkers)
 
 		for w := range numWorkers {
 			go func(workerID int) {
 				defer wg.Done()
+				warmed := false
+				defer func() {
+					if !warmed {
+						warmupWG.Done()
+					}
+				}()
 				inData := make([]float32, n)
 				outData := make([]float32, n)
 				for i := range inData {
@@ -192,7 +200,7 @@ func TestFinalize(t *testing.T, newBackend func() (compute.Backend, error)) {
 				}
 				want := float32(2 * (workerID + 1))
 
-				for {
+				for iter := 0; ; iter++ {
 					inBuf, err := b.BufferFromFlatData(0, inData, shape)
 					if err != nil {
 						if !compute.IsBackendFinalized(err) {
@@ -222,15 +230,16 @@ func TestFinalize(t *testing.T, newBackend func() (compute.Backend, error)) {
 						return
 					}
 					completed.Add(1)
+					if !warmed && iter+1 >= warmupIters {
+						warmed = true
+						warmupWG.Done()
+					}
 				}
 			}(w)
 		}
 
-		// Wait until workers have executed a few iterations before finalizing concurrently.
-		deadline := time.Now().Add(5 * time.Second)
-		for completed.Load() < numWorkers*2 && time.Now().Before(deadline) {
-			time.Sleep(1 * time.Millisecond)
-		}
+		// Wait until every worker has completed warmup iterations before finalizing concurrently.
+		warmupWG.Wait()
 
 		// Call Finalize concurrently from two goroutines while workers are active.
 		var finWG sync.WaitGroup
