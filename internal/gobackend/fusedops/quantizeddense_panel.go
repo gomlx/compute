@@ -20,18 +20,14 @@ const (
 	QuantizedPanelStripCols = gobackend.QuantizedPanelStripCols
 
 	// quantizedPanelMaxScratchBytes caps the temporary unpacked weight panel buffer (~2 MB)
-	// when quantized_cache is disabled (the default) or weights are dynamic.
+	// when a weight is not cached (e.g. quantized_cache=never, oversized/high-ratio weight
+	// under quantized_cache=balanced, or dynamic/non-constant weights).
 	quantizedPanelMaxScratchBytes = 2 * 1024 * 1024
 
 	// quantizedPanelMinM is 1 so even M == 1 (single-token decode) leverages 1x32/1x16 SIMD/VNNI
 	// strip-parallel microkernels and K4 panels.
 	quantizedPanelMinM = 1
 )
-
-type linearConstantPanelCache struct {
-	once  sync.Once
-	panel []uint8
-}
 
 type sharedQuantActEntry struct {
 	xBuf    *gobackend.Buffer
@@ -250,10 +246,7 @@ func dispatchQuantizedPanelGEMM(cfg *QuantizedPanelGEMMConfig) {
 func execQuantizedDenseLinearPanelDynamicInt8(
 	backend *gobackend.Backend,
 	data *nodeFusedQuantizedDense,
-	xBuf *gobackend.Buffer,
-	wBuf *gobackend.Buffer,
-	wScales []float32,
-	wZPBuf *gobackend.Buffer,
+	in unpackedQDInputs,
 	biasF32 []float32,
 	M, K, N int,
 	outF32 []float32,
@@ -279,9 +272,9 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 	stripBytes := numSubBlocks * subBlkBytes
 
 	qx, dxPairs, releaseAct, err := data.actShareGroup.acquire(
-		backend, xBuf, M, M*kPadded, M*numSubBlocks*2,
+		backend, in.x, M, M*kPadded, M*numSubBlocks*2,
 		func(qxDst []int8, dxDst []float32) error {
-			xF32, releaseX, convErr := bufferToFloat32Slice(backend, xBuf)
+			xF32, releaseX, convErr := bufferToFloat32Slice(backend, in.x)
 			if convErr != nil {
 				return convErr
 			}
@@ -295,31 +288,41 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 	}
 	defer releaseAct()
 
-	wDT := wBuf.RawShape.DType
+	wDT := data.weightDType
 	wideUnsigned := wDT == dtypes.Int8 || wDT == dtypes.Uint8
 
-	if data.linearPanelCache != nil {
+	if data.wConstantData != nil {
 		var buildErr error
-		data.linearPanelCache.once.Do(func() {
+		cachedPanel := gobackend.GetOrSetCachedForm(data.wConstantData, func() []uint8 {
+			wScales, releaseWScale, sErr := bufferToFloat32Slice(backend, in.wScale)
+			if sErr != nil {
+				buildErr = sErr
+				return nil
+			}
+			defer releaseWScale()
 			var wZPF32 []float32
-			if wZPBuf != nil {
+			if in.wZP != nil {
 				var releaseZP func()
-				wZPF32, releaseZP, buildErr = bufferToZeroPointFloat32Slice(backend, wZPBuf)
+				wZPF32, releaseZP, buildErr = bufferToZeroPointFloat32Slice(backend, in.wZP)
 				if buildErr != nil {
-					return
+					return nil
 				}
 				defer releaseZP()
 			}
 			totalStrips := (N + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
 			cached := make([]uint8, totalStrips*stripBytes)
 			unpackQuantLinearStrips(
-				backend, wBuf, isIO, wScales, wZPF32, wSLayout, wZPLayout,
+				backend, in.weight, isIO, wScales, wZPF32, wSLayout, wZPLayout,
 				K, N, 0, N, kBlock, quadsPerSubBlk, numSubBlocks, cached,
 			)
-			data.linearPanelCache.panel = cached
+			return cached
 		})
 		if buildErr != nil {
 			return false, buildErr
+		}
+		// Release donated wScale/wZeroPoint raw buffers only after wConstantData.CachedForm() is populated.
+		if cachedPanel != nil {
+			data.markBakedWeightSupportConstants()
 		}
 		var chunkBias []float32
 		if biasF32 != nil {
@@ -329,7 +332,7 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 			Backend:        backend,
 			Qx:             qx,
 			DxPairs:        dxPairs,
-			Panel:          data.linearPanelCache.panel,
+			Panel:          cachedPanel,
 			Bias:           chunkBias,
 			Out:            outF32,
 			M:              M,
@@ -346,10 +349,16 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 		return true, nil
 	}
 
+	wScales, releaseWScale, err := resolveCachedFloat32Slice(backend, in.wScale, data.wScaleConstantData)
+	if err != nil {
+		return false, err
+	}
+	defer releaseWScale()
+
 	var wZPF32 []float32
-	if wZPBuf != nil {
+	if in.wZP != nil || data.wZPConstantData != nil {
 		var releaseZP func()
-		wZPF32, releaseZP, err = bufferToZeroPointFloat32Slice(backend, wZPBuf)
+		wZPF32, releaseZP, err = resolveCachedZeroPointFloat32Slice(backend, in.wZP, data.wZPConstantData)
 		if err != nil {
 			return false, err
 		}
@@ -370,7 +379,7 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 		chunkCols := min(colChunk, N-nStart)
 		numStrips := (chunkCols + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
 		unpackQuantLinearStrips(
-			backend, wBuf, isIO, wScales, wZPF32, wSLayout, wZPLayout,
+			backend, in.weight, isIO, wScales, wZPF32, wSLayout, wZPLayout,
 			K, N, nStart, chunkCols, kBlock, quadsPerSubBlk, numSubBlocks,
 			panel[:numStrips*stripBytes],
 		)

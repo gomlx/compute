@@ -27,6 +27,72 @@ func init() {
 	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedQuantizedDenseVJP] = execFusedQuantizedDenseVJP
 }
 
+type weightCacheKind uint8
+
+const (
+	weightCacheNone weightCacheKind = iota
+	weightCacheGGMLPanel
+	weightCacheLinearPanel
+	weightCacheFloatMatmul
+)
+
+type supportCacheKind uint8
+
+const (
+	supportCacheNone supportCacheKind = iota
+	supportCacheF32
+	supportCacheI32
+)
+
+// bakedConstantSentinel is stored in ConstantData.cachedForm for supporting constants
+// (wScale, wZeroPoint) whose values have been baked into the associated weight's cached
+// panel so their donated raw buffers can be released cleanly.
+type bakedConstantSentinel struct {
+	baked bool
+}
+
+func markConstantBaked(cd *gobackend.ConstantData) {
+	if cd == nil {
+		return
+	}
+	_ = gobackend.GetOrSetCachedForm(cd, func() bakedConstantSentinel {
+		return bakedConstantSentinel{baked: true}
+	})
+}
+
+func supportCacheSig(k supportCacheKind) string {
+	switch k {
+	case supportCacheF32:
+		return "QDF32Slice"
+	case supportCacheI32:
+		return "QDI32Slice"
+	default:
+		return ""
+	}
+}
+
+func shouldCacheByPolicy(policy gobackend.QuantizedCachePolicy, rawBytes, cachedBytes int64, willFreeRaw bool) bool {
+	switch policy {
+	case gobackend.QuantizedCacheNever:
+		return false
+	case gobackend.QuantizedCacheAlways:
+		return cachedBytes > 0
+	case gobackend.QuantizedCacheBalanced:
+		if cachedBytes <= 0 || cachedBytes > gobackend.DefaultQuantizedCacheMaxWeightBytes || rawBytes <= 0 {
+			return false
+		}
+		var extraBytes int64
+		if willFreeRaw {
+			extraBytes = max(int64(0), cachedBytes-rawBytes)
+		} else {
+			extraBytes = cachedBytes
+		}
+		return float64(extraBytes) <= gobackend.DefaultQuantizedCacheMaxExtraRatio*float64(rawBytes)
+	default:
+		return false
+	}
+}
+
 // nodeFusedQuantizedDense stores compile-time validated metadata for FusedQuantizedDense.
 //
 // Node inputs order:
@@ -35,6 +101,8 @@ func init() {
 type nodeFusedQuantizedDense struct {
 	weightScheme     compute.QuantizationScheme
 	weightGGMLType   compute.GGMLQuantType
+	weightDType      dtypes.DType
+	wZPDType         dtypes.DType
 	weightLayout     compute.DenseLayout
 	hasXQuant        bool
 	xScheme          compute.QuantizationScheme
@@ -52,18 +120,68 @@ type nodeFusedQuantizedDense struct {
 	hasOutZP    bool
 	hasBias     bool
 
+	// Input slot indices in node.Inputs (-1 if absent).
+	wScaleIdx   int
+	wZPIdx      int
+	xScaleIdx   int
+	xZPIdx      int
+	outScaleIdx int
+	outZPIdx    int
+	biasIdx     int
+
 	info shapeinference.QuantizedDenseInfo
 
-	wConstantData    *gobackend.ConstantData
-	linearPanelCache *linearConstantPanelCache
-	floatDotNodeData *dot.NodeData
-	actShareGroup    *sharedQuantActGroup
+	// Compile-time constant caching metadata & policy.
+	cachePolicy       gobackend.QuantizedCachePolicy
+	weightCacheKind   weightCacheKind
+	weightCacheSig    string
+	weightRawBytes    int64
+	weightCachedBytes int64
+	floatLayout       dot.Layout
+
+	wScaleCacheKind   supportCacheKind
+	wScaleRawBytes    int64
+	wScaleCachedBytes int64
+	wZPCacheKind      supportCacheKind
+	wZPRawBytes       int64
+	wZPCachedBytes    int64
+	xScaleCacheKind   supportCacheKind
+	xScaleRawBytes    int64
+	xScaleCachedBytes int64
+	xZPCacheKind      supportCacheKind
+	xZPRawBytes       int64
+	xZPCachedBytes    int64
+	outScaleCacheKind supportCacheKind
+	outScaleRawBytes  int64
+	outScaleCachedB   int64
+	outZPCacheKind    supportCacheKind
+	outZPRawBytes     int64
+	outZPCachedBytes  int64
+	biasCacheKind     supportCacheKind
+	biasRawBytes      int64
+	biasCachedBytes   int64
+
+	// Bound shared ConstantData handles populated by setupConstantSubgraphCaching.
+	wConstantData        *gobackend.ConstantData
+	floatDotNodeData     *dot.NodeData
+	wScaleConstantData   *gobackend.ConstantData
+	wScaleBaked          bool
+	wZPConstantData      *gobackend.ConstantData
+	wZPBaked             bool
+	xScaleConstantData   *gobackend.ConstantData
+	xZPConstantData      *gobackend.ConstantData
+	outScaleConstantData *gobackend.ConstantData
+	outZPConstantData    *gobackend.ConstantData
+	biasConstantData     *gobackend.ConstantData
+
+	actShareGroup *sharedQuantActGroup
 }
 
 var (
 	_ gobackend.FusedDenseActivationTarget        = (*nodeFusedQuantizedDense)(nil)
 	_ gobackend.FusedQuantizedDenseActShareTarget = (*nodeFusedQuantizedDense)(nil)
 	_ gobackend.ConstantCacheNodeData             = (*nodeFusedQuantizedDense)(nil)
+	_ gobackend.ConditionalConstantCacheNodeData  = (*nodeFusedQuantizedDense)(nil)
 	_ gobackend.RecomputableNodeData              = (*nodeFusedQuantizedDense)(nil)
 )
 
@@ -107,25 +225,249 @@ func (d *nodeFusedQuantizedDense) BindSharedQuantActSiblings(siblings []gobacken
 	}
 }
 
+func (d *nodeFusedQuantizedDense) weightIsCached() bool {
+	if d == nil {
+		return false
+	}
+	return d.wConstantData != nil || (d.floatDotNodeData != nil && d.floatDotNodeData.RHSConstantData != nil)
+}
+
+func (d *nodeFusedQuantizedDense) weightCachedFormReady() bool {
+	if d == nil {
+		return false
+	}
+	if d.wConstantData != nil {
+		return d.wConstantData.CachedForm() != nil
+	}
+	if d.floatDotNodeData != nil && d.floatDotNodeData.RHSConstantData != nil {
+		return d.floatDotNodeData.RHSConstantData.CachedForm() != nil
+	}
+	return false
+}
+
+func (d *nodeFusedQuantizedDense) markBakedWeightSupportConstants() {
+	if d == nil {
+		return
+	}
+	if d.wScaleBaked && d.wScaleConstantData != nil {
+		markConstantBaked(d.wScaleConstantData)
+	}
+	if d.wZPBaked && d.wZPConstantData != nil {
+		markConstantBaked(d.wZPConstantData)
+	}
+}
+
+func (d *nodeFusedQuantizedDense) ConstantCachePriority(inputIdx int) int {
+	if d == nil {
+		return 0
+	}
+	if d.weightCacheKind != weightCacheNone && (inputIdx == d.wScaleIdx || inputIdx == d.wZPIdx) {
+		return 1
+	}
+	return 0
+}
+
 func (d *nodeFusedQuantizedDense) CacheSignature(inputIdx int) string {
-	if d == nil || inputIdx != 1 || d.wConstantData == nil {
+	if d == nil || d.cachePolicy == gobackend.QuantizedCacheNever {
 		return ""
 	}
-	return fmt.Sprintf("QDGGMLPanel(type=%s,K=%d,N=%d)", d.weightGGMLType, d.info.K, d.info.N)
+	switch inputIdx {
+	case 1:
+		if d.weightCacheKind == weightCacheNone {
+			return ""
+		}
+		return d.weightCacheSig
+	case d.wScaleIdx:
+		if d.wScaleIdx < 0 {
+			return ""
+		}
+		if d.weightIsCached() {
+			return fmt.Sprintf("QDBaked(%s,slot=wScale)", d.weightCacheSig)
+		}
+		return supportCacheSig(d.wScaleCacheKind)
+	case d.wZPIdx:
+		if d.wZPIdx < 0 {
+			return ""
+		}
+		if d.weightIsCached() {
+			return fmt.Sprintf("QDBaked(%s,slot=wZP)", d.weightCacheSig)
+		}
+		return supportCacheSig(d.wZPCacheKind)
+	case d.xScaleIdx:
+		if d.xScaleIdx < 0 {
+			return ""
+		}
+		return supportCacheSig(d.xScaleCacheKind)
+	case d.xZPIdx:
+		if d.xZPIdx < 0 {
+			return ""
+		}
+		return supportCacheSig(d.xZPCacheKind)
+	case d.outScaleIdx:
+		if d.outScaleIdx < 0 {
+			return ""
+		}
+		return supportCacheSig(d.outScaleCacheKind)
+	case d.outZPIdx:
+		if d.outZPIdx < 0 {
+			return ""
+		}
+		return supportCacheSig(d.outZPCacheKind)
+	case d.biasIdx:
+		if d.biasIdx < 0 {
+			return ""
+		}
+		return supportCacheSig(d.biasCacheKind)
+	default:
+		return ""
+	}
+}
+
+func (d *nodeFusedQuantizedDense) ShouldCacheInput(inputIdx int, _ *gobackend.ConstantData, willFreeRaw bool) bool {
+	if d == nil || d.cachePolicy == gobackend.QuantizedCacheNever {
+		return false
+	}
+	switch inputIdx {
+	case 1:
+		if d.weightCacheKind == weightCacheNone {
+			return false
+		}
+		rawBytes := d.weightRawBytes + d.wScaleRawBytes + d.wZPRawBytes
+		return shouldCacheByPolicy(d.cachePolicy, rawBytes, d.weightCachedBytes, willFreeRaw)
+	case d.wScaleIdx:
+		if d.wScaleIdx < 0 {
+			return false
+		}
+		if d.weightIsCached() {
+			// Already baked into the cached weight panel: 0 extra bytes and releases raw scale if donated.
+			return true
+		}
+		return d.wScaleCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.wScaleRawBytes, d.wScaleCachedBytes, willFreeRaw)
+	case d.wZPIdx:
+		if d.wZPIdx < 0 {
+			return false
+		}
+		if d.weightIsCached() {
+			// Already baked into the cached weight panel: 0 extra bytes and releases raw zero-point if donated.
+			return true
+		}
+		return d.wZPCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.wZPRawBytes, d.wZPCachedBytes, willFreeRaw)
+	case d.xScaleIdx:
+		return d.xScaleIdx >= 0 && d.xScaleCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.xScaleRawBytes, d.xScaleCachedBytes, willFreeRaw)
+	case d.xZPIdx:
+		return d.xZPIdx >= 0 && d.xZPCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.xZPRawBytes, d.xZPCachedBytes, willFreeRaw)
+	case d.outScaleIdx:
+		return d.outScaleIdx >= 0 && d.outScaleCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.outScaleRawBytes, d.outScaleCachedB, willFreeRaw)
+	case d.outZPIdx:
+		return d.outZPIdx >= 0 && d.outZPCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.outZPRawBytes, d.outZPCachedBytes, willFreeRaw)
+	case d.biasIdx:
+		return d.biasIdx >= 0 && d.biasCacheKind != supportCacheNone &&
+			shouldCacheByPolicy(d.cachePolicy, d.biasRawBytes, d.biasCachedBytes, willFreeRaw)
+	default:
+		return false
+	}
 }
 
 func (d *nodeFusedQuantizedDense) BindConstantData(inputIdx int, cd *gobackend.ConstantData) {
-	if d == nil || inputIdx != 1 || d.wConstantData == nil || cd == nil {
+	if d == nil || cd == nil {
 		return
 	}
-	d.wConstantData = cd
+	switch inputIdx {
+	case 1:
+		switch d.weightCacheKind {
+		case weightCacheGGMLPanel, weightCacheLinearPanel:
+			d.wConstantData = cd
+		case weightCacheFloatMatmul:
+			lhsCrossSize := 0
+			if !d.info.OutputShape.IsDynamic() && d.info.N > 0 {
+				lhsCrossSize = d.info.OutputShape.Size() / d.info.N
+			}
+			d.floatDotNodeData = &dot.NodeData{
+				InputDType:      dtypes.Float32,
+				OutputDType:     dtypes.Float32,
+				Layout:          d.floatLayout,
+				BatchSize:       1,
+				LHSCrossSize:    lhsCrossSize,
+				RHSCrossSize:    d.info.N,
+				ContractingSize: d.info.K,
+				RHSConstantData: cd,
+			}
+		}
+	case d.wScaleIdx:
+		if d.wScaleIdx >= 0 {
+			d.wScaleConstantData = cd
+			d.wScaleBaked = d.weightIsCached()
+		}
+	case d.wZPIdx:
+		if d.wZPIdx >= 0 {
+			d.wZPConstantData = cd
+			d.wZPBaked = d.weightIsCached()
+		}
+	case d.xScaleIdx:
+		if d.xScaleIdx >= 0 {
+			d.xScaleConstantData = cd
+		}
+	case d.xZPIdx:
+		if d.xZPIdx >= 0 {
+			d.xZPConstantData = cd
+		}
+	case d.outScaleIdx:
+		if d.outScaleIdx >= 0 {
+			d.outScaleConstantData = cd
+		}
+	case d.outZPIdx:
+		if d.outZPIdx >= 0 {
+			d.outZPConstantData = cd
+		}
+	case d.biasIdx:
+		if d.biasIdx >= 0 {
+			d.biasConstantData = cd
+		}
+	}
 }
 
 func (d *nodeFusedQuantizedDense) IsInputCached(inputIdx int) bool {
-	if d == nil || inputIdx != 1 || d.wConstantData == nil {
+	if d == nil {
 		return false
 	}
-	return d.wConstantData.CachedForm() != nil
+	switch inputIdx {
+	case 1:
+		return d.weightCachedFormReady()
+	case d.wScaleIdx:
+		if d.wScaleIdx < 0 {
+			return false
+		}
+		if d.wScaleBaked {
+			return d.weightCachedFormReady()
+		}
+		return d.wScaleConstantData.CachedForm() != nil
+	case d.wZPIdx:
+		if d.wZPIdx < 0 {
+			return false
+		}
+		if d.wZPBaked {
+			return d.weightCachedFormReady()
+		}
+		return d.wZPConstantData.CachedForm() != nil
+	case d.xScaleIdx:
+		return d.xScaleIdx >= 0 && d.xScaleConstantData.CachedForm() != nil
+	case d.xZPIdx:
+		return d.xZPIdx >= 0 && d.xZPConstantData.CachedForm() != nil
+	case d.outScaleIdx:
+		return d.outScaleIdx >= 0 && d.outScaleConstantData.CachedForm() != nil
+	case d.outZPIdx:
+		return d.outZPIdx >= 0 && d.outZPConstantData.CachedForm() != nil
+	case d.biasIdx:
+		return d.biasIdx >= 0 && d.biasConstantData.CachedForm() != nil
+	default:
+		return false
+	}
 }
 
 func (d *nodeFusedQuantizedDense) Recompute(_ *gobackend.Backend, _ []*gobackend.Node, _ *gobackend.Node) (any, error) {
@@ -160,7 +502,9 @@ func (d *nodeFusedQuantizedDense) EqualNodeData(other gobackend.NodeDataComparab
 		d.info.XZeroPointLayout == o.info.XZeroPointLayout &&
 		d.info.OutputScaleLayout == o.info.OutputScaleLayout &&
 		d.info.OutputZeroPointLayout == o.info.OutputZeroPointLayout &&
-		(d.floatDotNodeData != nil) == (o.floatDotNodeData != nil)
+		d.cachePolicy == o.cachePolicy &&
+		d.weightCacheKind == o.weightCacheKind &&
+		d.weightCacheSig == o.weightCacheSig
 }
 
 // TryFuseActivation implements gobackend.FusedDenseActivationTarget so single-consumer
@@ -275,31 +619,45 @@ func FusedQuantizedDense(
 
 	inputs := make([]*gobackend.Node, 0, 9)
 	inputs = append(inputs, xNode, wNode)
+	wScaleIdx, wZPIdx, xScaleIdx, xZPIdx, outScaleIdx, outZPIdx, biasIdx := -1, -1, -1, -1, -1, -1, -1
 	if wScaleNode != nil {
+		wScaleIdx = len(inputs)
 		inputs = append(inputs, wScaleNode)
 	}
 	if wZPNode != nil {
+		wZPIdx = len(inputs)
 		inputs = append(inputs, wZPNode)
 	}
 	if xScaleNode != nil {
+		xScaleIdx = len(inputs)
 		inputs = append(inputs, xScaleNode)
 	}
 	if xZPNode != nil {
+		xZPIdx = len(inputs)
 		inputs = append(inputs, xZPNode)
 	}
 	if oScaleNode != nil {
+		outScaleIdx = len(inputs)
 		inputs = append(inputs, oScaleNode)
 	}
 	if oZPNode != nil {
+		outZPIdx = len(inputs)
 		inputs = append(inputs, oZPNode)
 	}
 	if biasNode != nil {
+		biasIdx = len(inputs)
 		inputs = append(inputs, biasNode)
+	}
+
+	cachePolicy := gobackend.QuantizedCacheBalanced
+	if f.RawBuilder != nil && f.RawBuilder.Backend != nil {
+		cachePolicy = f.RawBuilder.Backend.QuantizedCache
 	}
 
 	data := &nodeFusedQuantizedDense{
 		weightScheme:     wqs.Scheme,
 		weightGGMLType:   wqs.GGMLType,
+		weightDType:      wNode.Shape.DType,
 		weightLayout:     options.WeightLayout,
 		hasXQuant:        xqs != nil,
 		hasOutputQuant:   oqs != nil,
@@ -313,46 +671,164 @@ func FusedQuantizedDense(
 		hasOutScale:      oScaleNode != nil,
 		hasOutZP:         oZPNode != nil,
 		hasBias:          biasNode != nil,
+		wScaleIdx:        wScaleIdx,
+		wZPIdx:           wZPIdx,
+		xScaleIdx:        xScaleIdx,
+		xZPIdx:           xZPIdx,
+		outScaleIdx:      outScaleIdx,
+		outZPIdx:         outZPIdx,
+		biasIdx:          biasIdx,
 		info:             info,
+		cachePolicy:      cachePolicy,
 	}
 	if xqs != nil {
 		data.xScheme = xqs.Scheme
 		data.xGGMLType = xqs.GGMLType
 	}
-	if f.RawBuilder != nil && f.RawBuilder.Backend != nil && f.RawBuilder.Backend.QuantizedCache && wNode.IsConstant() {
-		if data.weightScheme == compute.QuantGGML && (data.quantizedMatmul || data.hasXQuant) &&
-			canCacheGGMLPanel(data.weightGGMLType, info.K, info.N) {
-			data.wConstantData = gobackend.NewAnonymousConstantData()
-		} else if canCacheQuantLinearPanel(data) &&
-			(wScaleNode == nil || wScaleNode.IsConstant()) &&
-			(wZPNode == nil || wZPNode.IsConstant()) {
-			data.linearPanelCache = &linearConstantPanelCache{}
-		} else if !data.quantizedMatmul && !data.hasXQuant &&
-			(wScaleNode == nil || wScaleNode.IsConstant()) &&
-			(wZPNode == nil || wZPNode.IsConstant()) {
-			layout := dot.LayoutTransposed
-			if data.weightLayout == compute.DenseLayoutInputOutputs && data.weightScheme != compute.QuantGGML {
-				layout = dot.LayoutNonTransposed
-			}
-			lhsCrossSize := 0
-			if !info.OutputShape.IsDynamic() && info.N > 0 {
-				lhsCrossSize = info.OutputShape.Size() / info.N
-			}
-			data.floatDotNodeData = &dot.NodeData{
-				InputDType:      dtypes.Float32,
-				OutputDType:     dtypes.Float32,
-				Layout:          layout,
-				BatchSize:       1,
-				LHSCrossSize:    lhsCrossSize,
-				RHSCrossSize:    info.N,
-				ContractingSize: info.K,
-				RHSConstantData: gobackend.NewAnonymousConstantData(),
-			}
-		}
+	if wZPNode != nil {
+		data.wZPDType = wZPNode.Shape.DType
 	}
+	configureQuantizedDenseCaching(data, wNode, wScaleNode, wZPNode, xScaleNode, xZPNode, oScaleNode, oZPNode, biasNode)
 
 	node, _ := f.GetOrCreateNode(compute.OpTypeFusedQuantizedDense, info.OutputShape, inputs, data)
 	return node, nil
+}
+
+func configureSupportFloat32Cache(node *gobackend.Node) (supportCacheKind, int64, int64) {
+	if node == nil || !node.IsConstant() || node.Shape.IsDynamic() || node.Shape.Size() == 0 {
+		return supportCacheNone, 0, 0
+	}
+	dt := node.Shape.DType
+	if dt == dtypes.Float16 || dt == dtypes.BFloat16 {
+		return supportCacheF32, node.Shape.ByteSize(), int64(node.Shape.Size()) * 4
+	}
+	return supportCacheNone, 0, 0
+}
+
+func configureSupportZeroPointCache(node *gobackend.Node, wantInt32 bool) (supportCacheKind, int64, int64) {
+	if node == nil || !node.IsConstant() || node.Shape.IsDynamic() || node.Shape.Size() == 0 {
+		return supportCacheNone, 0, 0
+	}
+	dt := node.Shape.DType
+	if wantInt32 {
+		if dt == dtypes.Int32 {
+			return supportCacheNone, 0, 0
+		}
+		return supportCacheI32, node.Shape.ByteSize(), int64(node.Shape.Size()) * 4
+	}
+	if dt == dtypes.Float32 {
+		return supportCacheNone, 0, 0
+	}
+	return supportCacheF32, node.Shape.ByteSize(), int64(node.Shape.Size()) * 4
+}
+
+func configureQuantizedDenseCaching(
+	data *nodeFusedQuantizedDense,
+	wNode, wScaleNode, wZPNode, xScaleNode, xZPNode, oScaleNode, oZPNode, biasNode *gobackend.Node,
+) {
+	if data.cachePolicy == gobackend.QuantizedCacheNever {
+		return
+	}
+
+	// Supporting constant tensors (scales, zero-points, bias) that require dtype conversion.
+	data.wScaleCacheKind, data.wScaleRawBytes, data.wScaleCachedBytes = configureSupportFloat32Cache(wScaleNode)
+	if wScaleNode != nil && !wScaleNode.Shape.IsDynamic() {
+		data.wScaleRawBytes = wScaleNode.Shape.ByteSize()
+	}
+	wZPWantI32 := data.weightScheme == compute.QuantLinear &&
+		(data.hasXQuant || (data.quantizedMatmul && !canCacheQuantLinearPanel(data) && !data.wZPDType.IsFloat()))
+	data.wZPCacheKind, data.wZPRawBytes, data.wZPCachedBytes = configureSupportZeroPointCache(wZPNode, wZPWantI32)
+	if wZPNode != nil && !wZPNode.Shape.IsDynamic() {
+		data.wZPRawBytes = wZPNode.Shape.ByteSize()
+	}
+	data.xScaleCacheKind, data.xScaleRawBytes, data.xScaleCachedBytes = configureSupportFloat32Cache(xScaleNode)
+	data.xZPCacheKind, data.xZPRawBytes, data.xZPCachedBytes = configureSupportZeroPointCache(xZPNode, true)
+	data.outScaleCacheKind, data.outScaleRawBytes, data.outScaleCachedB = configureSupportFloat32Cache(oScaleNode)
+	data.outZPCacheKind, data.outZPRawBytes, data.outZPCachedBytes = configureSupportZeroPointCache(oZPNode, false)
+	if biasNode != nil && !(data.weightScheme == compute.QuantLinear && data.hasXQuant && biasNode.Shape.DType == dtypes.Int32) {
+		data.biasCacheKind, data.biasRawBytes, data.biasCachedBytes = configureSupportFloat32Cache(biasNode)
+	}
+
+	// Primary weight caching candidate.
+	if wNode == nil || !wNode.IsConstant() || wNode.Shape.IsDynamic() || data.info.K <= 0 || data.info.N <= 0 {
+		return
+	}
+	data.weightRawBytes = wNode.Shape.ByteSize()
+
+	// Helper to build pointer-stable identity signatures for constant wScale / wZP.
+	scaleAndZPSigs := func() (string, string, bool) {
+		var sSig, zpSig string
+		if wScaleNode != nil {
+			var ok bool
+			sSig, ok = gobackend.ConstantIdentitySignature(wScaleNode)
+			if !ok {
+				return "", "", false
+			}
+		}
+		if wZPNode != nil {
+			var ok bool
+			zpSig, ok = gobackend.ConstantIdentitySignature(wZPNode)
+			if !ok {
+				return "", "", false
+			}
+		}
+		return sSig, zpSig, true
+	}
+
+	if data.weightScheme == compute.QuantGGML && (data.quantizedMatmul || data.hasXQuant) &&
+		canCacheGGMLPanel(data.weightGGMLType, data.info.K, data.info.N) {
+		subBlockSize, _, _ := ggmlPanelSpec(data.weightGGMLType)
+		numSubBlocks := data.info.K / subBlockSize
+		subBlkBytes := QuantizedPanelStripSubBlockBytes(subBlockSize / 4)
+		totalStrips := (data.info.N + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
+		data.weightCacheKind = weightCacheGGMLPanel
+		data.weightCachedBytes = int64(totalStrips) * int64(numSubBlocks) * int64(subBlkBytes)
+		data.weightCacheSig = fmt.Sprintf("QDGGMLPanel(type=%s,K=%d,N=%d)", data.weightGGMLType, data.info.K, data.info.N)
+		return
+	}
+
+	if kBlock, ok := linearPanelKBlock(data); ok {
+		sSig, zpSig, constOK := scaleAndZPSigs()
+		if constOK {
+			numSubBlocks := (data.info.K + kBlock - 1) / kBlock
+			bPad := (kBlock + 3) &^ 3
+			subBlkBytes := QuantizedPanelStripSubBlockBytes(bPad / 4)
+			totalStrips := (data.info.N + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
+			data.weightCacheKind = weightCacheLinearPanel
+			data.weightCachedBytes = int64(totalStrips) * int64(numSubBlocks) * int64(subBlkBytes)
+			data.weightCacheSig = fmt.Sprintf(
+				"QDLinearPanel(dt=%s,layout=%v,K=%d,N=%d,kBlock=%d,sL=%+v,zpL=%+v,s=%s,zp=%s)",
+				wNode.Shape.DType, data.weightLayout, data.info.K, data.info.N, kBlock,
+				data.info.WeightScaleLayout, data.info.WeightZeroPointLayout, sSig, zpSig,
+			)
+		}
+		return
+	}
+
+	// Mode A: weight-only float32 matmul (QuantGGML, QuantLinear, or QuantNF4).
+	if !data.quantizedMatmul && !data.hasXQuant {
+		sSig, zpSig, constOK := scaleAndZPSigs()
+		if !constOK {
+			return
+		}
+		layout := dot.LayoutTransposed
+		if data.weightLayout == compute.DenseLayoutInputOutputs && data.weightScheme != compute.QuantGGML {
+			layout = dot.LayoutNonTransposed
+		}
+		data.weightCacheKind = weightCacheFloatMatmul
+		data.floatLayout = layout
+		data.weightCachedBytes = int64(data.info.N) * int64(data.info.K) * 4
+		if data.weightScheme == compute.QuantGGML {
+			data.weightCacheSig = fmt.Sprintf("QDGGMLFloatMatmul(type=%s,layout=%v,K=%d,N=%d)",
+				data.weightGGMLType, layout, data.info.K, data.info.N)
+		} else {
+			data.weightCacheSig = fmt.Sprintf(
+				"QDLinearFloatMatmul(scheme=%v,dt=%s,layout=%v,K=%d,N=%d,sL=%+v,zpL=%+v,s=%s,zp=%s)",
+				data.weightScheme, wNode.Shape.DType, layout, data.info.K, data.info.N,
+				data.info.WeightScaleLayout, data.info.WeightZeroPointLayout, sSig, zpSig,
+			)
+		}
+	}
 }
 
 type unpackedQDInputs struct {
@@ -461,7 +937,7 @@ func execFusedQuantizedDense(backend *gobackend.Backend, node *gobackend.Node, i
 
 	// Optional OutputQuantization (e.g. ONNX QLinearMatMul).
 	if data.hasOutputQuant {
-		if err := quantizeOutputFloat32(backend, outF32, M, N, in.outScale, in.outZP, data.info.OutputScaleLayout, data.info.OutputZeroPointLayout, output); err != nil {
+		if err := quantizeOutputFloat32(backend, outF32, M, N, in.outScale, data.outScaleConstantData, in.outZP, data.outZPConstantData, data.info.OutputScaleLayout, data.info.OutputZeroPointLayout, output); err != nil {
 			backend.PutBuffer(output)
 			return nil, err
 		}
@@ -535,20 +1011,23 @@ func quantizeOutputFloat32(
 	backend *gobackend.Backend,
 	yF32 []float32,
 	M, N int,
-	scaleBuf, zpBuf *gobackend.Buffer,
+	scaleBuf *gobackend.Buffer,
+	scaleCD *gobackend.ConstantData,
+	zpBuf *gobackend.Buffer,
+	zpCD *gobackend.ConstantData,
 	scaleLayout, zpLayout shapeinference.ActivationParamLayout,
 	outBuf *gobackend.Buffer,
 ) error {
-	scales, releaseScale, err := bufferToFloat32Slice(backend, scaleBuf)
+	scales, releaseScale, err := resolveCachedFloat32Slice(backend, scaleBuf, scaleCD)
 	if err != nil {
 		return err
 	}
 	defer releaseScale()
 
 	var zps []float32
-	if zpBuf != nil {
+	if zpBuf != nil || zpCD != nil {
 		var releaseZP func()
-		zps, releaseZP, err = bufferToZeroPointFloat32Slice(backend, zpBuf)
+		zps, releaseZP, err = resolveCachedZeroPointFloat32Slice(backend, zpBuf, zpCD)
 		if err != nil {
 			return err
 		}
@@ -590,6 +1069,88 @@ func quantizeOutputFloat32(
 		return errors.Errorf("FusedQuantizedDense: unsupported OutputQuantization DType %s", outBuf.RawShape.DType)
 	}
 	return nil
+}
+
+// resolveCachedFloat32Slice returns a []float32 view from cd.CachedForm() when bound and
+// cached, populating cd with an exact-sized non-pooled converted []float32 slice on cold start,
+// or falling back to bufferToFloat32Slice when cd is nil.
+func resolveCachedFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer, cd *gobackend.ConstantData) ([]float32, func(), error) {
+	if cd == nil {
+		return bufferToFloat32Slice(backend, buf)
+	}
+	if cached := cd.CachedForm(); cached != nil {
+		return cached.([]float32), func() {}, nil
+	}
+	var convErr error
+	res := gobackend.GetOrSetCachedForm(cd, func() []float32 {
+		s, release, err := bufferToFloat32Slice(backend, buf)
+		if err != nil {
+			convErr = err
+			return nil
+		}
+		defer release()
+		cp := make([]float32, len(s))
+		copy(cp, s)
+		return cp
+	})
+	if convErr != nil {
+		return nil, nil, convErr
+	}
+	return res, func() {}, nil
+}
+
+// resolveCachedZeroPointFloat32Slice returns a cached []float32 zero-point slice via cd when bound,
+// or falls back to bufferToZeroPointFloat32Slice when cd is nil.
+func resolveCachedZeroPointFloat32Slice(backend *gobackend.Backend, buf *gobackend.Buffer, cd *gobackend.ConstantData) ([]float32, func(), error) {
+	if cd == nil {
+		return bufferToZeroPointFloat32Slice(backend, buf)
+	}
+	if cached := cd.CachedForm(); cached != nil {
+		return cached.([]float32), func() {}, nil
+	}
+	var convErr error
+	res := gobackend.GetOrSetCachedForm(cd, func() []float32 {
+		s, release, err := bufferToZeroPointFloat32Slice(backend, buf)
+		if err != nil {
+			convErr = err
+			return nil
+		}
+		defer release()
+		cp := make([]float32, len(s))
+		copy(cp, s)
+		return cp
+	})
+	if convErr != nil {
+		return nil, nil, convErr
+	}
+	return res, func() {}, nil
+}
+
+// resolveCachedZeroPointInt32Slice returns a cached []int32 zero-point slice via cd when bound,
+// or falls back to bufferToZeroPointInt32Slice when cd is nil.
+func resolveCachedZeroPointInt32Slice(backend *gobackend.Backend, buf *gobackend.Buffer, cd *gobackend.ConstantData) ([]int32, func(), error) {
+	if cd == nil {
+		return bufferToZeroPointInt32Slice(backend, buf)
+	}
+	if cached := cd.CachedForm(); cached != nil {
+		return cached.([]int32), func() {}, nil
+	}
+	var convErr error
+	res := gobackend.GetOrSetCachedForm(cd, func() []int32 {
+		s, release, err := bufferToZeroPointInt32Slice(backend, buf)
+		if err != nil {
+			convErr = err
+			return nil
+		}
+		defer release()
+		cp := make([]int32, len(s))
+		copy(cp, s)
+		return cp
+	})
+	if convErr != nil {
+		return nil, nil, convErr
+	}
+	return res, func() {}, nil
 }
 
 // bufferToFloat32Slice returns a []float32 view (zero-copy when already Float32) or a pooled converted buffer.

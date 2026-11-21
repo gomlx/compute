@@ -1,13 +1,21 @@
 // Copyright 2023-2026 The GoMLX Authors. SPDX-License-Identifier: Apache-2.0
 
-// Package gobackend implements a [compute.Backend] using Go only.
+// Package gobackend implements a [compute.Backend] using pure Go (plus optional SIMD/assembly).
 //
-// Its main goal is portability, and not be a state-of-the art ML backend.
+// Its main goal is portability (including WASM), while still delivering high CPU throughput
+// via SIMD/assembly microkernels, fused operations, and constant weight panel caching.
 //
 // It also serves as a reference implementation for the [compute.Backend] interface.
 //
-// It only implements the most popular dtypes and operations.
-// But generally, it's easy to add new ops, if you need, just open an issue in GoMLX.
+// Supported configuration options (via GOMLX_BACKEND="go:<opt1>,<opt2>=<val>"):
+//   - parallelism=<N>: maximum intra-op scheduler worker goroutines (default: GOMAXPROCS).
+//   - num_executors=<N>: maximum concurrent node executors in parallel graph mode (default: 8).
+//   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
+//   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
+//   - quantized_cache=<always|balanced|never>: constant weight caching policy for FusedQuantizedDense
+//     (aliases: true/1 for always; false/none/0 for never; bare "quantized_cache" selects always;
+//     default: balanced). See compute/docs/GoBackendMemoryUsage.md for details.
+//   - no_ops: skip kernel math (for scheduling/framework benchmarking).
 package gobackend
 
 import (
@@ -110,16 +118,11 @@ func New(config string) (compute.Backend, error) {
 			}
 			b.NumExecutors = vInt
 		case "quantized_cache":
-			if value == "" {
-				b.QuantizedCache = true
-			} else {
-				vBool, err := strconv.ParseBool(value)
-				if err != nil {
-					return nil, errors.Wrapf(err,
-						"invalid value for %q in Go backend config: needs a bool, got %q", key, value)
-				}
-				b.QuantizedCache = vBool
+			policy, err := parseQuantizedCachePolicy(value)
+			if err != nil {
+				return nil, err
 			}
+			b.QuantizedCache = policy
 		case "":
 			// No-op, just skip.
 		default:
@@ -130,7 +133,7 @@ func New(config string) (compute.Backend, error) {
 					extraOptions = ", " + strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", ")
 				}
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache%s; "+
+					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>%s; "+
 					"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
 					key, extraOptions)
 			}
@@ -143,6 +146,71 @@ func New(config string) (compute.Backend, error) {
 	return b, nil
 }
 
+// QuantizedCachePolicy controls whether and when constant quantized weights (and their
+// supporting constant scales, zero-points, and biases) in FusedQuantizedDense are pre-unpacked
+// or converted into cached representations across executions.
+type QuantizedCachePolicy int
+
+const (
+	// QuantizedCacheBalanced (the default) decides per constant tensor: it caches a constant
+	// weight or supporting tensor when its cached size is at most DefaultQuantizedCacheMaxWeightBytes
+	// (4 MiB) AND its net extra memory (cachedBytes - releasedRawBytes) is at most
+	// DefaultQuantizedCacheMaxExtraRatio (2.0x) of the raw tensor byte size.
+	QuantizedCacheBalanced QuantizedCachePolicy = iota
+
+	// QuantizedCacheAlways caches every eligible constant quantized weight (both Mode B K4 panels
+	// and Mode A float32 GEMM panels) and supporting constant tensor regardless of size or
+	// expansion ratio.
+	QuantizedCacheAlways
+
+	// QuantizedCacheNever disables quantized constant caching completely; all quantized weights
+	// and supporting tensors are unpacked or converted on the fly in bounded pooled chunks.
+	QuantizedCacheNever
+)
+
+const (
+	// DefaultQuantizedCacheMaxWeightBytes caps the cached byte size of any single tensor cached
+	// automatically under QuantizedCacheBalanced (4 MiB). This covers small/medium L3-resident
+	// models (e.g. MiniLM, BERT/BGE-base) while avoiding multi-GB expansion and DRAM-bandwidth
+	// regressions on large LLMs (1B-70B).
+	DefaultQuantizedCacheMaxWeightBytes int64 = 4 * 1024 * 1024
+
+	// DefaultQuantizedCacheMaxExtraRatio caps the net extra memory ratio (extraBytes / rawBytes)
+	// under QuantizedCacheBalanced (2.0x). Donated 4-bit to 8-bit Mode B panels sit at 0.10x-1.50x
+	// extra (cached), whereas 2-3 bit formats (2.49x-4.0x) and Mode A float32 panels (2.76x-11.2x)
+	// stay uncached by default.
+	DefaultQuantizedCacheMaxExtraRatio = 2.0
+)
+
+// String returns the canonical configuration name of the QuantizedCachePolicy.
+func (p QuantizedCachePolicy) String() string {
+	switch p {
+	case QuantizedCacheBalanced:
+		return "balanced"
+	case QuantizedCacheAlways:
+		return "always"
+	case QuantizedCacheNever:
+		return "never"
+	default:
+		return fmt.Sprintf("QuantizedCachePolicy(%d)", int(p))
+	}
+}
+
+func parseQuantizedCachePolicy(value string) (QuantizedCachePolicy, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "always", "true", "1":
+		return QuantizedCacheAlways, nil
+	case "balanced":
+		return QuantizedCacheBalanced, nil
+	case "never", "none", "false", "0":
+		return QuantizedCacheNever, nil
+	default:
+		return QuantizedCacheBalanced, errors.Errorf(
+			"invalid value for \"quantized_cache\" in Go backend config: expected always|true|1, balanced, or never|none|false|0, got %q",
+			value)
+	}
+}
+
 // DefaultNumExecutors is the default number of concurrent worker executors
 // used in executeParallel to execute ready graph nodes.
 const DefaultNumExecutors = 8
@@ -151,6 +219,7 @@ func newDefaultBackend() *Backend {
 	b := &Backend{
 		NumExecutors:     DefaultNumExecutors,
 		OpsExecutionType: OpsExecutionDynamic,
+		QuantizedCache:   QuantizedCacheBalanced,
 	}
 	b.Scheduler = scheduler.New()
 	return b
@@ -180,10 +249,10 @@ type Backend struct {
 	// NumExecutors is the number of concurrent executor goroutines to launch in executeParallel.
 	NumExecutors int
 
-	// QuantizedCache enables pre-unpacking and caching constant quantized weights as K4-interleaved
-	// panels across executions (configured via "go:quantized_cache"). Defaults to false to preserve
-	// the compressed memory footprint of sub-8-bit (e.g. 4-bit) weights.
-	QuantizedCache bool
+	// QuantizedCache controls pre-unpacking/conversion caching of constant quantized weights
+	// and supporting tensors in FusedQuantizedDense (configured via
+	// "go:quantized_cache=<always|balanced|never>"). Defaults to QuantizedCacheBalanced.
+	QuantizedCache QuantizedCachePolicy
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.
@@ -200,8 +269,8 @@ func (b *Backend) String() string { return BackendName }
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
 	extra := ""
-	if b.QuantizedCache {
-		extra = ", quantized_cache"
+	if b.QuantizedCache != QuantizedCacheBalanced {
+		extra = fmt.Sprintf(", quantized_cache=%s", b.QuantizedCache)
 	}
 	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d%s)",
 		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism(), extra)
