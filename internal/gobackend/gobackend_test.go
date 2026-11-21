@@ -62,11 +62,53 @@ func TestUnknownBackendOptionError(t *testing.T) {
 		t.Fatalf("expected error from compute.NewWithConfig(\"go:help\"), got nil")
 	}
 	for _, want := range []string{
-		"quantized_cache",
+		"quantized_cache=<always|balanced|never>",
 		"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("expected error %q to contain %q", err.Error(), want)
 		}
+	}
+}
+
+func TestQuantizedCacheConfigParsing(t *testing.T) {
+	cases := []struct {
+		cfg      string
+		want     gobackend.QuantizedCachePolicy
+		wantDesc string
+	}{
+		{"", gobackend.QuantizedCacheBalanced, ""},
+		{"quantized_cache=balanced", gobackend.QuantizedCacheBalanced, ""},
+		{"quantized_cache=BALANCED", gobackend.QuantizedCacheBalanced, ""},
+		{"quantized_cache", gobackend.QuantizedCacheAlways, "quantized_cache=always"},
+		{"quantized_cache=always", gobackend.QuantizedCacheAlways, "quantized_cache=always"},
+		{"quantized_cache=true", gobackend.QuantizedCacheAlways, "quantized_cache=always"},
+		{"quantized_cache=1", gobackend.QuantizedCacheAlways, "quantized_cache=always"},
+		{"quantized_cache=never", gobackend.QuantizedCacheNever, "quantized_cache=never"},
+		{"quantized_cache=none", gobackend.QuantizedCacheNever, "quantized_cache=never"},
+		{"quantized_cache=false", gobackend.QuantizedCacheNever, "quantized_cache=never"},
+		{"quantized_cache=0", gobackend.QuantizedCacheNever, "quantized_cache=never"},
+	}
+	for _, tc := range cases {
+		bRaw, err := gobackend.New(tc.cfg)
+		if err != nil {
+			t.Fatalf("gobackend.New(%q): %+v", tc.cfg, err)
+		}
+		be := bRaw.(*gobackend.Backend)
+		if be.QuantizedCache != tc.want {
+			t.Errorf("gobackend.New(%q): got QuantizedCache=%v, want %v", tc.cfg, be.QuantizedCache, tc.want)
+		}
+		desc := be.Description()
+		if tc.wantDesc != "" && !strings.Contains(desc, tc.wantDesc) {
+			t.Errorf("gobackend.New(%q).Description() = %q, want substring %q", tc.cfg, desc, tc.wantDesc)
+		}
+		if tc.wantDesc == "" && strings.Contains(desc, "quantized_cache=") {
+			t.Errorf("gobackend.New(%q).Description() = %q, did not expect quantized_cache=", tc.cfg, desc)
+		}
+		bRaw.Finalize()
+	}
+
+	if _, err := gobackend.New("quantized_cache=invalid"); err == nil {
+		t.Fatalf("expected error for quantized_cache=invalid, got nil")
 	}
 }

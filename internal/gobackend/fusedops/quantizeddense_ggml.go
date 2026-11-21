@@ -31,10 +31,10 @@ func execQuantizedDenseGGMLCore(
 	wType := data.weightGGMLType
 
 	var biasF32 []float32
-	if in.bias != nil {
+	if in.bias != nil || data.biasConstantData != nil {
 		var releaseBias func()
 		var err error
-		biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
+		biasF32, releaseBias, err = resolveCachedFloat32Slice(backend, in.bias, data.biasConstantData)
 		if err != nil {
 			return false, err
 		}
@@ -71,8 +71,12 @@ func execQuantizedDenseGGMLCore(
 	}
 	defer releaseX()
 
-	weights := in.weight.Flat.([]uint8)
-	bytesPerRowW := in.weight.RawShape.Dimensions[1]
+	var weights []uint8
+	var bytesPerRowW int
+	if in.weight != nil {
+		weights = in.weight.Flat.([]uint8)
+		bytesPerRowW = in.weight.RawShape.Dimensions[1]
+	}
 
 	if data.quantizedMatmul {
 		var xType compute.GGMLQuantType

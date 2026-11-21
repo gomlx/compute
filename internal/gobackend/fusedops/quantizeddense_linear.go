@@ -19,21 +19,21 @@ func execQuantizedDenseLinearOrNF4Core(
 	outF32 []float32,
 	inTileAct activations.KernelFn[float32],
 ) (bool, error) {
-	wScales, releaseWScale, err := bufferToFloat32Slice(backend, in.wScale)
-	if err != nil {
-		return false, err
-	}
-	defer releaseWScale()
-
 	// Case 1: Pre-quantized XQuantization (QuantLinear Int32 matmul).
 	if data.hasXQuant {
+		wScales, releaseWScale, err := resolveCachedFloat32Slice(backend, in.wScale, data.wScaleConstantData)
+		if err != nil {
+			return false, err
+		}
+		defer releaseWScale()
 		return false, execQuantizedDenseLinearIntMatmul(backend, data, in, wScales, M, K, N, outF32)
 	}
 
 	var biasF32 []float32
-	if in.bias != nil {
+	if in.bias != nil || data.biasConstantData != nil {
 		var releaseBias func()
-		biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
+		var err error
+		biasF32, releaseBias, err = resolveCachedFloat32Slice(backend, in.bias, data.biasConstantData)
 		if err != nil {
 			return false, err
 		}
@@ -41,8 +41,10 @@ func execQuantizedDenseLinearOrNF4Core(
 	}
 
 	// Case 2: On-the-fly dynamic Int8 quantization hint (QuantizedMatmul == true) for QuantLinear.
+	// Invoked before reading in.wScale/in.wZP because cached K4 panels bake wScale/wZP into the
+	// weight's ConstantData and may have released their raw buffers.
 	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear {
-		if ok, err := execQuantizedDenseLinearPanelDynamicInt8(backend, data, in.x, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32, inTileAct); err != nil {
+		if ok, err := execQuantizedDenseLinearPanelDynamicInt8(backend, data, in, biasF32, M, K, N, outF32, inTileAct); err != nil {
 			return false, err
 		} else if ok {
 			return inTileAct != nil, nil
@@ -56,26 +58,55 @@ func execQuantizedDenseLinearOrNF4Core(
 	}
 	defer releaseX()
 
+	// Fast Mode A cached hit: weight + wScale + wZP are already packed into floatDotNodeData.RHSConstantData.
+	if !data.quantizedMatmul && data.floatDotNodeData != nil && data.floatDotNodeData.RHSConstantData.CachedForm() != nil {
+		return execQuantizedDenseLinearOrNF4FloatMatmul(
+			backend, data, xF32, nil, nil, nil, biasF32, outF32,
+			M, K, N, defaultQuantizedFloatMaxScratchFloats,
+		)
+	}
+
+	var wScaleCD *gobackend.ConstantData
+	if !data.wScaleBaked {
+		wScaleCD = data.wScaleConstantData
+	}
+	wScales, releaseWScale, err := resolveCachedFloat32Slice(backend, in.wScale, wScaleCD)
+	if err != nil {
+		return false, err
+	}
+	defer releaseWScale()
+
 	if data.quantizedMatmul && data.weightScheme == compute.QuantLinear &&
-		(in.wZP == nil || !in.wZP.RawShape.DType.IsFloat()) {
+		(!data.hasWZP || !data.wZPDType.IsFloat()) {
 		return false, execQuantizedDenseLinearDynamicInt8(backend, data, xF32, in.weight, wScales, in.wZP, biasF32, M, K, N, outF32)
 	}
 
 	// Case 3: Weight-only float matmul (QuantLinear or QuantNF4, or non-integer float zero-points).
 	var wZPF32 []float32
-	if in.wZP != nil {
+	if in.wZP != nil || (!data.wZPBaked && data.wZPConstantData != nil) {
+		var wZPCD *gobackend.ConstantData
+		if !data.wZPBaked {
+			wZPCD = data.wZPConstantData
+		}
 		var releaseWZP func()
-		wZPF32, releaseWZP, err = bufferToZeroPointFloat32Slice(backend, in.wZP)
+		wZPF32, releaseWZP, err = resolveCachedZeroPointFloat32Slice(backend, in.wZP, wZPCD)
 		if err != nil {
 			return false, err
 		}
 		defer releaseWZP()
 	}
 
-	return execQuantizedDenseLinearOrNF4FloatMatmul(
+	appliedAct, err := execQuantizedDenseLinearOrNF4FloatMatmul(
 		backend, data, xF32, in.weight, wScales, wZPF32, biasF32, outF32,
 		M, K, N, defaultQuantizedFloatMaxScratchFloats,
 	)
+	if err != nil {
+		return false, err
+	}
+	if data.floatDotNodeData != nil && data.floatDotNodeData.RHSConstantData.CachedForm() != nil {
+		data.markBakedWeightSupportConstants()
+	}
+	return appliedAct, nil
 }
 
 // weightRowReader provides zero-allocation row access for Int8, Uint8, and sub-byte [D0, D1] weights.
@@ -142,16 +173,16 @@ func execQuantizedDenseLinearIntMatmul(
 	M, K, N int,
 	outF32 []float32,
 ) error {
-	xScales, releaseXScale, err := bufferToFloat32Slice(backend, in.xScale)
+	xScales, releaseXScale, err := resolveCachedFloat32Slice(backend, in.xScale, data.xScaleConstantData)
 	if err != nil {
 		return err
 	}
 	defer releaseXScale()
 
 	var xZPs []int32
-	if in.xZP != nil {
+	if in.xZP != nil || data.xZPConstantData != nil {
 		var releaseXZP func()
-		xZPs, releaseXZP, err = bufferToZeroPointInt32Slice(backend, in.xZP)
+		xZPs, releaseXZP, err = resolveCachedZeroPointInt32Slice(backend, in.xZP, data.xZPConstantData)
 		if err != nil {
 			return err
 		}
@@ -159,9 +190,9 @@ func execQuantizedDenseLinearIntMatmul(
 	}
 
 	var wZPs []int32
-	if in.wZP != nil {
+	if in.wZP != nil || data.wZPConstantData != nil {
 		var releaseWZP func()
-		wZPs, releaseWZP, err = bufferToZeroPointInt32Slice(backend, in.wZP)
+		wZPs, releaseWZP, err = resolveCachedZeroPointInt32Slice(backend, in.wZP, data.wZPConstantData)
 		if err != nil {
 			return err
 		}
@@ -170,12 +201,12 @@ func execQuantizedDenseLinearIntMatmul(
 
 	var biasI32 []int32
 	var biasF32 []float32
-	if in.bias != nil {
-		if in.bias.RawShape.DType == dtypes.Int32 {
+	if in.bias != nil || data.biasConstantData != nil {
+		if in.bias != nil && in.bias.RawShape.DType == dtypes.Int32 {
 			biasI32 = in.bias.Flat.([]int32)
 		} else {
 			var releaseBias func()
-			biasF32, releaseBias, err = bufferToFloat32Slice(backend, in.bias)
+			biasF32, releaseBias, err = resolveCachedFloat32Slice(backend, in.bias, data.biasConstantData)
 			if err != nil {
 				return err
 			}
@@ -394,10 +425,10 @@ func execQuantizedDenseLinearDynamicInt8(
 	outF32 []float32,
 ) error {
 	var wZPs []int32
-	if wZPBuf != nil {
+	if wZPBuf != nil || data.wZPConstantData != nil {
 		var releaseZP func()
 		var err error
-		wZPs, releaseZP, err = bufferToZeroPointInt32Slice(backend, wZPBuf)
+		wZPs, releaseZP, err = resolveCachedZeroPointInt32Slice(backend, wZPBuf, data.wZPConstantData)
 		if err != nil {
 			return err
 		}

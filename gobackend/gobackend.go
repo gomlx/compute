@@ -1,9 +1,22 @@
-// Package gobackend implements a native Go [compute.Backend]: very portable (including WASM) but not very fast.
+// Package gobackend implements a native Go [compute.Backend]: 100% portable (including WASM)
+// with optional SIMD/assembly acceleration (AVX2, AVX-512, ARM64 NEON/SME), fused operations,
+// and constant weight caching.
 //
-// It only implements the most popular dtypes and operations.
-// But generally, it's easy to add new ops: just open an issue in GoMLX.
+// Configuration options can be passed via GOMLX_BACKEND="go:<option1>,<option2>=<value>" or
+// compute.NewWithConfig("go:..."). Supported options:
+//   - parallelism=<N>: maximum intra-op worker goroutines (default: runtime.GOMAXPROCS(0)).
+//   - num_executors=<N>: maximum concurrent node executors in parallel mode (default: 8).
+//   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
+//   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
+//   - quantized_cache=<always|balanced|never>: constant weight/scale/zero-point/bias caching policy
+//     for FusedQuantizedDense (default: balanced; aliases: true/1 or bare quantized_cache for always;
+//     false/none/0 for never). See docs/GoBackendMemoryUsage.md for details.
+//   - no_ops: skip kernel math for scheduling/framework overhead benchmarking.
 //
-// This package is simply a thin wrapper around internal/gobackend.
+// Passing an unknown option such as GOMLX_BACKEND="go:help" returns an error listing all valid
+// options.
+//
+// This package is a thin wrapper around internal/gobackend.
 package gobackend
 
 import (
@@ -31,8 +44,9 @@ var GetBackend = sync.OnceValue(func() compute.Backend {
 	return backend
 })
 
-// New constructs a new Go Backend.
-// There are no configurations, the string is simply ignored.
+// New constructs a new Go Backend using the comma-separated configuration options in config.
+// See package documentation or https://gomlx.github.io/docs/backends/#2-the-go-backend-go
+// for supported options.
 func New(config string) (compute.Backend, error) {
 	return gobackend.New(config)
 }

@@ -671,7 +671,7 @@ func TestQuantizedCacheOption(t *testing.T) {
 		xData[i] = float32(((i*13+3)%19)-9) * 0.1
 	}
 
-	runWithConfig := func(t *testing.T, cfgStr string, wantCached bool) []float32 {
+	runWithConfig := func(t *testing.T, cfgStr string, wantPolicy gobackend.QuantizedCachePolicy, wantCached bool) []float32 {
 		t.Helper()
 		bRaw, err := gobackend.New(cfgStr)
 		if err != nil {
@@ -679,8 +679,8 @@ func TestQuantizedCacheOption(t *testing.T) {
 		}
 		defer bRaw.Finalize()
 		be := bRaw.(*gobackend.Backend)
-		if be.QuantizedCache != wantCached {
-			t.Fatalf("config %q: got QuantizedCache=%v, want %v", cfgStr, be.QuantizedCache, wantCached)
+		if be.QuantizedCache != wantPolicy {
+			t.Fatalf("config %q: got QuantizedCache=%v, want %v", cfgStr, be.QuantizedCache, wantPolicy)
 		}
 
 		builder := bRaw.Builder("qcache_" + cfgStr)
@@ -701,12 +701,6 @@ func TestQuantizedCacheOption(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		qdNode := y.(*gobackend.Node)
-		qdData := qdNode.Data.(*nodeFusedQuantizedDense)
-		if (qdData.wConstantData != nil) != wantCached {
-			t.Fatalf("config %q: got wConstantData!=nil == %v, want %v", cfgStr, qdData.wConstantData != nil, wantCached)
-		}
-
 		if err := fn.Return([]compute.Value{y}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -715,6 +709,12 @@ func TestQuantizedCacheOption(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer exec.Finalize()
+
+		qdNode := y.(*gobackend.Node)
+		qdData := qdNode.Data.(*nodeFusedQuantizedDense)
+		if (qdData.wConstantData != nil) != wantCached {
+			t.Fatalf("config %q after Compile: got wConstantData!=nil == %v, want %v", cfgStr, qdData.wConstantData != nil, wantCached)
+		}
 
 		// Run 8 concurrent executions to verify cold-start caching race safety when wantCached==true.
 		var wg sync.WaitGroup
@@ -748,19 +748,26 @@ func TestQuantizedCacheOption(t *testing.T) {
 		return results[0]
 	}
 
-	gotDefaultOff := runWithConfig(t, "", false)
-	gotExplicitOff := runWithConfig(t, "quantized_cache=false", false)
-	gotCacheOn := runWithConfig(t, "quantized_cache", true)
-	gotCacheExplicitOn := runWithConfig(t, "quantized_cache=true", true)
-
-	if ok, diff := testutil.IsInDelta(gotDefaultOff, gotExplicitOff, 1e-6); !ok {
-		t.Fatalf("default vs quantized_cache=false mismatch:\n%s", diff)
-	}
-	if ok, diff := testutil.IsInDelta(gotDefaultOff, gotCacheOn, 1e-6); !ok {
-		t.Fatalf("default vs quantized_cache mismatch:\n%s", diff)
-	}
-	if ok, diff := testutil.IsInDelta(gotDefaultOff, gotCacheExplicitOn, 1e-6); !ok {
-		t.Fatalf("default vs quantized_cache=true mismatch:\n%s", diff)
+	gotNever := runWithConfig(t, "quantized_cache=never", gobackend.QuantizedCacheNever, false)
+	for _, tc := range []struct {
+		cfg        string
+		wantPolicy gobackend.QuantizedCachePolicy
+		wantCached bool
+	}{
+		{"", gobackend.QuantizedCacheBalanced, true},
+		{"quantized_cache=balanced", gobackend.QuantizedCacheBalanced, true},
+		{"quantized_cache", gobackend.QuantizedCacheAlways, true},
+		{"quantized_cache=always", gobackend.QuantizedCacheAlways, true},
+		{"quantized_cache=true", gobackend.QuantizedCacheAlways, true},
+		{"quantized_cache=1", gobackend.QuantizedCacheAlways, true},
+		{"quantized_cache=none", gobackend.QuantizedCacheNever, false},
+		{"quantized_cache=false", gobackend.QuantizedCacheNever, false},
+		{"quantized_cache=0", gobackend.QuantizedCacheNever, false},
+	} {
+		got := runWithConfig(t, tc.cfg, tc.wantPolicy, tc.wantCached)
+		if ok, diff := testutil.IsInDelta(gotNever, got, 1e-6); !ok {
+			t.Fatalf("never vs %q mismatch:\n%s", tc.cfg, diff)
+		}
 	}
 }
 
@@ -1016,11 +1023,434 @@ func TestQuantizedFloatModeACacheAndDynamic(t *testing.T) {
 	}
 
 	batchSizes := []int{1, 19, 64}
-	off := runModeA(t, "", batchSizes)
-	on := runModeA(t, "quantized_cache", batchSizes)
+	off := runModeA(t, "quantized_cache=never", batchSizes)
+	bal := runModeA(t, "quantized_cache=balanced", batchSizes)
+	on := runModeA(t, "quantized_cache=always", batchSizes)
 	for i, M := range batchSizes {
+		if ok, diff := testutil.IsInDelta(off[i], bal[i], 1e-3); !ok {
+			t.Fatalf("Mode A M=%d never vs balanced mismatch:\n%s", M, diff)
+		}
 		if ok, diff := testutil.IsInDelta(off[i], on[i], 1e-3); !ok {
-			t.Fatalf("Mode A M=%d cache off vs on mismatch:\n%s", M, diff)
+			t.Fatalf("Mode A M=%d never vs always mismatch:\n%s", M, diff)
 		}
 	}
+}
+
+func TestQuantizedCacheBalancedPolicy(t *testing.T) {
+	checkGGML := func(t *testing.T, cfg string, wType compute.GGMLQuantType, K, N int, quantMatmul, donate bool, wantCached, wantRawReleased bool) {
+		t.Helper()
+		bRaw, err := gobackend.New(cfg)
+		if err != nil {
+			t.Fatalf("gobackend.New(%q): %+v", cfg, err)
+		}
+		defer bRaw.Finalize()
+
+		bpr := (K / wType.ValuesPerBlock()) * wType.BytesPerBlock()
+		wBytes := makeTestGGMLWeightMatrix(N, K, wType, 5)
+		wBuf, err := bRaw.BufferFromFlatData(0, wBytes, shapes.Make(dtypes.Uint8, N, bpr))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !donate {
+			defer wBuf.Finalize()
+		}
+
+		builder := bRaw.Builder("balanced_check")
+		fn := builder.Main()
+		xParam, err := fn.Parameter("x", shapes.Make(dtypes.Float32, 2, K), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wConst, err := fn.ConstantFromBuffer(wBuf, donate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wCD := wConst.(*gobackend.Node).Data.(*gobackend.ConstantData)
+		y, err := fn.FusedQuantizedDense(xParam, wConst, nil, compute.FusedQuantizedDenseConfig{
+			WeightQuantization: &compute.Quantization{Scheme: compute.QuantGGML, GGMLType: wType},
+			QuantizedMatmul:    quantMatmul,
+			WeightLayout:       compute.DenseLayoutOutputsInput,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fn.Return([]compute.Value{y}, nil); err != nil {
+			t.Fatal(err)
+		}
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exec.Finalize()
+
+		qdData := y.(*gobackend.Node).Data.(*nodeFusedQuantizedDense)
+		if got := qdData.weightIsCached(); got != wantCached {
+			t.Fatalf("cfg=%q type=%s K=%d N=%d qmm=%v donate=%v: weightIsCached=%v, want %v",
+				cfg, wType, K, N, quantMatmul, donate, got, wantCached)
+		}
+
+		xData := make([]float32, 2*K)
+		for i := range xData {
+			xData[i] = float32((i%11)-5) * 0.05
+		}
+		xBuf, err := bRaw.BufferFromFlatData(0, xData, shapes.Make(dtypes.Float32, 2, K))
+		if err != nil {
+			t.Fatal(err)
+		}
+		outs, err := exec.Execute([]compute.Buffer{xBuf}, []bool{true}, 0)
+		if err != nil {
+			t.Fatalf("Execute: %+v", err)
+		}
+		outs[0].Finalize()
+
+		if got := qdData.IsInputCached(1); got != wantCached {
+			t.Fatalf("cfg=%q type=%s: IsInputCached(1)=%v, want %v", cfg, wType, got, wantCached)
+		}
+		gotRawReleased := wCD.Buffer() == nil
+		if gotRawReleased != wantRawReleased {
+			t.Fatalf("cfg=%q type=%s donate=%v: rawReleased=%v, want %v", cfg, wType, donate, gotRawReleased, wantRawReleased)
+		}
+	}
+
+	t.Run("RatioCap_Q2K_ModeB", func(t *testing.T) {
+		// Q2_K (+3.57x extra) exceeds 2.0x ratio: skipped in balanced, cached in always.
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ2_K, 256, 32, true, true, false, false)
+		checkGGML(t, "quantized_cache=always", compute.GGMLQ2_K, 256, 32, true, true, true, true)
+		checkGGML(t, "quantized_cache=never", compute.GGMLQ2_K, 256, 32, true, true, false, false)
+	})
+
+	t.Run("RatioCap_ModeA_Float32", func(t *testing.T) {
+		// Mode A Q4_K (+6.11x extra) exceeds 2.0x ratio: skipped in balanced, cached & raw freed in always.
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ4_K, 256, 32, false, true, false, false)
+		checkGGML(t, "quantized_cache=always", compute.GGMLQ4_K, 256, 32, false, true, true, true)
+		checkGGML(t, "quantized_cache=never", compute.GGMLQ4_K, 256, 32, false, true, false, false)
+	})
+
+	t.Run("PerWeightSizeCap_4MiB", func(t *testing.T) {
+		// Q8_0 with K=1024, N=3584 -> 224 strips * 32 subblocks * 640 B = 4,587,520 B (> 4 MiB),
+		// even though net extra ratio is only +0.18x!
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ8_0, 1024, 3584, true, true, false, false)
+		checkGGML(t, "quantized_cache=always", compute.GGMLQ8_0, 1024, 3584, true, true, true, true)
+	})
+
+	t.Run("DonatedVsNonDonated", func(t *testing.T) {
+		// Q4_0 donated: +1.22x extra <= 2.0x -> cached and raw released in balanced.
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ4_0, 64, 32, true, true, true, true)
+		// Q4_0 non-donated: raw not freed -> +2.22x extra > 2.0x -> skipped in balanced, cached (raw kept) in always.
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ4_0, 64, 32, true, false, false, false)
+		checkGGML(t, "quantized_cache=always", compute.GGMLQ4_0, 64, 32, true, false, true, false)
+		// Q8_0 non-donated: +1.18x extra <= 2.0x -> cached (raw kept!) in balanced.
+		checkGGML(t, "quantized_cache=balanced", compute.GGMLQ8_0, 64, 32, true, false, true, false)
+	})
+}
+
+func TestQuantizedCacheQuantLinearAndSupportConstants(t *testing.T) {
+	const K, N, G = 64, 32, 32
+	packedBytes := make([]byte, (N*K)/2)
+	for i := range packedBytes {
+		packedBytes[i] = byte((i*37 + 11) & 0xFF)
+	}
+	scaleF16 := make([]float16.Float16, N*(K/G))
+	for i := range scaleF16 {
+		scaleF16[i] = float16.FromFloat32(0.02 + float32(i%5)*0.01)
+	}
+	zpI8 := make([]int8, N*(K/G))
+	for i := range zpI8 {
+		zpI8[i] = int8((i % 5) - 2)
+	}
+	biasF16 := make([]float16.Float16, N)
+	for i := range biasF16 {
+		biasF16[i] = float16.FromFloat32(float32((i%7)-3) * 0.05)
+	}
+
+	runTwoGraphs := func(t *testing.T, cfg string, quantMatmul bool) (
+		outM1, outM2 []float32,
+		wRawFreed, scaleRawFreed, zpRawFreed, biasRawFreed bool,
+		wCached, scaleCached, zpCached, biasCached bool,
+	) {
+		t.Helper()
+		bRaw, err := gobackend.New(cfg)
+		if err != nil {
+			t.Fatalf("gobackend.New(%q): %+v", cfg, err)
+		}
+		defer bRaw.Finalize()
+
+		wBuf, _ := bRaw.BufferFromFlatData(0, packedBytes, shapes.Make(dtypes.Int4, N, K))
+		sBuf, _ := bRaw.BufferFromFlatData(0, scaleF16, shapes.Make(dtypes.Float16, N, K/G))
+		zpBuf, _ := bRaw.BufferFromFlatData(0, zpI8, shapes.Make(dtypes.Int8, N, K/G))
+		biasBuf, _ := bRaw.BufferFromFlatData(0, biasF16, shapes.Make(dtypes.Float16, N))
+
+		// Graph 1 (static M=4, Float16 x + Float16 bias): creates donated shared constants.
+		b1 := bRaw.Builder("g1")
+		fn1 := b1.Main()
+		x1, _ := fn1.Parameter("x", shapes.Make(dtypes.Float16, 4, K), nil)
+		wC1, err := fn1.ConstantFromBuffer(wBuf, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sC1, err := fn1.ConstantFromBuffer(sBuf, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zpC1, err := fn1.ConstantFromBuffer(zpBuf, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		biasC1, err := fn1.ConstantFromBuffer(biasBuf, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		qCfg1 := compute.FusedQuantizedDenseConfig{
+			WeightQuantization: &compute.Quantization{
+				Scheme:         compute.QuantLinear,
+				Scale:          sC1,
+				ZeroPoint:      zpC1,
+				BlockAxis:      1,
+				BlockSize:      G,
+				QuantizedDType: dtypes.Int4,
+			},
+			QuantizedMatmul: quantMatmul,
+			WeightLayout:    compute.DenseLayoutOutputsInput,
+		}
+		y1, err := fn1.FusedQuantizedDense(x1, wC1, biasC1, qCfg1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = fn1.Return([]compute.Value{y1}, nil)
+		exec1, err := b1.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exec1.Finalize()
+
+		makeXF16 := func(M int) []float16.Float16 {
+			x := make([]float16.Float16, M*K)
+			for i := range x {
+				x[i] = float16.FromFloat32(float32(((i*13 + 7) % 19) - 9) * 0.04)
+			}
+			return x
+		}
+		readOutF32 := func(buf compute.Buffer, n int) []float32 {
+			f16 := make([]float16.Float16, n)
+			_ = buf.ToFlatData(f16)
+			out := make([]float32, n)
+			for i, v := range f16 {
+				out[i] = v.Float32()
+			}
+			return out
+		}
+
+		// Execute Graph 1 concurrently on cold start.
+		x1Data := makeXF16(4)
+		var wg sync.WaitGroup
+		res1 := make([][]float32, 6)
+		for g := range 6 {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				xb, _ := bRaw.BufferFromFlatData(0, x1Data, shapes.Make(dtypes.Float16, 4, K))
+				outs, exErr := exec1.Execute([]compute.Buffer{xb}, []bool{true}, 0)
+				if exErr != nil {
+					t.Errorf("exec1: %+v", exErr)
+					return
+				}
+				defer outs[0].Finalize()
+				res1[idx] = readOutF32(outs[0], 4*N)
+			}(g)
+		}
+		wg.Wait()
+		for g := 1; g < 6; g++ {
+			if ok, diff := testutil.IsInDelta(res1[0], res1[g], 1e-3); !ok {
+				t.Fatalf("cfg=%q g1 goroutine %d mismatch:\n%s", cfg, g, diff)
+			}
+		}
+
+		qd1 := y1.(*gobackend.Node).Data.(*nodeFusedQuantizedDense)
+		wCD := wC1.(*gobackend.Node).Data.(*gobackend.ConstantData)
+		sCD := sC1.(*gobackend.Node).Data.(*gobackend.ConstantData)
+		zpCD := zpC1.(*gobackend.Node).Data.(*gobackend.ConstantData)
+		biasCD := biasC1.(*gobackend.Node).Data.(*gobackend.ConstantData)
+
+		wCached = qd1.IsInputCached(1)
+		scaleCached = qd1.IsInputCached(qd1.wScaleIdx)
+		zpCached = qd1.IsInputCached(qd1.wZPIdx)
+		biasCached = qd1.IsInputCached(qd1.biasIdx)
+		wRawFreed = wCD.Buffer() == nil
+		scaleRawFreed = sCD.Buffer() == nil
+		zpRawFreed = zpCD.Buffer() == nil
+		biasRawFreed = biasCD.Buffer() == nil
+
+		// Graph 2 (different static M=9): shares the EXACT SAME donated constants across graphs!
+		b2 := bRaw.Builder("g2")
+		fn2 := b2.Main()
+		x2, _ := fn2.Parameter("x", shapes.Make(dtypes.Float16, 9, K), nil)
+		qCfg2 := compute.FusedQuantizedDenseConfig{
+			WeightQuantization: &compute.Quantization{
+				Scheme:         compute.QuantLinear,
+				Scale:          sC1,
+				ZeroPoint:      zpC1,
+				BlockAxis:      1,
+				BlockSize:      G,
+				QuantizedDType: dtypes.Int4,
+			},
+			QuantizedMatmul: quantMatmul,
+			WeightLayout:    compute.DenseLayoutOutputsInput,
+		}
+		y2, err := fn2.FusedQuantizedDense(x2, wC1, biasC1, qCfg2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = fn2.Return([]compute.Value{y2}, nil)
+		exec2, err := b2.Compile()
+		if err != nil {
+			t.Fatalf("cfg=%q g2 Compile failed (cross-graph shared constant reuse): %+v", cfg, err)
+		}
+		defer exec2.Finalize()
+
+		x2Buf, _ := bRaw.BufferFromFlatData(0, makeXF16(9), shapes.Make(dtypes.Float16, 9, K))
+		outs2, err := exec2.Execute([]compute.Buffer{x2Buf}, []bool{true}, 0)
+		if err != nil {
+			t.Fatalf("cfg=%q g2 Execute failed: %+v", cfg, err)
+		}
+		defer outs2[0].Finalize()
+		out2 := readOutF32(outs2[0], 9*N)
+
+		return res1[0], out2, wRawFreed, scaleRawFreed, zpRawFreed, biasRawFreed, wCached, scaleCached, zpCached, biasCached
+	}
+
+	t.Run("QuantLinear_ModeB2_BalancedAndAlways_CrossGraph", func(t *testing.T) {
+		neverM1, neverM2, wF, sF, zpF, bF, wC, sC, zpC, bC := runTwoGraphs(t, "quantized_cache=never", true)
+		if wC || sC || zpC || bC || wF || sF || zpF || bF {
+			t.Fatalf("never: expected nothing cached/freed, got cached=(%v,%v,%v,%v) freed=(%v,%v,%v,%v)",
+				wC, sC, zpC, bC, wF, sF, zpF, bF)
+		}
+
+		for _, cfg := range []string{"quantized_cache=balanced", "quantized_cache=always"} {
+			m1, m2, wF, sF, zpF, bF, wC, sC, zpC, bC := runTwoGraphs(t, cfg, true)
+			if !wC || !sC || !zpC || !bC || !wF || !sF || !zpF || !bF {
+				t.Fatalf("%s: expected weight+scale+zp+bias all cached & raw freed, got cached=(%v,%v,%v,%v) freed=(%v,%v,%v,%v)",
+					cfg, wC, sC, zpC, bC, wF, sF, zpF, bF)
+			}
+			if ok, diff := testutil.IsInDelta(neverM1, m1, 1e-4); !ok {
+				t.Fatalf("%s M1 mismatch:\n%s", cfg, diff)
+			}
+			if ok, diff := testutil.IsInDelta(neverM2, m2, 1e-4); !ok {
+				t.Fatalf("%s M2 cross-graph mismatch:\n%s", cfg, diff)
+			}
+		}
+	})
+
+	t.Run("QuantLinear_ModeA_BalancedSkipsWeightCachesF16Support_AlwaysCachesAll", func(t *testing.T) {
+		neverM1, neverM2, _, _, _, _, _, _, _, _ := runTwoGraphs(t, "quantized_cache=never", false)
+
+		// Under balanced: Mode A weight (Float32 = +6x extra) and Int8->F32 zp (+3x extra) stay uncached,
+		// while Float16 scale and Float16 bias (+1x extra) ARE cached & their donated raw buffers freed!
+		balM1, balM2, wF, sF, zpF, bF, wC, sC, zpC, bC := runTwoGraphs(t, "quantized_cache=balanced", false)
+		if wC || wF || zpC || zpF || !sC || !sF || !bC || !bF {
+			t.Fatalf("Mode A balanced: expected w/zp uncached and f16 scale/bias cached+freed, got cached=(%v,%v,%v,%v) freed=(%v,%v,%v,%v)",
+				wC, sC, zpC, bC, wF, sF, zpF, bF)
+		}
+		if ok, diff := testutil.IsInDelta(neverM1, balM1, 1e-3); !ok {
+			t.Fatalf("Mode A balanced M1 mismatch:\n%s", diff)
+		}
+		if ok, diff := testutil.IsInDelta(neverM2, balM2, 1e-3); !ok {
+			t.Fatalf("Mode A balanced M2 mismatch:\n%s", diff)
+		}
+
+		// Under always: Mode A weight, baked scale & zp, and f16 bias ALL cache, release raw, and share across graphs!
+		allM1, allM2, wF, sF, zpF, bF, wC, sC, zpC, bC := runTwoGraphs(t, "quantized_cache=always", false)
+		if !wC || !sC || !zpC || !bC || !wF || !sF || !zpF || !bF {
+			t.Fatalf("Mode A always: expected all cached & raw freed, got cached=(%v,%v,%v,%v) freed=(%v,%v,%v,%v)",
+				wC, sC, zpC, bC, wF, sF, zpF, bF)
+		}
+		if ok, diff := testutil.IsInDelta(neverM1, allM1, 1e-3); !ok {
+			t.Fatalf("Mode A always M1 mismatch:\n%s", diff)
+		}
+		if ok, diff := testutil.IsInDelta(neverM2, allM2, 1e-3); !ok {
+			t.Fatalf("Mode A always M2 cross-graph mismatch:\n%s", diff)
+		}
+	})
+
+	t.Run("QuantLinear_ModeB1_NoWeightCacheAndNoF32ScaleCache", func(t *testing.T) {
+		bRaw, err := gobackend.New("quantized_cache=always")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer bRaw.Finalize()
+
+		wI8 := make([]int8, K*N)
+		for i := range wI8 {
+			wI8[i] = int8((i % 15) - 7)
+		}
+		wScaleF32 := make([]float32, N)
+		for i := range wScaleF32 {
+			wScaleF32[i] = 0.05
+		}
+		xScaleF16 := []float16.Float16{float16.FromFloat32(0.1)}
+
+		wBuf, _ := bRaw.BufferFromFlatData(0, wI8, shapes.Make(dtypes.Int8, K, N))
+		wsBuf, _ := bRaw.BufferFromFlatData(0, wScaleF32, shapes.Make(dtypes.Float32, 1, N))
+		xsBuf, _ := bRaw.BufferFromFlatData(0, xScaleF16, shapes.Make(dtypes.Float16, 1))
+		bBuf, _ := bRaw.BufferFromFlatData(0, biasF16, shapes.Make(dtypes.Float16, N))
+
+		builder := bRaw.Builder("b1")
+		fn := builder.Main()
+		xParam, _ := fn.Parameter("x", shapes.Make(dtypes.Int8, 2, K), nil)
+		wC, _ := fn.ConstantFromBuffer(wBuf, true)
+		wsC, _ := fn.ConstantFromBuffer(wsBuf, true)
+		xsC, _ := fn.ConstantFromBuffer(xsBuf, true)
+		bC, _ := fn.ConstantFromBuffer(bBuf, true)
+
+		y, err := fn.FusedQuantizedDense(xParam, wC, bC, compute.FusedQuantizedDenseConfig{
+			WeightQuantization: &compute.Quantization{
+				Scheme:         compute.QuantLinear,
+				Scale:          wsC,
+				QuantizedDType: dtypes.Int8,
+			},
+			XQuantization: &compute.Quantization{
+				Scheme:         compute.QuantLinear,
+				Scale:          xsC,
+				QuantizedDType: dtypes.Int8,
+			},
+			WeightLayout: compute.DenseLayoutInputOutputs,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = fn.Return([]compute.Value{y}, nil)
+		exec, err := builder.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exec.Finalize()
+
+		xData := make([]int8, 2*K)
+		for i := range xData {
+			xData[i] = int8((i % 9) - 4)
+		}
+		xBuf, _ := bRaw.BufferFromFlatData(0, xData, shapes.Make(dtypes.Int8, 2, K))
+		outs, err := exec.Execute([]compute.Buffer{xBuf}, []bool{true}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outs[0].Finalize()
+
+		qd := y.(*gobackend.Node).Data.(*nodeFusedQuantizedDense)
+		if qd.IsInputCached(1) {
+			t.Errorf("Mode B1: weight should never trigger caching (no repacking)")
+		}
+		if qd.IsInputCached(qd.wScaleIdx) {
+			t.Errorf("Mode B1: Float32 wScale should never trigger caching (already Float32)")
+		}
+		if !qd.IsInputCached(qd.xScaleIdx) || !qd.IsInputCached(qd.biasIdx) {
+			t.Errorf("Mode B1: Float16 xScale and bias should be cached, got xScale=%v bias=%v",
+				qd.IsInputCached(qd.xScaleIdx), qd.IsInputCached(qd.biasIdx))
+		}
+		if wC.(*gobackend.Node).Data.(*gobackend.ConstantData).Buffer() == nil {
+			t.Errorf("Mode B1: uncached weight raw buffer should still be alive")
+		}
+		if bC.(*gobackend.Node).Data.(*gobackend.ConstantData).Buffer() != nil {
+			t.Errorf("Mode B1: donated Float16 bias raw buffer should be released after caching")
+		}
+	})
 }

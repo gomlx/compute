@@ -33,8 +33,14 @@ type ConstantData struct {
 	rawBuffer atomic.Pointer[Buffer]
 
 	// isRawBufferPinned is set to true if any compiled graph uses this constant in an uncached
-	// operation (e.g., Gather, LayerNorm, or multiple incompatible layouts), preventing rawBuffer release.
+	// operation (e.g., Gather, LayerNorm, or multiple incompatible layouts) or if the buffer was
+	// borrowed without donation (donate == false), preventing rawBuffer release.
 	isRawBufferPinned bool
+
+	// isExternalRaw is true when this ConstantData was created via NewConstantDataFromBuffer with
+	// donate == false (meaning the caller retains ownership of the backing memory, so caching
+	// adds memory without freeing the caller's raw weights).
+	isExternalRaw bool
 
 	// mu protects slow-path initialization of cachedForm and compile-time updates to
 	// cachedFormSignature and isRawBufferPinned. Fast-path reads of cachedForm during
@@ -91,8 +97,10 @@ func NewConstantDataFromBuffer(backend *Backend, buf *Buffer, donate bool) (*Con
 		buf.markDonated()
 	}
 	cd := &ConstantData{
-		backend: backend,
-		shape:   adopted.RawShape.Clone(),
+		backend:           backend,
+		shape:             adopted.RawShape.Clone(),
+		isRawBufferPinned: !donate,
+		isExternalRaw:     !donate,
 	}
 	cd.rawBuffer.Store(adopted)
 	return cd, nil
@@ -182,6 +190,12 @@ func (cd *ConstantData) ForceCache() bool {
 	return cd != nil && cd.forceCache.Load()
 }
 
+// IsExternalRaw reports whether this ConstantData borrows backing memory without donation
+// (created via NewConstantDataFromBuffer with donate == false).
+func (cd *ConstantData) IsExternalRaw() bool {
+	return cd != nil && cd.isExternalRaw
+}
+
 // EqualNodeData implements NodeDataComparable for ConstantData.
 func (cd *ConstantData) EqualNodeData(other NodeDataComparable) bool {
 	if cd == other {
@@ -213,7 +227,7 @@ func (cd *ConstantData) EqualNodeData(other NodeDataComparable) bool {
 }
 
 // ConstantCacheNodeData is implemented by op Node.Data types in sub-packages
-// (for example, DotGeneral and FusedDense caching pre-packed weight panels)
+// (for example, DotGeneral, FusedDense, and FusedQuantizedDense caching pre-packed weight panels)
 // that transform constant inputs into ConstantData.cachedForm on first execution
 // and never read the raw constant input buffer again once cached.
 type ConstantCacheNodeData interface {
@@ -226,6 +240,24 @@ type ConstantCacheNodeData interface {
 
 	// IsInputCached reports whether inputIdx uses a cached form that has already been populated.
 	IsInputCached(inputIdx int) bool
+}
+
+// ConditionalConstantCacheNodeData is an optional extension of ConstantCacheNodeData
+// for ops whose caching decision depends on policy rules and whether the constant's raw
+// backing memory will actually be freed once cached (e.g. QuantizedCacheBalanced in
+// FusedQuantizedDense), or whose supporting inputs (such as scale/zero-point) depend on
+// whether the primary weight input was cached first.
+type ConditionalConstantCacheNodeData interface {
+	ConstantCacheNodeData
+
+	// ConstantCachePriority returns 0 for primary inputs (such as weight matrices) and > 0 for
+	// secondary/supporting inputs (such as weight scales/zero-points) whose caching signature
+	// or decision depends on whether the primary input was cached first.
+	ConstantCachePriority(inputIdx int) int
+
+	// ShouldCacheInput reports whether inputIdx should be cached given cd and whether
+	// cd's raw backing memory will be freed once cached (willFreeRaw).
+	ShouldCacheInput(inputIdx int, cd *ConstantData, willFreeRaw bool) bool
 }
 
 // constantCacheTerminal represents a consumer node input slot where a constant transformation
@@ -246,11 +278,15 @@ type constantCacheTerminal struct {
 
 // setupConstantSubgraphCaching is called once during compilation (from newFunctionExecutable).
 // It inspects all reachable OpTypeConstant nodes in fe.Function and analyzes how each constant is consumed:
+//   - Constants are processed in two passes: pass 0 handles primary constants (priority 0),
+//     and pass 1 handles secondary-only constants (priority > 0, such as weight scales/zero-points
+//     whose caching depends on whether the associated weight was cached in pass 0).
 //   - It verifies whether all uses of the constant flow exclusively through a deterministic constant
 //     transformation sub-graph (e.g., Transpose, Reshape, ConvertDType) into ConstantCacheNodeData consumers
-//     (e.g., DotGeneral or FusedDense) with a single canonical signature.
-//   - If a shared ConstantData was already compiled and optimized in an earlier graph with a different
-//     signature, it returns a compile-time error immediately.
+//     (e.g., DotGeneral, FusedDense, or FusedQuantizedDense) with a single canonical signature.
+//   - If a shared donated ConstantData was already compiled and optimized in an earlier graph with a
+//     different signature (and its raw buffer was released or scheduled for release), it returns a
+//     compile-time error immediately.
 //   - It binds the ConstantData to the terminal consumer nodes (via BindConstantData) and records any
 //     intermediate constant-subgraph nodes in fe.skipIfCachedConstant.
 //
@@ -258,78 +294,175 @@ type constantCacheTerminal struct {
 // when the consumer op calls ConstantData.GetOrSetCachedForm.
 func (fe *FunctionExecutable) setupConstantSubgraphCaching() error {
 	f := fe.Function
+	var pass0, pass1 []*Node
 	for nodeIdx := range fe.NumNodesToProcess {
 		constNode := f.Nodes[nodeIdx]
 		if constNode == nil || constNode.OpType != compute.OpTypeConstant || fe.NumUses[nodeIdx] == 0 {
 			continue
 		}
-		cd, ok := constNode.Data.(*ConstantData)
-		if !ok || cd == nil {
+		if _, ok := constNode.Data.(*ConstantData); !ok {
 			continue
 		}
+		if fe.constantFeedsSecondaryOnly(constNode) {
+			pass1 = append(pass1, constNode)
+		} else {
+			pass0 = append(pass0, constNode)
+		}
+	}
+	for _, constNode := range pass0 {
+		if err := fe.setupSingleConstantCaching(constNode); err != nil {
+			return err
+		}
+	}
+	for _, constNode := range pass1 {
+		if err := fe.setupSingleConstantCaching(constNode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		canReleaseRaw, sig, terminals, intermediateIdxs := fe.analyzeConstantCaching(constNode)
+// constantFeedsSecondaryOnly reports whether all direct or transitive ConditionalConstantCacheNodeData
+// terminals reached from constNode have ConstantCachePriority(slot) > 0 (and there is at least one).
+func (fe *FunctionExecutable) constantFeedsSecondaryOnly(constNode *Node) bool {
+	f := fe.Function
+	visited := make(map[int]bool)
+	queue := []*Node{constNode}
+	visited[constNode.Index] = true
+	foundSecondary := false
 
-		cd.mu.Lock()
-		if !canReleaseRaw {
-			if cd.cachedFormSignature != "" || cd.Buffer() == nil {
-				optSig := cd.cachedFormSignature
-				cd.mu.Unlock()
-				return errors.Errorf(
-					"the variable/constant (shape %s) was optimized in a first compilation (%s), and now is being compiled in a different way but can't be recovered; if you plan to have different graphs, please use different Exec objects and don't donate the model.Store",
-					cd.shape, optSig)
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		for _, depIdx := range fe.Dependents[curr.Index] {
+			depNode := f.Nodes[depIdx]
+			if depNode == nil {
+				continue
 			}
-			cd.isRawBufferPinned = true
-			// Even when rawBuffer must be kept for an uncached consumer (e.g. Gather or Add),
-			// if all cached consumers in this graph share a single signature sig, we can still
-			// cache and share the derived representation alongside rawBuffer (Option B).
-			if sig != "" && len(terminals) > 0 {
-				for _, term := range terminals {
-					cacher := term.node.Data.(ConstantCacheNodeData)
-					cacher.BindConstantData(term.inputSlot, cd)
+			_, isCacher := depNode.Data.(ConstantCacheNodeData)
+			cond, isCond := depNode.Data.(ConditionalConstantCacheNodeData)
+			for slot, inNode := range depNode.Inputs {
+				if inNode != curr {
+					continue
 				}
-				cd.forceCache.Store(true)
+				if isCacher {
+					if isCond && cond.ConstantCachePriority(slot) > 0 {
+						foundSecondary = true
+					} else {
+						return false
+					}
+				} else if depNode.IsConstant() && !depNode.Shape.IsDynamic() && !depNode.IsMultiOutputs() && len(depNode.CapturedInputs) == 0 {
+					if !visited[depNode.Index] {
+						visited[depNode.Index] = true
+						queue = append(queue, depNode)
+					}
+				}
 			}
-			cd.mu.Unlock()
-			continue
 		}
+	}
+	return foundSecondary
+}
 
-		// canReleaseRaw == true with canonical signature sig.
-		if cd.cachedFormSignature != "" && cd.cachedFormSignature != sig {
+func (fe *FunctionExecutable) setupSingleConstantCaching(constNode *Node) error {
+	cd := constNode.Data.(*ConstantData)
+	canReleaseRaw, sig, terminals, intermediateIdxs := fe.analyzeConstantCaching(constNode)
+
+	cd.mu.Lock()
+	alreadyCachedMatching := sig != "" && cd.CachedForm() != nil && cd.cachedFormSignature == sig
+
+	// Apply per-terminal conditional caching decisions (e.g., QuantizedCacheBalanced).
+	// If cd already has a matching CachedForm populated from an earlier graph, reuse it
+	// immediately without re-checking extra memory cost.
+	if len(terminals) > 0 && !alreadyCachedMatching {
+		willFreeRaw := canReleaseRaw && !cd.isRawBufferPinned && !cd.isExternalRaw
+		active := terminals[:0]
+		rejected := false
+		for _, term := range terminals {
+			if cond, ok := term.node.Data.(ConditionalConstantCacheNodeData); ok {
+				if !cond.ShouldCacheInput(term.inputSlot, cd, willFreeRaw) {
+					rejected = true
+					continue
+				}
+			}
+			active = append(active, term)
+		}
+		if rejected {
+			canReleaseRaw = false
+			intermediateIdxs = nil
+			// If some terminals accepted assuming willFreeRaw==true while others rejected
+			// (pinning rawBuffer), re-check the remaining terminals with willFreeRaw==false.
+			if willFreeRaw && len(active) > 0 {
+				rechecked := active[:0]
+				for _, term := range active {
+					if cond, ok := term.node.Data.(ConditionalConstantCacheNodeData); ok {
+						if !cond.ShouldCacheInput(term.inputSlot, cd, false) {
+							continue
+						}
+					}
+					rechecked = append(rechecked, term)
+				}
+				active = rechecked
+			}
+		}
+		terminals = active
+		if len(terminals) == 0 {
+			sig = ""
+		}
+	}
+
+	if !canReleaseRaw {
+		if !cd.isRawBufferPinned && (cd.cachedFormSignature != "" || cd.Buffer() == nil) {
 			optSig := cd.cachedFormSignature
 			cd.mu.Unlock()
 			return errors.Errorf(
-				"the variable/constant (shape %s) was optimized in a first compilation (%s), and now is being compiled in a different way (%s) but can't be recovered; if you plan to have different graphs, please use different Exec objects and don't donate the model.Store",
-				cd.shape, optSig, sig)
+				"the variable/constant (shape %s) was optimized in a first compilation (%s), and now is being compiled in a different way but can't be recovered; if you plan to have different graphs, please use different Exec objects and don't donate the model.Store",
+				cd.shape, optSig)
 		}
-
-		if cd.isRawBufferPinned {
-			// A previous compilation required rawBuffer to remain uncached (e.g., for Gather),
-			// so we cannot release rawBuffer, though we can still bind/share cachedForm if compatible.
+		cd.isRawBufferPinned = true
+		// Even when rawBuffer must be kept (e.g., non-donated constant or shared with Gather),
+		// if all cached consumers share a single compatible signature sig, cache and share the
+		// derived representation alongside rawBuffer (Option B).
+		if sig != "" && len(terminals) > 0 && (cd.cachedFormSignature == "" || cd.cachedFormSignature == sig) {
+			cd.cachedFormSignature = sig
 			for _, term := range terminals {
 				cacher := term.node.Data.(ConstantCacheNodeData)
 				cacher.BindConstantData(term.inputSlot, cd)
 			}
 			cd.forceCache.Store(true)
-			cd.mu.Unlock()
-			continue
 		}
-
-		cd.cachedFormSignature = sig
-		for _, term := range terminals {
-			cacher := term.node.Data.(ConstantCacheNodeData)
-			cacher.BindConstantData(term.inputSlot, cd)
-		}
-		cd.forceCache.Store(true)
 		cd.mu.Unlock()
+		return nil
+	}
 
-		if len(intermediateIdxs) > 0 {
-			if fe.skipIfCachedConstant == nil {
-				fe.skipIfCachedConstant = make([]*ConstantData, fe.NumNodesToProcess)
-			}
-			for _, interIdx := range intermediateIdxs {
-				fe.skipIfCachedConstant[interIdx] = cd
-			}
+	// canReleaseRaw == true with canonical signature sig.
+	if cd.cachedFormSignature != "" && cd.cachedFormSignature != sig {
+		if cd.isRawBufferPinned && cd.Buffer() != nil {
+			// Raw buffer is still pinned and available (e.g., non-donated constant), so
+			// incompatible consumers simply stay uncached and read rawBuffer directly.
+			cd.mu.Unlock()
+			return nil
+		}
+		optSig := cd.cachedFormSignature
+		cd.mu.Unlock()
+		return errors.Errorf(
+			"the variable/constant (shape %s) was optimized in a first compilation (%s), and now is being compiled in a different way (%s) but can't be recovered; if you plan to have different graphs, please use different Exec objects and don't donate the model.Store",
+			cd.shape, optSig, sig)
+	}
+
+	cd.cachedFormSignature = sig
+	for _, term := range terminals {
+		cacher := term.node.Data.(ConstantCacheNodeData)
+		cacher.BindConstantData(term.inputSlot, cd)
+	}
+	cd.forceCache.Store(true)
+	cd.mu.Unlock()
+
+	if len(intermediateIdxs) > 0 {
+		if fe.skipIfCachedConstant == nil {
+			fe.skipIfCachedConstant = make([]*ConstantData, fe.NumNodesToProcess)
+		}
+		for _, interIdx := range intermediateIdxs {
+			fe.skipIfCachedConstant[interIdx] = cd
 		}
 	}
 	return nil
@@ -466,6 +599,44 @@ func (fe *FunctionExecutable) analyzeConstantCaching(constNode *Node) (
 	}
 
 	return true, sig, terminals, intermediateIdxs
+}
+
+// ConstantIdentitySignature builds a canonical pointer-stable signature for a constant
+// expression node. Unlike constantSubgraphExprSignature, it identifies OpTypeConstant leaves
+// strictly by their *ConstantData pointer (never dereferencing cd.Buffer()), so the signature
+// remains identical before and after rawBuffer is released across multiple graph compilations.
+func ConstantIdentitySignature(node *Node) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+	if node.OpType == compute.OpTypeConstant {
+		cd, ok := node.Data.(*ConstantData)
+		if !ok || cd == nil {
+			return "", false
+		}
+		return fmt.Sprintf("Const(%s,%p)", cd.shape, cd), true
+	}
+	if !node.IsConstant() || node.Shape.IsDynamic() || node.IsMultiOutputs() || len(node.CapturedInputs) > 0 {
+		return "", false
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s(%s", node.OpType, node.Shape)
+	if dataSig := nodeDataSignature(node.Data); dataSig != "" {
+		fmt.Fprintf(&sb, ",data=%s", dataSig)
+	}
+	sb.WriteString(",in=[")
+	for i, in := range node.Inputs {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		inSig, ok := ConstantIdentitySignature(in)
+		if !ok {
+			return "", false
+		}
+		sb.WriteString(inSig)
+	}
+	sb.WriteString("])")
+	return sb.String(), true
 }
 
 // constantSubgraphExprSignature builds a canonical string representation of the constant expression
