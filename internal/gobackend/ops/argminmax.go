@@ -1,8 +1,11 @@
 package ops
 
 import (
+	"math"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
+	"github.com/gomlx/compute/dtypes/bfloat16"
 	"github.com/gomlx/compute/dtypes/gotype"
 	"github.com/gomlx/compute/internal/gobackend"
 	"github.com/gomlx/compute/shapeinference"
@@ -127,11 +130,113 @@ func buildArgMinMaxCopyIntsFn[T gobackend.PODIntegerConstraints](output *gobacke
 	}
 }
 
+const (
+	argMinMaxParallelChunkSize = 16384
+	argMinMaxMinParallelElems  = 32768
+)
+
+// execArgMinMaxGenericSuffix1 is the fast path when reducing the innermost contiguous axis (suffixSize == 1).
+func execArgMinMaxGenericSuffix1[T gobackend.PODNumericConstraints](
+	backend *gobackend.Backend, operandFlat []T, copyIntsFn func(flatIdx int, values []int32),
+	prefixSize, reduceSize int, isMin bool) {
+	if reduceSize == 0 {
+		return
+	}
+	canParallelReduce := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		!backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1 &&
+		reduceSize >= argMinMaxMinParallelElems
+
+	var single [1]int32
+	for p := range prefixSize {
+		row := operandFlat[p*reduceSize : (p+1)*reduceSize]
+		if canParallelReduce {
+			numChunks := (reduceSize + argMinMaxParallelChunkSize - 1) / argMinMaxParallelChunkSize
+			chunkVals := make([]T, numChunks)
+			chunkIdxs := make([]int32, numChunks)
+			backend.Scheduler.ParallelizeChunks(numChunks, 1, func(cStart, cEnd int) {
+				for c := cStart; c < cEnd; c++ {
+					lo := c * argMinMaxParallelChunkSize
+					hi := min(lo+argMinMaxParallelChunkSize, reduceSize)
+					bestVal := row[lo]
+					bestIdx := int32(lo)
+					if isMin {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := row[idx]
+							if v < bestVal || v != v {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					} else {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := row[idx]
+							if v > bestVal || v != v {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					}
+					chunkVals[c] = bestVal
+					chunkIdxs[c] = bestIdx
+				}
+			})
+			bestVal := chunkVals[0]
+			bestIdx := chunkIdxs[0]
+			if isMin {
+				for c := 1; c < numChunks; c++ {
+					v := chunkVals[c]
+					if v < bestVal || v != v {
+						bestVal = v
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			} else {
+				for c := 1; c < numChunks; c++ {
+					v := chunkVals[c]
+					if v > bestVal || v != v {
+						bestVal = v
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			}
+			single[0] = bestIdx
+			copyIntsFn(p, single[:])
+			continue
+		}
+
+		bestVal := row[0]
+		bestIdx := int32(0)
+		if isMin {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := row[idx]
+				if v < bestVal || v != v {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		} else {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := row[idx]
+				if v > bestVal || v != v {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		}
+		single[0] = bestIdx
+		copyIntsFn(p, single[:])
+	}
+}
+
 // TODO: handle the error condition.
 func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 	backend *gobackend.Backend, operand *gobackend.Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
 	operandFlat := operand.Flat.([]T)
+	if suffixSize == 1 {
+		execArgMinMaxGenericSuffix1(backend, operandFlat, copyIntsFn, prefixSize, reduceSize, isMin)
+		return
+	}
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
 	currentBestBuffer, _ := backend.GetBuffer(shapes.Make(operand.RawShape.DType, suffixSize))
@@ -187,11 +292,199 @@ func execArgMinMaxGeneric[T gobackend.PODNumericConstraints](
 	backend.PutBuffer(currentArgBestBuffer)
 }
 
+func execArgMinMaxBFloat16Suffix1(
+	backend *gobackend.Backend, operandFlat []bfloat16.BFloat16, copyIntsFn func(flatIdx int, values []int32),
+	prefixSize, reduceSize int, isMin bool) {
+	if reduceSize == 0 {
+		return
+	}
+	canParallelReduce := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		!backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1 &&
+		reduceSize >= argMinMaxMinParallelElems
+
+	var single [1]int32
+	for p := range prefixSize {
+		row := operandFlat[p*reduceSize : (p+1)*reduceSize]
+		if canParallelReduce {
+			numChunks := (reduceSize + argMinMaxParallelChunkSize - 1) / argMinMaxParallelChunkSize
+			chunkVals := make([]float32, numChunks)
+			chunkIdxs := make([]int32, numChunks)
+			backend.Scheduler.ParallelizeChunks(numChunks, 1, func(cStart, cEnd int) {
+				for c := cStart; c < cEnd; c++ {
+					lo := c * argMinMaxParallelChunkSize
+					hi := min(lo+argMinMaxParallelChunkSize, reduceSize)
+					bestVal := math.Float32frombits(uint32(row[lo]) << 16)
+					bestIdx := int32(lo)
+					if isMin {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := math.Float32frombits(uint32(row[idx]) << 16)
+							if v < bestVal {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					} else {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := math.Float32frombits(uint32(row[idx]) << 16)
+							if v > bestVal {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					}
+					chunkVals[c] = bestVal
+					chunkIdxs[c] = bestIdx
+				}
+			})
+			bestVal := chunkVals[0]
+			bestIdx := chunkIdxs[0]
+			if isMin {
+				for c := 1; c < numChunks; c++ {
+					if chunkVals[c] < bestVal {
+						bestVal = chunkVals[c]
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			} else {
+				for c := 1; c < numChunks; c++ {
+					if chunkVals[c] > bestVal {
+						bestVal = chunkVals[c]
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			}
+			single[0] = bestIdx
+			copyIntsFn(p, single[:])
+			continue
+		}
+
+		bestVal := math.Float32frombits(uint32(row[0]) << 16)
+		bestIdx := int32(0)
+		if isMin {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := math.Float32frombits(uint32(row[idx]) << 16)
+				if v < bestVal {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		} else {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := math.Float32frombits(uint32(row[idx]) << 16)
+				if v > bestVal {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		}
+		single[0] = bestIdx
+		copyIntsFn(p, single[:])
+	}
+}
+
+func execArgMinMaxGenericHalfSuffix1[T gotype.HalfPrecision[T]](
+	backend *gobackend.Backend, operandFlat []T, copyIntsFn func(flatIdx int, values []int32),
+	prefixSize, reduceSize int, isMin bool) {
+	if reduceSize == 0 {
+		return
+	}
+	canParallelReduce := backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() &&
+		!backend.Scheduler.IsBusy() && backend.Scheduler.EffectiveParallelism() > 1 &&
+		reduceSize >= argMinMaxMinParallelElems
+
+	var single [1]int32
+	for p := range prefixSize {
+		row := operandFlat[p*reduceSize : (p+1)*reduceSize]
+		if canParallelReduce {
+			numChunks := (reduceSize + argMinMaxParallelChunkSize - 1) / argMinMaxParallelChunkSize
+			chunkVals := make([]float32, numChunks)
+			chunkIdxs := make([]int32, numChunks)
+			backend.Scheduler.ParallelizeChunks(numChunks, 1, func(cStart, cEnd int) {
+				for c := cStart; c < cEnd; c++ {
+					lo := c * argMinMaxParallelChunkSize
+					hi := min(lo+argMinMaxParallelChunkSize, reduceSize)
+					bestVal := row[lo].Float32()
+					bestIdx := int32(lo)
+					if isMin {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := row[idx].Float32()
+							if v < bestVal {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					} else {
+						for idx := lo + 1; idx < hi; idx++ {
+							v := row[idx].Float32()
+							if v > bestVal {
+								bestVal = v
+								bestIdx = int32(idx)
+							}
+						}
+					}
+					chunkVals[c] = bestVal
+					chunkIdxs[c] = bestIdx
+				}
+			})
+			bestVal := chunkVals[0]
+			bestIdx := chunkIdxs[0]
+			if isMin {
+				for c := 1; c < numChunks; c++ {
+					if chunkVals[c] < bestVal {
+						bestVal = chunkVals[c]
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			} else {
+				for c := 1; c < numChunks; c++ {
+					if chunkVals[c] > bestVal {
+						bestVal = chunkVals[c]
+						bestIdx = chunkIdxs[c]
+					}
+				}
+			}
+			single[0] = bestIdx
+			copyIntsFn(p, single[:])
+			continue
+		}
+
+		bestVal := row[0].Float32()
+		bestIdx := int32(0)
+		if isMin {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := row[idx].Float32()
+				if v < bestVal {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		} else {
+			for idx := 1; idx < reduceSize; idx++ {
+				v := row[idx].Float32()
+				if v > bestVal {
+					bestVal = v
+					bestIdx = int32(idx)
+				}
+			}
+		}
+		single[0] = bestIdx
+		copyIntsFn(p, single[:])
+	}
+}
+
 // TODO: handle the error condition
 func execArgMinMaxGenericHalf[T gotype.HalfPrecision[T], P gotype.HalfPrecisionPtr[T]](
 	backend *gobackend.Backend, operand *gobackend.Buffer, copyIntsFn func(flatIdx int, values []int32), prefixSize, reduceSize,
 	suffixSize int, isMin bool) {
 	operandFlat := operand.Flat.([]T)
+	if suffixSize == 1 {
+		if bf16Flat, ok := operand.Flat.([]bfloat16.BFloat16); ok {
+			execArgMinMaxBFloat16Suffix1(backend, bf16Flat, copyIntsFn, prefixSize, reduceSize, isMin)
+			return
+		}
+		execArgMinMaxGenericHalfSuffix1(backend, operandFlat, copyIntsFn, prefixSize, reduceSize, isMin)
+		return
+	}
 
 	// Temporary data to store argMax results, so we can traverse the operand sequentially.
 	currentBestBuffer, _ := backend.GetBuffer(shapes.Make(operand.RawShape.DType, suffixSize))

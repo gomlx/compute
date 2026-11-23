@@ -311,6 +311,7 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 			}
 			totalStrips := (N + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
 			cached := make([]uint8, totalStrips*stripBytes)
+			gobackend.AdviseHugePages(cached)
 			unpackQuantLinearStrips(
 				backend, in.weight, isIO, wScales, wZPF32, wSLayout, wZPLayout,
 				K, N, 0, N, kBlock, quadsPerSubBlk, numSubBlocks, cached,

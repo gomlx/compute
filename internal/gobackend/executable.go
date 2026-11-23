@@ -550,11 +550,14 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 			fe.ExecutionBuffersPool.Put(execBuf)
 			return nil, errors.Errorf("output %d not computed", i)
 		}
-		if !execBuf.owned[outIdx] {
-			// Clone the buffer since we don't own it
+		if !execBuf.owned[outIdx] || execBuf.results[outIdx].IsView() {
+			// Clone the buffer since we don't own it or it is a zero-copy view over another buffer.
 			outputs[i], err = backend.CloneBuffer(execBuf.results[outIdx])
 			if err != nil {
 				return nil, err
+			}
+			if execBuf.owned[outIdx] && execBuf.results[outIdx].IsView() {
+				backend.PutBuffer(execBuf.results[outIdx])
 			}
 		} else {
 			// We owned it, and now we are giving it to the user.
@@ -939,6 +942,8 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 		// the buffer just won't be reused in-place. The important thing
 		// is we don't free the buffer until all users have finished (handled in cleanup).
 		inputsOwned[i] = execBuf.owned[inputIdx] &&
+			!inputBuffers[i].IsView() &&
+			!inputBuffers[i].HasLiveViews() &&
 			fe.NumUses[inputIdx]-int(execBuf.numUsed[inputIdx].Load()) == 1
 	}
 
@@ -976,6 +981,8 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 				}
 				// Only "own" the captured input if this is the last use of it.
 				closureInputs[closureIdx].Owned[i] = execBuf.owned[capturedIdx] &&
+					!closureInputs[closureIdx].Buffers[i].IsView() &&
+					!closureInputs[closureIdx].Buffers[i].HasLiveViews() &&
 					fe.NumUses[capturedIdx]-int(execBuf.numUsed[capturedIdx].Load()) == 1
 			}
 		}

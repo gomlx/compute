@@ -29,19 +29,27 @@ func init() {
 	gobackend.MultiOutputsNodeExecutors[compute.OpTypeFusedLayerNormVJP] = execFusedLayerNormVJP
 }
 
-// nodeFusedLayerNorm is node data for FusedLayerNorm.
+// nodeFusedLayerNorm is node data for FusedLayerNorm (and fused RMSNorm subgraphs).
 type nodeFusedLayerNorm struct {
 	axes        []int
 	epsilon     float64
 	hasGamma    bool
 	hasBeta     bool
 	hasResidual bool
+
+	// Fields used when this node represents a compile-time fused RMSNorm subgraph.
+	isRMSNorm      bool
+	scaleOffset    float64
+	scaleIsConst   bool
+	scaleCacheOnce sync.Once
+	cachedScaleF32 []float32
+	cachedScaleF64 []float64
 }
 
 var _ gobackend.FusedLayerNormResidualTarget = (*nodeFusedLayerNorm)(nil)
 
 func (d *nodeFusedLayerNorm) TryFuseResidualInput() bool {
-	if d == nil || d.hasResidual {
+	if d == nil || d.hasResidual || d.isRMSNorm {
 		return false
 	}
 	d.hasResidual = true
@@ -50,7 +58,9 @@ func (d *nodeFusedLayerNorm) TryFuseResidualInput() bool {
 
 func (d *nodeFusedLayerNorm) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	o := other.(*nodeFusedLayerNorm)
-	if d.epsilon != o.epsilon || d.hasGamma != o.hasGamma || d.hasBeta != o.hasBeta || d.hasResidual != o.hasResidual || len(d.axes) != len(o.axes) {
+	if d.epsilon != o.epsilon || d.hasGamma != o.hasGamma || d.hasBeta != o.hasBeta ||
+		d.hasResidual != o.hasResidual || d.isRMSNorm != o.isRMSNorm || d.scaleOffset != o.scaleOffset ||
+		len(d.axes) != len(o.axes) {
 		return false
 	}
 	for i, a := range d.axes {
@@ -122,6 +132,9 @@ func FusedLayerNorm(f *gobackend.Function, x compute.Value, axes []int, epsilon 
 // For each sample: y = (x - mean) / sqrt(var + epsilon) * gamma + beta
 func execFusedLayerNorm(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
+	if data.isRMSNorm {
+		return execFusedRMSNorm(backend, node, data, inputs, inputsOwned)
+	}
 	input := inputs[0]
 
 	paramInputs := inputs

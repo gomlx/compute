@@ -95,6 +95,7 @@ func NewConstantDataFromBuffer(backend *Backend, buf *Buffer, donate bool) (*Con
 	adopted.isDonated = false
 	if donate {
 		buf.markDonated()
+		AdviseHugePages(adopted.RawBytes)
 	}
 	cd := &ConstantData{
 		backend:           backend,

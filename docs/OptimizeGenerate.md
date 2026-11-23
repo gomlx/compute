@@ -4,7 +4,7 @@
 
 This document tracks the profile-driven optimization of single-stream (`batch=1`) autoregressive LLM generation in GoMLX's pure-Go CPU backend (`GOMLX_BACKEND=go`), benchmarked on **`google/gemma-4-E2B-it` (`BFloat16`)** over the `databricks/databricks-dolly-15k` dataset against **Ollama / `llama.cpp` CPU (`gemma4:e2b-it-bf16`)**.
 
-Across the optimization milestones so far, **decode throughput improved 5.9×** (`1.84` → `10.85 tok/s` at `par=16` / `10.70 tok/s` default `par=32`), **prefill throughput on long prompts improved ~2.3×** (`287` → `675 tok/s`), and **peak RSS dropped by ~15–20%** (`18.5 GiB` → `16.0 GiB`), while maintaining **9/10 exact character-for-character greedy output matches** against `llama.cpp`:
+Across the optimization milestones so far, **decode throughput improved 5.9–6.1×** (`1.84` → `10.91 tok/s` 10-ex avg / up to **`11.28 tok/s`** at `par=16`), **warm prefill throughput surged `+64%` (`308` → `506.2 tok/s`) — now beating Ollama/`llama.cpp` (`482.1 tok/s`) by `+5.0%` overall and `+7.0%` on the longest 445-token prompt (`775.8` vs `725 tok/s`)** — and **peak RSS dropped by ~15–20%** (`18.5 GiB` → `15.9 GiB`), while maintaining **9/10 exact character-for-character greedy output matches** against `llama.cpp`:
 
 | Milestone | Example #1 Cold TTFT (`132 tok`) | Example #5 Warm Prefill (`356 tok`) | Decode Throughput (`tok/s`) | Decode `CPUTime/tok` (`avg_cores`) | Peak `MaxRSS` (10 ex.) | Key Change |
 | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
@@ -13,9 +13,10 @@ Across the optimization milestones so far, **decode throughput improved 5.9×** 
 | **2. `OnlyLastTokenLogits` + Native `AVX512_BF16` (`VDPBF16PS`)** (`08b0c62` / `84d082ba` / `c9b0027`) | 1.1 s *(incl. prepack)* | 787 ms (`452 tok/s`) | **10.31–10.48 tok/s** (**5.7×**) | 1.4 s (`14.4` cores) | 14.7 GiB | Skip unused prompt `lm_head` rows (`[1, 356, 1536] → [1, 1, 1536]`); native `VDPBF16PS` K2-interleaved BF16 GEMM kernels |
 | **3. Zero-Copy KV-Cache Decode + Pre-Allocated Cache** (`91b702f0` / `d45a21c`) | 1.2 s *(incl. prepack)* | 942 ms (`378 tok/s`) *(regression from 2× larger prefill bool mask)* | **9.93–10.21 tok/s** (10-ex avg) | 1.4 s (`13.8–14.3` cores) | 16.9 GiB *(grew with static prompt graphs)* | Pre-allocate KV cache up to `MaxLength` (no mid-decode `PadTensors` / recompiles); `WithSeqLens` zero-copy decode; `sdpaMultiHeadHalf` converts only `kvLimit` rows; bulk `DynamicUpdateSlice` prefill |
 | **4. Step 1 — Prefill Quick Wins** (`5a5e8c85` / `43af1d6`) | 1.1 s *(incl. prepack)* | **564 ms (`631 tok/s`)** (**+67%**) | **10.54 tok/s** (10-ex avg, **5.7×**) | 1.4 s (`14.47` cores) | **16.0 GiB** (`-0.9 GiB`) | Zero-copy `WithSeqLens` + `WithCausalMask(true)` prefill; head-invariant `[B, Sq, 1, Skv]` masks (no bool transpose); `WithDynamicAxes` on `promptExec`; cap local KV cache to `sliding_window=512` |
-| **5. Step 2 — Decode Parallelism & Buffer Tightening** (`6c4cb63`) | 1.1 s *(incl. prepack)* | **561 ms (`635 tok/s`)** *(par=32)* / 585 ms *(par=16)* | **10.70 tok/s** *(default par=32)* / **10.85 tok/s** *(par=16, **5.9×**)* | 1.6 s (`16.61` cores) / **1.2 s** (`13.56` cores) | 16.9 GiB *(par=32)* / **16.0 GiB** *(par=16)* | Balanced 1D `N`-split (`128`-col panel-aligned chunks on `M<=mr`); `MinCachedLargeMatMulFlopsPerWorker=128K`; single shared pre-packed LHS for `M<=mr`; `accumOutput` `4 MiB → 3–16 KiB/worker` |
-| **6. Step 3 — `M=1` GEMV Microkernels (AVX-512, AVX2, NEON+SME)** *(uncommitted)* | 1.1 s *(incl. prepack)* | 561–585 ms | **10.78 tok/s** *(par=32)* / **10.92–11.05 tok/s** *(par=16 idle)*; **+18–65% Zen 5 L3-warm**; **2.0×–7.5× Apple M6** | **1.5 s** *(par=32)* / **1.0–1.2 s** (`-9.5%` `FusedDense` CPU) | **16.0 GiB** | Dedicated linear 1-strip `M=1` GEMV assembly kernels for `BF16`, `F32`, `F64` (zero `PackLHS`, direct output store); bypasses SME `32×32` + single-worker cap on ARM64 |
-| **Reference: Ollama (`llama.cpp` CPU, `gemma4:e2b-it-bf16`)** | 300 ms *(warm)* | 545 ms (`654 tok/s`) | **11.86–12.27 tok/s** | 1.36 s (`15.93` cores) | ~11.4 GiB | 16 physical threads (`n_threads=16`), spin-wait barrier, GEMV `M=1` BF16 dot kernel |
+| **5. Step 2 — Decode Parallelism & Buffer Tightening** (`6c4cb63`) | 1.1 s *(incl. prepack)* | 561 ms (`635 tok/s`) *(par=32)* / 585 ms *(par=16)* | **10.70 tok/s** *(par=32)* / **10.85 tok/s** *(par=16, **5.9×**)* | 1.6 s (`16.61` cores) / **1.2 s** (`13.56` cores) | 16.9 GiB *(par=32)* / **16.0 GiB** *(par=16)* | Balanced 1D `N`-split (`128`-col panel-aligned chunks on `M<=mr`); `MinCachedLargeMatMulFlopsPerWorker=128K`; single shared pre-packed LHS for `M<=mr`; `accumOutput` `4 MiB → 3–16 KiB/worker` |
+| **6. Step 3 — `M=1` GEMV Microkernels (AVX-512, AVX2, NEON+SME)** (`d3a3a8d`) | 1.1 s *(incl. prepack)* | 561–585 ms | **10.78 tok/s** *(par=32)* / **10.92–11.05 tok/s** *(par=16 idle)*; **1.16–3.21× x86 L3-warm**; **1.86–7.52× Apple M6** | **1.5 s** *(par=32)* / **1.0–1.2 s** (`-9.5%` `FusedDense` CPU) | **16.0 GiB** | Dedicated linear 1-strip `M=1` GEMV assembly kernels for `BF16`, `F32`, `F64` (zero `PackLHS`, direct output store); bypasses SME `32×32` + single-worker cap on ARM64 |
+| **7. Step 4 — `MADV_HUGEPAGE` + Non-Matmul Wins (`Reshape`, `ArgMinMax`, `RMSNorm`)** *(uncommitted)* | **820 ms** (`-264 ms`, incl. prepack!) | **521 ms (`683 tok/s`)** *(Ex #10: **574 ms / 776 tok/s**!)* | **10.91 tok/s** (10-ex avg, up to **11.28 tok/s**, **5.9–6.1×**) | **1.2 s** (`12.85` cores; `977 ms` seq) | **15.9 GiB** | `MADV_HUGEPAGE` on `>= 2 MiB` weight slabs; zero-copy `Reshape` views (`1.2 ms → 183 µs`); parallel `ArgMinMax` (`667 → 72 µs`); compile-time `RMSNormFusion` + SIMD pass (`242` norms in `505 µs` decode + all `242` in prefill) |
+| **Reference: Ollama (`llama.cpp` CPU, `gemma4:e2b-it-bf16`)** | 300 ms *(warm)* | 545 ms (`654 tok/s`) *(Ex #10: 614 ms / 725 tok/s)* | **11.86–12.27 tok/s** | 1.36 s (`15.93` cores) | ~11.4 GiB | 16 physical threads (`n_threads=16`), spin-wait barrier, GEMV `M=1` BF16 dot kernel |
 
 ---
 
@@ -361,9 +362,58 @@ Measured back-to-back on the exact Step 2 baseline (`6c4cb63`) vs. Step 3 workin
 - **Wall-clock throughput**: On idle Zen 5, Ex #4–#5 improved **`10.79 → 10.92 tok/s`** (peaking at **`11.05 tok/s`** on Ex #4; `avg_cores` `13.54 → 12.91`), and default `par=32` improved **`10.70 → 10.78 tok/s`** (`CPUTime/tok` `1.6s → 1.5s`, `avg_cores` `16.67 → 15.81`).
 
 ### Updated Next Priorities
-1. **`MADV_HUGEPAGE` for `ConstantData` Pre-Packed Weight Slabs (`~3–8%` expected cold-DRAM decode gain)**: Linux THP is in `[madvise]` mode; backing immutable `>= 2 MiB` pre-packed weight slabs with 2 MiB pages reduces `4.56 GB` from `1.19M` 4 KiB PTEs to `2,335` 2 MiB PTEs (fitting entirely inside Zen 5's `3,072`-entry L2 dTLB).
-2. **Non-Matmul Decode Quick Wins (`~3.9 ms/tok` = `+0.5 tok/s`)**: Zero-copy `Reshape` on non-owned KV cache views (`0.74 ms`), SIMD/parallel `ArgMinMax` on `BFloat16` (`0.67 ms`), and fused Gemma 4 RMSNorm (`~2.5 ms`).
+1. **`MADV_HUGEPAGE` for `ConstantData` Pre-Packed Weight Slabs** *(implemented in Section 9 below)*.
+2. **Non-Matmul Decode Quick Wins (`Reshape`, `ArgMinMax`, `RMSNorm`)** *(implemented in Section 9 below)*.
 3. **Step 5 — Prefill Epilogue BF16 Conversion & Multi-RHS Fusion (`-55–90 ms` on 356-tok prefill)**.
+
+---
+
+## 9. Step 4 (`MADV_HUGEPAGE` + Non-Matmul Optimizations: Zero-Copy `Reshape`, Fast `ArgMinMax`, Fused `RMSNorm`)
+
+### Changes Implemented
+1. **`MADV_HUGEPAGE` for Large Immutable Weight Slabs** ([`hugepage_linux.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/hugepage_linux.go), [`hugepage_other.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/hugepage_other.go), [`matmul/nosimd.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/nosimd.go), [`quantizeddense_panel.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/quantizeddense_panel.go), [`quantizeddense_ggml_unpack.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/quantizeddense_ggml_unpack.go), [`constants.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/constants.go)):
+   - Calls `syscall.Madvise(aligned2MiBInterior, syscall.MADV_HUGEPAGE)` on fresh `>= 2 MiB` pre-packed weight slabs before first touch (opt-out via `GOMLX_GO_HUGEPAGES=false`). Because Go allocates fresh large slabs without faulting pages inside `make()`, Linux promotes 95–99.8% of the slab synchronously to 2 MiB Transparent Huge Pages (verified via `/proc/self/smaps_rollup` `AnonHugePages: 786–823 MB` on `lm_head` + `gate_12288`) with **zero extra RSS**.
+   - **4-Way Alternating A/B Test on 10-Example Gemma 4 E2B (`par=16`, pre-built binary, `OFF → ON → OFF → ON`)**:
+     - `RUN1_OFF` (`AnonHugePages: 0 kB`): Cold TTFT `1,000 ms`, Warm Prefill `2,603.8 ms` (`521.9 tok/s`), Decode avg `11.11 tok/s` (peak `11.31`), `MaxRSS 15.9 GiB`.
+     - `RUN2_ON` (`AnonHugePages: 2.67 GiB`): Cold TTFT **`829.6 ms`** (`-170 ms`), Warm Prefill `2,602.2 ms` (`522.3 tok/s`), Decode avg `11.16 tok/s` (peak `11.40`), `MaxRSS 15.0 GiB`.
+     - `RUN3_OFF` (`AnonHugePages: 2 MB`): Cold TTFT `1,000 ms`, Warm Prefill `2,602.4 ms` (`522.2 tok/s`), Decode avg `11.14 tok/s` (peak `11.35`), `MaxRSS 15.9 GiB`.
+     - `RUN4_ON` (`AnonHugePages: 3.31 GiB`): Cold TTFT `991.6 ms`, Warm Prefill **`2,570.8 ms` (`528.6 tok/s`, `+1.2%`; Ex #5 `499 ms / 713 tok/s`, Ex #10 `569 ms / 782 tok/s`)**, Decode avg **`11.38 tok/s` (`+2.4%`, peak `11.66 tok/s`, `CPUTime/tok 1.2s → 1.1s`)**, `MaxRSS 15.9 GiB`.
+     - **Why `RUN4_ON` beat `RUN2_ON`**: Because `GetExactBuffer` allocates on the Go heap, when Go's GC frees raw weights early (`RUN2_ON`, `MaxRSS 15.0 GiB`) and reuses already-faulted 4 KiB spans, only `2.67 GiB` promotes synchronously (`+0.3%`); when fresh OS spans are allocated (`RUN4_ON`), `3.31 GiB` promotes (`76%` of `4.56 GB`), yielding a consistent **`+2.0–3.1%` decode speedup across all 10 examples** with **zero RSS overhead**.
+2. **Zero-Copy `Reshape` Views** ([`buffers.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/buffers.go), [`executable.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/executable.go), [`ops/reshape.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/ops/reshape.go)):
+   - Added reference-counted read-only views (`Buffer.NewView`, `viewOf`, `viewRefCount`, `pendingPool`) so `Reshape` / `DynamicReshape` on non-owned inputs (e.g., KV cache tensors shared with graph outputs) return a zero-copy view instead of copying `18.5 MiB/token`. Views never permit downstream in-place mutation (`inputsOwned = false`), defer parent buffer pooling until all views release, and clone automatically if a view escapes as a graph output.
+   - **Decode impact**: `Reshape` dropped from **`762 calls / 1.2 ms` → `318 calls / 183 µs` (`6.5×` faster)**.
+3. **Fast Parallel `ArgMinMax` (`suffixSize == 1`)** ([`ops/argminmax.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/ops/argminmax.go)):
+   - Added register-cached, chunk-parallel `suffixSize == 1` fast paths for `BFloat16` (inline `math.Float32frombits(uint32(u)<<16)`), `Float16`, and generic numeric types, preserving exact left-to-right first-index tie-breaking and NaN semantics.
+   - **Decode impact**: `ArgMinMax([1, 262144] BF16)` dropped from **`667 µs` → `66–72 µs` (`9.3–10.3×` faster)**.
+4. **Compile-Time `RMSNormFusion` + Portable SIMD Executor** ([`fusedops/rmsnorm.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/rmsnorm.go), [`fusedops/rmsnorm_simd.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/rmsnorm_simd.go), [`fusedops/layernorm.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/fusedops/layernorm.go), [`ops/reduce.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/ops/reduce.go)):
+   - Added a priority-90 `GraphTransformation` matching decomposed trailing-axis `RMSNorm` subgraphs (both static decode and dynamic prefill shapes, with/without scale, with/without `scaleOffset`, and `BF16`/`F16`/`F32`/`F64`), rewriting the tail node to a fused single-pass SIMD RMSNorm (`simd.Float32s` / `simd.Float64s`, 4× unrolled, portable across AVX-512, AVX2, and ARM64 NEON).
+   - Caches constant `Float32` scale weights (with `scaleOffset` baked in) once per node, uses pooled scratch rows (zero stack zeroing), reuses owned buffers in-place, and parallelizes across outer rows during prefill.
+   - **Decode impact**: Fused **all 242 RMSNorms** (eliminating `~1,900` ops/token: `ConvertDType` `694 → 8 calls` / `1.3 ms → 12 µs`, `Mul` `1,026 → 315 calls`, `ReduceSum`/`Sqrt`/`Div` `242 → 0`); all 242 fused RMSNorms execute in **`505 µs` total** (`2.1 µs` per `[1, 1, 1536]` norm).
+   - **Prefill impact**: Fused **all 242 dynamic prefill RMSNorms**, cutting 356-token prefill from `585 ms → 521 ms` and 445-token prefill from `663 ms → 574 ms` (`-90 ms`, **`775.8 tok/s`**)!
+
+### 10-Example Benchmark Results (`google/gemma-4-E2B-it` BF16, `par=16`, `-gen_tokens=64`, `-mmap=false`)
+
+| Ex # | Prompt Tokens | Step 2 Prefill (`par=16`) | Step 4 Prefill (`par=16`) | Ollama Prefill *(cold cache)* | Step 2 Decode (`par=16`) | Step 4 Decode (`par=16`) | Ollama Decode |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| #1 *(cold prepack)* | 132 | 1,084 ms | **820.2 ms** (`-264 ms`) | 300.1 ms *(warm)* | 10.91 tok/s | **11.07 tok/s** | 12.26 tok/s |
+| #2 | 19 | 158.5 ms | **155.7 ms** | 180.5 ms | 11.00 tok/s | **11.28 tok/s** | 11.98 tok/s |
+| #3 | 18 | 158.0 ms | **157.4 ms** | 171.5 ms | 10.99 tok/s | **11.16 tok/s** | 11.91 tok/s |
+| #4 | 33 | 187.1 ms | **183.9 ms** | 175.9 ms | 10.99 tok/s | **11.24 tok/s** | 12.01 tok/s |
+| #5 | 356 | 585.0 ms (`609 tok/s`) | **520.9 ms (`683.5 tok/s`)** | 544.5 ms (`654 tok/s`) | 10.63 tok/s | 10.38 tok/s | 12.13 tok/s |
+| #6 | 218 | 440.0 ms (`495 tok/s`) | **408.3 ms (`534.0 tok/s`)** | 374.8 ms (`582 tok/s`) | 10.80 tok/s | 10.66 tok/s | 11.75 tok/s |
+| #7 | 234 | 458.1 ms (`511 tok/s`) | **408.8 ms (`572.4 tok/s`)** | 392.0 ms (`597 tok/s`) | 10.78 tok/s | 10.50 tok/s | 11.80 tok/s |
+| #8 | 21 | 161.4 ms | **153.8 ms** | 192.5 ms | 11.02 tok/s | **11.19 tok/s** | 11.86 tok/s |
+| #9 | 15 | 125.9 ms | **122.1 ms** | 173.8 ms | 10.93 tok/s | **11.15 tok/s** | 11.59 tok/s |
+| #10 | 445 | 663.4 ms (`671 tok/s`) | **573.6 ms (`775.8 tok/s`)** | 613.5 ms (`725 tok/s`) | 10.50 tok/s | **10.62 tok/s** | 11.91 tok/s |
+| **Warm Prefill (#2–#10)** | **1,359** | **2,937.4 ms (`462.7 tok/s`)** | **2,684.5 ms (`506.2 tok/s`, +9.4%)** | **2,819.0 ms (`482.1 tok/s`)** | — | — | — |
+| **10-Ex Decode Avg** | **487 gen** | — | — | — | **10.85 tok/s** (`13.56` cores) | **10.91 tok/s** (`12.85` cores, **up to 11.28**) | **11.86–11.92 tok/s** (`15.93` cores) |
+| **Peak `MaxRSS`** | — | 16.0 GiB | **15.9 GiB** | ~11.4 GiB | — | — | — |
+
+### Key Takeaways & Remaining Gap to Ollama
+- **GoMLX now BEATS Ollama / `llama.cpp` on overall warm prefill by `+5.0%`** (**`506.2 tok/s` vs `482.1 tok/s`** across #2–#10), winning on both short prompts (up to **`+42%` faster** on #9) and the longest prompts (**`683.5 vs 654 tok/s`** on #5, **`775.8 vs 725 tok/s`** on #10)!
+- **Non-matmul decode overhead is essentially eliminated**: down from `6.8 ms/tok` → **`2.8 ms/tok`**, leaving **`FusedDense` at `96.9%`** of decode wall time (`86.2 / 89.0 ms`, `974 ms` CPU/tok).
+- **Remaining decode gap (`10.91–11.28` vs `11.86–12.27 tok/s`, ~`7–8 ms/tok`)**: At `86.2 ms` for `4.56 GB/token`, `FusedDense` already sustains **`52.9 GB/s`** across 277 calls (vs `63.5 GB/s` peak on single-matrix cold-DRAM). Closing the last `~7–8 ms/tok` on Zen 5 comes down to **reducing per-op barrier overhead / DRAM bubbles across the 277 `FusedDense` calls** — specifically **Multi-RHS Fusion (`gate_proj + up_proj` and `q_proj + k_proj + v_proj`, Step 5)**, which cuts `277` matmul barriers down to `~185` and merges adjacent cold-DRAM streams!
+
 
 
 

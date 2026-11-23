@@ -25,6 +25,9 @@ func init() {
 
 func execFusedLayerNormSIMD(backend *gobackend.Backend, node *gobackend.Node, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	data := node.Data.(*nodeFusedLayerNorm)
+	if data.isRMSNorm {
+		return execFusedRMSNorm(backend, node, data, inputs, inputsOwned)
+	}
 	input := inputs[0]
 	dtype := input.RawShape.DType
 	if dtype != dtypes.Float32 && dtype != dtypes.Float64 && dtype != dtypes.Float16 && dtype != dtypes.BFloat16 {

@@ -126,6 +126,11 @@ var (
 	_ gobackend.RecomputableNodeData = (*ReduceConfig)(nil)
 )
 
+// ReduceAxes returns the normalized axes reduced by this ReduceConfig.
+func (c *ReduceConfig) ReduceAxes() []int {
+	return c.Axes
+}
+
 // EqualNodeData implements gobackend.NodeDataComparable.
 func (c *ReduceConfig) EqualNodeData(other gobackend.NodeDataComparable) bool {
 	if c == nil && other == nil {

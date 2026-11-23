@@ -71,6 +71,18 @@ type Buffer struct {
 	Flat      any
 	flatDType dtypes.DType
 	flatLen   int
+
+	// viewOf points to the root owning Buffer when this Buffer is a zero-copy read-only
+	// reshaped view sharing RawBytes/Flat. Nil for owning buffers.
+	viewOf *Buffer
+
+	// viewRefCount tracks active zero-copy views borrowing this buffer's backing memory.
+	// While > 0, this buffer must never be mutated in-place or returned to the buffer pool.
+	viewRefCount atomic.Int32
+
+	// pendingPool records that PutBuffer was called on this owning buffer while viewRefCount > 0,
+	// deferring pool return/finalization until the last view is released.
+	pendingPool atomic.Bool
 }
 
 // EqualNodeData implements nodeDataComparable for Buffer.
@@ -368,6 +380,44 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 // 	}
 // }
 
+// IsView reports whether this buffer is a zero-copy read-only view over another buffer's storage.
+func (buffer *Buffer) IsView() bool {
+	return buffer != nil && buffer.viewOf != nil
+}
+
+// HasLiveViews reports whether any active zero-copy views currently borrow this buffer's storage.
+func (buffer *Buffer) HasLiveViews() bool {
+	return buffer != nil && buffer.viewRefCount.Load() > 0
+}
+
+// NewView creates a zero-copy read-only reshaped view sharing the underlying storage of buffer.
+// The view pins the root owning buffer via viewRefCount until released with PutBuffer.
+func (buffer *Buffer) NewView(targetShape shapes.Shape) *Buffer {
+	root := buffer
+	if root.viewOf != nil {
+		root = root.viewOf
+	}
+	root.viewRefCount.Add(1)
+	view := &Buffer{
+		RawBackend: root.RawBackend,
+		InUse:      true,
+		RawBytes:   root.RawBytes,
+		Flat:       root.Flat,
+		flatDType:  root.flatDType,
+		flatLen:    root.flatLen,
+		viewOf:     root,
+	}
+	view.RawShape.DType = targetShape.DType
+	rank := len(targetShape.Dimensions)
+	if rank <= len(view.ShapeDimensionsBuffer) {
+		view.RawShape.Dimensions = view.ShapeDimensionsBuffer[:rank]
+	} else {
+		view.RawShape.Dimensions = make([]int, rank)
+	}
+	copy(view.RawShape.Dimensions, targetShape.Dimensions)
+	return view
+}
+
 // PutBuffer back into the backend pool of buffers.
 // After this any references to buffer should be dropped.
 func (b *Backend) PutBuffer(buffer *Buffer) {
@@ -381,6 +431,27 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	if !buffer.InUse {
 		panic(errors.New("double-freeing Go backend buffer"))
 	}
+	if buffer.viewOf != nil {
+		parent := buffer.viewOf
+		buffer.InUse = false
+		buffer.RawShape = shapes.Invalid()
+		buffer.viewOf = nil
+		if parent.viewRefCount.Add(-1) == 0 && parent.pendingPool.CompareAndSwap(true, false) {
+			b.releaseBufferNow(parent)
+		}
+		return
+	}
+	if buffer.viewRefCount.Load() > 0 {
+		buffer.pendingPool.Store(true)
+		if buffer.viewRefCount.Load() == 0 && buffer.pendingPool.CompareAndSwap(true, false) {
+			b.releaseBufferNow(buffer)
+		}
+		return
+	}
+	b.releaseBufferNow(buffer)
+}
+
+func (b *Backend) releaseBufferNow(buffer *Buffer) {
 	if buffer.isUserFed {
 		// User-fed buffers are not returned to the pool to avoid unbounded growth
 		// when looping through large datasets.
@@ -396,9 +467,18 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 
 // shallowClone returns a new Buffer struct pointing to the same data.
 func (buffer *Buffer) shallowClone() *Buffer {
-	newBuf := *buffer
-	newBuf.poolSlot = 0
-	rank := len(newBuf.RawShape.Dimensions)
+	newBuf := Buffer{
+		RawBackend: buffer.RawBackend,
+		RawShape:   shapes.Shape{DType: buffer.RawShape.DType},
+		InUse:      buffer.InUse,
+		isUserFed:  buffer.isUserFed,
+		isDonated:  buffer.isDonated,
+		RawBytes:   buffer.RawBytes,
+		Flat:       buffer.Flat,
+		flatDType:  buffer.flatDType,
+		flatLen:    buffer.flatLen,
+	}
+	rank := len(buffer.RawShape.Dimensions)
 	if rank <= len(newBuf.ShapeDimensionsBuffer) {
 		newBuf.RawShape.Dimensions = newBuf.ShapeDimensionsBuffer[:rank]
 		copy(newBuf.RawShape.Dimensions, buffer.RawShape.Dimensions)
