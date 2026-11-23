@@ -859,15 +859,73 @@ func TestChoose2DSplit(t *testing.T) {
 	params := AVX512ParamsFloat32
 	for _, tc := range []struct {
 		m, n, workers int
+		minN          int
 	}{
-		{1536, 1024, 64},
-		{1536, 1024, 32},
-		{1536, 1536, 64},
-		{2048, 2048, 64},
+		{1536, 1024, 64, 1},
+		{1536, 1024, 32, 1},
+		{1536, 1536, 64, 1},
+		{2048, 2048, 64, 1},
+		// M=1 autoregressive decode shapes: must split N finely to utilize cores.
+		{1, 1536, 32, 16},
+		{1, 2048, 32, 16},
+		{1, 512, 32, 8},
+		{1, 256, 32, 4},
 	} {
 		numM, numN := matmul.Choose2DSplit(tc.m, tc.n, tc.workers, &params)
 		t.Logf("M=%d, N=%d, workers=%d -> numM=%d, numN=%d (colChunk=%d, rowChunk=%d)",
 			tc.m, tc.n, tc.workers, numM, numN, (tc.n+numN-1)/numN, (tc.m+numM-1)/numM)
+		if numN < tc.minN {
+			t.Errorf("Choose2DSplit(M=%d, N=%d, workers=%d): got numN=%d, want >= %d",
+				tc.m, tc.n, tc.workers, numN, tc.minN)
+		}
+	}
+}
+
+func TestAppendWorkItemsNarrowM(t *testing.T) {
+	params := AVX512ParamsBFloat16
+	for _, tc := range []struct {
+		batch, m, n, workers int
+		wantItems            int
+	}{
+		{1, 1, 1536, 16, 12},
+		{1, 1, 1536, 32, 12},
+		{1, 1, 2048, 16, 16},
+		{1, 1, 2048, 32, 16},
+		{1, 1, 12288, 16, 16},
+		{1, 1, 12288, 32, 32},
+		{1, 1, 512, 16, 4},
+		{1, 1, 256, 4, 4},
+		{1, 1, 1537, 16, 12},
+		{2, 1, 1536, 16, 16},
+	} {
+		var buf [256]matmul.WorkItem
+		items := matmul.AppendWorkItems(buf[:0], tc.batch, tc.m, tc.n, &params, tc.workers)
+		if len(items) != tc.wantItems {
+			t.Errorf("AppendWorkItems(B=%d, M=%d, N=%d, workers=%d): got %d items, want %d: %+v",
+				tc.batch, tc.m, tc.n, tc.workers, len(items), tc.wantItems, items)
+			continue
+		}
+		// Verify complete, non-overlapping coverage of [0, batch) x [0, m) x [0, n).
+		covered := make([]bool, tc.batch*tc.n)
+		for _, it := range items {
+			if it.LHSRowStart != 0 || it.LHSRowEnd != tc.m {
+				t.Errorf("unexpected row range [%d, %d) for M=%d", it.LHSRowStart, it.LHSRowEnd, tc.m)
+			}
+			for b := it.BatchStart; b < it.BatchEnd; b++ {
+				for c := it.RHSColStart; c < it.RHSColEnd; c++ {
+					idx := b*tc.n + c
+					if covered[idx] {
+						t.Fatalf("duplicate coverage at batch=%d col=%d", b, c)
+					}
+					covered[idx] = true
+				}
+			}
+		}
+		for i, ok := range covered {
+			if !ok {
+				t.Fatalf("missing coverage at flat idx %d (B=%d, N=%d)", i, tc.batch, tc.n)
+			}
+		}
 	}
 }
 

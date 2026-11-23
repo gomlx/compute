@@ -52,7 +52,10 @@ var (
 	// MinLargeMatMulFlopsPerWorker is the minimum number of multiply-adds per worker for the tiled/packed
 	// large matrix multiplication kernels so each worker receives enough compute to amortize panel packing
 	// and thread scheduling.
-	MinLargeMatMulFlopsPerWorker       = 256 * 1024
+	MinLargeMatMulFlopsPerWorker = 256 * 1024
+	// MinCachedLargeMatMulFlopsPerWorker is the minimum multiply-adds per worker when RHS (or LHS) panels
+	// are already pre-packed/cached, where there is no packing overhead to amortize (e.g. M=1 LLM decode).
+	MinCachedLargeMatMulFlopsPerWorker = 128 * 1024
 	noSIMDMinLargeMatMulFlopsPerWorker = 32 * 1024
 )
 
@@ -216,6 +219,18 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 	bestNumN := 1
 	bestScore := -1.0
 
+	// When M alone can saturate targetWorkers, keep a wide minimum column chunk (8*minCol)
+	// so row-splitting is preferred for RHS L2/L3 reuse. When M is small (maxPossibleM < targetWorkers,
+	// e.g. M=1 autoregressive decode), relax the column floor down to minCol (1 microkernel strip,
+	// 128 bytes of float32/float64 output = 2 cache lines, zero false sharing) so narrow-N projections
+	// can still utilize all available cores.
+	minColChunk := 8 * minCol
+	if maxPossibleM < targetWorkers {
+		neededN := (targetWorkers + maxPossibleM - 1) / maxPossibleM
+		targetChunk := (N / max(1, neededN) / minCol) * minCol
+		minColChunk = max(minCol, min(8*minCol, targetChunk))
+	}
+
 	// Consider candidate numN values: powers of 2 from 1 up to targetWorkers
 	for candN := 1; candN <= targetWorkers; candN *= 2 {
 		candM := (targetWorkers + candN - 1) / candN
@@ -236,7 +251,7 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 			continue
 		}
 		if candN > 1 {
-			if colChunk < 8*minCol {
+			if colChunk < minColChunk {
 				continue
 			}
 		}
@@ -456,6 +471,38 @@ func AppendWorkItems(
 			}
 			return dst
 		}
+	}
+
+	if totalMBlocks == 1 {
+		// 1D split along N (e.g. M=1 autoregressive decode): create one balanced N-chunk per worker
+		// without 2x oversubscription or power-of-2 rounding, avoiding uneven waves (e.g. 24 items on
+		// 16 workers) and excessive K-panel striding on narrow-N projections.
+		// Keep each worker chunk at least 4 microkernel strips (128 cols on AVX-512, 1/4 of a 512-col
+		// panel) when N is wide enough so workers avoid strided DRAM thrashing and load imbalance
+		// (e.g. N=1536 splits into 12 exact 128-col chunks aligned with 512-col panels).
+		minStrips := 1
+		if totalNBlocks >= 16 {
+			minStrips = 4
+		} else if totalNBlocks >= 4 {
+			minStrips = 2
+		}
+		workersPerBatch := (maxWorkers + batchSize - 1) / batchSize
+		actualN := min(workersPerBatch, max(1, totalNBlocks/minStrips))
+		for n := range actualN {
+			rhsColStart := ((n*totalNBlocks + actualN - 1) / actualN) * nr
+			rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualN-1)/actualN)*nr)
+			if rhsColStart >= rhsColEnd {
+				continue
+			}
+			for batchIdx := range batchSize {
+				dst = append(dst, WorkItem{
+					batchIdx, batchIdx + 1,
+					0, lhsCrossSize,
+					rhsColStart, rhsColEnd,
+				})
+			}
+		}
+		return dst
 	}
 
 	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize

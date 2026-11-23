@@ -4,7 +4,7 @@
 
 This document tracks the profile-driven optimization of single-stream (`batch=1`) autoregressive LLM generation in GoMLX's pure-Go CPU backend (`GOMLX_BACKEND=go`), benchmarked on **`google/gemma-4-E2B-it` (`BFloat16`)** over the `databricks/databricks-dolly-15k` dataset against **Ollama / `llama.cpp` CPU (`gemma4:e2b-it-bf16`)**.
 
-Across the initial optimization milestones, **decode throughput improved 5.7×** (`1.84` → `10.47 tok/s`), **prefill throughput on long prompts improved ~2×**, and **peak RSS dropped by ~20%** (`18.5 GiB` → `14.9 GiB`), while maintaining **9/10 exact character-for-character greedy output matches** against `llama.cpp`:
+Across the optimization milestones so far, **decode throughput improved 5.9×** (`1.84` → `10.85 tok/s` at `par=16` / `10.70 tok/s` default `par=32`), **prefill throughput on long prompts improved ~2.3×** (`287` → `675 tok/s`), and **peak RSS dropped by ~15–20%** (`18.5 GiB` → `16.0 GiB`), while maintaining **9/10 exact character-for-character greedy output matches** against `llama.cpp`:
 
 | Milestone | Example #1 Cold TTFT (`132 tok`) | Example #5 Warm Prefill (`356 tok`) | Decode Throughput (`tok/s`) | Decode `CPUTime/tok` (`avg_cores`) | Peak `MaxRSS` (10 ex.) | Key Change |
 | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
@@ -12,7 +12,8 @@ Across the initial optimization milestones, **decode throughput improved 5.7×**
 | **1. Parallel `M=1` Decode + `DonateStore`** (`3d7a574` / `7aab5d70`) | 1.9 s *(incl. prepack)* | 1,240 ms (`287 tok/s`) | **9.64–9.77 tok/s** (**5.3×**) | 1.5 s (`14.7` cores) | 18.5 → 15.1 GiB | Fallback from `avx512LargeMulti` when `M=1` so `avx512Large` splits along `N`; `WithDonateStore(true)` avoids per-token weight re-packing & drops 3.4 GiB RSS |
 | **2. `OnlyLastTokenLogits` + Native `AVX512_BF16` (`VDPBF16PS`)** (`08b0c62` / `84d082ba` / `c9b0027`) | 1.1 s *(incl. prepack)* | 787 ms (`452 tok/s`) | **10.31–10.48 tok/s** (**5.7×**) | 1.4 s (`14.4` cores) | 14.7 GiB | Skip unused prompt `lm_head` rows (`[1, 356, 1536] → [1, 1, 1536]`); native `VDPBF16PS` K2-interleaved BF16 GEMM kernels |
 | **3. Zero-Copy KV-Cache Decode + Pre-Allocated Cache** (`91b702f0` / `d45a21c`) | 1.2 s *(incl. prepack)* | 942 ms (`378 tok/s`) *(regression from 2× larger prefill bool mask)* | **9.93–10.21 tok/s** (10-ex avg) | 1.4 s (`13.8–14.3` cores) | 16.9 GiB *(grew with static prompt graphs)* | Pre-allocate KV cache up to `MaxLength` (no mid-decode `PadTensors` / recompiles); `WithSeqLens` zero-copy decode; `sdpaMultiHeadHalf` converts only `kvLimit` rows; bulk `DynamicUpdateSlice` prefill |
-| **4. Step 1 — Prefill Quick Wins** *(uncommitted)* | 1.1 s *(incl. prepack)* | **564 ms (`631 tok/s`)** (**+67%**) | **10.54 tok/s** (10-ex avg, **5.7×**) | 1.4 s (`14.47` cores) | **16.0 GiB** (`-0.9 GiB`) | Zero-copy `WithSeqLens` + `WithCausalMask(true)` prefill; head-invariant `[B, Sq, 1, Skv]` masks (no bool transpose); `WithDynamicAxes` on `promptExec`; cap local KV cache to `sliding_window=512` |
+| **4. Step 1 — Prefill Quick Wins** (`5a5e8c85` / `43af1d6`) | 1.1 s *(incl. prepack)* | **564 ms (`631 tok/s`)** (**+67%**) | **10.54 tok/s** (10-ex avg, **5.7×**) | 1.4 s (`14.47` cores) | **16.0 GiB** (`-0.9 GiB`) | Zero-copy `WithSeqLens` + `WithCausalMask(true)` prefill; head-invariant `[B, Sq, 1, Skv]` masks (no bool transpose); `WithDynamicAxes` on `promptExec`; cap local KV cache to `sliding_window=512` |
+| **5. Step 2 — Decode Parallelism & Buffer Tightening** *(uncommitted)* | 1.1 s *(incl. prepack)* | **561 ms (`635 tok/s`)** *(par=32)* / 585 ms *(par=16)* | **10.70 tok/s** *(default par=32)* / **10.85 tok/s** *(par=16, **5.9×**)* | 1.6 s (`16.61` cores) / **1.2 s** (`13.56` cores) | 16.9 GiB *(par=32)* / **16.0 GiB** *(par=16)* | Balanced 1D `N`-split (`128`-col panel-aligned chunks on `M<=mr`); `MinCachedLargeMatMulFlopsPerWorker=128K`; single shared pre-packed LHS for `M<=mr`; `accumOutput` `4 MiB → 3–16 KiB/worker` |
 | **Reference: Ollama (`llama.cpp` CPU, `gemma4:e2b-it-bf16`)** | 300 ms *(warm)* | 545 ms (`654 tok/s`) | **11.86–12.27 tok/s** | 1.36 s (`15.93` cores) | ~11.4 GiB | 16 physical threads (`n_threads=16`), spin-wait barrier, GEMV `M=1` BF16 dot kernel |
 
 ---
@@ -177,4 +178,68 @@ Comparing **Before Step 1** vs. **After Step 1** vs. **Ollama (`llama.cpp` CPU, 
 - **Long prompts saw the biggest gains:** `+67%` on #5 (`942 → 564 ms`, `631 tok/s`) and **`+75%` on #10** (`1,165 → 666 ms`, `668 tok/s`).
 - **Decode also gained `+6.1%`** (`9.93 → 10.54 tok/s`, now `88.4%` of Ollama's `11.92 tok/s`) from removing the `numHeads` broadcast on explicit decode masks and halving local KV cache size (`1024 → 512`), while **`MaxRSS` dropped by `0.9 GiB`** (`16.9 → 16.0 GiB`) and stopped growing linearly with each new prompt length.
 - **Next up (Steps 2 & 3):** Relaxing `Choose2DSplit`'s narrow-`N` floor (`colChunk < 256` currently starving `down_proj`/`o_proj` to 4 workers) and adding a dedicated `M=1` `VDPBF16PS` GEMV microkernel are expected to push decode past **`12.5–13.5 tok/s`** (surpassing `llama.cpp`), while Step 5 (epilogue BF16 conversion + Multi-RHS fusion) pushes long prefill past **`800+ tok/s`**.
+
+---
+
+## 6. Step 2 Implementation, Cold-DRAM Findings & Measured Results
+
+### Changes Implemented
+1. **Balanced 1D `N`-splitting & relaxed small-`M` floor** ([`compute/internal/gobackend/dot/matmul/nosimd.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/nosimd.go)):
+   - Added `MinCachedLargeMatMulFlopsPerWorker = 128 * 1024` (down from `256 * 1024`) when RHS or LHS panels are pre-packed/cached so smaller projections (`q_proj`, `k/v_proj`, `per_layer_*`) parallelize across more workers.
+   - Added a direct 1D `N`-split fast path in `AppendWorkItems` when `totalMBlocks == 1` (`M <= mr`, e.g. `M=1` decode), avoiding `2×` oversubscription and power-of-2 rounding (which created uneven waves like `24` items on `16` workers or `48` tiny 1-strip items on `32` workers). Each chunk is kept at least `4` microkernel strips (`128` cols on AVX-512, dividing `512`-col panels evenly) when `totalNBlocks >= 16` (so `N=1536` splits into `12` exact `128`-col chunks and `N=2048` into `16` exact `128`-col chunks).
+   - Relaxed `Choose2DSplit`'s `minColChunk` floor when `maxPossibleM < targetWorkers` for small multi-strip `M` (`9 <= M <= 32`).
+2. **Eliminated massive per-worker `M=1` buffer overhead & redundant LHS packing** ([`compute/internal/gobackend/dot/matmul/avx512/large.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/large.go), [`compute/internal/gobackend/dot/matmul/avx2/large.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx2/large.go)):
+   - **Shared single-pass LHS pre-pack for `M <= mr` (`batch == 1`)**: previously, all `16–32` workers each allocated a `numKPanels × 32 × 256` (`768 KiB` for `K=12288` → **`24.6 MiB` across 32 workers**) `packedLHS` buffer and redundantly packed the exact same 1-row input vector. Now `lhs` is packed **once** before `SaturateUpTo` into a single compact `numKPanels × mr × paddedPanelK` buffer (`24–192 KiB` total) read-only across all workers via `cachedLHSPanels`.
+   - **Tightened `accumOutput` & skipped unused `packedOutput`**: fixed a hardcoded `maxAccumPanels = 64` allocation (`64 × 32 × 512 × 4 = 4 MiB` per worker → **`128 MiB` across 32 workers!**) to `min(64, numRowPanels) × accumAllocRows × accumAllocCols` (**`3–16 KiB` per worker** on `M=1`, fitting inside L1d), and skipped allocating `packedOutput` (`64 KiB/worker`) whenever `alwaysUseAccum` holds (`numKPanels > 1`).
+   - Added LHS reuse across stolen work items with identical `(batchIdx, rowStart, rowEnd)` and unit tests (`TestChoose2DSplit`, `TestAppendWorkItemsNarrowM`) in [`internal_test.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/internal_test.go).
+
+### Cold-DRAM Microbenchmark Gains (`377 MB` streaming, 10 distinct matrices)
+
+| Shape (Cold DRAM) | Before Step 2 (`par=16`) | After Step 2 (`par=16`) | After Step 2 (`par=12` optimal `down`) | After Step 2 (`par=32`) |
+| :--- | ---: | ---: | ---: | ---: |
+| `Decode_gate_12288 [1 × 1536 × 12288]` | 667 µs (`56.6 GB/s`) | **640 µs (`59.0 GB/s`)** | 671 µs (`56.3 GB/s`) | 707 µs (`53.4 GB/s`) |
+| `Decode_down_12288 [1 × 12288 × 1536]` | 751 µs (`50.2 GB/s`) | **714 µs (`52.8 GB/s`)** | **679 µs (`55.6 GB/s`, +10.8%)** | 757 µs (`49.9 GB/s`) |
+
+### 10-Example Benchmark Results (`google/gemma-4-E2B-it` BF16, `-gen_tokens=64`, `-mmap=false`)
+
+| Ex # | Prompt | Step 1 Decode (`par=32`) | Step 2 Decode (`par=32`) | Step 2 Decode (`par=16`) | Ollama Decode | Step 2 Prefill (`par=16`) | Ollama Prefill *(cold)* |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| #1 *(cold)* | 132 | 10.67 tok/s | 10.63 tok/s | **10.91 tok/s** | 12.26 tok/s | 1,084 ms *(cold)* | 300.1 ms *(warm)* |
+| #2 | 19 | 10.82 tok/s | 10.80 tok/s | **11.00 tok/s** | 11.98 tok/s | **158.5 ms** | 180.5 ms |
+| #3 | 18 | 10.63 tok/s | 10.80 tok/s | **10.99 tok/s** | 11.91 tok/s | **158.0 ms** | 171.5 ms |
+| #4 | 33 | 10.69 tok/s | 10.83 tok/s | **10.99 tok/s** | 12.01 tok/s | 187.1 ms | 175.9 ms |
+| #5 | 356 | 10.39 tok/s | 10.51 tok/s | **10.63 tok/s** | 12.13 tok/s | 585.0 ms (`609 tok/s`) | 544.5 ms (`654 tok/s`) |
+| #6 | 218 | 10.44 tok/s | 10.67 tok/s | **10.80 tok/s** | 11.75 tok/s | 440.0 ms (`495 tok/s`) | 374.8 ms (`582 tok/s`) |
+| #7 | 234 | 10.45 tok/s | 10.63 tok/s | **10.78 tok/s** | 11.80 tok/s | 458.1 ms (`511 tok/s`) | 392.0 ms (`597 tok/s`) |
+| #8 | 21 | 10.74 tok/s | 10.86 tok/s | **11.02 tok/s** | 11.86 tok/s | **161.4 ms** | 192.5 ms |
+| #9 | 15 | 10.64 tok/s | 10.89 tok/s | **10.93 tok/s** | 11.59 tok/s | **125.9 ms** | 173.8 ms |
+| #10 | 445 | 10.20 tok/s | 10.33 tok/s | **10.50 tok/s** | 11.91 tok/s | 663.4 ms (`671 tok/s`) | 613.5 ms (`725 tok/s`) |
+| **10-Ex Decode Avg** | 487 gen | **10.54 tok/s** (`1.4s` CPU) | **10.70 tok/s** (+1.5%, `1.6s` CPU) | **10.85 tok/s** (**+2.9%**, **`1.2s` CPU**) | **11.86–11.92 tok/s** (`1.36s` CPU) | **Warm #2–#10: 2,937 ms (`462.7 tok/s`)** | **2,819 ms (`482.1 tok/s`)** |
+| **Peak `MaxRSS`** | — | 16.0 GiB | 16.9 GiB | **16.0 GiB** | ~11.4 GiB | — | — |
+
+### Crucial Diagnostic Discovery (`GOMLX_OP_PROFILE=30` at `par=16,ops_sequential`)
+Running `GOMLX_OP_PROFILE=30` on decode revealed **the exact mathematical location of the entire remaining `~18.7 ms/token` gap vs. `llama.cpp`**:
+
+| OpType / Signature | Calls/tok | Wall/tok | Wall/call | CPU/tok | Avg Cores | Effective BW |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `FusedDense` (total, all 277 calls) | 277 | **87.5 ms** (`93.7%`) | — | **1,100 ms** | **12.4 / 16** | `48.2 GB/s` |
+| ↳ `gate/up_12288 [1×1536×12288]` | 40 | 27.8 ms | 695.9 µs | 374.8 ms | 13.5 | 54.2 GB/s |
+| ↳ `down_12288 [1×12288×1536]` | 20 | 14.4 ms | 722.2 µs | 194.7 ms | 13.5 | 52.3 GB/s |
+| ↳ `lm_head [1×1536×262144]` | 1 | 14.4 ms | 14.4 ms | 215.5 ms | 14.9 | 55.9 GB/s |
+| ↳ `gate/up_6144 [1×1536×6144]` | 30 | 10.8 ms | 361.7 µs | 128.8 ms | 11.9 | 52.2 GB/s |
+| ↳ `down_6144 [1×6144×1536]` | 15 | 5.6 ms | 372.1 µs | 68.0 ms | 12.2 | 50.7 GB/s |
+| ↳ `o_proj` / `q_proj` local (`2048↔1536`) | 56 | 7.4 ms | 133 µs | 56.8 ms | **7.1–8.1** | 47.3 GB/s |
+| ↳ `k/v_proj` + `per_layer_gate` (`1536×256`) | 59 | 1.8 ms | 31 µs | 2.9 ms | **1.6** | 25.4 GB/s |
+| ↳ `per_layer_proj` (`256×1536`) | 35 | 0.78 ms | 22 µs | 0.82 ms | **1.1** | 35.4 GB/s |
+| `Reshape` (non-owned KV cache squeezes) | 762 | 1.1 ms (`0.74 ms` in 30 KV reshapes) | — | 1.1 ms | 1.0 | — |
+| `ArgMinMax([1, 262144] BF16)` | 1 | 0.67 ms | 675 µs | 0.68 ms | 1.0 | — |
+| Decomposed RMSNorm (`ConvertDType`/`Mul`/`ReduceSum`/`Div`/`Sqrt`) | ~176 layers | ~2.5 ms | — | ~2.7 ms | 1.1 | — |
+| **Total (Sum of Ops)** | — | **93.3 ms** | — | **1,100 ms** | **11.7 / 16** | — |
+
+**Key Takeaways for Next Steps (Steps 3 & 4):**
+1. **Scheduler park/unpark barrier latency (`~18.75 ms/token`) is now the #1 wall-clock bottleneck!** All 277 `FusedDense` calls consume `1,100 ms` of CPU time = **`68.75 ms` of ideal 16-core compute** (`+ 5.8 ms` other ops = **`74.5 ms/tok` = `13.4 tok/s`**), yet spend **`87.5 ms`** in wall time because every `SaturateUpTo` call wakes parked goroutines from `<-intraOpQueue` (Linux `futex` sleep/wake), adding **`~65–100 µs` of barrier/wake-up latency per call** (e.g. `q_proj` needs `59 µs` compute but takes `133 µs` wall; `per_layer_proj` finishes in `22 µs` before helper goroutines even wake up!). **A bounded spin-wait barrier in `scheduler.go` (Step 4) directly targets this `15–19 ms/token` gap and should be prioritized alongside Step 3 (`M=1` GEMV).**
+2. **`avx512LargeKernelBFloat16BF16Asm` still accounts for `94.6%` of all decode CPU time (`54.6s / 57.7s`)** due to executing 7/8 zero rows on `M=1`. Step 3's dedicated `1×64`/`1×128` `VDPBF16PS` GEMV microkernel will cut decode CPU time by ~3–4× (lowering core/power draw and helping `down_proj` reach `~58+ GB/s`).
+3. **Physical-core parallelism (`par=16` vs `par=32`)**: `par=16` already beats `par=32` in **decode (`10.85 vs 10.70 tok/s`)**, **CPU efficiency (`1.2s vs 1.6s`, `-25%` CPU time)**, and **RAM (`16.0 vs 16.9 GiB`, `-0.9 GiB`)** — and matches warm prefill (`2,937 vs 2,949 ms`).
+4. **Additional `~3.9 ms/tok` non-matmul wins surfaced by `GOMLX_OP_PROFILE`**: zero-copy `Reshape` views on non-owned KV cache buffers (`0.74 ms`), SIMD/parallel `ArgMinMax` on `BFloat16` (`0.67 ms`), and fusing Gemma 4 RMSNorm (`~2.5 ms`).
+
 
