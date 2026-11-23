@@ -25,6 +25,28 @@ func neonLargeKernelFloat32Asm(
 	accumulate bool,
 )
 
+//go:noescape
+func neonLargeKernelM1Float32Asm(
+	lhs, packedRHS, out []float32,
+	contractingLen, rhsActiveCols, kernelCols int,
+	accumulate bool,
+)
+
+//go:noescape
+func neonLargeKernelM1BFloat16Asm(
+	lhs, packedRHS []bfloat16.BFloat16,
+	out []float32,
+	contractingLen, rhsActiveCols, kernelCols int,
+	accumulate bool,
+)
+
+//go:noescape
+func neonLargeKernelM1Float64Asm(
+	lhs, packedRHS, out []float64,
+	contractingLen, rhsActiveCols, kernelCols int,
+	accumulate bool,
+)
+
 // neonLargeKernelFloat32Asm_4x16 is the Plan9 ARM64 assembly implementation of the 4 rows x 16 cols GEMM microkernel for Float32.
 // Defined in large_arm64_float32.s.
 //

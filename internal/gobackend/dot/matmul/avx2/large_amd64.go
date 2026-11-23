@@ -30,6 +30,14 @@ func avx2LargeKernelFloat32Asm(
 	accumulate bool,
 )
 
+//go:noescape
+func avx2LargeKernelM1Float32Asm(
+	lhs, packedRHS, out []float32,
+	contractingLen int,
+	rhsActiveCols int,
+	accumulate bool,
+)
+
 // avx2LargeKernelFloat64Asm is the assembly implementation of the 4 rows x 8 cols GEMM microkernel for Float64.
 // Defined in avx2_large_amd64_float64.s.
 //
@@ -39,6 +47,14 @@ func avx2LargeKernelFloat64Asm(
 	lhsPanelRows, rhsPanelCols int,
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
+	accumulate bool,
+)
+
+//go:noescape
+func avx2LargeKernelM1Float64Asm(
+	lhs, packedRHS, out []float64,
+	contractingLen int,
+	rhsActiveCols int,
 	accumulate bool,
 )
 
@@ -65,6 +81,15 @@ func avx2LargeKernelBFloat16Asm(
 	lhsPanelRows, rhsPanelCols int,
 	contractingLen int,
 	lhsActiveRows, rhsActiveCols int,
+	accumulate bool,
+)
+
+//go:noescape
+func avx2LargeKernelM1BFloat16Asm(
+	lhs, packedRHS []bfloat16.BFloat16,
+	out []float32,
+	contractingLen int,
+	rhsActiveCols int,
 	accumulate bool,
 )
 

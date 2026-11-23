@@ -111,9 +111,14 @@ func avx512LargeFloat32( //alt:f32
 	paddedPanelK := params.PanelContractingSize //alt:f32|f16|f64
 	//alt:bf16 paddedPanelK := avx512BFloat16PaddedK(params.PanelContractingSize)
 
-	// When M fits in a single microkernel strip (e.g. M=1 autoregressive decode) across multiple workers,
-	// pack the tiny [M, K] LHS once before fanning out instead of allocating and redundantly packing
-	// per-worker LHS buffers (which for K=12288 would touch 12-24 MiB across 16-32 workers).
+	// Dedicated M=1 GEMV direct path reads raw contiguous 1-row LHS without packing or temp output
+	// buffers (when N is a multiple of RHSL1KernelCols).
+	useM1Direct := AVX512UseAsm && lhsCrossSize == 1 && len(cachedLHSPanels) == 0 //alt:f32|bf16|f64
+	//alt:f16 useM1Direct := false
+
+	// When M fits in a single microkernel strip (e.g. M=1..8) across multiple workers and is not
+	// handled by the direct M=1 GEMV kernel, pack the tiny [M, K] LHS once before fanning out
+	// instead of allocating and redundantly packing per-worker LHS buffers.
 	var (
 		sharedPrepackedLHSRef *gobackend.Buffer
 		sharedPrepackedLHSArr [256][]float32 //alt:f32
@@ -121,7 +126,7 @@ func avx512LargeFloat32( //alt:f32
 		//alt:f16 sharedPrepackedLHSArr [256][]float16.Float16
 		//alt:f64 sharedPrepackedLHSArr [256][]float64
 	)
-	if maxWorkers > 1 && len(cachedLHSPanels) == 0 && batchSize == 1 && lhsCrossSize <= params.LHSL1KernelRows && numKPanels <= len(sharedPrepackedLHSArr) {
+	if !useM1Direct && maxWorkers > 1 && len(cachedLHSPanels) == 0 && batchSize == 1 && lhsCrossSize <= params.LHSL1KernelRows && numKPanels <= len(sharedPrepackedLHSArr) {
 		stripElems := params.LHSL1KernelRows * paddedPanelK
 		var flat []float32 //alt:f32
 		//alt:bf16 var flat []bfloat16.BFloat16
@@ -153,9 +158,11 @@ func avx512LargeFloat32( //alt:f32
 	if numColPanels > 1 {
 		lhsAllocPanels = maxMPanelsPerSubChunk * numKPanels
 	}
-	needTempOutput := (lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)
+	needTempOutput := (!useM1Direct && lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)
 	accumAllocRows := params.LHSPanelCrossSize
-	if lhsCrossSize < params.LHSPanelCrossSize {
+	if useM1Direct {
+		accumAllocRows = 1
+	} else if lhsCrossSize < params.LHSPanelCrossSize {
 		accumAllocRows = ((lhsCrossSize + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
 	}
 	accumAllocCols := params.RHSPanelCrossSize
@@ -182,7 +189,7 @@ func avx512LargeFloat32( //alt:f32
 			//alt:f16 packedLHS []float16.Float16
 			//alt:f64 packedLHS []float64
 		)
-		if len(cachedLHSPanels) == 0 {
+		if !useM1Direct && len(cachedLHSPanels) == 0 {
 			var ok bool
 			packedLHSRef, packedLHS, ok = GetBuffer[float32](backend, lhsAllocPanels*lhsPanelBufSize) //alt:f32
 			//alt:bf16 packedLHSRef, packedLHS, ok = GetBuffer[bfloat16.BFloat16](backend, lhsAllocPanels*lhsPanelBufSize)
@@ -340,7 +347,7 @@ func avx512LargeFloat32( //alt:f32
 			//alt:f16 packedLHS []float16.Float16
 			//alt:f64 packedLHS []float64
 		)
-		if len(cachedLHSPanels) == 0 {
+		if !useM1Direct && len(cachedLHSPanels) == 0 {
 			var ok bool
 			packedLHSRef, packedLHS, ok = GetBuffer[float32](backend, lhsAllocPanels*lhsPanelBufSize) //alt:f32
 			//alt:bf16 packedLHSRef, packedLHS, ok = GetBuffer[bfloat16.BFloat16](backend, lhsAllocPanels*lhsPanelBufSize)
@@ -859,8 +866,12 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 			}
 		}
 		canCacheAllLHS := len(packedLHS) >= numMPanels*numKPanels*lhsPanelBufSize
+		useM1Direct := AVX512UseAsm && rowEnd-rowStart == 1 && len(cachedLHSPanels) == 0 //alt:f32|bf16|f64
+		//alt:f16 useM1Direct := false
 		accumPanelRows := params.LHSPanelCrossSize
-		if numMPanels == 1 {
+		if useM1Direct {
+			accumPanelRows = 1
+		} else if numMPanels == 1 {
 			accumPanelRows = ((rowEnd - rowStart + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
 		}
 		accumPanelStride := ((rhsPanelWidth + params.RHSL1KernelCols - 1) / params.RHSL1KernelCols) * params.RHSL1KernelCols
@@ -940,6 +951,36 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 				//alt:bf16 	rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols)
 			}
 
+			if useM1Direct { //alt:f32|bf16|f64
+				lhsSlice := lhsMatrix[rowStart*contractingSize+contractingPanelIdx : rowStart*contractingSize+contractingPanelIdx+contractingPanelWidth] //alt:f32|bf16|f64
+				isFirstContractingPanel := contractingPanelIdx == 0                                                                                        //alt:f32|bf16|f64
+				isLastContractingPanel := contractingPanelIdx+contractingPanelWidth >= contractingSize                                                     //alt:f32|bf16|f64
+				accumulate := !isFirstContractingPanel                                                                                                     //alt:f32|bf16|f64
+				if rhsPanelWidth%params.RHSL1KernelCols == 0 {                                                                                             //alt:f32|bf16|f64
+					outOffset := rowStart*rhsCrossSize + rhsPanelColIdx //alt:f32|bf16|f64
+					avx512LargeKernelM1Float32Asm(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, accumulate) //alt:f32
+					//alt:bf16 avx512LargeKernelM1BFloat16AsmDispatch(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, accumulate)
+					//alt:f64 avx512LargeKernelM1Float64Asm(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, accumulate)
+					if isLastContractingPanel && hasEpilogue { //alt:f32|bf16|f64
+						matmul.ApplyEpilogueTile(outputMatrix, rhsCrossSize, rowStart, rowStart+1, rhsPanelColIdx, rhsPanelColIdx+rhsPanelWidth, epilogue) //alt:f32|bf16|f64
+					} //alt:f32|bf16|f64
+				} else if useAccum { //alt:f32|bf16|f64
+					avx512LargeKernelM1Float32Asm(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, accumulate) //alt:f32
+					//alt:bf16 avx512LargeKernelM1BFloat16AsmDispatch(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, accumulate)
+					//alt:f64 avx512LargeKernelM1Float64Asm(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, accumulate)
+				} else { //alt:f32|bf16|f64
+					avx512LargeKernelM1Float32Asm(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, false) //alt:f32
+					//alt:bf16 avx512LargeKernelM1BFloat16AsmDispatch(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, false)
+					//alt:f64 avx512LargeKernelM1Float64Asm(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, false)
+					avx512ApplyPackedOutputFloat32(packedOutput, outputMatrix, isFirstContractingPanel, params.RHSPanelCrossSize, rowStart, rhsPanelColIdx, rhsCrossSize, 1, rhsPanelWidth) //alt:f32|bf16
+					//alt:f64 avx512ApplyPackedOutputFloat64(packedOutput, outputMatrix, isFirstContractingPanel, params.RHSPanelCrossSize, rowStart, rhsPanelColIdx, rhsCrossSize, 1, rhsPanelWidth)
+					if isLastContractingPanel && hasEpilogue { //alt:f32|bf16|f64
+						matmul.ApplyEpilogueTile(outputMatrix, rhsCrossSize, rowStart, rowStart+1, rhsPanelColIdx, rhsPanelColIdx+rhsPanelWidth, epilogue) //alt:f32|bf16|f64
+					} //alt:f32|bf16|f64
+				} //alt:f32|bf16|f64
+				continue //alt:f32|bf16|f64
+			} //alt:f32|bf16|f64
+
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
 				lhsPanelEnd := lhsPanelRowIdx + params.LHSPanelCrossSize
@@ -972,7 +1013,7 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 				isFirstContractingPanel := contractingPanelIdx == 0
 				isLastContractingPanel := contractingPanelIdx+contractingPanelWidth >= contractingSize
 				accumulate := !isFirstContractingPanel
-				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				canDirectOutput := (useM1Direct || lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 
 				if canDirectOutput {
 					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
@@ -1091,7 +1132,7 @@ func avx512LargeMatrixSliceFloat32( //alt:f32
 				}
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
-				canDirectOutput := (lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
+				canDirectOutput := (useM1Direct || lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0)
 				if !canDirectOutput {
 					accumOffset := mIdx * panelSize
 					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]

@@ -135,11 +135,15 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 	//alt:f64 epilogue matmul.Epilogue[float64],
 ) {
 	flops := batchSize * lhsCrossSize * rhsCrossSize * contractingSize
+	minFlopsPerWorker := matmul.MinLargeMatMulFlopsPerWorker
+	if nodeData != nil && (nodeData.RHSConstantData.CachedForm() != nil || nodeData.LHSConstantData.CachedForm() != nil) {
+		minFlopsPerWorker = matmul.MinCachedLargeMatMulFlopsPerWorker
+	}
 	unscaled := backend.Scheduler.UnscaledParallelism()
 	eff := backend.Scheduler.EffectiveParallelism()
 	maxWorkers := min(
 		unscaled,
-		max(1, (flops+matmul.MinLargeMatMulFlopsPerWorker-1)/matmul.MinLargeMatMulFlopsPerWorker),
+		max(1, (flops+minFlopsPerWorker-1)/minFlopsPerWorker),
 	)
 
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -149,16 +153,20 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
 	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16 //alt:f32|bf16|f16
 	//alt:f64 isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8
+	hasCachedLHS := nodeData != nil && nodeData.LHSConstantData != nil                                                                                                 //alt:f32|bf16|f64
+	useM1Direct := NEONUseAsm && lhsCrossSize == 1 && !hasCachedLHS && (params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16 || params.RHSL1KernelCols == 32) //alt:f32|bf16
+	//alt:f64 useM1Direct := NEONUseAsm && lhsCrossSize == 1 && !hasCachedLHS && (params.RHSL1KernelCols == 4 || params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16)
+	//alt:f16 useM1Direct := false
 	if eff < unscaled {
-		flopsPerWorker := matmul.MinLargeMatMulFlopsPerWorker
-		if isSMEKernel {
+		flopsPerWorker := minFlopsPerWorker
+		if isSMEKernel && !useM1Direct {
 			flopsPerWorker = 256 * 1024 * 1024
 		}
 		maxWorkers = min(
 			eff,
 			max(1, (flops+flopsPerWorker-1)/flopsPerWorker),
 		)
-	} else if isSMEKernel && maxWorkers > 1 && smeShouldUseSingleWorker(flops, backend.Scheduler.IsWholeChipHeld()) {
+	} else if isSMEKernel && !useM1Direct && maxWorkers > 1 && smeShouldUseSingleWorker(flops, backend.Scheduler.IsWholeChipHeld()) {
 		maxWorkers = 1
 	}
 	// Note: fineNc must NOT depend on maxWorkers (which varies dynamically with smeCallerOnFastCluster()
@@ -240,7 +248,7 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 		return
 	}
 
-	needTempOutput := !isSMEKernel && ((lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0))
+	needTempOutput := (useM1Direct && rhsCrossSize%params.RHSL1KernelCols != 0) || (!useM1Direct && !isSMEKernel && ((lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)))
 	if len(cachedLHSPanels) == 0 && len(cachedRHSPanels) == 0 {
 		if contractingSize < params.PanelContractingSize {
 			params.PanelContractingSize = contractingSize
@@ -272,7 +280,7 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 		lhsAllocPanels = max(1, min(16, numRowPanels*numKPanels))
 	}
 
-	if isSMEKernel && layout == dot.LayoutNonTransposed && //alt:f32
+	if !useM1Direct && isSMEKernel && layout == dot.LayoutNonTransposed && //alt:f32
 		params.LHSL1KernelRows == 32 && params.RHSL1KernelCols == 32 && //alt:f32
 		contractingSize <= 512 && len(cachedLHSPanels) == 0 && len(cachedRHSPanels) == 0 { //alt:f32
 		stripLen := 32 * contractingSize //alt:f32
@@ -328,7 +336,7 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 		//alt:f64 packedRHS []float64
 	)
 	wantLHSLen := 0
-	if len(cachedLHSPanels) == 0 {
+	if !useM1Direct && len(cachedLHSPanels) == 0 {
 		wantLHSLen = lhsAllocPanels * lhsPanelBufSize
 	}
 	wantRHSLen := 0
@@ -433,8 +441,8 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 			accumOutput,
 			batchCachedLHSPanels, batchCachedRHSPanels,
 			nil, nil,
-			true,
-			isSMEKernel && SMEUseHybridNEON,
+			!useM1Direct,
+			!useM1Direct && isSMEKernel && SMEUseHybridNEON,
 			false,
 			epilogue,
 		)
@@ -479,16 +487,19 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
 	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16 //alt:f32|bf16|f16
 	//alt:f64 isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8
+	useM1Direct := NEONUseAsm && lhsCrossSize == 1 && len(cachedLHSPanels) == 0 && (params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16 || params.RHSL1KernelCols == 32) //alt:f32|bf16
+	//alt:f64 useM1Direct := NEONUseAsm && lhsCrossSize == 1 && len(cachedLHSPanels) == 0 && (params.RHSL1KernelCols == 4 || params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16)
+	//alt:f16 useM1Direct := false
 	numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
 	rhsPanelsPerBatch := numKPanels * numColPanels
 	numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
 	lhsPanelsPerBatch := numKPanels * numRowPanels
-	needTempOutput := !isSMEKernel && ((lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0))
+	needTempOutput := (useM1Direct && rhsCrossSize%params.RHSL1KernelCols != 0) || (!useM1Direct && !isSMEKernel && ((lhsCrossSize%params.LHSL1KernelRows != 0) || (rhsCrossSize%params.RHSL1KernelCols != 0)))
 
 	var workBuf [1024]matmul.WorkItem
 	var workItems []matmul.WorkItem
 	coarseEnd := 0
-	if isSMEKernel && SMEUseHybridNEON && batchSize < maxWorkers {
+	if !useM1Direct && isSMEKernel && SMEUseHybridNEON && batchSize < maxWorkers {
 		workItems, coarseEnd = smeAppendHybridWorkItems(
 			workBuf[:0], batchSize, lhsCrossSize, rhsCrossSize, &params, maxWorkers)
 	} else {
@@ -543,7 +554,7 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 				sharedRHSReady = sharedRHSReadyBuf[:totalPanels]
 			}
 		}
-		if numColPanels > 1 && isSMEKernel && SMEUseHybridNEON && len(cachedLHSPanels) == 0 && batchSize*lhsPanelsPerBatch <= len(sharedLHSReadyBuf) {
+		if !useM1Direct && numColPanels > 1 && isSMEKernel && SMEUseHybridNEON && len(cachedLHSPanels) == 0 && batchSize*lhsPanelsPerBatch <= len(sharedLHSReadyBuf) {
 			totalPanels := batchSize * lhsPanelsPerBatch
 			var flat []float32 //alt:f32
 			//alt:bf16 var flat []bfloat16.BFloat16
@@ -655,7 +666,7 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 			}
 		}
 		refreshSME := func() {
-			if !isSMEKernel || !SMEUseHybridNEON {
+			if useM1Direct || !isSMEKernel || !SMEUseHybridNEON {
 				return
 			}
 			curCl, curEff := smeCurrentCluster()
@@ -680,7 +691,7 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 			}
 		}
 
-		if isSMEKernel && SMEUseHybridNEON {
+		if !useM1Direct && isSMEKernel && SMEUseHybridNEON {
 			refreshSME()
 			shouldDrop := SMEWorkersPerCluster > 0 && !useSME && (SMETwoSMEsOnly || (SMEDropECoreNEON && isEfficiencyCore))
 			if shouldDrop && int(droppedWorkers.Add(1)) < maxWorkers {
@@ -734,7 +745,7 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 			//alt:f16 packedLHS []float16.Float16
 			//alt:f64 packedLHS []float64
 		)
-		if len(cachedLHSPanels) == 0 && len(sharedLHSPanels) == 0 {
+		if !useM1Direct && len(cachedLHSPanels) == 0 && len(sharedLHSPanels) == 0 {
 			var ok bool
 			packedLHSRef, packedLHS, ok = GetBuffer[float32](backend, lhsAllocPanels*lhsPanelBufSize) //alt:f32
 			//alt:bf16 packedLHSRef, packedLHS, ok = GetBuffer[bfloat16.BFloat16](backend, lhsAllocPanels*lhsPanelBufSize)
@@ -777,9 +788,13 @@ func neonLargeParallelWithParamsFloat32( //alt:f32
 			}
 			defer ReleaseBuffer(packedOutputRef)
 			if numKPanels > 1 {
-				const maxAccumPanels = 64
-				accumOutputRef, accumOutput, ok = GetBuffer[float32](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
-				//alt:f64 accumOutputRef, accumOutput, ok = GetBuffer[float64](backend, maxAccumPanels*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+				maxAccumPanels := min(64, numRowPanels)
+				accumRows := params.LHSPanelCrossSize
+				if useM1Direct {
+					accumRows = 1
+				}
+				accumOutputRef, accumOutput, ok = GetBuffer[float32](backend, maxAccumPanels*accumRows*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+				//alt:f64 accumOutputRef, accumOutput, ok = GetBuffer[float64](backend, maxAccumPanels*accumRows*params.RHSPanelCrossSize)
 				if !ok {
 					return
 				}
@@ -1492,8 +1507,15 @@ func neonLargeMatrixSliceFloat32( //alt:f32
 			numMPanels = ((rowEnd - 1) / params.LHSPanelCrossSize) - (rowStart / params.LHSPanelCrossSize) + 1
 		}
 		canCacheAllLHS := len(packedLHS) >= numMPanels*numKPanels*lhsPanelBufSize
+		useM1Direct := NEONUseAsm && rowEnd-rowStart == 1 && len(cachedLHSPanels) == 0 && (params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16 || params.RHSL1KernelCols == 32) //alt:f32|bf16
+		//alt:f64 useM1Direct := NEONUseAsm && rowEnd-rowStart == 1 && len(cachedLHSPanels) == 0 && (params.RHSL1KernelCols == 4 || params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16)
+		//alt:f16 useM1Direct := false
+		accumPanelRows := params.LHSPanelCrossSize
+		if useM1Direct {
+			accumPanelRows = 1
+		}
 		accumPanelStride := params.RHSPanelCrossSize
-		panelSize := params.LHSPanelCrossSize * accumPanelStride
+		panelSize := accumPanelRows * accumPanelStride
 		useAccum := len(accumBuffer) >= numMPanels*panelSize
 
 		// Loop 4 (p): Tiling the contracting axis (K)
@@ -1531,6 +1553,29 @@ func neonLargeMatrixSliceFloat32( //alt:f32
 				neonPackLHSSME(rhsMatrix, packedRHS, rhsPanelColIdx, contractingPanelIdx, contractingSize,
 					rhsPanelWidth, contractingPanelWidth, params.RHSL1KernelCols, useSME)
 			}
+
+			if useM1Direct { //alt:f32|bf16|f64
+				lhsSlice := lhsMatrix[rowStart*contractingSize+contractingPanelIdx : rowStart*contractingSize+contractingPanelIdx+contractingPanelWidth] //alt:f32|bf16|f64
+				isFirstContractingPanel := contractingPanelIdx == 0                                                                                        //alt:f32|bf16|f64
+				accumulate := !isFirstContractingPanel                                                                                                     //alt:f32|bf16|f64
+				if rhsPanelWidth%params.RHSL1KernelCols == 0 {                                                                                             //alt:f32|bf16|f64
+					outOffset := rowStart*rhsCrossSize + rhsPanelColIdx //alt:f32|bf16|f64
+					neonLargeKernelM1Float32Asm(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate) //alt:f32
+					//alt:bf16 neonLargeKernelM1BFloat16Asm(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate)
+					//alt:f64 neonLargeKernelM1Float64Asm(lhsSlice, packedRHS, outputMatrix[outOffset:outOffset+rhsPanelWidth], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate)
+				} else if useAccum { //alt:f32|bf16|f64
+					neonLargeKernelM1Float32Asm(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate) //alt:f32
+					//alt:bf16 neonLargeKernelM1BFloat16Asm(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate)
+					//alt:f64 neonLargeKernelM1Float64Asm(lhsSlice, packedRHS, accumBuffer[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, accumulate)
+				} else { //alt:f32|bf16|f64
+					neonLargeKernelM1Float32Asm(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, false) //alt:f32
+					//alt:bf16 neonLargeKernelM1BFloat16Asm(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, false)
+					//alt:f64 neonLargeKernelM1Float64Asm(lhsSlice, packedRHS, packedOutput[:accumPanelStride], contractingPanelWidth, rhsPanelWidth, params.RHSL1KernelCols, false)
+					neonApplyPackedOutputFloat32(packedOutput, outputMatrix, isFirstContractingPanel, params.RHSPanelCrossSize, rowStart, rhsPanelColIdx, rhsCrossSize, 1, rhsPanelWidth) //alt:f32|bf16
+					//alt:f64 neonApplyPackedOutputFloat64(packedOutput, outputMatrix, isFirstContractingPanel, params.RHSPanelCrossSize, rowStart, rhsPanelColIdx, rhsCrossSize, 1, rhsPanelWidth)
+				} //alt:f32|bf16|f64
+				continue //alt:f32|bf16|f64
+			} //alt:f32|bf16|f64
 
 			// Loop 3 (ic): Tiling LHS cross axis (M), i.e. the output rows.
 			for mIdx, lhsPanelRowIdx := 0, rowStart; lhsPanelRowIdx < rowEnd; mIdx++ {
@@ -1572,7 +1617,7 @@ func neonLargeMatrixSliceFloat32( //alt:f32
 
 				isFirstContractingPanel := contractingPanelIdx == 0
 				accumulate := !isFirstContractingPanel
-				canDirectOutput := isSMEKernel || ((lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0))
+				canDirectOutput := (!useM1Direct && isSMEKernel) || ((useM1Direct || lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0))
 
 				if canDirectOutput {
 					outOffset := lhsPanelRowIdx*rhsCrossSize + rhsPanelColIdx
@@ -1637,7 +1682,7 @@ func neonLargeMatrixSliceFloat32( //alt:f32
 				lhsPanelEnd := (rowPanelIdx + 1) * params.LHSPanelCrossSize
 				lhsPanelHeight := min(rowEnd, lhsPanelEnd) - lhsPanelRowIdx
 
-				canDirectOutput := isSMEKernel || ((lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0))
+				canDirectOutput := (!useM1Direct && isSMEKernel) || ((useM1Direct || lhsPanelHeight%params.LHSL1KernelRows == 0) && (rhsPanelWidth%params.RHSL1KernelCols == 0))
 				if !canDirectOutput {
 					accumOffset := mIdx * panelSize
 					accumSlice := accumBuffer[accumOffset : accumOffset+lhsPanelHeight*accumPanelStride]

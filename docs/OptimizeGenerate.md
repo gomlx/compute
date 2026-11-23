@@ -13,7 +13,8 @@ Across the optimization milestones so far, **decode throughput improved 5.9×** 
 | **2. `OnlyLastTokenLogits` + Native `AVX512_BF16` (`VDPBF16PS`)** (`08b0c62` / `84d082ba` / `c9b0027`) | 1.1 s *(incl. prepack)* | 787 ms (`452 tok/s`) | **10.31–10.48 tok/s** (**5.7×**) | 1.4 s (`14.4` cores) | 14.7 GiB | Skip unused prompt `lm_head` rows (`[1, 356, 1536] → [1, 1, 1536]`); native `VDPBF16PS` K2-interleaved BF16 GEMM kernels |
 | **3. Zero-Copy KV-Cache Decode + Pre-Allocated Cache** (`91b702f0` / `d45a21c`) | 1.2 s *(incl. prepack)* | 942 ms (`378 tok/s`) *(regression from 2× larger prefill bool mask)* | **9.93–10.21 tok/s** (10-ex avg) | 1.4 s (`13.8–14.3` cores) | 16.9 GiB *(grew with static prompt graphs)* | Pre-allocate KV cache up to `MaxLength` (no mid-decode `PadTensors` / recompiles); `WithSeqLens` zero-copy decode; `sdpaMultiHeadHalf` converts only `kvLimit` rows; bulk `DynamicUpdateSlice` prefill |
 | **4. Step 1 — Prefill Quick Wins** (`5a5e8c85` / `43af1d6`) | 1.1 s *(incl. prepack)* | **564 ms (`631 tok/s`)** (**+67%**) | **10.54 tok/s** (10-ex avg, **5.7×**) | 1.4 s (`14.47` cores) | **16.0 GiB** (`-0.9 GiB`) | Zero-copy `WithSeqLens` + `WithCausalMask(true)` prefill; head-invariant `[B, Sq, 1, Skv]` masks (no bool transpose); `WithDynamicAxes` on `promptExec`; cap local KV cache to `sliding_window=512` |
-| **5. Step 2 — Decode Parallelism & Buffer Tightening** *(uncommitted)* | 1.1 s *(incl. prepack)* | **561 ms (`635 tok/s`)** *(par=32)* / 585 ms *(par=16)* | **10.70 tok/s** *(default par=32)* / **10.85 tok/s** *(par=16, **5.9×**)* | 1.6 s (`16.61` cores) / **1.2 s** (`13.56` cores) | 16.9 GiB *(par=32)* / **16.0 GiB** *(par=16)* | Balanced 1D `N`-split (`128`-col panel-aligned chunks on `M<=mr`); `MinCachedLargeMatMulFlopsPerWorker=128K`; single shared pre-packed LHS for `M<=mr`; `accumOutput` `4 MiB → 3–16 KiB/worker` |
+| **5. Step 2 — Decode Parallelism & Buffer Tightening** (`6c4cb63`) | 1.1 s *(incl. prepack)* | **561 ms (`635 tok/s`)** *(par=32)* / 585 ms *(par=16)* | **10.70 tok/s** *(default par=32)* / **10.85 tok/s** *(par=16, **5.9×**)* | 1.6 s (`16.61` cores) / **1.2 s** (`13.56` cores) | 16.9 GiB *(par=32)* / **16.0 GiB** *(par=16)* | Balanced 1D `N`-split (`128`-col panel-aligned chunks on `M<=mr`); `MinCachedLargeMatMulFlopsPerWorker=128K`; single shared pre-packed LHS for `M<=mr`; `accumOutput` `4 MiB → 3–16 KiB/worker` |
+| **6. Step 3 — `M=1` GEMV Microkernels (AVX-512, AVX2, NEON+SME)** *(uncommitted)* | 1.1 s *(incl. prepack)* | 561–585 ms | **10.78 tok/s** *(par=32)* / **10.92–11.05 tok/s** *(par=16 idle)*; **+18–65% Zen 5 L3-warm**; **2.0×–7.5× Apple M6** | **1.5 s** *(par=32)* / **1.0–1.2 s** (`-9.5%` `FusedDense` CPU) | **16.0 GiB** | Dedicated linear 1-strip `M=1` GEMV assembly kernels for `BF16`, `F32`, `F64` (zero `PackLHS`, direct output store); bypasses SME `32×32` + single-worker cap on ARM64 |
 | **Reference: Ollama (`llama.cpp` CPU, `gemma4:e2b-it-bf16`)** | 300 ms *(warm)* | 545 ms (`654 tok/s`) | **11.86–12.27 tok/s** | 1.36 s (`15.93` cores) | ~11.4 GiB | 16 physical threads (`n_threads=16`), spin-wait barrier, GEMV `M=1` BF16 dot kernel |
 
 ---
@@ -28,10 +29,10 @@ Across the optimization milestones so far, **decode throughput improved 5.9×** 
 
 ### Model Profile (`google/gemma-4-E2B-it`, `BFloat16`)
 - **Architecture**: 35 layers (`d_model=1536`, `num_heads=8`, `num_kv_heads=1`), hybrid Local (`sliding_window=512`, `head_dim=256`) and Global (`head_dim=512`, proportional partial RoPE `0.25`) attention, KV-shared layers (`layer >= 15`) with double-wide MLP (`ffn_dim=12288` vs `6144` on layers `0..14`), Per-Layer Embeddings (PLE, `256`-dim), tied embeddings (`vocab_size=262144`).
-- **Active weights per token**:
-  - 35-layer MLP + attention + PLE weights: **`~3.42 GB`** (`BFloat16`)
+- **Active weights per token** (exact sum across all 277 `FusedDense` ops from `GOMLX_OP_PROFILE`):
+  - 35-layer MLP + attention + PLE weights: **`~3.76 GB`** (`BFloat16`)
   - `lm_head` (`[262144, 1536]`): **`~0.805 GB`** (`BFloat16`)
-  - **Total read per decoded token**: **`~4.22 GB/token`** (far exceeding L3 cache → strictly DDR5 bandwidth-bound during `M=1` decode).
+  - **Total read per decoded token**: **`~4.56 GB/token`** (far exceeding L3 cache → strictly DDR5 bandwidth-bound during `M=1` decode; `87.5 ms` `FusedDense` wall time already sustains **`52.1 GB/s`** across all 277 calls).
 
 ### Benchmark & Profiling Commands
 Run from `/home/janpf/Projects/gomlx/go-huggingface`:
@@ -241,5 +242,128 @@ Running `GOMLX_OP_PROFILE=30` on decode revealed **the exact mathematical locati
 2. **`avx512LargeKernelBFloat16BF16Asm` still accounts for `94.6%` of all decode CPU time (`54.6s / 57.7s`)** due to executing 7/8 zero rows on `M=1`. Step 3's dedicated `1×64`/`1×128` `VDPBF16PS` GEMV microkernel will cut decode CPU time by ~3–4× (lowering core/power draw and helping `down_proj` reach `~58+ GB/s`).
 3. **Physical-core parallelism (`par=16` vs `par=32`)**: `par=16` already beats `par=32` in **decode (`10.85 vs 10.70 tok/s`)**, **CPU efficiency (`1.2s vs 1.6s`, `-25%` CPU time)**, and **RAM (`16.0 vs 16.9 GiB`, `-0.9 GiB`)** — and matches warm prefill (`2,937 vs 2,949 ms`).
 4. **Additional `~3.9 ms/tok` non-matmul wins surfaced by `GOMLX_OP_PROFILE`**: zero-copy `Reshape` views on non-owned KV cache buffers (`0.74 ms`), SIMD/parallel `ArgMinMax` on `BFloat16` (`0.67 ms`), and fusing Gemma 4 RMSNorm (`~2.5 ms`).
+
+---
+
+## 7. Step 4 Experiment — Bounded Spin-Wait Scheduler Barrier (Tested & Reverted)
+
+Before implementing Step 3, we tested a bounded spin-wait barrier in [`compute/internal/gobackend/scheduler/scheduler.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/scheduler/scheduler.go) using hardware `PAUSE` (`amd64`) / `YIELD` (`arm64`) instructions, scoped strictly to single-caller executions (`numActiveCalls == 1`) so idle or concurrent workloads never burn CPU.
+
+### Measured Result (Regression — Cleanly Reverted)
+- **Correctness**: Passed `go test -race` cleanly.
+- **Performance (`par=16`, Ex #4–#5)**: Decode **regressed** from **`10.82 tok/s` → `10.68 tok/s`**, `FusedDense` wall time increased (`87.5 ms → 90.1 ms`), and `CPUTime/tok` jumped (`1.2s → 1.7s`).
+- **Why it regressed (and the `4.56 GB/tok` bandwidth realization)**:
+  1. Summing exact weight bytes across all 277 `FusedDense` calls in `GOMLX_OP_PROFILE` revealed the true traffic per decoded token is **`4.56 GB/token`** (not `4.22 GB`). At `87.5 ms` `FusedDense` wall time, Step 2 was **already sustaining `52.1 GB/s`** across all 277 calls (nearly saturating dual-channel DDR5). Even `par=8` already reaches `10.66 tok/s` at just `828 ms` CPU/tok!
+  2. Spinning 15 idle workers between DRAM-bound ops burned Zen 5 TDP/boost headroom and increased atomic/channel coherency traffic without unlocking any extra DDR5 bandwidth.
+  3. **Conclusion**: Reverted cleanly. The remaining wall-clock gap to Ollama (`10.9–11.0` vs `11.9–12.2 tok/s`) on Zen 5 cold-DRAM decode is primarily **DDR5 effective bandwidth** (specifically **4 KiB L2 dTLB misses** over `4.56 GB` — solvable via `MADV_HUGEPAGE` — plus `~3.9 ms/tok` of non-matmul ops), not scheduler futex wakeup latency.
+
+---
+
+## 8. Step 3 Implementation & Measured Results — `M=1` GEMV Microkernels
+
+### Changes Implemented (Across Architectures & DTypes)
+Dedicated **`M=1` direct GEMV assembly microkernels** were implemented across **AVX-512**, **AVX2**, and **ARM64 NEON + SME** for **`BFloat16`**, **`Float32`**, and **`Float64`**. All kernels read the **exact same pre-packed RHS panels** built for prefill (`M > 1`) and stream directly from raw contiguous 1-row `lhs` into `outputMatrix` (zero `PackLHS`, zero `packedOutput` / `accumBuffer` when `N % Nr == 0`).
+
+1. **AVX-512** ([`compute/internal/gobackend/dot/matmul/avx512/`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/)):
+   - [`large_m1_amd64_bfloat16_bf16.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/large_m1_amd64_bfloat16_bf16.s): `avx512LargeKernelM1BFloat16BF16Asm` — linear 1-strip `1×32` kernel using native `VDPBF16PS` on K2-interleaved panels, 4×K-pair unrolled across 4 independent accumulator pairs (`Z0..Z7`), handling both even and odd `K` directly from raw `lhs`.
+   - [`large_m1_amd64_bfloat16.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/large_m1_amd64_bfloat16.s): `avx512LargeKernelM1BFloat16Asm` — non-`AVX512_BF16` widening fallback (`VPMOVZXWD` + `VPSLLD` + `VFMADD231PS`).
+   - [`large_m1_amd64_float32.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/large_m1_amd64_float32.s): `avx512LargeKernelM1Float32Asm` (`1×32`, 4×K unrolled).
+   - [`large_m1_amd64_float64.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx512/large_m1_amd64_float64.s): `avx512LargeKernelM1Float64Asm` (`1×16`, 4×K unrolled).
+   - **Key design lesson**: An initial 4-strip parallel `1×128` AVX-512 kernel regressed cold-DRAM `Decode_gate_12288` (`640 → 854 µs`) because `stripBytes = 128 × 128 = 16 KiB` is an exact multiple of Zen 5's 4 KiB L1d cache-set stride (causing 4-way set aliasing and 64 simultaneous DRAM streams across 16 cores). Switching to a **linear 1-strip 4×K unrolled** stream (`512 B/iter` sequential) eliminated cache aliasing, recovered full cold-DRAM bandwidth, and boosted L3-warm throughput by **`+18%` to `+65%`**.
+
+2. **AVX2** ([`compute/internal/gobackend/dot/matmul/avx2/`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx2/)):
+   - [`large_m1_amd64_bfloat16.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx2/large_m1_amd64_bfloat16.s): `avx2LargeKernelM1BFloat16Asm` (`1×16`, 4×K unrolled, `VPMOVZXWD` + `VPSLLD` BF16→F32 unpacking + `VFMADD231PS`).
+   - [`large_m1_amd64_float32.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx2/large_m1_amd64_float32.s): `avx2LargeKernelM1Float32Asm` (`1×16`, 4×K unrolled).
+   - [`large_m1_amd64_float64.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/avx2/large_m1_amd64_float64.s): `avx2LargeKernelM1Float64Asm` (`1×8`, 4×K unrolled).
+
+3. **ARM64 NEON + SME** ([`compute/internal/gobackend/dot/matmul/neon/`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/neon/)):
+   - [`large_m1_arm64.s`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/neon/large_m1_arm64.s): `neonLargeKernelM1Float32Asm` (`Nr ∈ {8, 16, 32}`), `neonLargeKernelM1BFloat16Asm` (`Nr ∈ {8, 16, 32}`, `SHLL+FMLA`), and `neonLargeKernelM1Float64Asm` (`Nr ∈ {4, 8, 16}`).
+   - **Crucial SME bypass in [`neon/large.go`](file:///home/janpf/Projects/gomlx/compute/internal/gobackend/dot/matmul/neon/large.go)**: Previously, `M=1` on Apple Silicon SME hit `smeShouldUseSingleWorker` (forcing **1 core**!) and ran `32×32` SME tiles (31/32 zero rows) behind SME cluster locks. With `useM1Direct`, `M=1` runs NEON GEMV directly across **all CPU cores** on the exact same SME-packed `Nr=32` / `Nr=16` panels (with zero SME lock contention and zero re-packing).
+
+4. **`Int8` Status Audit**:
+   - Non-quantized `dot/matmul` has no SIMD `int8` kernels (handled by generic `nosimd.go`).
+   - Quantized `int8` (`FusedQuantizedDense`) **already has dedicated `M=1` assembly GEMV microkernels with 1D `N`-strip parallelization (`numMBlocks == 1`)** across all three architectures: AVX-512 VNNI (`quantizedPanelKernel1x32AVX512VNNIAsm`), AVX2 (`quantizedPanelKernel1x16AVX2Asm`), and NEON/SME (`quantizedPanelKernel1x16NEONAsm`, with `DispatchQuantizedPanelGEMMSME` delegating `M < 24` directly to NEON).
+
+### Measured Results: Apple Silicon M6 (`pea`, 12 cores, SME-packed cached RHS)
+
+Tested on `pea` (`Darwin arm64`, Apple M6, `go1.27.4`, `GOEXPERIMENT=simd`; all unit tests + `-race` passing):
+
+| Gemma 4 Shape (`M=1`, Cached RHS) | Dtype | Before Step 3 (SME `32×32`) | After Step 3 (NEON `M=1` GEMV) | Speedup | Effective BW |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| `k_256 [1 × 1536 × 256]` | `BFloat16` | 33.0 µs (`23.8 GB/s`) | **13.6 µs** | **2.43×** | `58.0 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `BFloat16` | 149.2 µs (`42.2 GB/s`) | **75.6 µs** | **1.97×** | `83.2 GB/s` |
+| `o_1536 [1 × 2048 × 1536]` | `BFloat16` | 223.8 µs (`28.1 GB/s`) | **82.1 µs** | **2.73×** | `76.7 GB/s` |
+| `gate_6144 [1 × 1536 × 6144]` | `BFloat16` | 499.2 µs (`37.8 GB/s`) | **198.7 µs** | **2.51×** | `95.0 GB/s` |
+| `down_6144 [1 × 6144 × 1536]` | `BFloat16` | 1,293.1 µs (`14.6 GB/s`) | **171.8 µs** | **7.52×** | `109.8 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `BFloat16` | 619.6 µs (`60.9 GB/s`) | **288.8 µs** | **2.15×** | **`130.7 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `BFloat16` | 1,032.8 µs (`36.6 GB/s`) | **291.7 µs** | **3.54×** | **`129.4 GB/s`** |
+| `down_6144 [1 × 6144 × 1536]` | `Float32` | 426.8 µs (`88.5 GB/s`) | **229.0 µs** | **1.86×** | **`164.8 GB/s`** |
+| `gate_12288 [1 × 1536 × 12288]` | `Float32` | 3,785.2 µs (`19.9 GB/s`) | **548.7 µs** | **6.90×** | **`137.6 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `Float32` | 1,115.5 µs (`67.7 GB/s`) | **548.4 µs** | **2.03×** | **`137.7 GB/s`** |
+| `q_2048 [1 × 1536 × 2048]` | `Float64` | 378.8 µs (`66.4 GB/s`) | **168.4 µs** | **2.25×** | **`149.5 GB/s`** |
+| `down_6144 [1 × 6144 × 1536]` | `Float64` | 2,554.7 µs (`29.6 GB/s`) | **602.4 µs** | **4.24×** | **`125.3 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `Float64` | 5,345.2 µs (`28.2 GB/s`) | **1,319.6 µs** | **4.05×** | **`114.4 GB/s`** |
+
+### Measured Results: AMD Zen 5 (`9950X3D`, `par=16`, AVX-512 & AVX2 — Before vs. After Step 3)
+
+Measured back-to-back on the exact Step 2 baseline (`6c4cb63`) vs. Step 3 working tree (`GOEXPERIMENT=simd`, `par=16`, cached RHS):
+
+#### 1. AVX-512 Before vs. After Step 3 (`BF16` Native `VDPBF16PS`, `BF16` Widen, `Float32`, `Float64`, and Cold-DRAM)
+
+| Shape (`M=1`, Cached RHS) | Dtype / Kernel | Before Step 3 (`8×32`/`8×16`) | After Step 3 (`1×32`/`1×16` GEMV) | Speedup | After Effective BW |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| `k_256 [1 × 1536 × 256]` | `BF16` Native (`VDPBF16PS`) | 13.5 µs (`58.1 GB/s`) | **8.1 µs** | **1.67×** | `96.9 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `BF16` Native (`VDPBF16PS`) | 52.3 µs (`120.2 GB/s`) | **35.6 µs** | **1.47×** | `176.8 GB/s` |
+| `o_1536 [1 × 2048 × 1536]` | `BF16` Native (`VDPBF16PS`) | 55.9 µs (`112.6 GB/s`) | **37.6 µs** | **1.49×** | `167.3 GB/s` |
+| `gate_6144 [1 × 1536 × 6144]` | `BF16` Native (`VDPBF16PS`) | 79.0 µs (`239.0 GB/s`) | **68.3 µs** | **1.16×** | `276.5 GB/s` |
+| `down_6144 [1 × 6144 × 1536]` | `BF16` Native (`VDPBF16PS`) | 85.6 µs (`220.4 GB/s`) | **69.0 µs** | **1.24×** | `273.6 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `BF16` Native (`VDPBF16PS`) | 130.0 µs (`290.5 GB/s`) | **107.3 µs** | **1.21×** | **`351.7 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `BF16` Native (`VDPBF16PS`) | 170.9 µs (`220.8 GB/s`) | **137.0 µs** | **1.25×** | `275.4 GB/s` |
+| `k_256 [1 × 1536 × 256]` | `BF16` Widen (no `AVX512_BF16`) | 31.4 µs (`25.0 GB/s`) | **9.8 µs** | **3.21×** | `80.4 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `BF16` Widen (no `AVX512_BF16`) | 74.1 µs (`84.9 GB/s`) | **41.9 µs** | **1.77×** | `150.0 GB/s` |
+| `down_6144 [1 × 6144 × 1536]` | `BF16` Widen (no `AVX512_BF16`) | 150.4 µs (`125.5 GB/s`) | **73.6 µs** | **2.04×** | `256.5 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `BF16` Widen (no `AVX512_BF16`) | 217.1 µs (`173.9 GB/s`) | **120.0 µs** | **1.81×** | **`314.5 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `BF16` Widen (no `AVX512_BF16`) | 292.9 µs (`128.9 GB/s`) | **137.9 µs** | **2.12×** | `273.8 GB/s` |
+| `k_256 [1 × 1536 × 256]` | `Float32` | 25.5 µs (`61.6 GB/s`) | **14.0 µs** | **1.82×** | `112.3 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `Float32` | 70.4 µs (`178.8 GB/s`) | **56.6 µs** | **1.24×** | `222.3 GB/s` |
+| `gate_6144 [1 × 1536 × 6144]` | `Float32` | 156.7 µs (`240.9 GB/s`) | **107.4 µs** | **1.46×** | **`351.5 GB/s`** |
+| `down_6144 [1 × 6144 × 1536]` | `Float32` | 191.1 µs (`197.6 GB/s`) | **117.2 µs** | **1.63×** | `322.1 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `Float32` *(75.5 MB, spills L3)* | 290.3 µs (`260.1 GB/s`) | 293.3 µs | 0.99× | `257.4 GB/s` |
+| `down_12288 [1 × 12288 × 1536]` | `Float32` | 411.4 µs (`183.5 GB/s`) | **250.4 µs** | **1.64×** | `301.5 GB/s` |
+| `k_256 [1 × 1536 × 256]` | `Float64` | 43.9 µs (`71.6 GB/s`) | **26.0 µs** | **1.69×** | `121.2 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `Float64` | 103.4 µs (`243.4 GB/s`) | **79.7 µs** | **1.30×** | **`315.9 GB/s`** |
+| `down_6144 [1 × 6144 × 1536]` | `Float64` | 380.3 µs (`198.5 GB/s`) | **297.7 µs** | **1.28×** | `253.6 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `Float64` *(151 MB, DRAM)* | 1,015.3 µs (`148.7 GB/s`) | **877.1 µs** | **1.16×** | `172.2 GB/s` |
+| `down_12288 [1 × 12288 × 1536]` | `Float64` *(151 MB, DRAM)* | 1,236.8 µs (`122.1 GB/s`) | **1,050.9 µs** | **1.18×** | `143.7 GB/s` |
+| `ColdDRAM gate_12288` *(377 MB)* | `BF16` Native *(DDR5-bound)* | 585.3 µs (`64.5 GB/s`) | 619.2 µs | 0.95× *(noise)* | `61.0 GB/s` |
+| `ColdDRAM down_12288` *(377 MB)* | `BF16` Native *(DDR5-bound)* | 594.6 µs (`63.5 GB/s`) | **593.4 µs** | **1.00×** | **`63.6 GB/s`** |
+
+#### 2. AVX2 Before vs. After Step 3 (`BF16` Unpack, `Float32`, `Float64`)
+
+| Shape (`M=1`, Cached RHS) | Dtype | Before Step 3 (`6×16`/`6×8`) | After Step 3 (`1×16`/`1×8` GEMV) | Speedup | After Effective BW |
+| :--- | :--- | ---: | ---: | ---: | ---: |
+| `q_2048 [1 × 1536 × 2048]` | `BFloat16` (Unpack) | 77.5 µs (`81.2 GB/s`) | **57.0 µs** | **1.36×** | `110.3 GB/s` |
+| `gate_6144 [1 × 1536 × 6144]` | `BFloat16` (Unpack) | 129.4 µs (`145.9 GB/s`) | **81.9 µs** | **1.58×** | `230.4 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `BFloat16` (Unpack) | 226.5 µs (`166.7 GB/s`) | **120.4 µs** | **1.88×** | **`313.5 GB/s`** |
+| `down_12288 [1 × 12288 × 1536]` | `BFloat16` (Unpack) | 309.8 µs (`121.8 GB/s`) | **166.9 µs** | **1.86×** | `226.2 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `Float32` | 72.1 µs (`174.6 GB/s`) | **59.1 µs** | **1.22×** | `212.9 GB/s` |
+| `gate_6144 [1 × 1536 × 6144]` | `Float32` | 144.0 µs (`262.1 GB/s`) | **120.8 µs** | **1.19×** | **`312.5 GB/s`** |
+| `gate_12288 [1 × 1536 × 12288]` | `Float32` | 281.1 µs (`268.6 GB/s`) | **268.5 µs** | **1.05×** | `281.2 GB/s` |
+| `down_12288 [1 × 12288 × 1536]` | `Float32` | 378.2 µs (`199.6 GB/s`) | **287.7 µs** | **1.31×** | `262.4 GB/s` |
+| `q_2048 [1 × 1536 × 2048]` | `Float64` | 98.2 µs (`256.3 GB/s`) | **79.7 µs** | **1.23×** | **`315.9 GB/s`** |
+| `gate_6144 [1 × 1536 × 6144]` | `Float64` | 326.5 µs (`231.3 GB/s`) | **284.0 µs** | **1.15×** | `265.9 GB/s` |
+| `gate_12288 [1 × 1536 × 12288]` | `Float64` | 923.3 µs (`163.5 GB/s`) | **877.7 µs** | **1.05×** | `172.0 GB/s` |
+| `down_12288 [1 × 12288 × 1536]` | `Float64` | 1,117.5 µs (`135.1 GB/s`) | **1,032.4 µs** | **1.08×** | `146.3 GB/s` |
+
+#### 3. End-to-End Gemma 4 E2B BF16 Decode (`4.56 GB/tok` Cold DRAM on Zen 5)
+- **`GOMLX_OP_PROFILE` (`par=16, ops_sequential`)**: Total `FusedDense` CPU/tok dropped **`1,100 ms → 996 ms` (-9.5%)**, with the biggest savings on narrow-`N` / deep-`K` layers (`down_12288` CPU **`194.7 → 143.0 ms`, -26.6%**; `down_6144` CPU **`68.0 → 50.7 ms`, -25.4%**; `q/o_proj` CPU **`56.8 → 47.3 ms`, -16.7%**; `k/v_proj` wall **`31 → 26 µs`, -16%**).
+- **Why Zen 5 cold-DRAM wall time barely moves while L3-warm jumps `+16%` to `+221%`**: On Zen 5, `ColdDRAM` `BF16` (`61–64 GB/s`) is already completely saturated at the dual-channel DDR5 bus limit (~`64 GB/s`), so the CPU cores spend ~80–85% of cycles stalled waiting on DRAM lines regardless of ALU work. In contrast, whenever weights fit in L3 (or on AVX-512 without `AVX512_BF16`, AVX2, `F32`/`F64`, or Apple M6 SME), removing 7/8 wasted zero-row math + `PackLHS` + `accumBuffer` delivers **`1.16×–3.21×` speedups on x86** and **`1.86×–7.52×` on Apple M6**.
+- **Wall-clock throughput**: On idle Zen 5, Ex #4–#5 improved **`10.79 → 10.92 tok/s`** (peaking at **`11.05 tok/s`** on Ex #4; `avg_cores` `13.54 → 12.91`), and default `par=32` improved **`10.70 → 10.78 tok/s`** (`CPUTime/tok` `1.6s → 1.5s`, `avg_cores` `16.67 → 15.81`).
+
+### Updated Next Priorities
+1. **`MADV_HUGEPAGE` for `ConstantData` Pre-Packed Weight Slabs (`~3–8%` expected cold-DRAM decode gain)**: Linux THP is in `[madvise]` mode; backing immutable `>= 2 MiB` pre-packed weight slabs with 2 MiB pages reduces `4.56 GB` from `1.19M` 4 KiB PTEs to `2,335` 2 MiB PTEs (fitting entirely inside Zen 5's `3,072`-entry L2 dTLB).
+2. **Non-Matmul Decode Quick Wins (`~3.9 ms/tok` = `+0.5 tok/s`)**: Zero-copy `Reshape` on non-owned KV cache views (`0.74 ms`), SIMD/parallel `ArgMinMax` on `BFloat16` (`0.67 ms`), and fused Gemma 4 RMSNorm (`~2.5 ms`).
+3. **Step 5 — Prefill Epilogue BF16 Conversion & Multi-RHS Fusion (`-55–90 ms` on 356-tok prefill)**.
+
 
 

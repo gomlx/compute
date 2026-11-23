@@ -111,6 +111,70 @@ func TestAVX512BFloat16Native(t *testing.T) {
 		}
 	})
 
+	t.Run("LargeM1GEMV", func(t *testing.T) {
+		AVX512UseBF16 = true
+		backend, err := gobackend.NewBackend()
+		if err != nil {
+			t.Fatalf("NewBackend: %v", err)
+		}
+		defer backend.Finalize()
+
+		for _, tc := range []struct {
+			K, N int
+		}{
+			{1, 1}, {1, 32}, {1, 128}, {1, 129},
+			{2, 32}, {3, 33}, {17, 160}, {65, 257},
+			{256, 128}, {257, 128}, {512, 256}, {513, 513},
+			{1536, 1536}, {1536, 2048}, {1537, 1539},
+		} {
+			K, N := tc.K, tc.N
+			lhs := make([]bfloat16.BFloat16, K)
+			for i := range lhs {
+				lhs[i] = bfloat16.FromFloat32(float32((i%11)-5) * 0.25)
+			}
+			rhsNT := make([]bfloat16.BFloat16, K*N)
+			rhsT := make([]bfloat16.BFloat16, N*K)
+			for k := range K {
+				for n := range N {
+					v := bfloat16.FromFloat32(float32(((k*7+n*5)%13)-6) * 0.125)
+					rhsNT[k*N+n] = v
+					rhsT[n*K+k] = v
+				}
+			}
+			ref := make([]float32, N)
+			for n := range N {
+				var sum float32
+				for k := range K {
+					sum += lhs[k].Float32() * rhsNT[k*N+n].Float32()
+				}
+				ref[n] = sum
+			}
+
+			for _, layout := range []dot.Layout{dot.LayoutNonTransposed, dot.LayoutTransposed} {
+				rhs := rhsNT
+				if layout == dot.LayoutTransposed {
+					rhs = rhsT
+				}
+				// Test uncached and pre-packed cached RHS.
+				for _, cached := range []bool{false, true} {
+					var nd *dot.NodeData
+					if cached {
+						cd := &gobackend.ConstantData{}
+						nd = &dot.NodeData{RHSConstantData: cd}
+					}
+					out := make([]float32, N)
+					avx512LargeBFloat16(backend, layout, lhs, rhs, 1, 1, N, K, out, nd)
+					for n, want := range ref {
+						if math.Abs(float64(out[n]-want)) > 1e-3*math.Max(1, math.Abs(float64(want))) {
+							t.Fatalf("LargeM1(K=%d,N=%d,layout=%v,cached=%v) col=%d: got %v, want %v",
+								K, N, layout, cached, n, out[n], want)
+						}
+					}
+				}
+			}
+		}
+	})
+
 	t.Run("SmallTransposedAndNonTransposed", func(t *testing.T) {
 		for _, M := range []int{1, 2, 3, 4, 5, 7, 8, 13} {
 			for _, N := range []int{1, 2, 3, 4, 5, 15, 16, 17, 32, 64, 69} {

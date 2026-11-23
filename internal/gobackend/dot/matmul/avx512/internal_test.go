@@ -929,6 +929,163 @@ func TestAppendWorkItemsNarrowM(t *testing.T) {
 	}
 }
 
+func TestAVX512LargeM1GEMVAllDTypes(t *testing.T) {
+	if !gobackend.IsAVX512Allowed {
+		t.Skip("AVX512 is not supported on this architecture")
+	}
+	backend, err := gobackend.NewBackend()
+	if err != nil {
+		t.Fatalf("NewBackend: %v", err)
+	}
+	defer backend.Finalize()
+
+	shapes := []struct{ K, N int }{
+		{1, 1}, {1, 32}, {3, 33}, {17, 160}, {65, 257},
+		{256, 128}, {513, 513}, {1536, 1536},
+	}
+
+	t.Run("Float32", func(t *testing.T) {
+		for _, tc := range shapes {
+			K, N := tc.K, tc.N
+			lhs := make([]float32, K)
+			for i := range lhs {
+				lhs[i] = float32((i%11)-5) * 0.25
+			}
+			rhsNT := make([]float32, K*N)
+			rhsT := make([]float32, N*K)
+			for k := range K {
+				for n := range N {
+					v := float32(((k*7+n*5)%13)-6) * 0.125
+					rhsNT[k*N+n] = v
+					rhsT[n*K+k] = v
+				}
+			}
+			ref := make([]float32, N)
+			for n := range N {
+				var sum float32
+				for k := range K {
+					sum += lhs[k] * rhsNT[k*N+n]
+				}
+				ref[n] = sum
+			}
+			for _, layout := range []dot.Layout{dot.LayoutNonTransposed, dot.LayoutTransposed} {
+				rhs := rhsNT
+				if layout == dot.LayoutTransposed {
+					rhs = rhsT
+				}
+				for _, cached := range []bool{false, true} {
+					var nd *dot.NodeData
+					if cached {
+						nd = &dot.NodeData{RHSConstantData: &gobackend.ConstantData{}}
+					}
+					out := make([]float32, N)
+					avx512LargeFloat32(backend, layout, lhs, rhs, 1, 1, N, K, out, nd)
+					for n, want := range ref {
+						if math.Abs(float64(out[n]-want)) > 1e-3*math.Max(1, math.Abs(float64(want))) {
+							t.Fatalf("F32 M1(K=%d,N=%d,layout=%v,cached=%v) col=%d: got %v, want %v", K, N, layout, cached, n, out[n], want)
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("Float64", func(t *testing.T) {
+		for _, tc := range shapes {
+			K, N := tc.K, tc.N
+			lhs := make([]float64, K)
+			for i := range lhs {
+				lhs[i] = float64((i%11)-5) * 0.25
+			}
+			rhsNT := make([]float64, K*N)
+			rhsT := make([]float64, N*K)
+			for k := range K {
+				for n := range N {
+					v := float64(((k*7+n*5)%13)-6) * 0.125
+					rhsNT[k*N+n] = v
+					rhsT[n*K+k] = v
+				}
+			}
+			ref := make([]float64, N)
+			for n := range N {
+				var sum float64
+				for k := range K {
+					sum += lhs[k] * rhsNT[k*N+n]
+				}
+				ref[n] = sum
+			}
+			for _, layout := range []dot.Layout{dot.LayoutNonTransposed, dot.LayoutTransposed} {
+				rhs := rhsNT
+				if layout == dot.LayoutTransposed {
+					rhs = rhsT
+				}
+				for _, cached := range []bool{false, true} {
+					var nd *dot.NodeData
+					if cached {
+						nd = &dot.NodeData{RHSConstantData: &gobackend.ConstantData{}}
+					}
+					out := make([]float64, N)
+					avx512LargeFloat64(backend, layout, lhs, rhs, 1, 1, N, K, out, nd)
+					for n, want := range ref {
+						if math.Abs(out[n]-want) > 1e-9*math.Max(1, math.Abs(want)) {
+							t.Fatalf("F64 M1(K=%d,N=%d,layout=%v,cached=%v) col=%d: got %v, want %v", K, N, layout, cached, n, out[n], want)
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("BFloat16WidenFallback", func(t *testing.T) {
+		origBF16 := AVX512UseBF16
+		AVX512UseBF16 = false
+		defer func() { AVX512UseBF16 = origBF16 }()
+		for _, tc := range shapes {
+			K, N := tc.K, tc.N
+			lhs := make([]bfloat16.BFloat16, K)
+			for i := range lhs {
+				lhs[i] = bfloat16.FromFloat32(float32((i%11)-5) * 0.25)
+			}
+			rhsNT := make([]bfloat16.BFloat16, K*N)
+			rhsT := make([]bfloat16.BFloat16, N*K)
+			for k := range K {
+				for n := range N {
+					v := bfloat16.FromFloat32(float32(((k*7+n*5)%13)-6) * 0.125)
+					rhsNT[k*N+n] = v
+					rhsT[n*K+k] = v
+				}
+			}
+			ref := make([]float32, N)
+			for n := range N {
+				var sum float32
+				for k := range K {
+					sum += lhs[k].Float32() * rhsNT[k*N+n].Float32()
+				}
+				ref[n] = sum
+			}
+			for _, layout := range []dot.Layout{dot.LayoutNonTransposed, dot.LayoutTransposed} {
+				rhs := rhsNT
+				if layout == dot.LayoutTransposed {
+					rhs = rhsT
+				}
+				for _, cached := range []bool{false, true} {
+					var nd *dot.NodeData
+					if cached {
+						nd = &dot.NodeData{RHSConstantData: &gobackend.ConstantData{}}
+					}
+					out := make([]float32, N)
+					avx512LargeBFloat16(backend, layout, lhs, rhs, 1, 1, N, K, out, nd)
+					for n, want := range ref {
+						if math.Abs(float64(out[n]-want)) > 1e-3*math.Max(1, math.Abs(float64(want))) {
+							t.Fatalf("BF16Widen M1(K=%d,N=%d,layout=%v,cached=%v) col=%d: got %v, want %v", K, N, layout, cached, n, out[n], want)
+						}
+					}
+				}
+			}
+		}
+	})
+}
+
 // TestAVX512LargeParallelUnalignedPanels tests multi-worker large GEMMs where worker row slices start at
 // rowStart % Mc != 0 and end at rowEnd % Mr != 0 with numKPanels > 1 (exercising useAccum copy-back,
 // L2 row sub-chunking, cached/uncached LHS & RHS panels, and both ASM 8x32 and Go SIMD 4x32 microkernels).

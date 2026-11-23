@@ -27,6 +27,16 @@ func avx512LargeKernelBFloat16BF16Asm(
 )
 
 //go:noescape
+func avx512LargeKernelM1BFloat16BF16Asm(
+	lhs []bfloat16.BFloat16,
+	packedRHS []bfloat16.BFloat16,
+	out []float32,
+	contractingLen int,
+	rhsActiveCols int,
+	accumulate bool,
+)
+
+//go:noescape
 func avx512PackLHSKernelRows8BFloat16K2Asm(
 	lhs, panel []bfloat16.BFloat16,
 	lhsRowStart, lhsColStart, lhsCols,
@@ -117,6 +127,22 @@ func avx512LargeKernelBFloat16AsmDispatch(
 		lhsActiveRows, rhsActiveCols,
 		accumulate,
 	)
+}
+
+// avx512LargeKernelM1BFloat16AsmDispatch routes M=1 BFloat16 GEMV to the native VDPBF16PS
+// microkernel when AVX512_BF16 is enabled, or the F32-widening VFMADD231PS M=1 fallback otherwise.
+func avx512LargeKernelM1BFloat16AsmDispatch(
+	lhs, packedRHS []bfloat16.BFloat16,
+	out []float32,
+	contractingLen int,
+	rhsActiveCols int,
+	accumulate bool,
+) {
+	if AVX512UseBF16 {
+		avx512LargeKernelM1BFloat16BF16Asm(lhs, packedRHS, out, contractingLen, rhsActiveCols, accumulate)
+		return
+	}
+	avx512LargeKernelM1BFloat16Asm(lhs, packedRHS, out, contractingLen, rhsActiveCols, accumulate)
 }
 
 func avx512SmallTransposedTile4x4BFloat16Dispatch(
