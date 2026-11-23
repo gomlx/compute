@@ -515,6 +515,11 @@ func avx512LargeMultiFloat32( //alt:f32
 	var workBuf [256]matmul.WorkItem
 	workItems := matmul.AppendRowWorkItems(
 		workBuf[:0], batchSize, lhsCrossSize, totalRHSCrossSize, &params, maxWorkers)
+	if maxWorkers > 1 && len(workItems) < maxWorkers/2+1 && totalRHSCrossSize >= 2*params.RHSL1KernelCols {
+		// Not enough batch*M parallelism to keep workers busy (e.g. M=1 decoding);
+		// fall back so the standard path can split across N (rhsCrossSize).
+		return false
+	}
 	maxWorkers = min(maxWorkers, len(workItems))
 
 	maxMPanelsPerSubChunk := max(1, min(4, 16/max(1, numKPanels)))
