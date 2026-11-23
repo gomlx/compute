@@ -27,6 +27,9 @@ var (
 	// IsAVX512VNNIAllowed returns true if AVX-512 VNNI (VPDPBUSD) is supported and AVX-512 is allowed.
 	IsAVX512VNNIAllowed = IsAVX512Allowed && archsimd.X86.AVX512VNNI()
 
+	// IsAVX512BF16Allowed returns true if AVX-512 BF16 (VDPBF16PS) is supported and not disabled by GOMLX_GO_SIMD_AVX512_BF16.
+	IsAVX512BF16Allowed = IsAVX512Allowed && envutil.MustReadBool(envutil.GoBackendSIMD_AVX512_BF16, true) && hasAVX512BF16()
+
 	// ARM64 feature flags are always false on amd64.
 	IsNEONAllowed         = false
 	IsARM64FP16Allowed    = false
@@ -36,6 +39,8 @@ var (
 	IsSVEAllowed          = false
 	IsSMEAllowed          = false
 )
+
+func hasAVX512BF16() bool
 
 func init() {
 	ActiveArchitectures = append(ActiveArchitectures, "SIMD")

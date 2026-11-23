@@ -301,7 +301,7 @@ SIMD and assembly implementations for specific architectures (such as AVX2, AVX-
       t.Skip("ARM64 NEON is not supported or allowed on this host")
   }
   ```
-- **Use `gobackend.Is*Allowed` helpers**: In `internal/gobackend/...`, prefer `gobackend.IsAVX2Allowed`, `gobackend.IsAVXVNNIAllowed`, `gobackend.IsAVX512Allowed`, `gobackend.IsAVX512VNNIAllowed`, `gobackend.IsNEONAllowed`, `gobackend.IsARM64FP16Allowed`, `gobackend.IsARM64BF16Allowed`, `gobackend.IsARM64DotProdAllowed`, `gobackend.IsARM64I8MMAllowed`, `gobackend.IsSVEAllowed`, and `gobackend.IsSMEAllowed`, as they check both hardware support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`, `GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`).
+- **Use `gobackend.Is*Allowed` helpers**: In `internal/gobackend/...`, prefer `gobackend.IsAVX2Allowed`, `gobackend.IsAVXVNNIAllowed`, `gobackend.IsAVX512Allowed`, `gobackend.IsAVX512VNNIAllowed`, `gobackend.IsAVX512BF16Allowed`, `gobackend.IsNEONAllowed`, `gobackend.IsARM64FP16Allowed`, `gobackend.IsARM64BF16Allowed`, `gobackend.IsARM64DotProdAllowed`, `gobackend.IsARM64I8MMAllowed`, `gobackend.IsSVEAllowed`, and `gobackend.IsSMEAllowed`, as they check both hardware support and environment variables (`GOMLX_GO_SIMD_AVX2`, `GOMLX_GO_SIMD_AVX512`, `GOMLX_GO_SIMD_AVX512_BF16`, `GOMLX_GO_SIMD_NEON`, `GOMLX_GO_SIMD_SVE`, `GOMLX_GO_SIMD_SME`).
 - **Never invoke instructions directly in tests without gating**: Without this check, executing unsupported instructions triggers a `SIGILL` (illegal instruction) crash on machines that lack those CPU extensions.
 
 ## Guidelines for Writing SIMD Assembly (AMD64 / AVX2 & AVX-512)

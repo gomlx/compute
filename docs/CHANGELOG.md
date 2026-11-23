@@ -1,3 +1,10 @@
+- 2026-11-23:
+  - Added native AVX512_BF16 (`VDPBF16PS`) acceleration for `BFloat16` matrix multiplications in the `"go"` backend (`internal/gobackend/simdarch`, `internal/gobackend/dot/matmul/avx512`):
+    - Added runtime `CPUID.(EAX=7, ECX=1):EAX[bit 5]` (`AVX512_BF16`) feature detection (`internal/gobackend/simdarch/cpuid_amd64.s`), exposed as `simdarch.IsAVX512BF16Allowed` / `gobackend.IsAVX512BF16Allowed` and gated by `GOMLX_GO_SIMD_AVX512_BF16` (`support/envutil/envutil.go`).
+    - Implemented K2-interleaved `BFloat16` packers (`pack_amd64_bfloat16_k2.s`: `avx512PackLHSKernelRows8BFloat16K2Asm`, `avx512PackRHSTransposed32BFloat16K2Asm`, `avx512PackRHSNonTransposed32BFloat16K2Asm`), native `VDPBF16PS` 8×32 large GEMM microkernel (`large_amd64_bfloat16_bf16.s`, with RHS-outer/LHS-inner L1D-resident loop order and `Kc=256, Nc=512`), and native `VDPBF16PS` small transposed (`4×4`, `4×1`) and non-transposed (`4×64`, `4×16`) microkernels (`small_bfloat16_bf16_amd64.s`).
+    - Automatically falls back to the existing `VPMOVZXWD`+`VPSLLD`+`VFMADD231PS` implementation on AVX-512 CPUs without `AVX512_BF16` support (or when `GOMLX_GO_SIMD_AVX512_BF16=0`).
+    - Achieves up to **717.5 GFlops/s** single-core microkernel throughput (2.85× vs. unpack-to-FP32) and **6.93 TFlops/s** multi-core on `2048×2048×2048` (**2.0×–2.34×** speedup across large matmul sizes on AMD Ryzen 9 9950X3D).
+
 - 2026-11-21:
   - Standardized quantized constant caching across `FusedQuantizedDense` and introduced `QuantizedCachePolicy` (`balanced` default, `always`, `never`) in the `"go"` backend (see `docs/GoBackendMemoryUsage.md`):
     - Replaced boolean `Backend.QuantizedCache` with `QuantizedCachePolicy` (`internal/gobackend/gobackend.go`), configured via `GOMLX_BACKEND="go:quantized_cache=<always|balanced|never>"` (aliases: `true`/`1` or bare `quantized_cache` for `always`; `none`/`false`/`0` for `never`; default `balanced`), and updated `gobackend` package comments and `go:help` option errors.

@@ -20,6 +20,9 @@ var (
 	// IsAVX512VNNIAllowed returns true if AVX-512 VNNI is supported and AVX-512 is allowed.
 	IsAVX512VNNIAllowed = simdarch.IsAVX512VNNIAllowed
 
+	// IsAVX512BF16Allowed returns true if AVX-512 BF16 (VDPBF16PS) is supported and allowed.
+	IsAVX512BF16Allowed = simdarch.IsAVX512BF16Allowed
+
 	// IsNEONAllowed returns true if ARM64 AdvSIMD (NEON) is supported and not disabled by GOMLX_GO_SIMD_NEON.
 	IsNEONAllowed = simdarch.IsNEONAllowed
 

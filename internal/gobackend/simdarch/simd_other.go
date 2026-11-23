@@ -11,6 +11,9 @@ var (
 	// IsAVX512VNNIAllowed returns false on non-amd64 architectures or when SIMD is disabled.
 	IsAVX512VNNIAllowed = false
 
+	// IsAVX512BF16Allowed returns false on non-amd64 architectures or when SIMD is disabled.
+	IsAVX512BF16Allowed = false
+
 	// IsAVX2Allowed returns false on non-amd64 architectures or when SIMD is disabled.
 	IsAVX2Allowed = false
 

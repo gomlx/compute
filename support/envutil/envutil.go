@@ -21,8 +21,9 @@ var (
 // Note that GOMLX_GO_SIMD_AVX512 and GOMLX_GO_SIMD_AVX2 only control AVX512/AVX2-specific implementations
 // (e.g. specialized matmul and activations), while generic portable SIMD code will still use available vector instructions.
 const (
-	GoBackendSIMD_AVX512 = "GOMLX_GO_SIMD_AVX512"
-	GoBackendSIMD_AVX2   = "GOMLX_GO_SIMD_AVX2"
+	GoBackendSIMD_AVX512      = "GOMLX_GO_SIMD_AVX512"
+	GoBackendSIMD_AVX512_BF16 = "GOMLX_GO_SIMD_AVX512_BF16"
+	GoBackendSIMD_AVX2        = "GOMLX_GO_SIMD_AVX2"
 	GoBackendSIMD_NEON   = "GOMLX_GO_SIMD_NEON"
 	GoBackendSIMD_SVE    = "GOMLX_GO_SIMD_SVE"
 	GoBackendSIMD_SME    = "GOMLX_GO_SIMD_SME"
