@@ -98,7 +98,18 @@ func (fe *FunctionExecutable) recordOpProfileNode(node *Node, execMode OpsExecut
 		sb.WriteString(in.Shape.String())
 	}
 	sb.WriteString(") -> ")
-	sb.WriteString(node.Shape.String())
+	if node.IsMultiOutputs() && len(node.MultiOutputsShapes) > 0 {
+		sb.WriteByte('(')
+		for i, outShape := range node.MultiOutputsShapes {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(outShape.String())
+		}
+		sb.WriteByte(')')
+	} else {
+		sb.WriteString(node.Shape.String())
+	}
 	sig := sb.String()
 
 	val, ok := opProfileBySig.Load(sig)

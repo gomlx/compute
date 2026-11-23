@@ -1203,27 +1203,35 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 	eff := backend.Scheduler.EffectiveParallelism()
 	isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 16 //alt:f32|bf16|f16
 	//alt:f64 isSMEKernel := NEONUseAsm && params.LHSL1KernelRows >= 8 && params.RHSL1KernelCols >= 8
+	useM1Direct := NEONUseAsm && batchSize == 1 && lhsCrossSize == 1 && (params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16 || params.RHSL1KernelCols == 32) //alt:f32|bf16
+	//alt:f64 useM1Direct := NEONUseAsm && batchSize == 1 && lhsCrossSize == 1 && (params.RHSL1KernelCols == 4 || params.RHSL1KernelCols == 8 || params.RHSL1KernelCols == 16)
+	//alt:f16 useM1Direct := false
+	minFlopsPerWorker := matmul.MinLargeMatMulFlopsPerWorker
+	if hasPackedCache {
+		minFlopsPerWorker = matmul.MinCachedLargeMatMulFlopsPerWorker
+	}
 	maxWorkers := min(
 		unscaled,
-		max(1, (flops+matmul.MinLargeMatMulFlopsPerWorker-1)/matmul.MinLargeMatMulFlopsPerWorker),
+		max(1, (flops+minFlopsPerWorker-1)/minFlopsPerWorker),
 	)
 	if eff < unscaled {
-		flopsPerWorker := matmul.MinLargeMatMulFlopsPerWorker
-		if isSMEKernel {
+		flopsPerWorker := minFlopsPerWorker
+		if isSMEKernel && !useM1Direct {
 			flopsPerWorker = 256 * 1024 * 1024
 		}
 		maxWorkers = min(
 			eff,
 			max(1, (flops+flopsPerWorker-1)/flopsPerWorker),
 		)
-	} else if isSMEKernel && maxWorkers > 1 && smeShouldUseSingleWorker(flops, backend.Scheduler.IsWholeChipHeld()) {
+	} else if isSMEKernel && !useM1Direct && maxWorkers > 1 && smeShouldUseSingleWorker(flops, backend.Scheduler.IsWholeChipHeld()) {
 		maxWorkers = 1
 	}
 
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
+	baseRHSPanelCrossSize := params.RHSPanelCrossSize
+	fineNc := baseRHSPanelCrossSize
 	if isSMEKernel {
-		fineNc := max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
-		params.RHSPanelCrossSize = fineNc
+		fineNc = max(params.RHSL1KernelCols, min(params.RHSPanelCrossSize, 4*params.RHSL1KernelCols))
 	}
 	if maxWorkers <= 1 {
 		roundedM := ((lhsCrossSize + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
@@ -1237,21 +1245,33 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 	lhsPanelBufSize := params.LHSPanelCrossSize * params.PanelContractingSize
 
 	numTargets := len(targets)
+	targetParams := make([]matmul.CacheParams, numTargets)
 	cachedRHSPanels := make([][][]float32, numTargets) //alt:f32
 	//alt:bf16 cachedRHSPanels := make([][][]bfloat16.BFloat16, numTargets)
 	//alt:f16 cachedRHSPanels := make([][][]float16.Float16, numTargets)
 	//alt:f64 cachedRHSPanels := make([][][]float64, numTargets)
 	rhsPanelsPerBatch := make([]int, numTargets)
+	needM1TempOutput := false
 	needTempOutput := !isSMEKernel && (lhsCrossSize%params.LHSL1KernelRows != 0)
 	needPackedRHS := false
 
 	for tIdx := range numTargets {
 		t := &targets[tIdx]
 		tParams := params
+		if isSMEKernel {
+			fineColPanels := (t.RHSCrossSize + fineNc - 1) / fineNc
+			if batchSize*numKPanels*fineColPanels <= 2048 {
+				tParams.RHSPanelCrossSize = fineNc
+			}
+		}
+		targetParams[tIdx] = tParams
 		numColPanels := (t.RHSCrossSize + tParams.RHSPanelCrossSize - 1) / tParams.RHSPanelCrossSize
 		rhsPanelsPerBatch[tIdx] = numKPanels * numColPanels
-		if !isSMEKernel && t.RHSCrossSize%tParams.RHSL1KernelCols != 0 {
-			needTempOutput = true
+		if t.RHSCrossSize%tParams.RHSL1KernelCols != 0 {
+			needM1TempOutput = true
+			if !isSMEKernel {
+				needTempOutput = true
+			}
 		}
 		if t.NodeData != nil && t.NodeData.RHSConstantData != nil {
 			rhsSlice := t.RHS
@@ -1272,9 +1292,130 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 		}
 	}
 
-	var workBuf [256]matmul.WorkItem
-	workItems := matmul.AppendRowWorkItems(
-		workBuf[:0], batchSize, lhsCrossSize, totalRHSCrossSize, &params, maxWorkers)
+	if useM1Direct {
+		var targetSizesBuf [8]int
+		targetSizes := targetSizesBuf[:0]
+		for tIdx := range numTargets {
+			targetSizes = append(targetSizes, targets[tIdx].RHSCrossSize)
+		}
+		var m1Buf [256]matmul.MultiRHSM1WorkItem
+		m1Items := matmul.AppendMultiRHSM1WorkItems(m1Buf[:0], targetSizes, &targetParams[0], maxWorkers)
+		if len(m1Items) == 0 {
+			return true
+		}
+		m1Workers := min(maxWorkers, len(m1Items))
+		maxRHSPanelCross := baseRHSPanelCrossSize
+		runM1Worker := func(itemIdx int, getNext func() (int, bool)) {
+			var (
+				packedRHSRef *gobackend.Buffer
+				packedRHS    []float32 //alt:f32
+				//alt:bf16 packedRHS []bfloat16.BFloat16
+				//alt:f16 packedRHS []float16.Float16
+				//alt:f64 packedRHS []float64
+			)
+			if needPackedRHS {
+				var ok bool
+				packedRHSRef, packedRHS, ok = GetBuffer[float32](backend, params.PanelContractingSize*maxRHSPanelCross) //alt:f32
+				//alt:bf16 packedRHSRef, packedRHS, ok = GetBuffer[bfloat16.BFloat16](backend, params.PanelContractingSize*maxRHSPanelCross)
+				//alt:f16 packedRHSRef, packedRHS, ok = GetBuffer[float16.Float16](backend, params.PanelContractingSize*maxRHSPanelCross)
+				//alt:f64 packedRHSRef, packedRHS, ok = GetBuffer[float64](backend, params.PanelContractingSize*maxRHSPanelCross)
+				if !ok {
+					return
+				}
+				defer ReleaseBuffer(packedRHSRef)
+			}
+			var (
+				packedOutputRef, accumOutputRef *gobackend.Buffer
+				packedOutput, accumOutput       []float32 //alt:f32|bf16|f16
+				//alt:f64 packedOutput, accumOutput []float64
+			)
+			if needM1TempOutput {
+				var ok bool
+				if numKPanels > 1 {
+					accumOutputRef, accumOutput, ok = GetBuffer[float32](backend, maxRHSPanelCross) //alt:f32|bf16|f16
+					//alt:f64 accumOutputRef, accumOutput, ok = GetBuffer[float64](backend, maxRHSPanelCross)
+					if !ok {
+						return
+					}
+					defer ReleaseBuffer(accumOutputRef)
+				} else {
+					packedOutputRef, packedOutput, ok = GetBuffer[float32](backend, maxRHSPanelCross) //alt:f32|bf16|f16
+					//alt:f64 packedOutputRef, packedOutput, ok = GetBuffer[float64](backend, maxRHSPanelCross)
+					if !ok {
+						return
+					}
+					defer ReleaseBuffer(packedOutputRef)
+				}
+			}
+			for {
+				item := m1Items[itemIdx]
+				t := &targets[item.TargetIdx]
+				neonLargeMatrixSliceFloat32( //alt:f32
+					//alt:bf16 neonLargeMatrixSliceBFloat16(
+					//alt:f16 neonLargeMatrixSliceFloat16(
+					//alt:f64 neonLargeMatrixSliceFloat64(
+					layout,
+					lhs, t.RHS, t.Output,
+					1, t.RHSCrossSize, contractingSize,
+					0, 1, item.ColStart, item.ColEnd,
+					targetParams[item.TargetIdx],
+					nil, packedRHS, packedOutput,
+					accumOutput,
+					nil, cachedRHSPanels[item.TargetIdx],
+					nil, nil,
+					false,
+					false,
+					false,
+					t.Epilogue,
+				)
+				var ok bool
+				itemIdx, ok = getNext()
+				if !ok {
+					return
+				}
+			}
+		}
+		if m1Workers <= 1 {
+			nextIdx := 1
+			runM1Worker(0, func() (int, bool) {
+				if nextIdx >= len(m1Items) {
+					return 0, false
+				}
+				idx := nextIdx
+				nextIdx++
+				return idx, true
+			})
+			return true
+		}
+		var nextItem atomic.Int32
+		backend.Scheduler.SaturateUpTo(m1Workers, func() {
+			first := int(nextItem.Add(1) - 1)
+			if first >= len(m1Items) {
+				return
+			}
+			runM1Worker(first, func() (int, bool) {
+				idx := int(nextItem.Add(1) - 1)
+				if idx >= len(m1Items) {
+					return 0, false
+				}
+				return idx, true
+			})
+		})
+		return true
+	}
+
+	var targetSizesBuf [8]int
+	targetSizes := targetSizesBuf[:0]
+	for tIdx := range numTargets {
+		targetSizes = append(targetSizes, targets[tIdx].RHSCrossSize)
+	}
+
+	var workBuf [256]matmul.MultiRHSWorkItem
+	workItems := matmul.AppendMultiRHS2DWorkItems(
+		workBuf[:0], batchSize, lhsCrossSize, targetSizes, &params, maxWorkers)
+	if len(workItems) == 0 {
+		return true
+	}
 	maxWorkers = min(maxWorkers, len(workItems))
 
 	maxMPanelsPerSubChunk := max(1, min(4, 16/max(1, numKPanels)))
@@ -1351,18 +1492,27 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 			}
 		}
 
+		lastBatch, lastSubRowStart, lastSubRowEnd := -1, -1, -1
 		for {
 			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				for subRowStart := item.LHSRowStart; subRowStart < item.LHSRowEnd; {
 					subRowEnd := min(item.LHSRowEnd, subRowStart+maxMPanelsPerSubChunk*params.LHSPanelCrossSize)
-					lhsPacked := false
-					for tIdx := range numTargets {
+					lhsPacked := batchIdx == lastBatch && subRowStart == lastSubRowStart && subRowEnd == lastSubRowEnd
+					tStart, tEnd := 0, numTargets
+					if item.TargetIdx >= 0 {
+						tStart, tEnd = item.TargetIdx, item.TargetIdx+1
+					}
+					for tIdx := tStart; tIdx < tEnd; tIdx++ {
 						t := &targets[tIdx]
 						rhsCross := t.RHSCrossSize
 						if rhsCross == 0 {
 							continue
+						}
+						colStart, colEnd := 0, rhsCross
+						if item.TargetIdx >= 0 {
+							colStart, colEnd = item.RHSColStart, item.RHSColEnd
 						}
 						var (
 							batchRhs             []float32 //alt:f32
@@ -1391,8 +1541,8 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 							layout,
 							batchLhs, batchRhs, batchOutput,
 							lhsCrossSize, rhsCross, contractingSize,
-							subRowStart, subRowEnd, 0, rhsCross,
-							params,
+							subRowStart, subRowEnd, colStart, colEnd,
+							targetParams[tIdx],
 							packedLHS, packedRHS, packedOutput,
 							accumOutput,
 							nil, batchCachedRHSPanels,
@@ -1403,6 +1553,7 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 							t.Epilogue,
 						)
 						lhsPacked = true
+						lastBatch, lastSubRowStart, lastSubRowEnd = batchIdx, subRowStart, subRowEnd
 					}
 					subRowStart = subRowEnd
 				}

@@ -45,6 +45,35 @@ func avx512LargeBFloat16( //alt:bf16
 	//alt:f64  output []float64,
 	nodeData *dot.NodeData,
 ) {
+	//alt:f32 avx512LargeWithEpilogueFloat32(
+	avx512LargeWithEpilogueBFloat16( //alt:bf16
+		//alt:f16  avx512LargeWithEpilogueFloat16(
+		//alt:f64  avx512LargeWithEpilogueFloat64(
+		backend, layout, lhs, rhs,
+		batchSize, lhsCrossSize, rhsCrossSize, contractingSize,
+		output, nodeData,
+		matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
+		//alt:f64  matmul.Epilogue[float64]{},
+	)
+}
+
+//alt:f32 func avx512LargeWithEpilogueFloat32(
+func avx512LargeWithEpilogueBFloat16( //alt:bf16
+	//alt:f16  func avx512LargeWithEpilogueFloat16(
+	//alt:f64  func avx512LargeWithEpilogueFloat64(
+	backend *gobackend.Backend,
+	layout dot.Layout,
+	//alt:f32 lhs, rhs []float32,
+	lhs, rhs []bfloat16.BFloat16, //alt:bf16
+	//alt:f16  lhs, rhs []float16.Float16,
+	//alt:f64  lhs, rhs []float64,
+	batchSize, lhsCrossSize, rhsCrossSize, contractingSize int,
+	output []float32, //alt:f32|bf16|f16
+	//alt:f64  output []float64,
+	nodeData *dot.NodeData,
+	epilogue matmul.Epilogue[float32], //alt:f32|bf16|f16
+	//alt:f64  epilogue matmul.Epilogue[float64],
+) {
 	//alt:f32 params := AVX512ParamsFloat32
 	params := AVX512ParamsBFloat16 //alt:bf16
 	//alt:f16  params := AVX512ParamsFloat16
@@ -292,8 +321,7 @@ func avx512LargeBFloat16( //alt:bf16
 				batchCachedLHSPanels, batchCachedRHSPanels,
 				nil, nil,
 				false,
-				matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
-				//alt:f64  matmul.Epilogue[float64]{},
+				epilogue,
 			)
 			lhsFlatIdx += lhsBatchStride
 			rhsFlatIdx += rhsBatchStride
@@ -471,8 +499,7 @@ func avx512LargeBFloat16( //alt:bf16
 							batchCachedLHSPanels, batchCachedRHSPanels,
 							batchSharedRHSPanels, batchSharedRHSReady,
 							reuseLHS,
-							matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
-							//alt:f64  matmul.Epilogue[float64]{},
+							epilogue,
 						)
 						subRowStart = subRowEnd
 					}
@@ -498,8 +525,7 @@ func avx512LargeBFloat16( //alt:bf16
 						batchCachedLHSPanels, batchCachedRHSPanels,
 						batchSharedRHSPanels, batchSharedRHSReady,
 						false,
-						matmul.Epilogue[float32]{}, //alt:f32|bf16|f16
-						//alt:f64  matmul.Epilogue[float64]{},
+						epilogue,
 					)
 				}
 			}
@@ -562,10 +588,26 @@ func avx512LargeMultiBFloat16( //alt:bf16
 	if useSmallVariant {
 		return false
 	}
+	if len(targets) == 1 {
+		t := &targets[0]
+		//alt:f32 avx512LargeWithEpilogueFloat32(
+		avx512LargeWithEpilogueBFloat16( //alt:bf16
+			//alt:f16  avx512LargeWithEpilogueFloat16(
+			//alt:f64  avx512LargeWithEpilogueFloat64(
+			backend, layout, lhs, t.RHS,
+			batchSize, lhsCrossSize, t.RHSCrossSize, contractingSize,
+			t.Output, t.NodeData, t.Epilogue,
+		)
+		return true
+	}
 
+	minFlopsPerWorker := matmul.MinLargeMatMulFlopsPerWorker
+	if hasPackedCache {
+		minFlopsPerWorker = matmul.MinCachedLargeMatMulFlopsPerWorker
+	}
 	maxWorkers := min(
 		backend.Scheduler.AdjustedMaxParallelism(),
-		max(1, (flops+matmul.MinLargeMatMulFlopsPerWorker-1)/matmul.MinLargeMatMulFlopsPerWorker),
+		max(1, (flops+minFlopsPerWorker-1)/minFlopsPerWorker),
 	)
 
 	lhsBatchStride := lhsCrossSize * contractingSize
@@ -581,6 +623,7 @@ func avx512LargeMultiBFloat16( //alt:bf16
 	//alt:f16  cachedRHSPanels := make([][][]float16.Float16, numTargets)
 	//alt:f64  cachedRHSPanels := make([][][]float64, numTargets)
 	rhsPanelsPerBatch := make([]int, numTargets)
+	needM1TempOutput := false
 	needTempOutput := lhsCrossSize%params.LHSL1KernelRows != 0
 	needPackedRHS := false
 
@@ -590,6 +633,7 @@ func avx512LargeMultiBFloat16( //alt:bf16
 		rhsPanelsPerBatch[tIdx] = numKPanels * numColPanels
 		if t.RHSCrossSize%params.RHSL1KernelCols != 0 {
 			needTempOutput = true
+			needM1TempOutput = true
 		}
 		if t.NodeData != nil && t.NodeData.RHSConstantData != nil {
 			rhsSlice := t.RHS
@@ -610,17 +654,151 @@ func avx512LargeMultiBFloat16( //alt:bf16
 		}
 	}
 
-	var workBuf [256]matmul.WorkItem
-	workItems := matmul.AppendRowWorkItems(
-		workBuf[:0], batchSize, lhsCrossSize, totalRHSCrossSize, &params, maxWorkers)
-	if maxWorkers > 1 && len(workItems) < maxWorkers/2+1 && totalRHSCrossSize >= 2*params.RHSL1KernelCols {
-		// Not enough batch*M parallelism to keep workers busy (e.g. M=1 decoding);
-		// fall back so the standard path can split across N (rhsCrossSize).
-		return false
+	// Dedicated M=1 Multi-RHS GEMV fast path: splits all targets' columns into a single
+	// balanced SaturateUpTo wave with zero LHS packing and inline L1-hot epilogues.
+	useM1Direct := AVX512UseAsm && batchSize == 1 && lhsCrossSize == 1 //alt:f32|bf16|f64
+	//alt:f16  useM1Direct := false
+	if useM1Direct {
+		var targetSizesBuf [8]int
+		targetSizes := targetSizesBuf[:0]
+		for tIdx := range numTargets {
+			targetSizes = append(targetSizes, targets[tIdx].RHSCrossSize)
+		}
+		var m1Buf [256]matmul.MultiRHSM1WorkItem
+		m1Items := matmul.AppendMultiRHSM1WorkItems(m1Buf[:0], targetSizes, &params, maxWorkers)
+		if len(m1Items) == 0 {
+			return true
+		}
+		m1Workers := min(maxWorkers, len(m1Items))
+		runM1Worker := func(itemIdx int, getNext func() (int, bool)) {
+			var (
+				packedRHSRef *gobackend.Buffer
+				//alt:f32 packedRHS    []float32
+				packedRHS []bfloat16.BFloat16 //alt:bf16
+				//alt:f16  packedRHS []float16.Float16
+				//alt:f64  packedRHS []float64
+			)
+			if needPackedRHS {
+				var ok bool
+				//alt:f32 packedRHSRef, packedRHS, ok = GetBuffer[float32](backend, rhsPanelBufSize)
+				packedRHSRef, packedRHS, ok = GetBuffer[bfloat16.BFloat16](backend, rhsPanelBufSize) //alt:bf16
+				//alt:f16  packedRHSRef, packedRHS, ok = GetBuffer[float16.Float16](backend, rhsPanelBufSize)
+				//alt:f64  packedRHSRef, packedRHS, ok = GetBuffer[float64](backend, rhsPanelBufSize)
+				if !ok {
+					return
+				}
+				defer ReleaseBuffer(packedRHSRef)
+			}
+			var (
+				packedOutputRef, accumOutputRef *gobackend.Buffer
+				packedOutput, accumOutput       []float32 //alt:f32|bf16|f16
+				//alt:f64  packedOutput, accumOutput []float64
+			)
+			if needM1TempOutput {
+				var ok bool
+				if numKPanels > 1 {
+					accumOutputRef, accumOutput, ok = GetBuffer[float32](backend, params.RHSPanelCrossSize) //alt:f32|bf16|f16
+					//alt:f64  accumOutputRef, accumOutput, ok = GetBuffer[float64](backend, params.RHSPanelCrossSize)
+					if !ok {
+						return
+					}
+					defer ReleaseBuffer(accumOutputRef)
+				} else {
+					packedOutputRef, packedOutput, ok = GetBuffer[float32](backend, params.RHSPanelCrossSize) //alt:f32|bf16|f16
+					//alt:f64  packedOutputRef, packedOutput, ok = GetBuffer[float64](backend, params.RHSPanelCrossSize)
+					if !ok {
+						return
+					}
+					defer ReleaseBuffer(packedOutputRef)
+				}
+			}
+			for {
+				item := m1Items[itemIdx]
+				t := &targets[item.TargetIdx]
+				//alt:f32 avx512LargeMatrixSliceFloat32(
+				avx512LargeMatrixSliceBFloat16( //alt:bf16
+					//alt:f16  avx512LargeMatrixSliceFloat16(
+					//alt:f64  avx512LargeMatrixSliceFloat64(
+					layout,
+					lhs, t.RHS, t.Output,
+					1, t.RHSCrossSize, contractingSize,
+					0, 1, item.ColStart, item.ColEnd,
+					params,
+					nil, packedRHS, packedOutput,
+					accumOutput,
+					nil, cachedRHSPanels[item.TargetIdx],
+					nil, nil,
+					false,
+					t.Epilogue,
+				)
+				var ok bool
+				itemIdx, ok = getNext()
+				if !ok {
+					return
+				}
+			}
+		}
+		if m1Workers <= 1 {
+			nextIdx := 1
+			runM1Worker(0, func() (int, bool) {
+				if nextIdx >= len(m1Items) {
+					return 0, false
+				}
+				idx := nextIdx
+				nextIdx++
+				return idx, true
+			})
+			return true
+		}
+		var nextItem atomic.Int32
+		backend.Scheduler.SaturateUpTo(m1Workers, func() {
+			first := int(nextItem.Add(1) - 1)
+			if first >= len(m1Items) {
+				return
+			}
+			runM1Worker(first, func() (int, bool) {
+				idx := int(nextItem.Add(1) - 1)
+				if idx >= len(m1Items) {
+					return 0, false
+				}
+				return idx, true
+			})
+		})
+		return true
+	}
+
+	var targetSizesBuf [8]int
+	targetSizes := targetSizesBuf[:0]
+	for tIdx := range numTargets {
+		targetSizes = append(targetSizes, targets[tIdx].RHSCrossSize)
+	}
+
+	var workBuf [256]matmul.MultiRHSWorkItem
+	workItems := matmul.AppendMultiRHS2DWorkItems(
+		workBuf[:0], batchSize, lhsCrossSize, targetSizes, &params, maxWorkers)
+	if len(workItems) == 0 {
+		return true
 	}
 	maxWorkers = min(maxWorkers, len(workItems))
 
+	// Tighten LHSPanelCrossSize and temporary output buffers for small-M prefills (e.g. M=15..64)
+	// so workers do not over-allocate 96-row panels or unused packedOutput scratch buffers.
+	maxItemRows := 0
+	for _, wi := range workItems {
+		if r := wi.LHSRowEnd - wi.LHSRowStart; r > maxItemRows {
+			maxItemRows = r
+		}
+	}
+	if maxItemRows > 0 && maxItemRows < params.LHSPanelCrossSize {
+		roundedRows := ((maxItemRows + params.LHSL1KernelRows - 1) / params.LHSL1KernelRows) * params.LHSL1KernelRows
+		params.LHSPanelCrossSize = min(params.LHSPanelCrossSize, roundedRows)
+		lhsPanelBufSize = params.LHSPanelCrossSize * paddedPanelK
+	}
 	maxMPanelsPerSubChunk := max(1, min(4, 16/max(1, numKPanels)))
+	if maxItemRows > 0 {
+		neededMPanels := (maxItemRows + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
+		maxMPanelsPerSubChunk = min(maxMPanelsPerSubChunk, max(1, neededMPanels))
+	}
 	lhsAllocPanels := maxMPanelsPerSubChunk * numKPanels
 
 	//alt:f32 sharedRHSPanels := make([][][]float32, numTargets)
@@ -692,12 +870,6 @@ func avx512LargeMultiBFloat16( //alt:bf16
 			//alt:f64  packedOutput, accumOutput []float64
 		)
 		if needTempOutput {
-			packedOutputRef, packedOutput, ok = GetBuffer[float32](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
-			//alt:f64  packedOutputRef, packedOutput, ok = GetBuffer[float64](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
-			if !ok {
-				return
-			}
-			defer ReleaseBuffer(packedOutputRef)
 			if numKPanels > 1 {
 				accumOutputRef, accumOutput, ok = GetBuffer[float32](backend, maxMPanelsPerSubChunk*params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
 				//alt:f64  accumOutputRef, accumOutput, ok = GetBuffer[float64](backend, maxMPanelsPerSubChunk*params.LHSPanelCrossSize*params.RHSPanelCrossSize)
@@ -705,21 +877,37 @@ func avx512LargeMultiBFloat16( //alt:bf16
 					return
 				}
 				defer ReleaseBuffer(accumOutputRef)
+			} else {
+				packedOutputRef, packedOutput, ok = GetBuffer[float32](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize) //alt:f32|bf16|f16
+				//alt:f64  packedOutputRef, packedOutput, ok = GetBuffer[float64](backend, params.LHSPanelCrossSize*params.RHSPanelCrossSize)
+				if !ok {
+					return
+				}
+				defer ReleaseBuffer(packedOutputRef)
 			}
 		}
 
+		lastBatch, lastSubRowStart, lastSubRowEnd := -1, -1, -1
 		for {
 			item := workItems[itemIdx]
 			for batchIdx := item.BatchStart; batchIdx < item.BatchEnd; batchIdx++ {
 				batchLhs := lhs[batchIdx*lhsBatchStride : (batchIdx+1)*lhsBatchStride]
 				for subRowStart := item.LHSRowStart; subRowStart < item.LHSRowEnd; {
 					subRowEnd := min(item.LHSRowEnd, subRowStart+maxMPanelsPerSubChunk*params.LHSPanelCrossSize)
-					lhsPacked := false
-					for tIdx := range numTargets {
+					lhsPacked := batchIdx == lastBatch && subRowStart == lastSubRowStart && subRowEnd == lastSubRowEnd
+					tStart, tEnd := 0, numTargets
+					if item.TargetIdx >= 0 {
+						tStart, tEnd = item.TargetIdx, item.TargetIdx+1
+					}
+					for tIdx := tStart; tIdx < tEnd; tIdx++ {
 						t := &targets[tIdx]
 						rhsCross := t.RHSCrossSize
 						if rhsCross == 0 {
 							continue
+						}
+						colStart, colEnd := 0, rhsCross
+						if item.TargetIdx >= 0 {
+							colStart, colEnd = item.RHSColStart, item.RHSColEnd
 						}
 						var (
 							//alt:f32 batchRhs             []float32
@@ -757,7 +945,7 @@ func avx512LargeMultiBFloat16( //alt:bf16
 							layout,
 							batchLhs, batchRhs, batchOutput,
 							lhsCrossSize, rhsCross, contractingSize,
-							subRowStart, subRowEnd, 0, rhsCross,
+							subRowStart, subRowEnd, colStart, colEnd,
 							params,
 							packedLHS, packedRHS, packedOutput,
 							accumOutput,
@@ -767,6 +955,7 @@ func avx512LargeMultiBFloat16( //alt:bf16
 							t.Epilogue,
 						)
 						lhsPacked = true
+						lastBatch, lastSubRowStart, lastSubRowEnd = batchIdx, subRowStart, subRowEnd
 					}
 					subRowStart = subRowEnd
 				}

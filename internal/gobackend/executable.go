@@ -3,6 +3,7 @@
 package gobackend
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -117,6 +118,35 @@ func newFunctionExecutable(f *Function) (*FunctionExecutable, error) {
 		}
 	}
 
+	// Fuse sibling FusedDense projections sharing the same activation input x
+	// (e.g., gate_proj + up_proj, or q_proj + k_proj + v_proj) into a single
+	// multi-output OpTypeFusedDense node so LHS is read/packed once and M=1
+	// decode runs all siblings in a single SaturateUpTo parallel wave.
+	if fe.fuseSiblingFusedDenseNodes() {
+		if err := f.DAGSort(); err != nil {
+			return nil, errors.WithMessage(err, "DAG sorting after sibling FusedDense fusion failed")
+		}
+		numNodesToProcess = 0
+		for _, output := range f.Outputs {
+			numNodesToProcess = max(numNodesToProcess, output.Index+1)
+		}
+		fe.NumNodesToProcess = numNodesToProcess
+		fe.NumUses = make([]int, numNodesToProcess)
+		fe.Dependents = make([][]int, numNodesToProcess)
+		fe.MaxInputs = 0
+		for nodeIdx := range numNodesToProcess {
+			node := f.Nodes[nodeIdx]
+			totalCaptured := 0
+			for _, closureCaptures := range node.CapturedInputs {
+				totalCaptured += len(closureCaptures)
+			}
+			fe.MaxInputs = max(fe.MaxInputs, len(node.Inputs)+totalCaptured)
+		}
+		for _, output := range f.Outputs {
+			fe.countNodeUsesAndDependents(output)
+		}
+	}
+
 	if err := fe.setupConstantSubgraphCaching(); err != nil {
 		return nil, err
 	}
@@ -222,6 +252,212 @@ func (fe *FunctionExecutable) fuseSingleConsumerDenseActivations() {
 			actSource.MarkFusedIntoInput()
 		}
 	}
+}
+
+// FusedDenseMultiSibling is implemented by nodeFusedDense so compile-time graph
+// optimization can identify sibling FusedDense projections sharing the same activation
+// input x (e.g., gate_proj + up_proj or q_proj + k_proj + v_proj) and merge them into
+// a single multi-output OpTypeFusedDense node.
+type FusedDenseMultiSibling interface {
+	MultiDenseShareKey() (key string, ok bool)
+}
+
+// BuildFusedMultiDenseDataFn constructs the multi-output Node.Data for a fused group
+// of sibling FusedDense nodes sharing node.Inputs[0] (x). Registered by fusedops/dense.
+var BuildFusedMultiDenseDataFn func(siblings []*Node, weightInputSlots, biasInputSlots []int) any
+
+// fuseSiblingFusedDenseNodes merges groups of >= 2 live single-output FusedDense nodes
+// that share the same non-constant activation input xNode and compatible MatMul key
+// (layout, dtype, contracting size) into a single multi-output OpTypeFusedDense node.
+// Each original sibling node is converted in-place into a select-output node so all
+// downstream consumers and function outputs remain valid without rewiring.
+func (fe *FunctionExecutable) fuseSiblingFusedDenseNodes() bool {
+	if BuildFusedMultiDenseDataFn == nil {
+		return false
+	}
+	f := fe.Function
+	fusedAny := false
+
+	// Snapshot original node count because fusing appends new leader nodes to f.Nodes.
+	origCount := fe.NumNodesToProcess
+	for srcIdx := range origCount {
+		deps := fe.Dependents[srcIdx]
+		if len(deps) < 2 {
+			continue
+		}
+		srcNode := f.Nodes[srcIdx]
+		if srcNode == nil || srcNode.IsConstant() {
+			continue
+		}
+
+		var groups map[string][]*Node
+		var groupOrder []string
+		var seenBuf [8]int
+		seen := seenBuf[:0]
+		for _, depIdx := range deps {
+			if depIdx < 0 || depIdx >= origCount || fe.NumUses[depIdx] == 0 {
+				continue
+			}
+			if slices.Contains(seen, depIdx) {
+				continue
+			}
+			seen = append(seen, depIdx)
+
+			depNode := f.Nodes[depIdx]
+			if depNode == nil ||
+				depNode.OpType != compute.OpTypeFusedDense ||
+				depNode.IsMultiOutputs() ||
+				depNode.IsNodeSelectOutput ||
+				depNode.Function != f ||
+				len(depNode.CapturedInputs) > 0 ||
+				len(depNode.Inputs) < 2 ||
+				depNode.Inputs[0] != srcNode {
+				continue
+			}
+			// Avoid degenerate self-inputs where weight or bias is the same node as x.
+			selfInput := false
+			for _, in := range depNode.Inputs[1:] {
+				if in == srcNode {
+					selfInput = true
+					break
+				}
+			}
+			if selfInput {
+				continue
+			}
+
+			sib, ok := depNode.Data.(FusedDenseMultiSibling)
+			if !ok {
+				continue
+			}
+			key, ok := sib.MultiDenseShareKey()
+			if !ok {
+				continue
+			}
+			if groups == nil {
+				groups = make(map[string][]*Node, 2)
+			}
+			if _, exists := groups[key]; !exists {
+				groupOrder = append(groupOrder, key)
+			}
+			groups[key] = append(groups[key], depNode)
+		}
+
+		for _, key := range groupOrder {
+			group := groups[key]
+			if len(group) < 2 {
+				continue
+			}
+			slices.SortFunc(group, func(a, b *Node) int {
+				return a.Index - b.Index
+			})
+
+			// Filter out any sibling whose non-x inputs transitively depend on another
+			// sibling in the group, guaranteeing the merged multi-output node is cycle-free.
+			group = filterCycleFreeSiblingGroup(f, group)
+			if len(group) < 2 {
+				continue
+			}
+
+			leaderInputs := make([]*Node, 0, 1+2*len(group))
+			leaderInputs = append(leaderInputs, srcNode)
+			weightSlots := make([]int, len(group))
+			biasSlots := make([]int, len(group))
+			multiShapes := make([]shapes.Shape, len(group))
+			for i, sib := range group {
+				weightSlots[i] = len(leaderInputs)
+				leaderInputs = append(leaderInputs, sib.Inputs[1])
+				if len(sib.Inputs) > 2 {
+					biasSlots[i] = len(leaderInputs)
+					leaderInputs = append(leaderInputs, sib.Inputs[2])
+				} else {
+					biasSlots[i] = -1
+				}
+				multiShapes[i] = sib.Shape
+			}
+
+			multiData := BuildFusedMultiDenseDataFn(group, weightSlots, biasSlots)
+			if multiData == nil {
+				continue
+			}
+
+			leaderNode := &Node{
+				Builder:            f.RawBuilder,
+				OpType:             compute.OpTypeFusedDense,
+				Index:              len(f.Nodes),
+				Shape:              shapes.Invalid(),
+				Inputs:             leaderInputs,
+				Function:           f,
+				Data:               multiData,
+				MultiOutputsShapes: multiShapes,
+				MultiOutputsNodes:  slices.Clone(group),
+			}
+			f.Nodes = append(f.Nodes, leaderNode)
+
+			for i, sib := range group {
+				sib.Inputs = []*Node{leaderNode}
+				sib.IsNodeSelectOutput = true
+				sib.SelectOutputIdx = i
+				sib.Data = nil
+			}
+			fusedAny = true
+		}
+	}
+	return fusedAny
+}
+
+// filterCycleFreeSiblingGroup returns the maximal subset of group (sorted by Index)
+// for which no member's non-x inputs transitively reach any member of the returned subset.
+func filterCycleFreeSiblingGroup(f *Function, group []*Node) []*Node {
+	minIdx := group[0].Index
+	inGroup := make(map[int]bool, len(group))
+	for _, sib := range group {
+		inGroup[sib.Index] = true
+	}
+
+	valid := make([]*Node, 0, len(group))
+	for _, sib := range group {
+		dependsOnGroup := false
+		var stack []*Node
+		for _, in := range sib.Inputs[1:] {
+			if in.Function == f && in.Index >= minIdx {
+				stack = append(stack, in)
+			}
+		}
+		if len(stack) > 0 {
+			visited := make(map[int]bool, 8)
+			for len(stack) > 0 {
+				curr := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				if inGroup[curr.Index] {
+					dependsOnGroup = true
+					break
+				}
+				if visited[curr.Index] {
+					continue
+				}
+				visited[curr.Index] = true
+				for _, in := range curr.Inputs {
+					if in.Function == f && in.Index >= minIdx && !visited[in.Index] {
+						stack = append(stack, in)
+					}
+				}
+				for _, captures := range curr.CapturedInputs {
+					for _, in := range captures {
+						if in.Function == f && in.Index >= minIdx && !visited[in.Index] {
+							stack = append(stack, in)
+						}
+					}
+				}
+			}
+		}
+		if dependsOnGroup {
+			delete(inGroup, sib.Index)
+			continue
+		}
+		valid = append(valid, sib)
+	}
+	return valid
 }
 
 // FusedLayerNormResidualTarget is implemented by nodeFusedLayerNorm so compile-time graph
