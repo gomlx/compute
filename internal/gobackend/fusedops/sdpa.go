@@ -968,10 +968,7 @@ func sdpaTrimAdditiveKeyMaskFloat[T ~float32 | ~float64](additiveMaskSlice []T, 
 		lastValid--
 	}
 	if lastValid < 0 {
-		if math.IsInf(float64(additiveMaskSlice[0]), -1) {
-			return additiveMaskSlice, 0
-		}
-		return additiveMaskSlice, kvLimit
+		return additiveMaskSlice, 0
 	}
 	for i := 0; i <= lastValid; i++ {
 		if additiveMaskSlice[i] != 0 {
