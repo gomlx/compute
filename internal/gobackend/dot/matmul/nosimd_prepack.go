@@ -15,6 +15,7 @@ func noSIMDPrepackRHS[I gotype.ScalarNotComplex](
 	rhs []I,
 	batchSize, rhsCrossSize, contractingSize int,
 	params CacheParams,
+	constData *gobackend.ConstantData,
 ) (*gobackend.Buffer, [][]I) {
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
 	numColPanels := (rhsCrossSize + params.RHSPanelCrossSize - 1) / params.RHSPanelCrossSize
@@ -34,7 +35,7 @@ func noSIMDPrepackRHS[I gotype.ScalarNotComplex](
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements, constData)
 	if !ok {
 		return nil, nil
 	}
@@ -75,6 +76,7 @@ func noSIMDPrepackLHS[I gotype.ScalarNotComplex](
 	lhs []I,
 	batchSize, lhsCrossSize, contractingSize int,
 	params CacheParams,
+	constData *gobackend.ConstantData,
 ) (*gobackend.Buffer, [][]I) {
 	numKPanels := (contractingSize + params.PanelContractingSize - 1) / params.PanelContractingSize
 	numRowPanels := (lhsCrossSize + params.LHSPanelCrossSize - 1) / params.LHSPanelCrossSize
@@ -94,7 +96,7 @@ func noSIMDPrepackLHS[I gotype.ScalarNotComplex](
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[I](backend, totalElements, constData)
 	if !ok {
 		return nil, nil
 	}

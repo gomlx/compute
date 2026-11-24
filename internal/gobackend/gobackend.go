@@ -15,6 +15,10 @@
 //   - quantized_cache=<always|balanced|never>: constant weight caching policy for FusedQuantizedDense
 //     (aliases: true/1 for always; false/none/0 for never; bare "quantized_cache" selects always;
 //     default: balanced). See compute/docs/GoBackendMemoryUsage.md for details.
+//   - constant_arena[=<true|false>]: allocate transformed/pre-packed constant buffers into off-heap
+//     2 MiB-aligned mmap + MADV_HUGEPAGE arena chunks (reference-counted per builder/executable and
+//     unmapped when all referencing builders/executables or the backend are finalized). Can also be
+//     configured via GOMLX_GO_CONSTANT_ARENA (default: true).
 //   - no_ops: skip kernel math (for scheduling/framework benchmarking).
 package gobackend
 
@@ -29,6 +33,7 @@ import (
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend/scheduler"
 	"github.com/gomlx/compute/notimplemented"
+	"github.com/gomlx/compute/support/envutil"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/gomlx/compute/support/xsync"
 	"github.com/pkg/errors"
@@ -123,6 +128,12 @@ func New(config string) (compute.Backend, error) {
 				return nil, err
 			}
 			b.QuantizedCache = policy
+		case "constant_arena":
+			enabled, err := parseBoolOption(key, value, true)
+			if err != nil {
+				return nil, err
+			}
+			b.UseConstantArena = enabled
 		case "":
 			// No-op, just skip.
 		default:
@@ -133,7 +144,7 @@ func New(config string) (compute.Backend, error) {
 					extraOptions = ", " + strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", ")
 				}
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>%s; "+
+					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>, constant_arena[=<true|false>]%s; "+
 					"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
 					key, extraOptions)
 			}
@@ -211,15 +222,38 @@ func parseQuantizedCachePolicy(value string) (QuantizedCachePolicy, error) {
 	}
 }
 
+func parseBoolOption(key, value string, defaultIfEmpty bool) (bool, error) {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return defaultIfEmpty, nil
+	}
+	if envutil.TrueValues.Has(v) {
+		return true, nil
+	}
+	if envutil.FalseValues.Has(v) {
+		return false, nil
+	}
+	return false, errors.Errorf("invalid boolean value %q for %q in Go backend config", value, key)
+}
+
 // DefaultNumExecutors is the default number of concurrent worker executors
 // used in executeParallel to execute ready graph nodes.
 const DefaultNumExecutors = 8
 
+// DefaultConstantArenaGCThresholdBytes is the default byte threshold (64 MiB) of released donated
+// Go-heap constant buffers after which the backend triggers GC + OS memory scavenging
+// (debug.FreeOSMemory) to bound peak MaxRSS while weights are being transferred into the off-heap
+// constant_arena.
+const DefaultConstantArenaGCThresholdBytes int64 = 64 * 1024 * 1024
+
 func newDefaultBackend() *Backend {
 	b := &Backend{
-		NumExecutors:     DefaultNumExecutors,
-		OpsExecutionType: OpsExecutionDynamic,
-		QuantizedCache:   QuantizedCacheBalanced,
+		NumExecutors:                  DefaultNumExecutors,
+		OpsExecutionType:              OpsExecutionDynamic,
+		QuantizedCache:                QuantizedCacheBalanced,
+		UseConstantArena:              envutil.MustReadBool(envutil.GoBackendConstantArena, true),
+		ConstantArenaGCThresholdBytes: DefaultConstantArenaGCThresholdBytes,
+		constantArena:                 newConstantArena(),
 	}
 	b.Scheduler = scheduler.New()
 	return b
@@ -253,6 +287,21 @@ type Backend struct {
 	// and supporting tensors in FusedQuantizedDense (configured via
 	// "go:quantized_cache=<always|balanced|never>"). Defaults to QuantizedCacheBalanced.
 	QuantizedCache QuantizedCachePolicy
+
+	// UseConstantArena controls whether transformed constant caches (e.g. pre-packed GEMM panels)
+	// are sub-allocated from off-heap 2 MiB-aligned mmap + MADV_HUGEPAGE arena chunks instead of
+	// individual Go heap allocations. Configured via "go:constant_arena" or GOMLX_GO_CONSTANT_ARENA
+	// (default: true).
+	UseConstantArena bool
+
+	// ConstantArenaGCThresholdBytes controls how many bytes of donated Go-heap constant buffers
+	// may be released while transferring weights into constantArena before triggering GC + OS
+	// page reclamation (debug.FreeOSMemory) to cap peak MaxRSS. 0 disables forced reclamation.
+	// Defaults to DefaultConstantArenaGCThresholdBytes (64 MiB).
+	ConstantArenaGCThresholdBytes int64
+
+	// constantArena manages off-heap mmap chunks when UseConstantArena is enabled.
+	constantArena *constantArena
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.
@@ -329,6 +378,9 @@ func (b *Backend) Finalize() {
 	b.lifecycle.Finalize(func() {
 		for i := range b.bufferPools {
 			b.bufferPools[i].Store(nil)
+		}
+		if b.constantArena != nil {
+			b.constantArena.Finalize()
 		}
 	})
 }

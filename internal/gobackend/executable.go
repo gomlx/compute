@@ -1398,11 +1398,16 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 			}
 		}
 	}
+	clear(inputBuffers)
 	if execBuf.opsExecutionType == OpsExecutionSequential {
 		// For sequential execution, we store the input buffers and ownership slices
 		// to save an allocation for these slices the next time it is executed.
 		execBuf.opInputBuffers = inputBuffers
 		execBuf.opInputsOwned = inputsOwned
+	}
+	if backend.ConstantArenaGCThresholdBytes > 0 && backend.constantArena != nil &&
+		backend.constantArena.releasedDonatedBytes.Load() >= backend.ConstantArenaGCThresholdBytes {
+		backend.constantArena.reclaimReleasedDonatedBytes(backend.ConstantArenaGCThresholdBytes)
 	}
 	if isOpProfileEnabled {
 		fe.recordOpProfileNode(node, execBuf.opsExecutionType, profTimer)

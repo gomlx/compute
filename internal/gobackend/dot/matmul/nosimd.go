@@ -182,9 +182,19 @@ func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (ref 
 }
 
 // GetExactBuffer allocates an exact-sized, non-pooled buffer for long-lived caches (e.g., PrepackRHS/PrepackLHS).
-func GetExactBuffer[T gotype.Supported](_ *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
-	ref = gobackend.NewBuffer(shapes.Make(dtypes.FromGenericsType[T](), length))
-	gobackend.AdviseHugePages(ref.RawBytes)
+// If constData is non-nil and backend.UseConstantArena is enabled, the backing bytes are sub-allocated from
+// a 2 MiB-aligned off-heap mmap + MADV_HUGEPAGE arena chunk tracked by constData and its live builders/executables.
+func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int, constData *gobackend.ConstantData) (ref *gobackend.Buffer, flat []T, success bool) {
+	dtype := dtypes.FromGenericsType[T]()
+	shape := shapes.Make(dtype, length)
+	if backend != nil && constData != nil && backend.UseConstantArena && length > 0 {
+		byteSize := dtype.SizeForDimensions(length)
+		rawBytes := backend.AllocConstantBytes(constData, byteSize)
+		ref = gobackend.NewBufferWithBytes(shape, rawBytes)
+	} else {
+		ref = gobackend.NewBuffer(shape)
+		gobackend.AdviseHugePages(ref.RawBytes)
+	}
 	flat = ref.Flat.([]T)
 	success = true
 	return

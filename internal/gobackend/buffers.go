@@ -675,6 +675,21 @@ func NewBuffer(shape shapes.Shape) *Buffer {
 	return buf
 }
 
+// NewBufferWithBytes creates a non-pooled Buffer backed directly by rawBytes without copying.
+// The caller must ensure len(rawBytes) >= shape.ByteSize().
+func NewBufferWithBytes(shape shapes.Shape, rawBytes []byte) *Buffer {
+	dtype := shape.DType
+	length := shape.Size()
+	buf := &Buffer{
+		RawBytes:  rawBytes,
+		InUse:     true,
+		isUserFed: true,
+		RawShape:  shape,
+	}
+	buf.recast(dtype, length)
+	return buf
+}
+
 // markDonated invalidates this Buffer handle after transferring ownership of its backing memory elsewhere.
 // It allows one subsequent Finalize() call to succeed as a no-op.
 func (buffer *Buffer) markDonated() {

@@ -194,10 +194,10 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 				//alt:bf16 cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]bfloat16.BFloat16 {
 				//alt:f16 cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]float16.Float16 {
 				//alt:f64 cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]float64 {
-				_, panels := neonPrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params) //alt:f32
-				//alt:bf16 _, panels := neonPrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				//alt:f16 _, panels := neonPrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
-				//alt:f64 _, panels := neonPrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				_, panels := neonPrepackRHSFloat32(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params, nodeData.RHSConstantData) //alt:f32
+				//alt:bf16 _, panels := neonPrepackRHSBFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params, nodeData.RHSConstantData)
+				//alt:f16 _, panels := neonPrepackRHSFloat16(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params, nodeData.RHSConstantData)
+				//alt:f64 _, panels := neonPrepackRHSFloat64(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params, nodeData.RHSConstantData)
 				return panels
 			})
 		}
@@ -207,10 +207,10 @@ func neonLargeWithParamsAndEpilogueFloat32( //alt:f32
 				//alt:bf16 cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]bfloat16.BFloat16 {
 				//alt:f16 cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]float16.Float16 {
 				//alt:f64 cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]float64 {
-				_, panels := neonPrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params) //alt:f32
-				//alt:bf16 _, panels := neonPrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				//alt:f16 _, panels := neonPrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
-				//alt:f64 _, panels := neonPrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				_, panels := neonPrepackLHSFloat32(backend, lhs, batchSize, lhsCrossSize, contractingSize, params, nodeData.LHSConstantData) //alt:f32
+				//alt:bf16 _, panels := neonPrepackLHSBFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params, nodeData.LHSConstantData)
+				//alt:f16 _, panels := neonPrepackLHSFloat16(backend, lhs, batchSize, lhsCrossSize, contractingSize, params, nodeData.LHSConstantData)
+				//alt:f64 _, panels := neonPrepackLHSFloat64(backend, lhs, batchSize, lhsCrossSize, contractingSize, params, nodeData.LHSConstantData)
 				return panels
 			})
 		}
@@ -1280,10 +1280,10 @@ func neonLargeMultiWithParamsFloat32( //alt:f32
 				//alt:bf16 cachedRHSPanels[tIdx] = gobackend.GetOrSetCachedForm(t.NodeData.RHSConstantData, func() [][]bfloat16.BFloat16 {
 				//alt:f16 cachedRHSPanels[tIdx] = gobackend.GetOrSetCachedForm(t.NodeData.RHSConstantData, func() [][]float16.Float16 {
 				//alt:f64 cachedRHSPanels[tIdx] = gobackend.GetOrSetCachedForm(t.NodeData.RHSConstantData, func() [][]float64 {
-				_, panels := neonPrepackRHSFloat32(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams) //alt:f32
-				//alt:bf16 _, panels := neonPrepackRHSBFloat16(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams)
-				//alt:f16 _, panels := neonPrepackRHSFloat16(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams)
-				//alt:f64 _, panels := neonPrepackRHSFloat64(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams)
+				_, panels := neonPrepackRHSFloat32(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams, t.NodeData.RHSConstantData) //alt:f32
+				//alt:bf16 _, panels := neonPrepackRHSBFloat16(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams, t.NodeData.RHSConstantData)
+				//alt:f16 _, panels := neonPrepackRHSFloat16(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams, t.NodeData.RHSConstantData)
+				//alt:f64 _, panels := neonPrepackRHSFloat64(backend, layout, rhsSlice, batchSize, rhsCross, contractingSize, tParams, t.NodeData.RHSConstantData)
 				return panels
 			})
 		}
@@ -1882,6 +1882,7 @@ func neonPrepackRHSFloat32( //alt:f32
 	//alt:f64 rhs []float64,
 	batchSize, rhsCrossSize, contractingSize int,
 	params matmul.CacheParams,
+	constData *gobackend.ConstantData,
 ) (*gobackend.Buffer, [][]float32) { //alt:f32
 	//alt:bf16 ) (*gobackend.Buffer, [][]bfloat16.BFloat16) {
 	//alt:f16 ) (*gobackend.Buffer, [][]float16.Float16) {
@@ -1904,10 +1905,10 @@ func neonPrepackRHSFloat32( //alt:f32
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements) //alt:f32
-	//alt:bf16 ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements)
-	//alt:f16 ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements)
-	//alt:f64 ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements, constData) //alt:f32
+	//alt:bf16 ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements, constData)
+	//alt:f16 ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements, constData)
+	//alt:f64 ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements, constData)
 	if !ok {
 		return nil, nil
 	}
@@ -1957,6 +1958,7 @@ func neonPrepackLHSFloat32( //alt:f32
 	//alt:f64 lhs []float64,
 	batchSize, lhsCrossSize, contractingSize int,
 	params matmul.CacheParams,
+	constData *gobackend.ConstantData,
 ) (*gobackend.Buffer, [][]float32) { //alt:f32
 	//alt:bf16 ) (*gobackend.Buffer, [][]bfloat16.BFloat16) {
 	//alt:f16 ) (*gobackend.Buffer, [][]float16.Float16) {
@@ -1979,10 +1981,10 @@ func neonPrepackLHSFloat32( //alt:f32
 	}
 	totalElements *= batchSize
 
-	ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements) //alt:f32
-	//alt:bf16 ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements)
-	//alt:f16 ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements)
-	//alt:f64 ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements)
+	ref, flatBuf, ok := GetExactBuffer[float32](backend, totalElements, constData) //alt:f32
+	//alt:bf16 ref, flatBuf, ok := GetExactBuffer[bfloat16.BFloat16](backend, totalElements, constData)
+	//alt:f16 ref, flatBuf, ok := GetExactBuffer[float16.Float16](backend, totalElements, constData)
+	//alt:f64 ref, flatBuf, ok := GetExactBuffer[float64](backend, totalElements, constData)
 	if !ok {
 		return nil, nil
 	}

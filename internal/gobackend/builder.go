@@ -31,6 +31,14 @@ type Builder struct {
 	// Functions are all functions created within this builder, in order of creation.
 	// It includes the main function.
 	Functions []*Function
+
+	// usedConstants lists unique ConstantData instances referenced by compiled functions in this
+	// builder so Finalize can decrement arena chunk reference counts.
+	usedConstants []*ConstantData
+
+	// arenaChunks lists off-heap constantArenaChunks retained by this builder (guarded by
+	// Backend.constantArena.mu).
+	arenaChunks []*constantArenaChunk
 }
 
 // Compile-time check.
@@ -146,6 +154,7 @@ func (b *Builder) Compile() (compute.Executable, error) {
 	b.MainFn.Outputs = outputs
 	mainFnExec, err := newFunctionExecutable(b.MainFn)
 	if err != nil {
+		b.releaseConstantArenaRefs()
 		return nil, errors.WithMessagef(err, "failed to compile main function")
 	}
 	b.MainFn.Compiled = mainFnExec
@@ -159,6 +168,7 @@ func (b *Builder) Finalize() {
 	if b == nil {
 		return
 	}
+	b.releaseConstantArenaRefs()
 	for _, fn := range b.Functions {
 		if fn != nil {
 			for _, node := range fn.Nodes {
