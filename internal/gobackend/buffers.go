@@ -465,6 +465,21 @@ func (b *Backend) releaseBufferNow(buffer *Buffer) {
 	pool.Put(buffer)
 }
 
+// movePoolSlot gives the pool slot of buffer, if it has one, to clone, a shallowClone of
+// buffer that goes to the user.
+//
+// A slot keeps its Buffer for good. If the slot kept buffer, the pool would keep buffer's
+// data alive after the user finalizes the clone, and memory would grow at every Execute.
+// With the slot, the clone returns to the pool on PutBuffer as any pooled buffer does.
+func (b *Backend) movePoolSlot(buffer, clone *Buffer) {
+	if buffer.poolSlot == 0 {
+		return
+	}
+	pool := b.getBufferPool(len(buffer.RawBytes))
+	pool.slot(buffer.poolSlot).buf.Store(clone)
+	clone.poolSlot, buffer.poolSlot = buffer.poolSlot, 0
+}
+
 // shallowClone returns a new Buffer struct pointing to the same data.
 func (buffer *Buffer) shallowClone() *Buffer {
 	newBuf := Buffer{
