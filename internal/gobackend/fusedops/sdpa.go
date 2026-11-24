@@ -963,7 +963,8 @@ func sdpaTrimAdditiveKeyMaskFloat[T ~float32 | ~float64](additiveMaskSlice []T, 
 		return additiveMaskSlice, kvLimit
 	}
 	lastValid := kvLimit - 1
-	for lastValid >= 0 && additiveMaskSlice[lastValid] <= -1e4 {
+	// Finite additive masks can be offset by attention scores and must remain in softmax.
+	for lastValid >= 0 && math.IsInf(float64(additiveMaskSlice[lastValid]), -1) {
 		lastValid--
 	}
 	if lastValid < 0 {
