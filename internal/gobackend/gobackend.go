@@ -9,7 +9,9 @@
 //
 // Supported configuration options (via GOMLX_BACKEND="go:<opt1>,<opt2>=<val>"):
 //   - parallelism=<N>: maximum intra-op workers and concurrent Execute() calls (default: physical
-//     CPU cores when wide SIMD is active, or GOMAXPROCS when running scalar without SIMD).
+//     CPU cores when AVX-512 is active, or GOMAXPROCS otherwise — e.g., AVX2, ARM64, or scalar
+//     builds. Because modern CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD,
+//     varying vector widths — the default may not be optimal for every CPU/workload; tune N if needed).
 //   - num_executors=<N>: maximum concurrent node executors in parallel graph mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
@@ -258,11 +260,11 @@ func newDefaultBackend() *Backend {
 		constantArena:                 newConstantArena(),
 	}
 	b.Scheduler = scheduler.New()
-	if simdarch.IsAVX512Allowed || simdarch.IsAVX2Allowed || simdarch.IsNEONAllowed {
-		// Wide SIMD kernels (AVX-512/AVX2/NEON) saturate each physical core's FMA/VNNI pipes and
-		// private L1d/L2 caches with a single thread, so defaulting to physical CPU cores avoids
-		// SMT contention and barrier overhead. Scalar (!simd) builds keep GOMAXPROCS (all logical
-		// hardware threads), where SMT delivers substantial speedups.
+	if simdarch.IsAVX512Allowed {
+		// AVX-512 microkernels (32 ZMM registers, 512-bit FMA/VNNI/BF16) saturate each physical
+		// core's vector pipelines and private L1d/L2 caches with a single thread, so defaulting to
+		// physical CPU cores avoids SMT contention and barrier overhead. AVX2 (256-bit, 16 YMM),
+		// hybrid Intel P+E CPUs, ARM64, and scalar (!simd) builds keep GOMAXPROCS (all logical CPUs).
 		b.Scheduler.SetMaxParallelism(scheduler.DefaultPhysicalParallelism())
 	}
 	return b

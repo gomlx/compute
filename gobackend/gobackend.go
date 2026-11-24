@@ -5,7 +5,10 @@
 // Configuration options can be passed via GOMLX_BACKEND="go:<option1>,<option2>=<value>" or
 // compute.NewWithConfig("go:..."). Supported options:
 //   - parallelism=<N>: maximum intra-op worker goroutines and concurrent Execute() calls
-//     (default: physical CPU cores when wide SIMD is active, or GOMAXPROCS without SIMD).
+//     (default: physical CPU cores when AVX-512 is active, or GOMAXPROCS otherwise. Because modern
+//     CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD, and 64-192+ core EPYC/Xeon
+//     NUMA servers where single-stream fan-out often peaks around 32-64 cores — the default may
+//     not always be optimal for every workload; override with parallelism=<N> when tuning).
 //   - num_executors=<N>: maximum concurrent node executors in parallel mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
