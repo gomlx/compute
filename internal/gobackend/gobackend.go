@@ -12,6 +12,10 @@
 //     CPU cores when AVX-512 is active, or GOMAXPROCS otherwise — e.g., AVX2, ARM64, or scalar
 //     builds. Because modern CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD,
 //     varying vector widths — the default may not be optimal for every CPU/workload; tune N if needed).
+//   - intra_call_parallelism=<N>: optional upper bound on workers used inside a single Execute()
+//     call (intra-op + inter-op), without limiting inter-call concurrency (default: 0 = same as
+//     parallelism). Intended for high-core-count server CPUs (e.g. 64-192+ core EPYC/Xeon) so many
+//     concurrent requests can saturate all cores while each single call avoids cross-CCD/NUMA barriers.
 //   - num_executors=<N>: maximum concurrent node executors in parallel graph mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
@@ -106,6 +110,13 @@ func New(config string) (compute.Backend, error) {
 			}
 			b.Scheduler.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
+		case "intra_call_parallelism":
+			vInt, err := strconv.Atoi(value)
+			if err != nil || vInt < 0 {
+				return nil, errors.Errorf(
+					"invalid value for %q in Go backend config: needs a non-negative integer, got %q", key, value)
+			}
+			b.Scheduler.SetMaxIntraCallParallelism(vInt)
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
 			b.OpsExecutionType = OpsExecutionSequential
@@ -148,7 +159,7 @@ func New(config string) (compute.Backend, error) {
 					extraOptions = ", " + strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", ")
 				}
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>, constant_arena[=<true|false>]%s; "+
+					"parallelism=#workers, intra_call_parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>, constant_arena[=<true|false>]%s; "+
 					"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
 					key, extraOptions)
 			}
@@ -329,8 +340,11 @@ func (b *Backend) String() string { return BackendName }
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
 	extra := ""
+	if intraCap := b.Scheduler.MaxIntraCallParallelism(); intraCap > 0 {
+		extra += fmt.Sprintf(", intra_call_parallelism=%d", intraCap)
+	}
 	if b.QuantizedCache != QuantizedCacheBalanced {
-		extra = fmt.Sprintf(", quantized_cache=%s", b.QuantizedCache)
+		extra += fmt.Sprintf(", quantized_cache=%s", b.QuantizedCache)
 	}
 	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d%s)",
 		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism(), extra)

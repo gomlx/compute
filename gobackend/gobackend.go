@@ -9,6 +9,11 @@
 //     CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD, and 64-192+ core EPYC/Xeon
 //     NUMA servers where single-stream fan-out often peaks around 32-64 cores — the default may
 //     not always be optimal for every workload; override with parallelism=<N> when tuning).
+//   - intra_call_parallelism=<N>: optional cap on workers used inside a single Execute() call
+//     (intra-op + inter-op) without limiting inter-call concurrency (default: 0 = same as
+//     parallelism). Expected to be useful on 64-192+ core EPYC/Xeon servers (e.g., parallelism=192,
+//     intra_call_parallelism=32) so concurrent requests utilize all cores while each single call
+//     avoids cross-CCD/NUMA synchronization overhead.
 //   - num_executors=<N>: maximum concurrent node executors in parallel mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).

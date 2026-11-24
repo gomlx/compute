@@ -43,10 +43,15 @@ func DefaultPhysicalParallelism() int {
 // Scheduler manages persistent worker goroutines and dispatches intra-op and inter-op tasks.
 type Scheduler struct {
 	// maxParallelism is the configured target limit of parallel workers:
-	//   > 0: explicit limit (also throttles concurrent EnterExecution calls to UnscaledParallelism)
+	//   > 0: explicit limit (also throttles concurrent EnterExecution calls to maxInterCallParallelism)
 	//   == 0: parallelism disabled
 	//   < 0: unlimited (uses runtime.GOMAXPROCS(0))
 	maxParallelism atomic.Int32
+
+	// maxIntraCallParallelism optionally caps the maximum number of workers used inside a single
+	// Execute() call (intra-op + inter-op) without reducing the inter-call concurrency limit in
+	// EnterExecution(). Values <= 0 disable the separate cap (defaulting to maxParallelism).
+	maxIntraCallParallelism atomic.Int32
 
 	// gomaxprocs caches runtime.GOMAXPROCS(0) to avoid acquiring runtime.sched.lock
 	// on every UnscaledParallelism() / EffectiveParallelism() call.
@@ -170,9 +175,40 @@ func (s *Scheduler) SetMaxParallelism(maxParallelism int) {
 	s.execGateMu.Unlock()
 }
 
+// MaxIntraCallParallelism returns the configured per-call (intra-op + inter-op) worker cap.
+// A value <= 0 means no separate cap (same limit as MaxParallelism).
+func (s *Scheduler) MaxIntraCallParallelism() int {
+	return int(s.maxIntraCallParallelism.Load())
+}
+
+// SetMaxIntraCallParallelism sets an upper bound on the number of workers used within any single
+// Execute() call (intra-op + inter-op) without reducing inter-call concurrency in EnterExecution().
+// Pass 0 (the default) to use the same limit as MaxParallelism.
+func (s *Scheduler) SetMaxIntraCallParallelism(maxIntraCall int) {
+	if maxIntraCall < 0 {
+		maxIntraCall = 0
+	}
+	s.maxIntraCallParallelism.Store(int32(maxIntraCall))
+}
+
+// maxInterCallParallelism returns the total concurrency budget across all concurrent Execute() calls
+// (not capped by maxIntraCallParallelism).
+func (s *Scheduler) maxInterCallParallelism() int {
+	maxP := int(s.maxParallelism.Load())
+	if maxP == 0 {
+		return 1
+	}
+	procs := s.cachedGOMAXPROCS()
+	if maxP < 0 {
+		return procs
+	}
+	return min(max(maxP, 1), procs)
+}
+
 // EnterExecution registers the start of a top-level Executable.Execute() call (inter-call tracking).
-// When maxParallelism > 0, it also throttles concurrent active executions to UnscaledParallelism()
+// When maxParallelism > 0, it also throttles concurrent active executions to maxInterCallParallelism()
 // so callers launching more concurrent requests than available cores do not oversubscribe the CPU.
+// Note that maxIntraCallParallelism does NOT reduce this inter-call concurrency limit.
 // It returns a function that must be deferred to unregister the call when Execute() finishes.
 func (s *Scheduler) EnterExecution() func() {
 	if s.maxParallelism.Load() > 0 {
@@ -180,7 +216,7 @@ func (s *Scheduler) EnterExecution() func() {
 		if s.execGateCond == nil {
 			s.execGateCond = sync.NewCond(&s.execGateMu)
 		}
-		for s.maxParallelism.Load() > 0 && s.activeExecs >= s.UnscaledParallelism() {
+		for s.maxParallelism.Load() > 0 && s.activeExecs >= s.maxInterCallParallelism() {
 			s.execGateCond.Wait()
 		}
 		s.activeExecs++
@@ -201,29 +237,31 @@ func (s *Scheduler) EnterExecution() func() {
 }
 
 // EffectiveParallelism returns the target number of workers an operation within the current
-// Execute() call should use, dynamically scaled by the number of concurrent active executions:
+// Execute() call should use, dynamically scaled by the number of concurrent active executions
+// and capped by MaxIntraCallParallelism (when > 0):
 //
-//	max(1, totalParallelism / numActiveCalls)
+//	min(maxIntraCallParallelism, max(1, maxInterCallParallelism / numActiveCalls))
 func (s *Scheduler) EffectiveParallelism() int {
-	total := s.UnscaledParallelism()
+	total := s.maxInterCallParallelism()
 	activeCalls := max(int(s.numActiveCalls.Load()), 1)
-	return max(1, total/activeCalls)
+	eff := max(1, total/activeCalls)
+	if intraCap := int(s.maxIntraCallParallelism.Load()); intraCap > 0 {
+		eff = min(eff, intraCap)
+	}
+	return eff
 }
 
-// UnscaledParallelism returns the full target number of workers for the scheduler without
-// dividing by numActiveCalls. This is used by large operations that acquire the fair FIFO
-// whole-chip gate via AcquireWholeChip() so each large op utilizes all workers sequentially
-// rather than thrashing shared L2/L3 caches concurrently.
+// UnscaledParallelism returns the full target number of workers for a single Execute() call
+// without dividing by numActiveCalls (still respecting MaxIntraCallParallelism when > 0).
+// This is used by large operations that acquire the fair FIFO whole-chip gate via
+// AcquireWholeChip() so each large op utilizes its allowed workers sequentially rather than
+// thrashing shared L2/L3 caches concurrently.
 func (s *Scheduler) UnscaledParallelism() int {
-	maxP := int(s.maxParallelism.Load())
-	if maxP == 0 {
-		return 1
+	total := s.maxInterCallParallelism()
+	if intraCap := int(s.maxIntraCallParallelism.Load()); intraCap > 0 {
+		return min(total, intraCap)
 	}
-	procs := s.cachedGOMAXPROCS()
-	if maxP < 0 {
-		return procs
-	}
-	return min(max(maxP, 1), procs)
+	return total
 }
 
 // AcquireWholeChip acquires the fair FIFO whole-chip gate for a large operation so that
@@ -286,7 +324,7 @@ func (s *Scheduler) RunIntraOpTasks(tasks []func()) {
 
 	eff := s.EffectiveParallelism()
 	if s.IsUnlimited() {
-		eff = s.cachedGOMAXPROCS()
+		eff = s.UnscaledParallelism()
 	}
 	if eff <= 1 {
 		for _, task := range tasks {

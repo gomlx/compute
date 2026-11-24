@@ -192,6 +192,69 @@ func TestScheduler_ExecutionThrottling(t *testing.T) {
 	}
 }
 
+func TestScheduler_MaxIntraCallParallelism(t *testing.T) {
+	sched := New()
+	total := min(8, runtime.GOMAXPROCS(0))
+	if total < 4 {
+		t.Skip("requires GOMAXPROCS >= 4")
+	}
+	intraCap := 2
+	sched.SetMaxParallelism(total)
+	sched.SetMaxIntraCallParallelism(intraCap)
+
+	if got := sched.MaxIntraCallParallelism(); got != intraCap {
+		t.Fatalf("MaxIntraCallParallelism() = %d, want %d", got, intraCap)
+	}
+	if got := sched.UnscaledParallelism(); got != intraCap {
+		t.Fatalf("UnscaledParallelism() = %d, want %d", got, intraCap)
+	}
+	if got := sched.EffectiveParallelism(); got != intraCap {
+		t.Fatalf("EffectiveParallelism() with 0 active calls = %d, want %d", got, intraCap)
+	}
+
+	// Verify Saturate caps workers at intraCap (2) even though maxParallelism is total (8).
+	var workers atomic.Int32
+	latch := xsync.NewLatch()
+	done := make(chan struct{})
+	go func() {
+		sched.Saturate(func() {
+			if int(workers.Add(1)) == intraCap {
+				latch.Trigger()
+				return
+			}
+			latch.Wait()
+		})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Saturate timed out (workers=%d, want=%d)", workers.Load(), intraCap)
+	}
+	if got := int(workers.Load()); got != intraCap {
+		t.Fatalf("Saturate workers = %d, want %d", got, intraCap)
+	}
+
+	// Verify EnterExecution still allows up to `total` concurrent calls (NOT capped by intraCap!).
+	exits := make([]func(), 0, total)
+	for range total {
+		exits = append(exits, sched.EnterExecution())
+	}
+	// With total active calls, EffectiveParallelism drops to total/total == 1.
+	if got := sched.EffectiveParallelism(); got != 1 {
+		t.Fatalf("EffectiveParallelism() with %d active calls = %d, want 1", total, got)
+	}
+	for _, exit := range exits {
+		exit()
+	}
+
+	// Passing 0 restores default (same as maxParallelism).
+	sched.SetMaxIntraCallParallelism(0)
+	if got := sched.EffectiveParallelism(); got != total {
+		t.Fatalf("EffectiveParallelism() after resetting intraCap to 0 = %d, want %d", got, total)
+	}
+}
+
 func TestScheduler_NestedInterOpAndIntraOp_NoDeadlock(t *testing.T) {
 	for _, maxP := range []int{1, 2, 4, 8} {
 		sched := New()

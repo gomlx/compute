@@ -78,6 +78,33 @@ func TestConstantArenaConfig(t *testing.T) {
 			t.Fatalf("expected error for invalid constant_arena value")
 		}
 	})
+
+	t.Run("intra_call_parallelism_config", func(t *testing.T) {
+		bDefault := newTestArenaBackend(t, "")
+		defer bDefault.Finalize()
+		if got := bDefault.Scheduler.MaxIntraCallParallelism(); got != 0 {
+			t.Fatalf("expected default MaxIntraCallParallelism=0, got %d", got)
+		}
+
+		bCap := newTestArenaBackend(t, "parallelism=8,intra_call_parallelism=2")
+		defer bCap.Finalize()
+		if got := bCap.Scheduler.MaxParallelism(); got != 8 {
+			t.Fatalf("expected MaxParallelism=8, got %d", got)
+		}
+		if got := bCap.Scheduler.MaxIntraCallParallelism(); got != 2 {
+			t.Fatalf("expected MaxIntraCallParallelism=2, got %d", got)
+		}
+		if got := bCap.Scheduler.EffectiveParallelism(); got != 2 {
+			t.Fatalf("expected EffectiveParallelism=2, got %d", got)
+		}
+
+		if _, err := New("intra_call_parallelism=-1"); err == nil {
+			t.Fatalf("expected error for negative intra_call_parallelism")
+		}
+		if _, err := New("intra_call_parallelism=abc"); err == nil {
+			t.Fatalf("expected error for non-integer intra_call_parallelism")
+		}
+	})
 }
 
 func TestConstantArenaAllocationAndRefcounting(t *testing.T) {
