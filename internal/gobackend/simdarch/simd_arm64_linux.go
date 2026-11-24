@@ -7,6 +7,7 @@ package simdarch
 import (
 	"encoding/binary"
 	"os"
+	"syscall"
 )
 
 const (
@@ -59,7 +60,20 @@ func detectARM64Features() arm64Features {
 	if hwcap2 != 0 {
 		features.hasI8MM = (hwcap2 & hwcap2I8MM) != 0
 		features.hasBF16 = (hwcap2 & hwcap2BF16) != 0
-		features.hasSME = (hwcap2 & hwcap2SME) != 0
+		features.hasSME = (hwcap2&hwcap2SME) != 0 && smeVectorLength() == 64
 	}
 	return features
+}
+
+// smeVectorLength returns the streaming vector length of the thread in
+// bytes (prctl PR_SME_GET_VL), or 0. The SME kernels need 64 bytes (512
+// bits). Linux starts a process at the largest length of at most 32
+// bytes that the CPU has, or else at the smallest.
+func smeVectorLength() int {
+	const prSMEGetVL, prSMEVLLenMask = 64, 0xffff
+	r, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, prSMEGetVL, 0, 0)
+	if errno != 0 {
+		return 0
+	}
+	return int(r & prSMEVLLenMask)
 }
