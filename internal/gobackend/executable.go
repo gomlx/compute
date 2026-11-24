@@ -563,7 +563,11 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 			//
 			// If we return the same pointer, and the user calls Finalize() on it (which clears
 			// the memory), then the user would be destroying the output they just received.
+			//
+			// The clone also takes over the pool slot of the original, if it has one, so the
+			// pool keeps no reference to the original and its data.
 			outputs[i] = execBuf.results[outIdx].shallowClone()
+			backend.movePoolSlot(execBuf.results[outIdx], outputs[i])
 		}
 		execBuf.results[outIdx] = nil // Set to nil so it's not put back into the pool in the cleanup loop below.
 	}
