@@ -762,6 +762,17 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 	}
 	execBuf.opsExecutionType = executionMode
 
+	releaseRemainingOwned := func() {
+		for idx, buf := range execBuf.results {
+			if buf != nil {
+				if execBuf.owned[idx] && buf.InUse {
+					backend.PutBuffer(buf)
+				}
+				execBuf.results[idx] = nil
+			}
+		}
+	}
+
 	// Execute
 	var err error
 	if executionMode == OpsExecutionSequential {
@@ -770,6 +781,7 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 		err = fe.executeParallel(backend, execBuf, spec)
 	}
 	if err != nil {
+		releaseRemainingOwned()
 		fe.ExecutionBuffersPool.Put(execBuf)
 		return nil, err
 	}
@@ -783,6 +795,10 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 		outIdx := outNode.Index
 		outputs[i] = execBuf.results[outIdx]
 		if outputs[i] == nil {
+			for j := range i {
+				backend.PutBuffer(outputs[j])
+			}
+			releaseRemainingOwned()
 			fe.ExecutionBuffersPool.Put(execBuf)
 			return nil, errors.Errorf("output %d not computed", i)
 		}
@@ -790,36 +806,27 @@ func (fe *FunctionExecutable) Execute(backend *Backend, inputs []*Buffer, donate
 			// Clone the buffer since we don't own it or it is a zero-copy view over another buffer.
 			outputs[i], err = backend.CloneBuffer(execBuf.results[outIdx])
 			if err != nil {
+				for j := range i {
+					backend.PutBuffer(outputs[j])
+				}
+				releaseRemainingOwned()
+				fe.ExecutionBuffersPool.Put(execBuf)
 				return nil, err
 			}
 			if execBuf.owned[outIdx] && execBuf.results[outIdx].IsView() {
 				backend.PutBuffer(execBuf.results[outIdx])
 			}
 		} else {
-			// We owned it, and now we are giving it to the user.
-			// Return a shallow clone so the user can have a fresh handle,
-			// while keeping the original handle (if it was a donated input) unchanged.
-			//
-			// If we return the same pointer, and the user calls Finalize() on it (which clears
-			// the memory), then the user would be destroying the output they just received.
-			//
-			// The clone also takes over the pool slot of the original, if it has one, so the
-			// pool keeps no reference to the original and its data.
-			outputs[i] = execBuf.results[outIdx].shallowClone()
-			backend.movePoolSlot(execBuf.results[outIdx], outputs[i])
+			// We own this buffer exclusively: donated user inputs were already detached via
+			// shallowClone()+markDonated() at Executable.Execute entry, and bufferPool.Get()
+			// clears its slot reference on checkout. Return it directly without cloning.
+			outputs[i] = execBuf.results[outIdx]
 		}
 		execBuf.results[outIdx] = nil // Set to nil so it's not put back into the pool in the cleanup loop below.
 	}
 
 	// Free any remaining owned buffers that weren't outputs
-	for idx, buf := range execBuf.results {
-		if buf != nil {
-			if execBuf.owned[idx] {
-				backend.PutBuffer(buf)
-			}
-			execBuf.results[idx] = nil
-		}
-	}
+	releaseRemainingOwned()
 
 	fe.ExecutionBuffersPool.Put(execBuf)
 	return outputs, nil

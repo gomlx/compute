@@ -28,11 +28,11 @@ type Executable interface {
 	// Execute the computation.
 	// The number and shapes of the inputs must match those of the Executable parameters (returned by [Executable.Inputs]).
 	//
-	// The inputs marked as donate will become invalid after use.
+	// The inputs marked as donate will become invalid after use (even if Execute returns an error).
 	// This is useful if the input buffer is no longer needed or if updating a variable
 	// so its Buffer space can be reused as an output Buffer.
 	//
-	// Donated buffers are no longer valid after the call.
+	// Donated buffers are no longer valid after the call, and calling Finalize on them is a safe no-op.
 	// If donate is nil, it is assumed to be false for all buffers, and no buffer is donated.
 	//
 	// For portable computations (not compiled with a fixed device assignment), the execution runs on the defaultDevice.
