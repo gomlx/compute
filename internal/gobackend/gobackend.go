@@ -8,7 +8,8 @@
 // It also serves as a reference implementation for the [compute.Backend] interface.
 //
 // Supported configuration options (via GOMLX_BACKEND="go:<opt1>,<opt2>=<val>"):
-//   - parallelism=<N>: maximum intra-op scheduler worker goroutines (default: GOMAXPROCS).
+//   - parallelism=<N>: maximum intra-op workers and concurrent Execute() calls (default: physical
+//     CPU cores when wide SIMD is active, or GOMAXPROCS when running scalar without SIMD).
 //   - num_executors=<N>: maximum concurrent node executors in parallel graph mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
@@ -32,6 +33,7 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend/scheduler"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/notimplemented"
 	"github.com/gomlx/compute/support/envutil"
 	"github.com/gomlx/compute/support/xslices"
@@ -256,6 +258,13 @@ func newDefaultBackend() *Backend {
 		constantArena:                 newConstantArena(),
 	}
 	b.Scheduler = scheduler.New()
+	if simdarch.IsAVX512Allowed || simdarch.IsAVX2Allowed || simdarch.IsNEONAllowed {
+		// Wide SIMD kernels (AVX-512/AVX2/NEON) saturate each physical core's FMA/VNNI pipes and
+		// private L1d/L2 caches with a single thread, so defaulting to physical CPU cores avoids
+		// SMT contention and barrier overhead. Scalar (!simd) builds keep GOMAXPROCS (all logical
+		// hardware threads), where SMT delivers substantial speedups.
+		b.Scheduler.SetMaxParallelism(scheduler.DefaultPhysicalParallelism())
+	}
 	return b
 }
 

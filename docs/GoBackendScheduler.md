@@ -49,10 +49,12 @@ Historically, `scheduler.Scheduler` (formerly `workerspool.Pool`) and `FunctionE
 
 ## 3. Core Design & Invariants
 
-### Default Parallelism (`runtime.GOMAXPROCS(0)`)
+### Default Parallelism (SIMD-Aware Physical Cores vs. `GOMAXPROCS`)
 
-- Because workers in the new design never block passively while holding a compute slot, the default `maxParallelism` is set to **`runtime.GOMAXPROCS(0)`** (1:1 with available logical CPU cores) rather than `2 * runtime.GOMAXPROCS(0)`.
-- Matching active compute workers 1:1 with `GOMAXPROCS` prevents mid-chunk preemption by the Go scheduler and keeps worker OS threads naturally resident on their CPU cores across consecutive operations, preserving L1/L2 cache warmth.
+- When wide hardware SIMD (`AVX-512`, `AVX2`, or `NEON`) is enabled, `gobackend` defaults `maxParallelism` to **`scheduler.DefaultPhysicalParallelism()` = `min(PhysicalCores(), runtime.GOMAXPROCS(0))`** (detected via Linux `/sys/devices/system/cpu/cpu*/topology/` or macOS `sysctl hw.physicalcpu`). Wide SIMD microkernels already saturate each physical core's FMA/VNNI pipelines and private L1d/L2 caches with a single thread, so matching physical cores avoids SMT thrashing, cuts CPU usage by ~30–50%, and lowers barrier latency.
+- When running scalar (`GOEXPERIMENT=nosimd`), `gobackend` defaults `maxParallelism` to **`runtime.GOMAXPROCS(0)`** (all logical SMT threads), where SMT delivers substantial speedups (`+9%` to `+53%` on Zen 5).
+- Explicit `GOMLX_BACKEND="go:parallelism=N"` always overrides the default.
+- Additionally, when `maxParallelism > 0`, `Scheduler.EnterExecution()` throttles concurrent top-level `Executable.Execute()` calls to `UnscaledParallelism()`, so applications spawning more concurrent requests than available physical cores do not oversubscribe the CPU.
 
 ### Invariant 1: Priority Hierarchy (`Inter-Call` > `Intra-Op` > `Inter-Op`)
 

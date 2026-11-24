@@ -24,21 +24,44 @@ import (
 
 const defaultQueueSize = 1024
 
+var cachedPhysicalCores = sync.OnceValue(detectPhysicalCores)
+
+// PhysicalCores returns the detected number of online physical CPU cores on this machine
+// (excluding SMT/Hyper-Threading sibling threads on Linux and macOS; falls back to runtime.NumCPU()
+// on other platforms).
+func PhysicalCores() int {
+	return max(cachedPhysicalCores(), 1)
+}
+
+// DefaultPhysicalParallelism returns min(PhysicalCores(), runtime.GOMAXPROCS(0)),
+// respecting container/cgroup GOMAXPROCS limits while avoiding SMT oversubscription.
+func DefaultPhysicalParallelism() int {
+	procs := max(runtime.GOMAXPROCS(0), 1)
+	return min(PhysicalCores(), procs)
+}
+
 // Scheduler manages persistent worker goroutines and dispatches intra-op and inter-op tasks.
 type Scheduler struct {
 	// maxParallelism is the configured target limit of parallel workers:
-	//   > 0: explicit limit
+	//   > 0: explicit limit (also throttles concurrent EnterExecution calls to UnscaledParallelism)
 	//   == 0: parallelism disabled
 	//   < 0: unlimited (uses runtime.GOMAXPROCS(0))
-	maxParallelism int
+	maxParallelism atomic.Int32
 
 	// gomaxprocs caches runtime.GOMAXPROCS(0) to avoid acquiring runtime.sched.lock
 	// on every UnscaledParallelism() / EffectiveParallelism() call.
-	gomaxprocs int
+	gomaxprocs atomic.Int32
 
 	// numActiveCalls tracks the number of concurrent top-level Executable.Execute() calls
 	// for inter-call parallelism scaling.
 	numActiveCalls atomic.Int32
+
+	// execGateMu / execGateCond / activeExecs throttle concurrent top-level Executable.Execute()
+	// calls to UnscaledParallelism() when maxParallelism > 0, preventing oversubscription when
+	// callers spawn more concurrent requests than available physical cores.
+	execGateMu   sync.Mutex
+	execGateCond *sync.Cond
+	activeExecs  int
 
 	// maxInterOpWorkers tracks the maximum number of persistent background workers that
 	// may concurrently execute inter-op tasks, reserving at least 1 persistent worker
@@ -61,18 +84,19 @@ type Scheduler struct {
 // New returns a new Scheduler with the default parallelism set to runtime.GOMAXPROCS(0).
 func New() *Scheduler {
 	procs := max(runtime.GOMAXPROCS(0), 1)
-	return &Scheduler{
-		maxParallelism: procs,
-		gomaxprocs:     procs,
-	}
+	s := &Scheduler{}
+	s.maxParallelism.Store(int32(procs))
+	s.gomaxprocs.Store(int32(procs))
+	s.execGateCond = sync.NewCond(&s.execGateMu)
+	return s
 }
 
 func (s *Scheduler) cachedGOMAXPROCS() int {
-	if s.gomaxprocs > 0 {
-		return s.gomaxprocs
+	if procs := int(s.gomaxprocs.Load()); procs > 0 {
+		return procs
 	}
 	procs := max(runtime.GOMAXPROCS(0), 1)
-	s.gomaxprocs = procs
+	s.gomaxprocs.Store(int32(procs))
 	return procs
 }
 
@@ -82,7 +106,7 @@ func (s *Scheduler) ensureWorkersStarted() {
 		s.intraOpQueue = make(chan func(), defaultQueueSize)
 		s.interOpQueue = make(chan func(), defaultQueueSize)
 		s.wholeChipGate = make(chan struct{}, 1)
-		numWorkers := max(s.cachedGOMAXPROCS(), s.maxParallelism, 1)
+		numWorkers := max(s.cachedGOMAXPROCS(), int(s.maxParallelism.Load()), 1)
 		if numWorkers > 1 {
 			s.maxInterOpWorkers = int32(numWorkers - 1)
 		} else {
@@ -117,32 +141,59 @@ func (s *Scheduler) interOpWorkerLoop() {
 
 // IsEnabled returns whether parallelism is enabled (maxParallelism != 0).
 func (s *Scheduler) IsEnabled() bool {
-	return s.maxParallelism != 0
+	return s.maxParallelism.Load() != 0
 }
 
 // IsUnlimited returns whether parallelism is unlimited (maxParallelism < 0).
 func (s *Scheduler) IsUnlimited() bool {
-	return s.maxParallelism < 0
+	return s.maxParallelism.Load() < 0
 }
 
 // MaxParallelism returns the configured target for parallelism.
 // If set to 0, parallelism is disabled.
 // If set to -1, parallelism is unlimited.
 func (s *Scheduler) MaxParallelism() int {
-	return s.maxParallelism
+	return int(s.maxParallelism.Load())
 }
 
 // SetMaxParallelism sets the target maxParallelism.
 //
-// This should be configured before workers start executing.
+// This should typically be configured before workers start executing; calling it dynamically
+// safely wakes any executions parked in EnterExecution.
 func (s *Scheduler) SetMaxParallelism(maxParallelism int) {
-	s.maxParallelism = maxParallelism
-	s.gomaxprocs = max(runtime.GOMAXPROCS(0), 1)
+	s.execGateMu.Lock()
+	s.maxParallelism.Store(int32(maxParallelism))
+	s.gomaxprocs.Store(int32(max(runtime.GOMAXPROCS(0), 1)))
+	if s.execGateCond != nil {
+		s.execGateCond.Broadcast()
+	}
+	s.execGateMu.Unlock()
 }
 
 // EnterExecution registers the start of a top-level Executable.Execute() call (inter-call tracking).
+// When maxParallelism > 0, it also throttles concurrent active executions to UnscaledParallelism()
+// so callers launching more concurrent requests than available cores do not oversubscribe the CPU.
 // It returns a function that must be deferred to unregister the call when Execute() finishes.
 func (s *Scheduler) EnterExecution() func() {
+	if s.maxParallelism.Load() > 0 {
+		s.execGateMu.Lock()
+		if s.execGateCond == nil {
+			s.execGateCond = sync.NewCond(&s.execGateMu)
+		}
+		for s.maxParallelism.Load() > 0 && s.activeExecs >= s.UnscaledParallelism() {
+			s.execGateCond.Wait()
+		}
+		s.activeExecs++
+		s.execGateMu.Unlock()
+		s.numActiveCalls.Add(1)
+		return func() {
+			s.numActiveCalls.Add(-1)
+			s.execGateMu.Lock()
+			s.activeExecs--
+			s.execGateCond.Signal()
+			s.execGateMu.Unlock()
+		}
+	}
 	s.numActiveCalls.Add(1)
 	return func() {
 		s.numActiveCalls.Add(-1)
@@ -164,14 +215,15 @@ func (s *Scheduler) EffectiveParallelism() int {
 // whole-chip gate via AcquireWholeChip() so each large op utilizes all workers sequentially
 // rather than thrashing shared L2/L3 caches concurrently.
 func (s *Scheduler) UnscaledParallelism() int {
-	if s.maxParallelism == 0 {
+	maxP := int(s.maxParallelism.Load())
+	if maxP == 0 {
 		return 1
 	}
 	procs := s.cachedGOMAXPROCS()
-	if s.maxParallelism < 0 {
+	if maxP < 0 {
 		return procs
 	}
-	return min(max(s.maxParallelism, 1), procs)
+	return min(max(maxP, 1), procs)
 }
 
 // AcquireWholeChip acquires the fair FIFO whole-chip gate for a large operation so that

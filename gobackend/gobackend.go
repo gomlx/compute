@@ -4,7 +4,8 @@
 //
 // Configuration options can be passed via GOMLX_BACKEND="go:<option1>,<option2>=<value>" or
 // compute.NewWithConfig("go:..."). Supported options:
-//   - parallelism=<N>: maximum intra-op worker goroutines (default: runtime.GOMAXPROCS(0)).
+//   - parallelism=<N>: maximum intra-op worker goroutines and concurrent Execute() calls
+//     (default: physical CPU cores when wide SIMD is active, or GOMAXPROCS without SIMD).
 //   - num_executors=<N>: maximum concurrent node executors in parallel mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
