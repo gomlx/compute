@@ -44,4 +44,22 @@ func TestAVX512(t *testing.T) {
 		matmul.ForceLargeVariant = true
 		backendtest.TestDotGeneral(t, backend)
 	})
+
+	if gobackend.IsAVX512BF16Allowed {
+		origUseBF16 := avx512.AVX512UseBF16
+		avx512.AVX512UseBF16 = false
+		defer func() { avx512.AVX512UseBF16 = origUseBF16 }()
+
+		t.Run("Small_BF16Fallback", func(t *testing.T) {
+			matmul.ForceSmallVariant = true
+			matmul.ForceLargeVariant = false
+			backendtest.TestDotGeneral(t, backend)
+		})
+
+		t.Run("Large_BF16Fallback", func(t *testing.T) {
+			matmul.ForceSmallVariant = false
+			matmul.ForceLargeVariant = true
+			backendtest.TestDotGeneral(t, backend)
+		})
+	}
 }

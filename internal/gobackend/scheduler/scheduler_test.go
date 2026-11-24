@@ -112,26 +112,146 @@ func TestScheduler_ParallelizeChunks(t *testing.T) {
 
 func TestScheduler_InterCallScaling(t *testing.T) {
 	sched := New()
-	sched.SetMaxParallelism(4)
+	targetP := min(4, runtime.GOMAXPROCS(0))
+	sched.SetMaxParallelism(targetP)
 
-	if got := sched.EffectiveParallelism(); got != min(4, runtime.GOMAXPROCS(0)) {
-		t.Fatalf("EffectiveParallelism() = %d, want %d", got, min(4, runtime.GOMAXPROCS(0)))
+	if got := sched.EffectiveParallelism(); got != targetP {
+		t.Fatalf("EffectiveParallelism() = %d, want %d", got, targetP)
 	}
 
-	// Simulate 4 concurrent Execute() calls.
+	// Simulate targetP concurrent Execute() calls.
 	var exits []func()
-	for range 4 {
+	for range targetP {
 		exits = append(exits, sched.EnterExecution())
 	}
 	if got := sched.EffectiveParallelism(); got != 1 {
-		t.Fatalf("With 4 active calls, EffectiveParallelism() = %d, want 1", got)
+		t.Fatalf("With %d active calls, EffectiveParallelism() = %d, want 1", targetP, got)
 	}
 
 	for _, exit := range exits {
 		exit()
 	}
-	if got := sched.EffectiveParallelism(); got != min(4, runtime.GOMAXPROCS(0)) {
-		t.Fatalf("After exiting calls, EffectiveParallelism() = %d, want %d", got, min(4, runtime.GOMAXPROCS(0)))
+	if got := sched.EffectiveParallelism(); got != targetP {
+		t.Fatalf("After exiting calls, EffectiveParallelism() = %d, want %d", got, targetP)
+	}
+}
+
+func TestScheduler_PhysicalCores(t *testing.T) {
+	phys := PhysicalCores()
+	if phys < 1 {
+		t.Fatalf("PhysicalCores() = %d, want >= 1", phys)
+	}
+	def := DefaultPhysicalParallelism()
+	if def < 1 || def > runtime.GOMAXPROCS(0) || def > phys {
+		t.Fatalf("DefaultPhysicalParallelism() = %d out of bounds (phys=%d, GOMAXPROCS=%d)",
+			def, phys, runtime.GOMAXPROCS(0))
+	}
+	t.Logf("PhysicalCores=%d, GOMAXPROCS=%d, DefaultPhysicalParallelism=%d",
+		phys, runtime.GOMAXPROCS(0), def)
+}
+
+func TestScheduler_ExecutionThrottling(t *testing.T) {
+	sched := New()
+	limit := min(4, runtime.GOMAXPROCS(0))
+	sched.SetMaxParallelism(limit)
+
+	const totalRequests = 24
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	var completed atomic.Int32
+	var wg sync.WaitGroup
+
+	for range totalRequests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			exit := sched.EnterExecution()
+			defer exit()
+			cur := active.Add(1)
+			for {
+				prev := maxActive.Load()
+				if cur <= prev || maxActive.CompareAndSwap(prev, cur) {
+					break
+				}
+			}
+			time.Sleep(2 * time.Millisecond)
+			active.Add(-1)
+			completed.Add(1)
+		}()
+	}
+	wg.Wait()
+
+	if got := completed.Load(); got != totalRequests {
+		t.Fatalf("completed = %d, want %d", got, totalRequests)
+	}
+	if got := int(maxActive.Load()); got > limit {
+		t.Fatalf("max concurrent active executions = %d, exceeded limit %d", got, limit)
+	}
+	if limit > 1 && int(maxActive.Load()) < 2 {
+		t.Fatalf("expected concurrent executions up to limit=%d, got maxActive=%d", limit, maxActive.Load())
+	}
+}
+
+func TestScheduler_MaxIntraCallParallelism(t *testing.T) {
+	sched := New()
+	total := min(8, runtime.GOMAXPROCS(0))
+	if total < 4 {
+		t.Skip("requires GOMAXPROCS >= 4")
+	}
+	intraCap := 2
+	sched.SetMaxParallelism(total)
+	sched.SetMaxIntraCallParallelism(intraCap)
+
+	if got := sched.MaxIntraCallParallelism(); got != intraCap {
+		t.Fatalf("MaxIntraCallParallelism() = %d, want %d", got, intraCap)
+	}
+	if got := sched.UnscaledParallelism(); got != intraCap {
+		t.Fatalf("UnscaledParallelism() = %d, want %d", got, intraCap)
+	}
+	if got := sched.EffectiveParallelism(); got != intraCap {
+		t.Fatalf("EffectiveParallelism() with 0 active calls = %d, want %d", got, intraCap)
+	}
+
+	// Verify Saturate caps workers at intraCap (2) even though maxParallelism is total (8).
+	var workers atomic.Int32
+	latch := xsync.NewLatch()
+	done := make(chan struct{})
+	go func() {
+		sched.Saturate(func() {
+			if int(workers.Add(1)) == intraCap {
+				latch.Trigger()
+				return
+			}
+			latch.Wait()
+		})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("Saturate timed out (workers=%d, want=%d)", workers.Load(), intraCap)
+	}
+	if got := int(workers.Load()); got != intraCap {
+		t.Fatalf("Saturate workers = %d, want %d", got, intraCap)
+	}
+
+	// Verify EnterExecution still allows up to `total` concurrent calls (NOT capped by intraCap!).
+	exits := make([]func(), 0, total)
+	for range total {
+		exits = append(exits, sched.EnterExecution())
+	}
+	// With total active calls, EffectiveParallelism drops to total/total == 1.
+	if got := sched.EffectiveParallelism(); got != 1 {
+		t.Fatalf("EffectiveParallelism() with %d active calls = %d, want 1", total, got)
+	}
+	for _, exit := range exits {
+		exit()
+	}
+
+	// Passing 0 restores default (same as maxParallelism).
+	sched.SetMaxIntraCallParallelism(0)
+	if got := sched.EffectiveParallelism(); got != total {
+		t.Fatalf("EffectiveParallelism() after resetting intraCap to 0 = %d, want %d", got, total)
 	}
 }
 
@@ -189,9 +309,9 @@ func TestScheduler_WholeChipGate(t *testing.T) {
 	}
 	sched.SetMaxParallelism(targetP)
 
-	// Simulate 4 concurrent active Execute() calls so EffectiveParallelism() == 1,
+	// Simulate targetP concurrent active Execute() calls so EffectiveParallelism() == 1,
 	// while UnscaledParallelism() remains targetP.
-	const numCalls = 4
+	numCalls := targetP
 	exits := make([]func(), numCalls)
 	for i := range numCalls {
 		exits[i] = sched.EnterExecution()

@@ -918,8 +918,8 @@ func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (*gob
 }
 
 // GetExactBuffer forwards exact-sized buffer allocation to the shared matmul package.
-func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (*gobackend.Buffer, []T, bool) {
-	return matmul.GetExactBuffer[T](backend, length)
+func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int, constData *gobackend.ConstantData) (*gobackend.Buffer, []T, bool) {
+	return matmul.GetExactBuffer[T](backend, length, constData)
 }
 
 // ReleaseBuffer forwards buffer release to the shared matmul package.

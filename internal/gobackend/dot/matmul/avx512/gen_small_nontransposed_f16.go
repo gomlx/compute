@@ -172,7 +172,7 @@ func avx512SmallFloat16NonTransposedAsm( //alt:f16
 				outRow3 := unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
 
 				//alt:f32 avx512SmallNonTransposedTile4x64Float32Asm(
-				//alt:bf16  avx512SmallNonTransposedTile4x64BFloat16Asm(
+				//alt:bf16  avx512SmallNonTransposedTile4x64BFloat16Dispatch(
 				avx512SmallNonTransposedTile4x64Float16Asm( //alt:f16
 					lRow0, lRow1, lRow2, lRow3, //alt:f32|bf16|f16
 					rhsCol,                             //alt:f32|bf16|f16
@@ -190,7 +190,7 @@ func avx512SmallFloat16NonTransposedAsm( //alt:f16
 				outRow3 := unsafe.Add(outputBase, uintptr((row+3)*rhsCrossSize+col)*outputElemSize) //alt:f32|bf16|f16
 
 				//alt:f32 avx512SmallNonTransposedTile4x16Float32Asm(
-				//alt:bf16  avx512SmallNonTransposedTile4x16BFloat16Asm(
+				//alt:bf16  avx512SmallNonTransposedTile4x16BFloat16Dispatch(
 				avx512SmallNonTransposedTile4x16Float16Asm( //alt:f16
 					lRow0, lRow1, lRow2, lRow3, //alt:f32|bf16|f16
 					rhsCol,                             //alt:f32|bf16|f16

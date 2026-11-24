@@ -49,7 +49,8 @@ type ConstantData struct {
 
 	// cachedForm holds a shared derived representation (opaque any; e.g., pre-packed GEMM panels [][]T
 	// in DotGeneral) for this constant. Read lock-free via CachedForm() and populated once via GetOrSetCachedForm().
-	cachedForm atomic.Value
+	// Stored as atomic.Pointer[any] so releasing an off-heap constant arena chunk can safely reset it to nil.
+	cachedForm atomic.Pointer[any]
 
 	// cachedFormSignature records the canonical signature of the constant sub-graph and consumer parameters
 	// that produced cachedForm.
@@ -58,6 +59,17 @@ type ConstantData struct {
 	// forceCache indicates that a consumer op should populate cachedForm on the first execution
 	// (e.g., even for small batch sizes in DotGeneral, unless ForceSmallVariant is active in tests).
 	forceCache atomic.Bool
+
+	// liveBuilders tracks active (un-finalized) Builders/Executables referencing this ConstantData.
+	// Protected by mu.
+	liveBuilders map[*Builder]struct{}
+
+	// arenaChunks lists off-heap constantArenaChunks backing cachedForm. Protected by mu.
+	arenaChunks []*constantArenaChunk
+
+	// arenaReleased is set when cachedForm was cleared because all referencing builders/executables
+	// were finalized and the donated rawBuffer had already been freed. Protected by mu.
+	arenaReleased bool
 }
 
 // NewConstantData creates a new ConstantData with an exact-sized, non-pooled buffer copied from flat.
@@ -95,6 +107,7 @@ func NewConstantDataFromBuffer(backend *Backend, buf *Buffer, donate bool) (*Con
 	adopted.isDonated = false
 	if donate {
 		buf.markDonated()
+		AdviseHugePages(adopted.RawBytes)
 	}
 	cd := &ConstantData{
 		backend:           backend,
@@ -146,7 +159,11 @@ func (cd *ConstantData) CachedForm() any {
 	if cd == nil {
 		return nil
 	}
-	return cd.cachedForm.Load()
+	ptr := cd.cachedForm.Load()
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
 }
 
 // GetOrSetCachedForm returns the cached representation cast to T if already present (via a lock-free atomic load).
@@ -157,29 +174,37 @@ func GetOrSetCachedForm[T any](cd *ConstantData, computeFn func() T) T {
 	if cd == nil {
 		return zero
 	}
-	if v := cd.cachedForm.Load(); v != nil {
-		if typed, ok := v.(T); ok {
+	if ptr := cd.cachedForm.Load(); ptr != nil {
+		if typed, ok := (*ptr).(T); ok {
 			return typed
 		}
 		return zero
 	}
 	cd.mu.Lock()
 	defer cd.mu.Unlock()
-	if v := cd.cachedForm.Load(); v != nil {
-		if typed, ok := v.(T); ok {
+	if ptr := cd.cachedForm.Load(); ptr != nil {
+		if typed, ok := (*ptr).(T); ok {
 			return typed
 		}
 		return zero
 	}
 	typed := computeFn()
 	if !reflect.ValueOf(&typed).Elem().IsZero() {
-		cd.cachedForm.Store(typed)
+		var boxed any = typed
+		cd.cachedForm.Store(&boxed)
 		if !cd.isRawBufferPinned {
 			// Clear the atomic pointer so GC can reclaim the buffer once any
 			// concurrent readers that already loaded it finish; do not mutate
 			// oldBuf fields in place because concurrent first-run readers may
 			// still be reading them.
-			_ = cd.rawBuffer.Swap(nil)
+			if oldBuf := cd.rawBuffer.Swap(nil); oldBuf != nil && cd.backend != nil &&
+				cd.backend.UseConstantArena && cd.backend.constantArena != nil {
+				freed := int64(len(oldBuf.RawBytes))
+				if freed == 0 {
+					freed = cd.shape.ByteSize()
+				}
+				cd.backend.constantArena.recordReleasedDonatedBytes(freed)
+			}
 		}
 	}
 	return typed
@@ -300,9 +325,11 @@ func (fe *FunctionExecutable) setupConstantSubgraphCaching() error {
 		if constNode == nil || constNode.OpType != compute.OpTypeConstant || fe.NumUses[nodeIdx] == 0 {
 			continue
 		}
-		if _, ok := constNode.Data.(*ConstantData); !ok {
+		cd, ok := constNode.Data.(*ConstantData)
+		if !ok {
 			continue
 		}
+		fe.Builder.registerConstantUser(cd)
 		if fe.constantFeedsSecondaryOnly(constNode) {
 			pass1 = append(pass1, constNode)
 		} else {
@@ -368,6 +395,13 @@ func (fe *FunctionExecutable) setupSingleConstantCaching(constNode *Node) error 
 	canReleaseRaw, sig, terminals, intermediateIdxs := fe.analyzeConstantCaching(constNode)
 
 	cd.mu.Lock()
+	if cd.arenaReleased && cd.Buffer() == nil {
+		optSig := cd.cachedFormSignature
+		cd.mu.Unlock()
+		return errors.Errorf(
+			"the donated variable/constant (shape %s, %s) was previously freed when all builders/executables using its constant_arena were finalized; recreate the constant or avoid finalizing all referencing executables before compiling a new graph",
+			cd.shape, optSig)
+	}
 	alreadyCachedMatching := sig != "" && cd.CachedForm() != nil && cd.cachedFormSignature == sig
 
 	// Apply per-terminal conditional caching decisions (e.g., QuantizedCacheBalanced).

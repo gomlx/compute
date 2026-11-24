@@ -28,11 +28,17 @@ type Epilogue[T any] struct {
 	// ActivationMinParallelChunk is the minimum element chunk size from the activation's KernelMetadata.
 	// When <= 0, defaults to 16384.
 	ActivationMinParallelChunk int
+
+	// TilePostStore is an optional hook invoked immediately after Bias and Activation have been
+	// applied to a finished output tile [rowStart:rowEnd, colStart:colEnd] while it is still hot
+	// in L1/L2 cache (e.g. to convert Float32 tiles directly into a BFloat16/Float16 output buffer
+	// without a trailing full-tensor ParallelConvertSlice pass).
+	TilePostStore func(outputMatrix []T, rhsCrossSize, rowStart, rowEnd, colStart, colEnd int)
 }
 
-// HasWork returns true if the epilogue contains either a bias or an activation.
+// HasWork returns true if the epilogue contains a bias, activation, or post-store tile hook.
 func (e Epilogue[T]) HasWork() bool {
-	return len(e.Bias) > 0 || e.Activation != nil || e.BiasTileActivation != nil
+	return len(e.Bias) > 0 || e.Activation != nil || e.BiasTileActivation != nil || e.TilePostStore != nil
 }
 
 // ApplyEpilogue applies the epilogue across output.
@@ -54,6 +60,7 @@ func ApplyEpilogue[T any](
 	hasBias := len(bias) > 0
 	act := epilogue.Activation
 	biasTileAct := epilogue.BiasTileActivation
+	postStore := epilogue.TilePostStore
 
 	minChunkElements := 16384
 	if (act != nil || biasTileAct != nil) && epilogue.ActivationMinParallelChunk > 0 {
@@ -61,8 +68,8 @@ func ApplyEpilogue[T any](
 	}
 	minElementsThreshold := minChunkElements * 2
 
-	// Fast path: No bias, only activation. We can apply activation on the whole buffer or in chunks.
-	if !hasBias && act != nil {
+	// Fast path: No bias and no postStore, only activation.
+	if !hasBias && postStore == nil && act != nil {
 		if backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() && len(output) > minElementsThreshold {
 			backend.Scheduler.ParallelizeChunks(len(output), minChunkElements, func(start, end int) {
 				act(output[start:end])
@@ -73,24 +80,22 @@ func ApplyEpilogue[T any](
 		return
 	}
 
-	// Path with bias (and optional activation): Process row chunks so each chunk
-	// is modified and activated while resident in L1/L2 cache.
+	// Single-row fast path with postStore (e.g. M=1 fallback small/nosimd): parallelize across columns if large.
+	if numRows == 1 && postStore != nil && rowSize > minElementsThreshold &&
+		backend != nil && backend.Scheduler != nil && backend.Scheduler.IsEnabled() {
+		backend.Scheduler.ParallelizeChunks(rowSize, minChunkElements, func(cStart, cEnd int) {
+			ApplyEpilogueTile(output, rowSize, 0, 1, cStart, cEnd, epilogue)
+		})
+		return
+	}
+
+	// Path with bias, activation, and/or postStore: Process row chunks so each chunk
+	// is modified, activated, and converted while resident in L1/L2 cache.
 	applyRows := func(rStart, rEnd int) {
 		if rEnd <= rStart {
 			return
 		}
-		if hasBias && biasTileAct != nil {
-			biasTileAct(output[rStart*rowSize:rEnd*rowSize], rowSize, rEnd-rStart, rowSize, bias[:rowSize])
-			return
-		}
-		for r := rStart; r < rEnd; r++ {
-			rowOffset := r * rowSize
-			row := output[rowOffset : rowOffset+rowSize]
-			addBias(row, bias)
-			if act != nil {
-				act(row)
-			}
-		}
+		ApplyEpilogueTile(output, rowSize, rStart, rEnd, 0, rowSize, epilogue)
 	}
 
 	totalElements := numRows * rowSize
@@ -129,6 +134,7 @@ func ApplyEpilogueTile[T any](
 	hasBias := len(bias) > 0
 	act := epilogue.Activation
 	biasTileAct := epilogue.BiasTileActivation
+	postStore := epilogue.TilePostStore
 
 	if !hasBias {
 		if act != nil {
@@ -141,6 +147,9 @@ func ApplyEpilogueTile[T any](
 				}
 			}
 		}
+		if postStore != nil {
+			postStore(outputMatrix, rhsCrossSize, rowStart, rowEnd, colStart, colEnd)
+		}
 		return
 	}
 
@@ -148,6 +157,9 @@ func ApplyEpilogueTile[T any](
 	if biasTileAct != nil {
 		outOff := rowStart*rhsCrossSize + colStart
 		biasTileAct(outputMatrix[outOff:outOff+(numRows-1)*rhsCrossSize+width], rhsCrossSize, numRows, width, biasSlice)
+		if postStore != nil {
+			postStore(outputMatrix, rhsCrossSize, rowStart, rowEnd, colStart, colEnd)
+		}
 		return
 	}
 
@@ -158,6 +170,9 @@ func ApplyEpilogueTile[T any](
 		if act != nil {
 			act(row)
 		}
+	}
+	if postStore != nil {
+		postStore(outputMatrix, rhsCrossSize, rowStart, rowEnd, colStart, colEnd)
 	}
 }
 

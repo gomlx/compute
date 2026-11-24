@@ -4,13 +4,26 @@
 //
 // Configuration options can be passed via GOMLX_BACKEND="go:<option1>,<option2>=<value>" or
 // compute.NewWithConfig("go:..."). Supported options:
-//   - parallelism=<N>: maximum intra-op worker goroutines (default: runtime.GOMAXPROCS(0)).
+//   - parallelism=<N>: maximum intra-op worker goroutines and concurrent Execute() calls
+//     (default: physical CPU cores when AVX-512 is active, or GOMAXPROCS otherwise. Because modern
+//     CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD, and 64-192+ core EPYC/Xeon
+//     NUMA servers where single-stream fan-out often peaks around 32-64 cores — the default may
+//     not always be optimal for every workload; override with parallelism=<N> when tuning).
+//   - intra_call_parallelism=<N>: optional cap on workers used inside a single Execute() call
+//     (intra-op + inter-op) without limiting inter-call concurrency (default: 0 = same as
+//     parallelism). Expected to be useful on 64-192+ core EPYC/Xeon servers (e.g., parallelism=192,
+//     intra_call_parallelism=32) so concurrent requests utilize all cores while each single call
+//     avoids cross-CCD/NUMA synchronization overhead.
 //   - num_executors=<N>: maximum concurrent node executors in parallel mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
 //   - quantized_cache=<always|balanced|never>: constant weight/scale/zero-point/bias caching policy
 //     for FusedQuantizedDense (default: balanced; aliases: true/1 or bare quantized_cache for always;
 //     false/none/0 for never). See docs/GoBackendMemoryUsage.md for details.
+//   - constant_arena[=<true|false>]: allocate cached/pre-packed constant buffers in 2 MiB-aligned
+//     off-heap mmap chunks advised with MADV_HUGEPAGE on Linux, reference-counted per Builder/Executable
+//     so chunks are unmapped back to the OS when all referencing executables are finalized (default: true;
+//     can also be configured via GOMLX_GO_CONSTANT_ARENA).
 //   - no_ops: skip kernel math for scheduling/framework overhead benchmarking.
 //
 // Passing an unknown option such as GOMLX_BACKEND="go:help" returns an error listing all valid

@@ -143,7 +143,7 @@ func execQuantizedDenseGGMLPanel(
 		cachedPanel := gobackend.GetOrSetCachedForm(wConstantData, func() []uint8 {
 			weights := wBuf.Flat.([]uint8)
 			bytesPerRowW := wBuf.RawShape.Dimensions[1]
-			p := make([]uint8, totalStrips*stripBytes)
+			p := backend.AllocConstantBytes(wConstantData, totalStrips*stripBytes)
 			unpackGGMLWeightStrips(
 				backend, weights, bytesPerRowW, wType,
 				0, N, numSubBlocks, subBlkBytes, p,

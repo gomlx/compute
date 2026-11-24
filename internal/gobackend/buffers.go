@@ -55,12 +55,9 @@ type Buffer struct {
 	isUserFed bool
 
 	// isDonated is set to true when the buffer's backing memory ownership has been donated
-	// (e.g., via ConstantFromBuffer(..., donate=true)), making one subsequent Finalize() call a no-op.
+	// (e.g., via ConstantFromBuffer(..., donate=true) or Executable.Execute(..., donate=true)),
+	// making subsequent Finalize() calls a no-op.
 	isDonated bool
-
-	// poolSlot is the 1-based slot index of this Buffer in its size-bucket's bufferPool
-	// (0 if not yet registered in a bufferPool).
-	poolSlot uint32
 
 	// RawBytes is the underlying storage for the buffer.
 	// Its length is always >= requested size in bytes.
@@ -71,6 +68,18 @@ type Buffer struct {
 	Flat      any
 	flatDType dtypes.DType
 	flatLen   int
+
+	// viewOf points to the root owning Buffer when this Buffer is a zero-copy read-only
+	// reshaped view sharing RawBytes/Flat. Nil for owning buffers.
+	viewOf *Buffer
+
+	// viewRefCount tracks active zero-copy views borrowing this buffer's backing memory.
+	// While > 0, this buffer must never be mutated in-place or returned to the buffer pool.
+	viewRefCount atomic.Int32
+
+	// pendingPool records that PutBuffer was called on this owning buffer while viewRefCount > 0,
+	// deferring pool return/finalization until the last view is released.
+	pendingPool atomic.Bool
 }
 
 // EqualNodeData implements nodeDataComparable for Buffer.
@@ -155,29 +164,53 @@ const numBufferPoolBuckets = 128
 
 const (
 	poolChunkShift = 6
-	poolChunkSize  = 1 << poolChunkShift // 64 buffer slots per chunk
-	poolMaxChunks  = 256                 // Up to 16,384 pooled buffers per size bucket
+	poolChunkSize  = 1 << poolChunkShift           // 64 buffer slots per chunk
+	poolMaxChunks  = 256                           // Up to 16,384 simultaneously idle pooled buffers per size bucket
+	poolMaxSlots   = poolMaxChunks * poolChunkSize // 16,384 total slots per size bucket
 )
 
+// bufferSlot is a reusable container in a bufferPool's lock-free LIFO Treiber stacks
+// (stacks implemented as linked lists via 1-based slot indices) for a single bucketed byte size.
+//
+// At any time, each allocated slot is in at most one state:
+//   - on fullHead: buf != nil (idle buffer ready for Get)
+//   - exclusively owned by a goroutine mid-Get or mid-Put
+//   - on emptyHead: buf == nil (empty slot ready for Put to reuse)
 type bufferSlot struct {
 	buf  atomic.Pointer[Buffer]
 	next atomic.Uint32
 }
 
-// bufferPool is a lock-free LIFO Treiber stack of reusable Buffers for a single bucketed byte size.
+// bufferPool is a lock-free LIFO Treiber stack (a stack implemented as a linked list) of reusable Buffers
+// for a single bucketed byte size.
 //
 // Unlike sync.Pool, it does not strand buffers in per-P private slots when the executor
 // goroutine migrates across Ps at parallel barriers, and it is not wiped by runtime.GC
 // between inference/training steps (it is released when Backend.Finalize is called).
 //
+// Checked-out buffers are completely decoupled from the pool: Get() atomically clears slot.buf
+// and returns the slot index to emptyHead for reuse by Put(). Consequently, the pool holds no
+// references to checked-out or user-returned buffers, and slot indices are never exhausted over
+// long-running loops (poolMaxSlots bounds only the peak number of simultaneously idle buffers).
+//
 // To avoid both mutex contention (when many worker goroutines acquire/release scratch buffers
-// simultaneously) and the ABA problem (when a popped *Buffer is re-pushed while another goroutine
-// is mid-pop), the stack head is a 64-bit atomic value packing a 32-bit monotonic ABA generation
+// simultaneously) and the ABA problem (when a popped slot is re-pushed while another goroutine
+// is mid-pop), each stack head is a 64-bit atomic value packing a 32-bit monotonic ABA generation
 // tag in the upper 32 bits and a 1-based slot index in the lower 32 bits.
 type bufferPool struct {
-	head     atomic.Uint64
+	// fullHead is the head of the stack of slots holding idle *Buffer instances ready for Get().
+	// Packs Tag (upper 32 bits) + Link (lower 32 bits, 1-based slot index).
+	fullHead atomic.Uint64
+
+	// emptyHead is the head of the stack of empty slots (buf == nil) ready for Put() to reuse.
+	// Packs Tag (upper 32 bits) + Link (lower 32 bits, 1-based slot index).
+	emptyHead atomic.Uint64
+
+	// nextSlot allocates a fresh 1-based slot index when emptyHead is empty (capped at poolMaxSlots).
 	nextSlot atomic.Uint32
-	chunks   [poolMaxChunks]atomic.Pointer[[poolChunkSize]bufferSlot]
+
+	// chunks is a lazily allocated 2D chunked array of buffer slots (grows in chunks of poolChunkSize=64).
+	chunks [poolMaxChunks]atomic.Pointer[[poolChunkSize]bufferSlot]
 }
 
 func (p *bufferPool) slot(idx uint32) *bufferSlot {
@@ -186,64 +219,73 @@ func (p *bufferPool) slot(idx uint32) *bufferSlot {
 	return &chunk[z&(poolChunkSize-1)]
 }
 
-func (p *bufferPool) registerSlot(buf *Buffer) uint32 {
-	idx := p.nextSlot.Add(1)
-	z := idx - 1
-	chunkIdx := z >> poolChunkShift
-	if int(chunkIdx) >= len(p.chunks) {
+func (p *bufferPool) allocSlot() uint32 {
+	if p.nextSlot.Load() >= poolMaxSlots {
 		return 0
 	}
-	chunk := p.chunks[chunkIdx].Load()
-	if chunk == nil {
-		newChunk := new([poolChunkSize]bufferSlot)
-		if p.chunks[chunkIdx].CompareAndSwap(nil, newChunk) {
-			chunk = newChunk
-		} else {
-			chunk = p.chunks[chunkIdx].Load()
-		}
+	idx := p.nextSlot.Add(1)
+	if idx > poolMaxSlots {
+		return 0
 	}
-	s := &chunk[z&(poolChunkSize-1)]
-	s.buf.Store(buf)
-	buf.poolSlot = idx
+	z := idx - 1
+	chunkIdx := z >> poolChunkShift
+	if p.chunks[chunkIdx].Load() == nil {
+		newChunk := new([poolChunkSize]bufferSlot)
+		p.chunks[chunkIdx].CompareAndSwap(nil, newChunk)
+	}
 	return idx
 }
 
-func (p *bufferPool) Get() *Buffer {
+func (p *bufferPool) pop(head *atomic.Uint64) uint32 {
 	for {
-		oldHead := p.head.Load()
+		oldHead := head.Load()
 		oldIdx := uint32(oldHead)
 		if oldIdx == 0 {
-			return nil
+			return 0
 		}
-		s := p.slot(oldIdx)
-		nextIdx := s.next.Load()
+		nextIdx := p.slot(oldIdx).next.Load()
 		newTag := uint32(oldHead>>32) + 1
 		newHead := (uint64(newTag) << 32) | uint64(nextIdx)
-		if p.head.CompareAndSwap(oldHead, newHead) {
-			return s.buf.Load()
+		if head.CompareAndSwap(oldHead, newHead) {
+			return oldIdx
 		}
 	}
 }
 
-func (p *bufferPool) Put(buf *Buffer) {
-	slotIdx := buf.poolSlot
-	if slotIdx == 0 {
-		slotIdx = p.registerSlot(buf)
-		if slotIdx == 0 {
-			return
-		}
-	}
+func (p *bufferPool) push(head *atomic.Uint64, slotIdx uint32) {
 	s := p.slot(slotIdx)
 	for {
-		oldHead := p.head.Load()
+		oldHead := head.Load()
 		oldIdx := uint32(oldHead)
 		newTag := uint32(oldHead>>32) + 1
 		s.next.Store(oldIdx)
 		newHead := (uint64(newTag) << 32) | uint64(slotIdx)
-		if p.head.CompareAndSwap(oldHead, newHead) {
+		if head.CompareAndSwap(oldHead, newHead) {
 			return
 		}
 	}
+}
+
+func (p *bufferPool) Get() *Buffer {
+	slotIdx := p.pop(&p.fullHead)
+	if slotIdx == 0 {
+		return nil
+	}
+	buf := p.slot(slotIdx).buf.Swap(nil)
+	p.push(&p.emptyHead, slotIdx)
+	return buf
+}
+
+func (p *bufferPool) Put(buf *Buffer) {
+	slotIdx := p.pop(&p.emptyHead)
+	if slotIdx == 0 {
+		slotIdx = p.allocSlot()
+		if slotIdx == 0 {
+			return
+		}
+	}
+	p.slot(slotIdx).buf.Store(buf)
+	p.push(&p.fullHead, slotIdx)
 }
 
 // bufferPoolBucketIndex maps a bucketedSize produced by support.TwoBitBucketLen
@@ -368,6 +410,44 @@ func (b *Backend) GetBuffer(shape shapes.Shape) (*Buffer, error) {
 // 	}
 // }
 
+// IsView reports whether this buffer is a zero-copy read-only view over another buffer's storage.
+func (buffer *Buffer) IsView() bool {
+	return buffer != nil && buffer.viewOf != nil
+}
+
+// HasLiveViews reports whether any active zero-copy views currently borrow this buffer's storage.
+func (buffer *Buffer) HasLiveViews() bool {
+	return buffer != nil && buffer.viewRefCount.Load() > 0
+}
+
+// NewView creates a zero-copy read-only reshaped view sharing the underlying storage of buffer.
+// The view pins the root owning buffer via viewRefCount until released with PutBuffer.
+func (buffer *Buffer) NewView(targetShape shapes.Shape) *Buffer {
+	root := buffer
+	if root.viewOf != nil {
+		root = root.viewOf
+	}
+	root.viewRefCount.Add(1)
+	view := &Buffer{
+		RawBackend: root.RawBackend,
+		InUse:      true,
+		RawBytes:   root.RawBytes,
+		Flat:       root.Flat,
+		flatDType:  root.flatDType,
+		flatLen:    root.flatLen,
+		viewOf:     root,
+	}
+	view.RawShape.DType = targetShape.DType
+	rank := len(targetShape.Dimensions)
+	if rank <= len(view.ShapeDimensionsBuffer) {
+		view.RawShape.Dimensions = view.ShapeDimensionsBuffer[:rank]
+	} else {
+		view.RawShape.Dimensions = make([]int, rank)
+	}
+	copy(view.RawShape.Dimensions, targetShape.Dimensions)
+	return view
+}
+
 // PutBuffer back into the backend pool of buffers.
 // After this any references to buffer should be dropped.
 func (b *Backend) PutBuffer(buffer *Buffer) {
@@ -381,6 +461,27 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	if !buffer.InUse {
 		panic(errors.New("double-freeing Go backend buffer"))
 	}
+	if buffer.viewOf != nil {
+		parent := buffer.viewOf
+		buffer.InUse = false
+		buffer.RawShape = shapes.Invalid()
+		buffer.viewOf = nil
+		if parent.viewRefCount.Add(-1) == 0 && parent.pendingPool.CompareAndSwap(true, false) {
+			b.releaseBufferNow(parent)
+		}
+		return
+	}
+	if buffer.viewRefCount.Load() > 0 {
+		buffer.pendingPool.Store(true)
+		if buffer.viewRefCount.Load() == 0 && buffer.pendingPool.CompareAndSwap(true, false) {
+			b.releaseBufferNow(buffer)
+		}
+		return
+	}
+	b.releaseBufferNow(buffer)
+}
+
+func (b *Backend) releaseBufferNow(buffer *Buffer) {
 	if buffer.isUserFed {
 		// User-fed buffers are not returned to the pool to avoid unbounded growth
 		// when looping through large datasets.
@@ -394,26 +495,20 @@ func (b *Backend) PutBuffer(buffer *Buffer) {
 	pool.Put(buffer)
 }
 
-// movePoolSlot gives the pool slot of buffer, if it has one, to clone, a shallowClone of
-// buffer that goes to the user.
-//
-// A slot keeps its Buffer for good. If the slot kept buffer, the pool would keep buffer's
-// data alive after the user finalizes the clone, and memory would grow at every Execute.
-// With the slot, the clone returns to the pool on PutBuffer as any pooled buffer does.
-func (b *Backend) movePoolSlot(buffer, clone *Buffer) {
-	if buffer.poolSlot == 0 {
-		return
-	}
-	pool := b.getBufferPool(len(buffer.RawBytes))
-	pool.slot(buffer.poolSlot).buf.Store(clone)
-	clone.poolSlot, buffer.poolSlot = buffer.poolSlot, 0
-}
-
 // shallowClone returns a new Buffer struct pointing to the same data.
 func (buffer *Buffer) shallowClone() *Buffer {
-	newBuf := *buffer
-	newBuf.poolSlot = 0
-	rank := len(newBuf.RawShape.Dimensions)
+	newBuf := Buffer{
+		RawBackend: buffer.RawBackend,
+		RawShape:   shapes.Shape{DType: buffer.RawShape.DType},
+		InUse:      buffer.InUse,
+		isUserFed:  buffer.isUserFed,
+		isDonated:  buffer.isDonated,
+		RawBytes:   buffer.RawBytes,
+		Flat:       buffer.Flat,
+		flatDType:  buffer.flatDType,
+		flatLen:    buffer.flatLen,
+	}
+	rank := len(buffer.RawShape.Dimensions)
 	if rank <= len(newBuf.ShapeDimensionsBuffer) {
 		newBuf.RawShape.Dimensions = newBuf.ShapeDimensionsBuffer[:rank]
 		copy(newBuf.RawShape.Dimensions, buffer.RawShape.Dimensions)
@@ -602,6 +697,21 @@ func NewBuffer(shape shapes.Shape) *Buffer {
 	requestedSizeInBytes := dtype.SizeForDimensions(length)
 	buf := &Buffer{
 		RawBytes:  allocAlignedBytes(requestedSizeInBytes),
+		InUse:     true,
+		isUserFed: true,
+		RawShape:  shape,
+	}
+	buf.recast(dtype, length)
+	return buf
+}
+
+// NewBufferWithBytes creates a non-pooled Buffer backed directly by rawBytes without copying.
+// The caller must ensure len(rawBytes) >= shape.ByteSize().
+func NewBufferWithBytes(shape shapes.Shape, rawBytes []byte) *Buffer {
+	dtype := shape.DType
+	length := shape.Size()
+	buf := &Buffer{
+		RawBytes:  rawBytes,
 		InUse:     true,
 		isUserFed: true,
 		RawShape:  shape,

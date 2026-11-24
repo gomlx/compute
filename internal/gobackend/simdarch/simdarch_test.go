@@ -11,9 +11,9 @@ import (
 )
 
 func TestSIMDArchFlags(t *testing.T) {
-	t.Logf("GOARCH=%s GOOS=%s: ActiveArchitectures=%v IsAVX2Allowed=%v IsAVX512Allowed=%v IsNEONAllowed=%v IsARM64FP16Allowed=%v IsARM64BF16Allowed=%v IsARM64DotProdAllowed=%v IsARM64I8MMAllowed=%v IsSVEAllowed=%v IsSMEAllowed=%v",
+	t.Logf("GOARCH=%s GOOS=%s: ActiveArchitectures=%v IsAVX2Allowed=%v IsAVX512Allowed=%v IsAVX512VNNIAllowed=%v IsAVX512BF16Allowed=%v IsNEONAllowed=%v IsARM64FP16Allowed=%v IsARM64BF16Allowed=%v IsARM64DotProdAllowed=%v IsARM64I8MMAllowed=%v IsSVEAllowed=%v IsSMEAllowed=%v",
 		runtime.GOARCH, runtime.GOOS, ActiveArchitectures,
-		IsAVX2Allowed, IsAVX512Allowed,
+		IsAVX2Allowed, IsAVX512Allowed, IsAVX512VNNIAllowed, IsAVX512BF16Allowed,
 		IsNEONAllowed, IsARM64FP16Allowed, IsARM64BF16Allowed,
 		IsARM64DotProdAllowed, IsARM64I8MMAllowed,
 		IsSVEAllowed, IsSMEAllowed)

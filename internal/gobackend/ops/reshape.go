@@ -61,20 +61,22 @@ func DynamicReshape(f *gobackend.Function, operandValue compute.Value, specs ...
 // This is the execution implementation, once the shape is resolved.
 func reshapeToShape(backend *gobackend.Backend, targetShape shapes.Shape, inputs []*gobackend.Buffer, inputsOwned []bool) (*gobackend.Buffer, error) {
 	operand := inputs[0]
-	var output *gobackend.Buffer
-	var err error
 	if inputsOwned[0] {
-		output = operand
+		output := operand
 		output.RawShape = targetShape // Actual reshape happening here.
 		inputs[0] = nil
-	} else {
-		output, err = backend.GetBuffer(targetShape)
-		if err != nil {
-			return nil, err
-		}
-		if !backend.NoOps {
-			gobackend.CopyFlat(output.Flat, operand.Flat)
-		}
+		return output, nil
+	}
+	if !backend.NoOps && operand.RawShape.Size() > 0 && operand.RawShape.DType == targetShape.DType {
+		// Return a zero-copy read-only view pinning the root buffer until released.
+		return operand.NewView(targetShape), nil
+	}
+	output, err := backend.GetBuffer(targetShape)
+	if err != nil {
+		return nil, err
+	}
+	if !backend.NoOps {
+		gobackend.CopyFlat(output.Flat, operand.Flat)
 	}
 	return output, nil
 }

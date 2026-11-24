@@ -8,13 +8,24 @@
 // It also serves as a reference implementation for the [compute.Backend] interface.
 //
 // Supported configuration options (via GOMLX_BACKEND="go:<opt1>,<opt2>=<val>"):
-//   - parallelism=<N>: maximum intra-op scheduler worker goroutines (default: GOMAXPROCS).
+//   - parallelism=<N>: maximum intra-op workers and concurrent Execute() calls (default: physical
+//     CPU cores when AVX-512 is active, or GOMAXPROCS otherwise — e.g., AVX2, ARM64, or scalar
+//     builds. Because modern CPUs are very heterogeneous — hybrid P/E cores, SMT, multi-CCD,
+//     varying vector widths — the default may not be optimal for every CPU/workload; tune N if needed).
+//   - intra_call_parallelism=<N>: optional upper bound on workers used inside a single Execute()
+//     call (intra-op + inter-op), without limiting inter-call concurrency (default: 0 = same as
+//     parallelism). Intended for high-core-count server CPUs (e.g. 64-192+ core EPYC/Xeon) so many
+//     concurrent requests can saturate all cores while each single call avoids cross-CCD/NUMA barriers.
 //   - num_executors=<N>: maximum concurrent node executors in parallel graph mode (default: 8).
 //   - ops_sequential / ops_parallel: force sequential or parallel inter-op execution (default: dynamic).
 //   - dependency_order / creation_order: topological scheduling strategy (default: dependency_order).
 //   - quantized_cache=<always|balanced|never>: constant weight caching policy for FusedQuantizedDense
 //     (aliases: true/1 for always; false/none/0 for never; bare "quantized_cache" selects always;
 //     default: balanced). See compute/docs/GoBackendMemoryUsage.md for details.
+//   - constant_arena[=<true|false>]: allocate transformed/pre-packed constant buffers into off-heap
+//     2 MiB-aligned mmap + MADV_HUGEPAGE arena chunks (reference-counted per builder/executable and
+//     unmapped when all referencing builders/executables or the backend are finalized). Can also be
+//     configured via GOMLX_GO_CONSTANT_ARENA (default: true).
 //   - no_ops: skip kernel math (for scheduling/framework benchmarking).
 package gobackend
 
@@ -28,7 +39,9 @@ import (
 
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/internal/gobackend/scheduler"
+	"github.com/gomlx/compute/internal/gobackend/simdarch"
 	"github.com/gomlx/compute/notimplemented"
+	"github.com/gomlx/compute/support/envutil"
 	"github.com/gomlx/compute/support/xslices"
 	"github.com/gomlx/compute/support/xsync"
 	"github.com/pkg/errors"
@@ -97,6 +110,13 @@ func New(config string) (compute.Backend, error) {
 			}
 			b.Scheduler.SetMaxParallelism(vInt)
 			fmt.Printf("Go backend: parallelism set to %d\n", vInt)
+		case "intra_call_parallelism":
+			vInt, err := strconv.Atoi(value)
+			if err != nil || vInt < 0 {
+				return nil, errors.Errorf(
+					"invalid value for %q in Go backend config: needs a non-negative integer, got %q", key, value)
+			}
+			b.Scheduler.SetMaxIntraCallParallelism(vInt)
 		case "ops_sequential":
 			// This will force the ops to be executed sequentially.
 			b.OpsExecutionType = OpsExecutionSequential
@@ -123,6 +143,12 @@ func New(config string) (compute.Backend, error) {
 				return nil, err
 			}
 			b.QuantizedCache = policy
+		case "constant_arena":
+			enabled, err := parseBoolOption(key, value, true)
+			if err != nil {
+				return nil, err
+			}
+			b.UseConstantArena = enabled
 		case "":
 			// No-op, just skip.
 		default:
@@ -133,7 +159,7 @@ func New(config string) (compute.Backend, error) {
 					extraOptions = ", " + strings.Join(xslices.SortedKeys(KnownOptionsSetters), ", ")
 				}
 				return nil, errors.Errorf("unknown configuration option %q for the Go backend -- valid configuration options are: "+
-					"parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>%s; "+
+					"parallelism=#workers, intra_call_parallelism=#workers, num_executors=#executors, ops_sequential, ops_parallel, dependency_order, creation_order, no_ops, quantized_cache=<always|balanced|never>, constant_arena[=<true|false>]%s; "+
 					"see documentation in https://gomlx.github.io/docs/backends/#2-the-go-backend-go",
 					key, extraOptions)
 			}
@@ -211,17 +237,47 @@ func parseQuantizedCachePolicy(value string) (QuantizedCachePolicy, error) {
 	}
 }
 
+func parseBoolOption(key, value string, defaultIfEmpty bool) (bool, error) {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return defaultIfEmpty, nil
+	}
+	if envutil.TrueValues.Has(v) {
+		return true, nil
+	}
+	if envutil.FalseValues.Has(v) {
+		return false, nil
+	}
+	return false, errors.Errorf("invalid boolean value %q for %q in Go backend config", value, key)
+}
+
 // DefaultNumExecutors is the default number of concurrent worker executors
 // used in executeParallel to execute ready graph nodes.
 const DefaultNumExecutors = 8
 
+// DefaultConstantArenaGCThresholdBytes is the default byte threshold (64 MiB) of released donated
+// Go-heap constant buffers after which the backend triggers GC + OS memory scavenging
+// (debug.FreeOSMemory) to bound peak MaxRSS while weights are being transferred into the off-heap
+// constant_arena.
+const DefaultConstantArenaGCThresholdBytes int64 = 64 * 1024 * 1024
+
 func newDefaultBackend() *Backend {
 	b := &Backend{
-		NumExecutors:     DefaultNumExecutors,
-		OpsExecutionType: OpsExecutionDynamic,
-		QuantizedCache:   QuantizedCacheBalanced,
+		NumExecutors:                  DefaultNumExecutors,
+		OpsExecutionType:              OpsExecutionDynamic,
+		QuantizedCache:                QuantizedCacheBalanced,
+		UseConstantArena:              envutil.MustReadBool(envutil.GoBackendConstantArena, true),
+		ConstantArenaGCThresholdBytes: DefaultConstantArenaGCThresholdBytes,
+		constantArena:                 newConstantArena(),
 	}
 	b.Scheduler = scheduler.New()
+	if simdarch.IsAVX512Allowed {
+		// AVX-512 microkernels (32 ZMM registers, 512-bit FMA/VNNI/BF16) saturate each physical
+		// core's vector pipelines and private L1d/L2 caches with a single thread, so defaulting to
+		// physical CPU cores avoids SMT contention and barrier overhead. AVX2 (256-bit, 16 YMM),
+		// hybrid Intel P+E CPUs, ARM64, and scalar (!simd) builds keep GOMAXPROCS (all logical CPUs).
+		b.Scheduler.SetMaxParallelism(scheduler.DefaultPhysicalParallelism())
+	}
 	return b
 }
 
@@ -253,6 +309,21 @@ type Backend struct {
 	// and supporting tensors in FusedQuantizedDense (configured via
 	// "go:quantized_cache=<always|balanced|never>"). Defaults to QuantizedCacheBalanced.
 	QuantizedCache QuantizedCachePolicy
+
+	// UseConstantArena controls whether transformed constant caches (e.g. pre-packed GEMM panels)
+	// are sub-allocated from off-heap 2 MiB-aligned mmap + MADV_HUGEPAGE arena chunks instead of
+	// individual Go heap allocations. Configured via "go:constant_arena" or GOMLX_GO_CONSTANT_ARENA
+	// (default: true).
+	UseConstantArena bool
+
+	// ConstantArenaGCThresholdBytes controls how many bytes of donated Go-heap constant buffers
+	// may be released while transferring weights into constantArena before triggering GC + OS
+	// page reclamation (debug.FreeOSMemory) to cap peak MaxRSS. 0 disables forced reclamation.
+	// Defaults to DefaultConstantArenaGCThresholdBytes (64 MiB).
+	ConstantArenaGCThresholdBytes int64
+
+	// constantArena manages off-heap mmap chunks when UseConstantArena is enabled.
+	constantArena *constantArena
 }
 
 // Compile-time check that the gobackend.Backend implements compute.Backend.
@@ -269,8 +340,11 @@ func (b *Backend) String() string { return BackendName }
 // Description is a longer description of the Backend that can be used to pretty-print.
 func (b *Backend) Description() string {
 	extra := ""
+	if intraCap := b.Scheduler.MaxIntraCallParallelism(); intraCap > 0 {
+		extra += fmt.Sprintf(", intra_call_parallelism=%d", intraCap)
+	}
 	if b.QuantizedCache != QuantizedCacheBalanced {
-		extra = fmt.Sprintf(", quantized_cache=%s", b.QuantizedCache)
+		extra += fmt.Sprintf(", quantized_cache=%s", b.QuantizedCache)
 	}
 	return fmt.Sprintf("Go Portable Compute Backend (%s, parallelism=%d%s)",
 		strings.Join(ActiveArchitectures, ", "), b.Scheduler.MaxParallelism(), extra)
@@ -329,6 +403,9 @@ func (b *Backend) Finalize() {
 	b.lifecycle.Finalize(func() {
 		for i := range b.bufferPools {
 			b.bufferPools[i].Store(nil)
+		}
+		if b.constantArena != nil {
+			b.constantArena.Finalize()
 		}
 	})
 }

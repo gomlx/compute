@@ -310,7 +310,7 @@ func execQuantizedDenseLinearPanelDynamicInt8(
 				defer releaseZP()
 			}
 			totalStrips := (N + QuantizedPanelStripCols - 1) / QuantizedPanelStripCols
-			cached := make([]uint8, totalStrips*stripBytes)
+			cached := backend.AllocConstantBytes(data.wConstantData, totalStrips*stripBytes)
 			unpackQuantLinearStrips(
 				backend, in.weight, isIO, wScales, wZPF32, wSLayout, wZPLayout,
 				K, N, 0, N, kBlock, quadsPerSubBlk, numSubBlocks, cached,

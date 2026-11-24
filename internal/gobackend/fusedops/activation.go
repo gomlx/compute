@@ -3,6 +3,8 @@
 package fusedops
 
 import (
+	"slices"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -64,7 +66,8 @@ func execFusedActivation(backend *gobackend.Backend, node *gobackend.Node, input
 	act := data.cfg.Type
 	var output *gobackend.Buffer
 	var err error
-	if act != compute.ActivationSwiGLU && len(inputsOwned) > 0 && inputsOwned[0] && input.RawShape.Equal(node.Shape) {
+	if act != compute.ActivationSwiGLU && len(inputsOwned) > 0 && inputsOwned[0] &&
+		input.RawShape.DType == node.Shape.DType && slices.Equal(input.RawShape.Dimensions, node.Shape.Dimensions) {
 		output = input
 		inputs[0] = nil
 		if act == compute.ActivationNone {

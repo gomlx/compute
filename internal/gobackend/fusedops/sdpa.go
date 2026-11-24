@@ -968,10 +968,7 @@ func sdpaTrimAdditiveKeyMaskFloat[T ~float32 | ~float64](additiveMaskSlice []T, 
 		lastValid--
 	}
 	if lastValid < 0 {
-		if math.IsInf(float64(additiveMaskSlice[0]), -1) {
-			return additiveMaskSlice, 0
-		}
-		return additiveMaskSlice, kvLimit
+		return additiveMaskSlice, 0
 	}
 	for i := 0; i <= lastValid; i++ {
 		if additiveMaskSlice[i] != 0 {
@@ -1349,7 +1346,7 @@ func sdpaMultiHeadHalf[T any](
 		outW        []float32
 		kWork       []float32
 		vWork       []float32
-		lastBatchKV *[2]int
+		lastBatchKV *[3]int // {batchIdx, kvHeadIdx, convertedKVLen}
 	}
 
 	runSDPATasks(
@@ -1387,7 +1384,7 @@ func sdpaMultiHeadHalf[T any](
 				outW:        outW,
 				kWork:       kWork,
 				vWork:       vWork,
-				lastBatchKV: &[2]int{-1, -1},
+				lastBatchKV: &[3]int{-1, -1, 0},
 			}
 		},
 		func(w halfWorker) {
@@ -1447,11 +1444,12 @@ func sdpaMultiHeadHalf[T any](
 			var kUse, vUse []float32
 			var kvOffUse, kvSeqStrideUse int
 			if localKV {
-				if w.lastBatchKV[0] != batchIdx || w.lastBatchKV[1] != kvHeadIdx {
-					sdpaConvertHeadRowsToF32(w.kWork, kHalf, kvOff, info.kvSeqStride, 0, 1, info.kvLen, info.headDim, toF32)
-					sdpaConvertHeadRowsToF32(w.vWork, vHalf, kvOff, info.kvSeqStride, 0, 1, info.kvLen, info.headDim, toF32)
+				if kvLimit > 0 && (w.lastBatchKV[0] != batchIdx || w.lastBatchKV[1] != kvHeadIdx || w.lastBatchKV[2] < kvLimit) {
+					sdpaConvertHeadRowsToF32(w.kWork, kHalf, kvOff, info.kvSeqStride, 0, 1, kvLimit, info.headDim, toF32)
+					sdpaConvertHeadRowsToF32(w.vWork, vHalf, kvOff, info.kvSeqStride, 0, 1, kvLimit, info.headDim, toF32)
 					w.lastBatchKV[0] = batchIdx
 					w.lastBatchKV[1] = kvHeadIdx
+					w.lastBatchKV[2] = kvLimit
 				}
 				kUse = w.kWork
 				vUse = w.vWork

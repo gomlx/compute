@@ -24,6 +24,7 @@ var (
 	IsAVXVNNIAllowed    = false
 	IsAVX512Allowed     = false
 	IsAVX512VNNIAllowed = false
+	IsAVX512BF16Allowed = false
 
 	arm64CPU = detectARM64Features()
 

@@ -221,16 +221,34 @@ const (
 	OpsExecutionSequential
 )
 
+// finalizeDonatedInputs finalizes all non-nil input buffers marked as donated.
+// It is used on early error returns so donated buffers never leak even when validation fails.
+func finalizeDonatedInputs(inputs []compute.Buffer, donate []bool) {
+	n := min(len(inputs), len(donate))
+	for i := range n {
+		if donate[i] && inputs[i] != nil {
+			_ = inputs[i].Finalize()
+		}
+	}
+}
+
 // Execute the executable on the default device (0).
 // The number and shapes of the inputs must match those returned by Inputs.
 //
-// The inputs marked in `donate` will become invalid after use.
+// The inputs marked in `donate` will become invalid after use (even if Execute returns an error).
 // This is useful if the input buffer is no longer needed or if updating a variable
 // so its Buffer space can be reused as an output Buffer.
 //
 // Donated buffers are no longer valid after the call.
 // If donate is nil, it is assumed to be false for all buffers, and no buffer is donated.
 func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.DeviceNum) ([]compute.Buffer, error) {
+	donatedHandled := false
+	defer func() {
+		if !donatedHandled {
+			finalizeDonatedInputs(inputs, donate)
+		}
+	}()
+
 	if e == nil || e.backend == nil {
 		return nil, errors.New("Execute: executable is nil")
 	}
@@ -245,7 +263,12 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 
 	// Keep the live executions count.
 	e.backend.NumLiveExecutions.Add(1)
-	defer e.backend.NumLiveExecutions.Add(-1)
+	defer func() {
+		remaining := e.backend.NumLiveExecutions.Add(-1)
+		if e.backend.constantArena != nil {
+			e.backend.constantArena.onExecutionFinished(remaining)
+		}
+	}()
 	if e.backend.Scheduler != nil {
 		exitExec := e.backend.Scheduler.EnterExecution()
 		defer exitExec()
@@ -260,6 +283,8 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 	// donate defaults to false for all buffers.
 	if len(donate) == 0 {
 		donate = make([]bool, len(inputs))
+	} else if len(donate) != len(inputs) {
+		return nil, errors.Errorf("Execute: donate length (%d) does not match inputs length (%d)", len(donate), len(inputs))
 	}
 
 	// Check input shapes and convert to *Buffer
@@ -317,6 +342,44 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 			return nil, errors.WithMessage(err, "Execute")
 		}
 	}
+
+	// Detach donated inputs from the caller's handles immediately before execution:
+	// shallow-clone each donated buffer for internal ownership and invalidate the caller's
+	// handle via markDonated() so subsequent Finalize() calls are safe no-ops and the caller
+	// cannot alias or corrupt any output reusing the backing storage.
+	hasDonated := false
+	for ii, isDonated := range donate {
+		if !isDonated {
+			continue
+		}
+		hasDonated = true
+		orig := bufInputs[ii]
+		if !orig.InUse {
+			for jj := range ii {
+				if donate[jj] {
+					_ = bufInputs[jj].Finalize()
+				}
+			}
+			return nil, errors.Errorf("Execute: input buffer (%p) #%d was donated more than once", orig, ii)
+		}
+		cloned := orig.shallowClone()
+		orig.markDonated()
+		bufInputs[ii] = cloned
+	}
+	if hasDonated {
+		for ii, isDonated := range donate {
+			if !isDonated && !bufInputs[ii].InUse {
+				for jj, d := range donate {
+					if d {
+						_ = bufInputs[jj].Finalize()
+					}
+				}
+				return nil, errors.Errorf("Execute: input buffer (%p) #%d cannot be both donated and non-donated",
+					bufInputs[ii], ii)
+			}
+		}
+	}
+	donatedHandled = true
 
 	// Delegate to FunctionExecutable
 	// Main function doesn't have captured values, so pass nil for both

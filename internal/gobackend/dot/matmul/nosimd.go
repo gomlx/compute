@@ -52,7 +52,10 @@ var (
 	// MinLargeMatMulFlopsPerWorker is the minimum number of multiply-adds per worker for the tiled/packed
 	// large matrix multiplication kernels so each worker receives enough compute to amortize panel packing
 	// and thread scheduling.
-	MinLargeMatMulFlopsPerWorker       = 256 * 1024
+	MinLargeMatMulFlopsPerWorker = 256 * 1024
+	// MinCachedLargeMatMulFlopsPerWorker is the minimum multiply-adds per worker when RHS (or LHS) panels
+	// are already pre-packed/cached, where there is no packing overhead to amortize (e.g. M=1 LLM decode).
+	MinCachedLargeMatMulFlopsPerWorker = 128 * 1024
 	noSIMDMinLargeMatMulFlopsPerWorker = 32 * 1024
 )
 
@@ -179,8 +182,19 @@ func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (ref 
 }
 
 // GetExactBuffer allocates an exact-sized, non-pooled buffer for long-lived caches (e.g., PrepackRHS/PrepackLHS).
-func GetExactBuffer[T gotype.Supported](_ *gobackend.Backend, length int) (ref *gobackend.Buffer, flat []T, success bool) {
-	ref = gobackend.NewBuffer(shapes.Make(dtypes.FromGenericsType[T](), length))
+// If constData is non-nil and backend.UseConstantArena is enabled, the backing bytes are sub-allocated from
+// a 2 MiB-aligned off-heap mmap + MADV_HUGEPAGE arena chunk tracked by constData and its live builders/executables.
+func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int, constData *gobackend.ConstantData) (ref *gobackend.Buffer, flat []T, success bool) {
+	dtype := dtypes.FromGenericsType[T]()
+	shape := shapes.Make(dtype, length)
+	if backend != nil && constData != nil && backend.UseConstantArena && length > 0 {
+		byteSize := dtype.SizeForDimensions(length)
+		rawBytes := backend.AllocConstantBytes(constData, byteSize)
+		ref = gobackend.NewBufferWithBytes(shape, rawBytes)
+	} else {
+		ref = gobackend.NewBuffer(shape)
+		gobackend.AdviseHugePages(ref.RawBytes)
+	}
 	flat = ref.Flat.([]T)
 	success = true
 	return
@@ -196,6 +210,299 @@ type WorkItem struct {
 	BatchStart, BatchEnd,
 	LHSRowStart, LHSRowEnd,
 	RHSColStart, RHSColEnd int
+}
+
+// MultiRHSM1WorkItem represents a column slice [ColStart, ColEnd) of target TargetIdx
+// for M=1 Multi-RHS GEMV execution in a single SaturateUpTo wave.
+type MultiRHSM1WorkItem struct {
+	TargetIdx int
+	ColStart  int
+	ColEnd    int
+}
+
+// MultiRHSWorkItem represents a 2D work tile for Multi-RHS (or single-RHS epilogue) execution.
+// When TargetIdx < 0, the worker processes all targets across their full column width [0, RHSCrossSize)
+// for [LHSRowStart, LHSRowEnd), reusing packed LHS across all targets.
+// When TargetIdx >= 0, the worker processes only [RHSColStart, RHSColEnd) of target TargetIdx.
+type MultiRHSWorkItem struct {
+	BatchStart, BatchEnd   int
+	LHSRowStart, LHSRowEnd int
+	TargetIdx              int
+	RHSColStart, RHSColEnd int
+}
+
+// appendBalancedTargetColChunks distributes up to numChunks column chunks proportionally across
+// targetCrossSizes using D'Hondt allocation (maximizing blocks/assigned per step) so every
+// worker gets an evenly balanced, strip-aligned column slice with zero wasted cores.
+func appendBalancedTargetColChunks(
+	dst []MultiRHSM1WorkItem,
+	targetCrossSizes []int,
+	minCol int,
+	numChunks int,
+) []MultiRHSM1WorkItem {
+	minCol = max(1, minCol)
+	var blocksBuf [8]int
+	var assignedBuf [8]int
+	var blocks, assigned []int
+	if len(targetCrossSizes) <= len(blocksBuf) {
+		blocks = blocksBuf[:len(targetCrossSizes)]
+		assigned = assignedBuf[:len(targetCrossSizes)]
+	} else {
+		blocks = make([]int, len(targetCrossSizes))
+		assigned = make([]int, len(targetCrossSizes))
+	}
+
+	totalBlocks := 0
+	activeTargets := 0
+	for i, n := range targetCrossSizes {
+		if n > 0 {
+			b := (n + minCol - 1) / minCol
+			blocks[i] = b
+			totalBlocks += b
+			activeTargets++
+		}
+	}
+	if totalBlocks == 0 {
+		return dst
+	}
+	if numChunks <= 1 || totalBlocks <= 1 {
+		for tIdx, n := range targetCrossSizes {
+			if n > 0 {
+				dst = append(dst, MultiRHSM1WorkItem{TargetIdx: tIdx, ColStart: 0, ColEnd: n})
+			}
+		}
+		return dst
+	}
+
+	targetChunks := min(numChunks, totalBlocks)
+	assignedTotal := 0
+	for i, b := range blocks {
+		if b > 0 {
+			assigned[i] = 1
+			assignedTotal++
+		}
+	}
+	// If there are more active targets than targetChunks, each active target gets 1 chunk.
+	for assignedTotal < targetChunks {
+		bestIdx := -1
+		bestLoad := -1.0
+		for i, b := range blocks {
+			if b == 0 || assigned[i] >= b {
+				continue
+			}
+			load := float64(b) / float64(assigned[i])
+			if load > bestLoad {
+				bestLoad = load
+				bestIdx = i
+			}
+		}
+		if bestIdx < 0 {
+			break
+		}
+		assigned[bestIdx]++
+		assignedTotal++
+	}
+
+	for tIdx, n := range targetCrossSizes {
+		chunks := assigned[tIdx]
+		if chunks <= 0 || n <= 0 {
+			continue
+		}
+		b := blocks[tIdx]
+		baseBlocks := b / chunks
+		remBlocks := b % chunks
+		col := 0
+		for c := range chunks {
+			cBlocks := baseBlocks
+			if c < remBlocks {
+				cBlocks++
+			}
+			nextCol := min(n, col+cBlocks*minCol)
+			if nextCol > col {
+				dst = append(dst, MultiRHSM1WorkItem{TargetIdx: tIdx, ColStart: col, ColEnd: nextCol})
+			}
+			col = nextCol
+		}
+	}
+	return dst
+}
+
+// AppendMultiRHSM1WorkItems splits M=1 work across one or more RHS targets into balanced,
+// panel-friendly column chunks for a single parallel wave saturating maxWorkers.
+// When total work allows (totalBlocks >= 16), chunks are allocated in 4-strip units (128 cols on
+// AVX-512, 1/4 of a 512-col panel) to avoid strided DRAM streams and panel-boundary straddling.
+func AppendMultiRHSM1WorkItems(
+	dst []MultiRHSM1WorkItem,
+	targetCrossSizes []int,
+	params *CacheParams,
+	maxWorkers int,
+) []MultiRHSM1WorkItem {
+	minCol := max(1, params.RHSL1KernelCols)
+	totalBlocks := 0
+	for _, n := range targetCrossSizes {
+		if n > 0 {
+			totalBlocks += (n + minCol - 1) / minCol
+		}
+	}
+	unitStrips := 1
+	if totalBlocks >= 16 {
+		unitStrips = 4
+	} else if totalBlocks >= 4 {
+		unitStrips = 2
+	}
+	return appendBalancedTargetColChunks(dst, targetCrossSizes, unitStrips*minCol, maxWorkers)
+}
+
+// AppendMultiRHS2DWorkItems partitions Multi-RHS (M > 1) work across batch, M (rows), and
+// targets/N (columns) while keeping each tile's row height close to LHSPanelCrossSize (Mc)
+// so RHS weight panels get high L2/L3 reuse instead of collapsing to 1-Mr-strip DRAM streaming,
+// and oversubscribing by ~2x so heterogeneous targets (e.g. gate+GELU vs up) stay load-balanced.
+func AppendMultiRHS2DWorkItems(
+	dst []MultiRHSWorkItem,
+	batchSize, lhsCrossSize int,
+	targetCrossSizes []int,
+	params *CacheParams,
+	maxWorkers int,
+) []MultiRHSWorkItem {
+	totalRHSCrossSize := 0
+	activeTargets := 0
+	for _, n := range targetCrossSizes {
+		if n > 0 {
+			totalRHSCrossSize += n
+			activeTargets++
+		}
+	}
+	if totalRHSCrossSize == 0 || lhsCrossSize == 0 || batchSize == 0 {
+		return dst
+	}
+	if maxWorkers <= 1 {
+		return append(dst, MultiRHSWorkItem{
+			BatchStart:  0,
+			BatchEnd:    batchSize,
+			LHSRowStart: 0,
+			LHSRowEnd:   lhsCrossSize,
+			TargetIdx:   -1,
+		})
+	}
+
+	mr := max(1, params.LHSL1KernelRows)
+	mc := max(mr, params.LHSPanelCrossSize)
+	nr := max(1, params.RHSL1KernelCols)
+
+	// When batchSize >= maxWorkers or M has enough Mr strips to saturate maxWorkers on its own
+	// (e.g. M >= 128 on AVX-512), row-only tapered splitting (TargetIdx = -1) is strictly optimal:
+	// each worker packs a compact L1/L2-resident LHS strip once and reuses it across all RHS targets
+	// while all cores sweep the shared RHS weight panels in L3 lockstep with a tapered tail.
+	totalMBlocks := max(1, (lhsCrossSize+mr-1)/mr)
+	workersPerBatch := (maxWorkers + batchSize - 1) / batchSize
+	if batchSize >= maxWorkers || totalMBlocks >= workersPerBatch {
+		var rowBuf [256]WorkItem
+		rowItems := AppendRowWorkItems(rowBuf[:0], batchSize, lhsCrossSize, totalRHSCrossSize, params, maxWorkers)
+		for _, wi := range rowItems {
+			dst = append(dst, MultiRHSWorkItem{
+				BatchStart:  wi.BatchStart,
+				BatchEnd:    wi.BatchEnd,
+				LHSRowStart: wi.LHSRowStart,
+				LHSRowEnd:   wi.LHSRowEnd,
+				TargetIdx:   -1,
+			})
+		}
+		return dst
+	}
+
+	totalNBlocks := 0
+	for _, n := range targetCrossSizes {
+		if n > 0 {
+			totalNBlocks += (n + nr - 1) / nr
+		}
+	}
+
+	// Small-to-medium M (1 < M < maxWorkers*Mr, e.g. M=15..120): M alone cannot saturate all workers,
+	// so split across (M, targets+N) using an exact divisor of workersPerBatch to avoid tail waves.
+	idealM := min(totalMBlocks, max(1, (lhsCrossSize+mc-1)/mc))
+	maxUsefulN := totalNBlocks
+	if totalMBlocks > 1 && totalNBlocks >= 4*activeTargets {
+		maxUsefulN = max(activeTargets, totalNBlocks/4)
+	}
+	// Find the divisor of workersPerBatch closest to idealM (never exceeding totalMBlocks)
+	// whose complementary numN fits within maxUsefulN.
+	numM := 1
+	bestDiff := totalMBlocks + workersPerBatch
+	for candM := 1; candM <= min(workersPerBatch, totalMBlocks); candM++ {
+		if workersPerBatch%candM != 0 {
+			continue
+		}
+		candN := workersPerBatch / candM
+		if candN > maxUsefulN {
+			continue
+		}
+		diff := candM - idealM
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff < bestDiff {
+			bestDiff = diff
+			numM = candM
+		}
+	}
+	numN := min(maxUsefulN, max(1, workersPerBatch/numM))
+	if numM*numN < workersPerBatch && totalMBlocks > numM {
+		numM = min(totalMBlocks, (workersPerBatch+numN-1)/numN)
+	}
+	// When all tiles have generous row height (near Mc) and N is wide enough, double numN to 2x
+	// (an exact 2-wave schedule, e.g. 4x8 = 32 tiles on 16 workers) so heterogeneous targets
+	// (e.g. gate+GELU vs up) and OS jitter stay load-balanced while reusing packedLHS across waves.
+	if numM*numN == workersPerBatch && 2*numN <= maxUsefulN && lhsCrossSize/numM >= mc/2 && totalNBlocks >= 4*2*numN {
+		numN *= 2
+	}
+
+	// If we didn't split across N at all (only 1 column chunk total), use TargetIdx = -1 so all
+	// targets share packed LHS directly.
+	if numN <= 1 && activeTargets > 1 {
+		for batchIdx := range batchSize {
+			for m := range numM {
+				rowStart := ((m*totalMBlocks + numM - 1) / numM) * mr
+				rowEnd := min(lhsCrossSize, (((m+1)*totalMBlocks+numM-1)/numM)*mr)
+				if rowStart < rowEnd {
+					dst = append(dst, MultiRHSWorkItem{
+						BatchStart:  batchIdx,
+						BatchEnd:    batchIdx + 1,
+						LHSRowStart: rowStart,
+						LHSRowEnd:   rowEnd,
+						TargetIdx:   -1,
+					})
+				}
+			}
+		}
+		return dst
+	}
+
+	var colBuf [128]MultiRHSM1WorkItem
+	colChunks := appendBalancedTargetColChunks(colBuf[:0], targetCrossSizes, nr, numN)
+
+	// Emit items ordered by (batch, m, colChunk) so workers grabbing adjacent items often share
+	// the same LHS row range and can reuse their packedLHS buffer in L2 cache.
+	for batchIdx := range batchSize {
+		for m := range numM {
+			rowStart := ((m*totalMBlocks + numM - 1) / numM) * mr
+			rowEnd := min(lhsCrossSize, (((m+1)*totalMBlocks+numM-1)/numM)*mr)
+			if rowStart >= rowEnd {
+				continue
+			}
+			for _, cc := range colChunks {
+				dst = append(dst, MultiRHSWorkItem{
+					BatchStart:  batchIdx,
+					BatchEnd:    batchIdx + 1,
+					LHSRowStart: rowStart,
+					LHSRowEnd:   rowEnd,
+					TargetIdx:   cc.TargetIdx,
+					RHSColStart: cc.ColStart,
+					RHSColEnd:   cc.ColEnd,
+				})
+			}
+		}
+	}
+	return dst
 }
 
 type workItem = WorkItem
@@ -215,6 +522,18 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 	bestNumM := min(targetWorkers, maxPossibleM)
 	bestNumN := 1
 	bestScore := -1.0
+
+	// When M alone can saturate targetWorkers, keep a wide minimum column chunk (8*minCol)
+	// so row-splitting is preferred for RHS L2/L3 reuse. When M is small (maxPossibleM < targetWorkers,
+	// e.g. M=1 autoregressive decode), relax the column floor down to minCol (1 microkernel strip,
+	// 128 bytes of float32/float64 output = 2 cache lines, zero false sharing) so narrow-N projections
+	// can still utilize all available cores.
+	minColChunk := 8 * minCol
+	if maxPossibleM < targetWorkers {
+		neededN := (targetWorkers + maxPossibleM - 1) / maxPossibleM
+		targetChunk := (N / max(1, neededN) / minCol) * minCol
+		minColChunk = max(minCol, min(8*minCol, targetChunk))
+	}
 
 	// Consider candidate numN values: powers of 2 from 1 up to targetWorkers
 	for candN := 1; candN <= targetWorkers; candN *= 2 {
@@ -236,7 +555,7 @@ func Choose2DSplit(M, N, targetWorkers int, params *CacheParams) (numM, numN int
 			continue
 		}
 		if candN > 1 {
-			if colChunk < 8*minCol {
+			if colChunk < minColChunk {
 				continue
 			}
 		}
@@ -458,6 +777,38 @@ func AppendWorkItems(
 		}
 	}
 
+	if totalMBlocks == 1 {
+		// 1D split along N (e.g. M=1 autoregressive decode): create one balanced N-chunk per worker
+		// without 2x oversubscription or power-of-2 rounding, avoiding uneven waves (e.g. 24 items on
+		// 16 workers) and excessive K-panel striding on narrow-N projections.
+		// Keep each worker chunk at least 4 microkernel strips (128 cols on AVX-512, 1/4 of a 512-col
+		// panel) when N is wide enough so workers avoid strided DRAM thrashing and load imbalance
+		// (e.g. N=1536 splits into 12 exact 128-col chunks aligned with 512-col panels).
+		minStrips := 1
+		if totalNBlocks >= 16 {
+			minStrips = 4
+		} else if totalNBlocks >= 4 {
+			minStrips = 2
+		}
+		workersPerBatch := (maxWorkers + batchSize - 1) / batchSize
+		actualN := min(workersPerBatch, max(1, totalNBlocks/minStrips))
+		for n := range actualN {
+			rhsColStart := ((n*totalNBlocks + actualN - 1) / actualN) * nr
+			rhsColEnd := min(rhsCrossSize, (((n+1)*totalNBlocks+actualN-1)/actualN)*nr)
+			if rhsColStart >= rhsColEnd {
+				continue
+			}
+			for batchIdx := range batchSize {
+				dst = append(dst, WorkItem{
+					batchIdx, batchIdx + 1,
+					0, lhsCrossSize,
+					rhsColStart, rhsColEnd,
+				})
+			}
+		}
+		return dst
+	}
+
 	targetWorkersPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
 	numM, numN := choose2DSplit(lhsCrossSize, rhsCrossSize, targetWorkersPerBatch, params)
 
@@ -527,6 +878,7 @@ func AppendRowWorkItems(
 		rowQuantum = mc
 	}
 	totalBlocks := max(1, (lhsCrossSize+rowQuantum-1)/rowQuantum)
+	workersPerBatch := (maxWorkers + batchSize - 1) / batchSize
 	targetPerBatch := (2*maxWorkers + batchSize - 1) / batchSize
 
 	if totalBlocks >= 8 {
@@ -534,7 +886,10 @@ func AppendRowWorkItems(
 		headRows := min(lhsCrossSize, headBlocks*rowQuantum)
 		tailMBlocks := max(1, (lhsCrossSize-headRows+mr-1)/mr)
 
-		actualHeadM := min(max(1, targetPerBatch), headBlocks)
+		// Size head chunks at ~workersPerBatch (so each head chunk gets >= 2*Mr rows when M allows,
+		// giving 2x+ better RHS panel reuse than 1-Mr-strip chunks) and keep the final 25% tapered
+		// into finer tail chunks for load balancing.
+		actualHeadM := min(max(1, workersPerBatch), headBlocks)
 		actualTailM := min(max(1, targetPerBatch), tailMBlocks)
 		if (actualHeadM+actualTailM)*batchSize <= maxCap {
 			for m := range actualHeadM {

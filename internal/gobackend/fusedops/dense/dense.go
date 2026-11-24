@@ -3,6 +3,8 @@
 package dense
 
 import (
+	"fmt"
+
 	"github.com/gomlx/compute"
 	"github.com/gomlx/compute/dtypes"
 	"github.com/gomlx/compute/dtypes/bfloat16"
@@ -41,11 +43,25 @@ func (d *nodeFusedDense) EqualNodeData(other gobackend.NodeDataComparable) bool 
 		d.contractingSize == o.contractingSize
 }
 
-// Compile-time check that *nodeFusedDense implements gobackend.ConstantCacheNodeData and gobackend.FusedDenseActivationTarget.
+// Compile-time check that *nodeFusedDense implements gobackend.ConstantCacheNodeData,
+// gobackend.FusedDenseActivationTarget, and gobackend.FusedDenseMultiSibling.
 var (
 	_ gobackend.ConstantCacheNodeData      = (*nodeFusedDense)(nil)
 	_ gobackend.FusedDenseActivationTarget = (*nodeFusedDense)(nil)
+	_ gobackend.FusedDenseMultiSibling     = (*nodeFusedDense)(nil)
 )
+
+func (d *nodeFusedDense) MultiDenseShareKey() (string, bool) {
+	if d == nil || d.batchSize != 1 || d.dotNodeData == nil {
+		return "", false
+	}
+	switch d.dotNodeData.InputDType {
+	case dtypes.Float32, dtypes.Float64, dtypes.BFloat16, dtypes.Float16:
+		return fmt.Sprintf("%d:%d:%d", d.layout, d.dotNodeData.InputDType, d.contractingSize), true
+	default:
+		return "", false
+	}
+}
 
 func (d *nodeFusedDense) TryFuseActivation(cfg compute.ActivationConfig) bool {
 	if d == nil || d.options.Activation.Type != compute.ActivationNone {
@@ -344,9 +360,46 @@ func execFusedDense(backend *gobackend.Backend, node *gobackend.Node, inputs []*
 	return output, nil
 }
 
+func convertF32ToHalfSlice[T float16.Float16 | bfloat16.BFloat16](dst []T, src []float32, fromF32 func([]T, []float32)) {
+	if fromF32 != nil {
+		fromF32(dst, src)
+		return
+	}
+	switch d := any(dst).(type) {
+	case []bfloat16.BFloat16:
+		for i, v := range src {
+			d[i] = bfloat16.FromFloat32(v)
+		}
+	case []float16.Float16:
+		for i, v := range src {
+			d[i] = float16.FromFloat32(v)
+		}
+	}
+}
+
+func makeHalfTilePostStore[T float16.Float16 | bfloat16.BFloat16](
+	outHalf []T,
+	fromF32 func([]T, []float32),
+) func(outF32 []float32, rhsCrossSize, rowStart, rowEnd, colStart, colEnd int) {
+	return func(outF32 []float32, rhsCrossSize, rowStart, rowEnd, colStart, colEnd int) {
+		width := colEnd - colStart
+		if colStart == 0 && width == rhsCrossSize {
+			start := rowStart * rhsCrossSize
+			end := rowEnd * rhsCrossSize
+			convertF32ToHalfSlice(outHalf[start:end], outF32[start:end], fromF32)
+			return
+		}
+		for r := rowStart; r < rowEnd; r++ {
+			off := r*rhsCrossSize + colStart
+			convertF32ToHalfSlice(outHalf[off:off+width], outF32[off:off+width], fromF32)
+		}
+	}
+}
+
 // execFusedDenseHalf executes FusedDense for half-precision inputs (Float16 or BFloat16):
-// matmul accumulates into a pooled Float32 buffer with optional bias/activation epilogue
-// before converting back in parallel via SIMD converters.
+// matmul accumulates into a pooled Float32 buffer and applies bias, activation, and
+// Float32 -> Half conversion inline per tile while hot in L1/L2 cache (eliminating the
+// trailing full-tensor ParallelConvertSlice pass and DRAM round-trip).
 func execFusedDenseHalf[T float16.Float16 | bfloat16.BFloat16](
 	backend *gobackend.Backend,
 	data *nodeFusedDense,
@@ -403,11 +456,15 @@ func execFusedDenseHalf[T float16.Float16 | bfloat16.BFloat16](
 		actMinChunk = actMeta.EffectiveMinParallelChunk()
 		biasTileFn = activations.GetBiasTile[float32](data.options.Activation.Type)
 	}
+	fuseHalfStore := data.batchSize == 1
 	epilogue := matmul.Epilogue[float32]{
 		Bias:                       biasF32,
 		Activation:                 actFn,
 		BiasTileActivation:         biasTileFn,
 		ActivationMinParallelChunk: actMinChunk,
+	}
+	if fuseHalfStore {
+		epilogue.TilePostStore = makeHalfTilePostStore(outHalf, fromF32)
 	}
 
 	if err := matmul.ExecuteWithEpilogue(
@@ -419,6 +476,8 @@ func execFusedDenseHalf[T float16.Float16 | bfloat16.BFloat16](
 		return err
 	}
 
-	gobackend.ParallelConvertSlice(backend, outHalf, tmpF32, fromF32)
+	if !fuseHalfStore {
+		gobackend.ParallelConvertSlice(backend, outHalf, tmpF32, fromF32)
+	}
 	return nil
 }

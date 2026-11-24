@@ -44,14 +44,14 @@ func largeNoSIMDGeneric[I, O gotype.NumericNotComplex]( //alt:generic
 	if nodeData != nil {
 		if nodeData.RHSConstantData != nil {
 			cachedRHSPanels = gobackend.GetOrSetCachedForm(nodeData.RHSConstantData, func() [][]I {
-				_, panels := noSIMDPrepackRHS(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params)
+				_, panels := noSIMDPrepackRHS(backend, layout, rhs, batchSize, rhsCrossSize, contractingSize, params, nodeData.RHSConstantData)
 				return panels
 			})
 		}
 
 		if nodeData.LHSConstantData != nil {
 			cachedLHSPanels = gobackend.GetOrSetCachedForm(nodeData.LHSConstantData, func() [][]I {
-				_, panels := noSIMDPrepackLHS(backend, lhs, batchSize, lhsCrossSize, contractingSize, params)
+				_, panels := noSIMDPrepackLHS(backend, lhs, batchSize, lhsCrossSize, contractingSize, params, nodeData.LHSConstantData)
 				return panels
 			})
 		}

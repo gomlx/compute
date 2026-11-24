@@ -48,6 +48,7 @@ var (
 	}
 
 	// AVX512ParamsBFloat16 are the parameters to use for BFloat16, tuned for the 16 registers implementations.
+	// When AVX512_BF16 (VDPBF16PS) is enabled, init() adjusts Kc=256, Nc=512 for optimal L1D/L2 residency.
 	AVX512ParamsBFloat16 = matmul.CacheParams{
 		LHSL1KernelRows:      8,   // Mr: 8 rows
 		RHSL1KernelCols:      32,  // Nr: 32 cols
@@ -57,7 +58,13 @@ var (
 	}
 
 	// AVX512ParamsFloat16 are the parameters to use for Float16, tuned for the 16 registers implementations.
-	AVX512ParamsFloat16 = AVX512ParamsBFloat16
+	AVX512ParamsFloat16 = matmul.CacheParams{
+		LHSL1KernelRows:      8,   // Mr: 8 rows
+		RHSL1KernelCols:      32,  // Nr: 32 cols
+		PanelContractingSize: 128, // Kc: A strip fits in L1 cache
+		LHSPanelCrossSize:    32,  // Mc: Fits in L2 cache (multiple of LHSL1KernelRows)
+		RHSPanelCrossSize:    768, // Nc: Fits in L3 cache (multiple of RHSL1KernelCols)
+	}
 
 	// AVX512ParamsFloat64 are the parameters to use for Float64, tuned for the 16 registers implementations.
 	AVX512ParamsFloat64 = matmul.CacheParams{
@@ -75,6 +82,11 @@ func init() {
 		AVX512ParamsFloat16.LHSL1KernelRows = 4
 		AVX512ParamsBFloat16.LHSL1KernelRows = 4
 		AVX512ParamsFloat64.LHSL1KernelRows = 4
+	} else if AVX512UseBF16 {
+		// With native VDPBF16PS (K2-interleaved panels), Kc=256 & Nc=512 keeps packedLHS (16 KB)
+		// + active RHS strip (16 KB) in L1D and packedRHS (256 KB) in L2 while halving K-panel merges.
+		AVX512ParamsBFloat16.PanelContractingSize = 256
+		AVX512ParamsBFloat16.RHSPanelCrossSize = 512
 	}
 	if kc := envutil.MustReadInt(envutil.GoBackendAVX512_KC, 0); kc > 0 {
 		AVX512ParamsFloat32.PanelContractingSize = kc
@@ -767,8 +779,8 @@ func GetBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (*gob
 }
 
 // GetExactBuffer forwards exact-sized buffer allocation to the shared matmul package.
-func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int) (*gobackend.Buffer, []T, bool) {
-	return matmul.GetExactBuffer[T](backend, length)
+func GetExactBuffer[T gotype.Supported](backend *gobackend.Backend, length int, constData *gobackend.ConstantData) (*gobackend.Buffer, []T, bool) {
+	return matmul.GetExactBuffer[T](backend, length, constData)
 }
 
 // ReleaseBuffer forwards buffer release to the shared matmul package.
