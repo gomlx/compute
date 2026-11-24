@@ -335,4 +335,196 @@ func TestConstantArenaFusedDenseRefcounting(t *testing.T) {
 			t.Fatalf("expected 0 chunks after stress test, got chunks=%d mapped=%d used=%d", chunks, mapped, used)
 		}
 	})
+
+	t.Run("concurrent_cold_same_exec_and_shared_model_execs_with_gc_reclaim", func(t *testing.T) {
+		b, err := igobackend.New("constant_arena")
+		if err != nil {
+			t.Fatalf("New: %+v", err)
+		}
+		defer b.Finalize()
+		ib := b.(*igobackend.Backend)
+		// Force donated-buffer GC reclamation on small test tensors so the concurrent
+		// debug.FreeOSMemory() and trailing post-concurrent reclaim paths execute deterministically.
+		ib.ConstantArenaGCThresholdBytes = 1024
+
+		// Build a 2-layer model with shared donated weights used by BOTH:
+		//   - execPrefill (M=4)
+		//   - execDecode  (M=1)
+		w1Buf := makeTestBF16Buffer(t, b, kDim, nDim)
+		w2Buf := makeTestBF16Buffer(t, b, nDim, nDim)
+		xPrefill := makeTestBF16Buffer(t, b, 4, kDim)
+		xDecode := makeTestBF16Buffer(t, b, 1, kDim)
+		defer func() {
+			_ = xPrefill.Finalize()
+			_ = xDecode.Finalize()
+		}()
+
+		constData1, err := igobackend.NewConstantDataFromBuffer(ib, w1Buf.(*igobackend.Buffer), true)
+		if err != nil {
+			t.Fatalf("NewConstantDataFromBuffer(w1): %+v", err)
+		}
+		constData2, err := igobackend.NewConstantDataFromBuffer(ib, w2Buf.(*igobackend.Buffer), true)
+		if err != nil {
+			t.Fatalf("NewConstantDataFromBuffer(w2): %+v", err)
+		}
+
+		buildTwoLayer := func(name string, mDim int) compute.Executable {
+			bldr := b.Builder(name).(*igobackend.Builder)
+			fn := bldr.MainFn
+			x, err := fn.Parameter("x", shapes.Make(dtypes.BFloat16, mDim, kDim), nil)
+			if err != nil {
+				t.Fatalf("Parameter: %+v", err)
+			}
+			w1 := fn.NewNode(compute.OpTypeConstant, constData1.Shape())
+			w1.Data = constData1
+			w2 := fn.NewNode(compute.OpTypeConstant, constData2.Shape())
+			w2.Data = constData2
+			h, err := fn.FusedDense(x, w1, nil, compute.DenseConfig{})
+			if err != nil {
+				t.Fatalf("FusedDense 1: %+v", err)
+			}
+			y, err := fn.FusedDense(h, w2, nil, compute.DenseConfig{})
+			if err != nil {
+				t.Fatalf("FusedDense 2: %+v", err)
+			}
+			if err := fn.Return([]compute.Value{y}, nil); err != nil {
+				t.Fatalf("Return: %+v", err)
+			}
+			exec, err := bldr.Compile()
+			if err != nil {
+				t.Fatalf("Compile(%s): %+v", name, err)
+			}
+			return exec
+		}
+
+		execPrefill := buildTwoLayer("prefill_shared", 4)
+		execDecode := buildTwoLayer("decode_shared", 1)
+
+		// Launch concurrent cold calls to BOTH the same Executable (multiple workers on execPrefill
+		// and multiple workers on execDecode) AND across the two different Executables sharing the
+		// same donated constants simultaneously.
+		const workersPerExec = 4
+		const iters = 4
+		startGate := make(chan struct{})
+		prefillResults := make([][]float32, workersPerExec)
+		decodeResults := make([][]float32, workersPerExec)
+		errCh := make(chan error, 2*workersPerExec*iters)
+
+		var wg sync.WaitGroup
+		for w := range workersPerExec {
+			wg.Add(2)
+			go func(idx int) {
+				defer wg.Done()
+				<-startGate
+				for iter := range iters {
+					outs, err := execPrefill.Execute([]compute.Buffer{xPrefill}, []bool{false}, 0)
+					if err != nil {
+						errCh <- err
+						return
+					}
+					if iter == 0 {
+						shape, err := outs[0].Shape()
+						if err != nil {
+							_ = outs[0].Finalize()
+							errCh <- err
+							return
+						}
+						raw := make([]bfloat16.BFloat16, shape.Size())
+						if err := outs[0].ToFlatData(raw); err != nil {
+							_ = outs[0].Finalize()
+							errCh <- err
+							return
+						}
+						res := make([]float32, len(raw))
+						for i, v := range raw {
+							res[i] = v.Float32()
+						}
+						prefillResults[idx] = res
+					}
+					_ = outs[0].Finalize()
+				}
+			}(w)
+			go func(idx int) {
+				defer wg.Done()
+				<-startGate
+				for iter := range iters {
+					outs, err := execDecode.Execute([]compute.Buffer{xDecode}, []bool{false}, 0)
+					if err != nil {
+						errCh <- err
+						return
+					}
+					if iter == 0 {
+						shape, err := outs[0].Shape()
+						if err != nil {
+							_ = outs[0].Finalize()
+							errCh <- err
+							return
+						}
+						raw := make([]bfloat16.BFloat16, shape.Size())
+						if err := outs[0].ToFlatData(raw); err != nil {
+							_ = outs[0].Finalize()
+							errCh <- err
+							return
+						}
+						res := make([]float32, len(raw))
+						for i, v := range raw {
+							res[i] = v.Float32()
+						}
+						decodeResults[idx] = res
+					}
+					_ = outs[0].Finalize()
+				}
+			}(w)
+		}
+		close(startGate)
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatalf("concurrent cold execution failed: %+v", err)
+		}
+
+		// Verify all concurrent workers got identical results and donated raw buffers were released.
+		for w := 1; w < workersPerExec; w++ {
+			assertF32Close(t, prefillResults[w], prefillResults[0], 1e-4)
+			assertF32Close(t, decodeResults[w], decodeResults[0], 1e-4)
+		}
+		if constData1.Buffer() != nil || constData2.Buffer() != nil {
+			t.Fatalf("expected donated raw buffers to be released after concurrent cold execution")
+		}
+		chunks, _, _ := ib.ConstantArenaStats()
+		if chunks < 1 {
+			t.Fatalf("expected >= 1 mapped constant_arena chunk, got %d", chunks)
+		}
+
+		// Finalize execPrefill while concurrently executing execDecode — shared arena must remain valid.
+		var decodeWG sync.WaitGroup
+		decodeErrCh := make(chan error, 8)
+		for range 4 {
+			decodeWG.Add(1)
+			go func() {
+				defer decodeWG.Done()
+				for range 4 {
+					outs, err := execDecode.Execute([]compute.Buffer{xDecode}, []bool{false}, 0)
+					if err != nil {
+						decodeErrCh <- err
+						return
+					}
+					_ = outs[0].Finalize()
+				}
+			}()
+		}
+		execPrefill.Finalize()
+		decodeWG.Wait()
+		close(decodeErrCh)
+		for err := range decodeErrCh {
+			t.Fatalf("execDecode failed while execPrefill finalized: %+v", err)
+		}
+
+		// Finalize execDecode -> all users gone -> arena chunks unmapped.
+		execDecode.Finalize()
+		chunks, mapped, used := ib.ConstantArenaStats()
+		if chunks != 0 || mapped != 0 || used != 0 {
+			t.Fatalf("expected 0 chunks after both executables finalized, got chunks=%d mapped=%d used=%d", chunks, mapped, used)
+		}
+	})
 }

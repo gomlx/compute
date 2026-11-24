@@ -245,7 +245,12 @@ func (e *Executable) Execute(inputs []compute.Buffer, donate []bool, _ compute.D
 
 	// Keep the live executions count.
 	e.backend.NumLiveExecutions.Add(1)
-	defer e.backend.NumLiveExecutions.Add(-1)
+	defer func() {
+		remaining := e.backend.NumLiveExecutions.Add(-1)
+		if e.backend.constantArena != nil {
+			e.backend.constantArena.onExecutionFinished(remaining)
+		}
+	}()
 	if e.backend.Scheduler != nil {
 		exitExec := e.backend.Scheduler.EnterExecution()
 		defer exitExec()

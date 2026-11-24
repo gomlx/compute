@@ -251,4 +251,45 @@ func TestConstantArenaAllocationAndRefcounting(t *testing.T) {
 		// Calling Builder.Finalize after Backend.Finalize must be a safe no-op.
 		bldr.Finalize()
 	})
+
+	t.Run("post_concurrent_reclaim_trailing_gc_state", func(t *testing.T) {
+		arena := newConstantArena()
+		const thresh int64 = 1024
+
+		// Single-execution reclaim must NOT arm pendingPostConcurrentReclaim.
+		arena.recordReleasedDonatedBytes(thresh)
+		arena.reclaimReleasedDonatedBytes(thresh, 1)
+		if arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim=false when liveExecutions==1")
+		}
+
+		// Concurrent reclaim (liveExecutions==2) arms trailing reclaim and drains when remainingLive==0.
+		arena.recordReleasedDonatedBytes(thresh)
+		arena.reclaimReleasedDonatedBytes(thresh, 2)
+		if !arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim=true when liveExecutions==2")
+		}
+		// First exit leaves 1 live execution and 1 exit remaining -> still armed.
+		arena.onExecutionFinished(1)
+		if !arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim to stay armed while sibling execution is live")
+		}
+		// Second exit drains to remainingLive==0 -> triggers trailing reclaim and clears flag.
+		arena.onExecutionFinished(0)
+		if arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim cleared after last concurrent execution finishes")
+		}
+
+		// Continuous-traffic server case: remainingLive stays > 0, countdown hits 0 after 2 exits.
+		arena.recordReleasedDonatedBytes(thresh)
+		arena.reclaimReleasedDonatedBytes(thresh, 2)
+		arena.onExecutionFinished(4)
+		if !arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim armed after 1/2 exits")
+		}
+		arena.onExecutionFinished(4)
+		if arena.pendingPostConcurrentReclaim.Load() {
+			t.Fatalf("expected pendingPostConcurrentReclaim cleared after countdown reaches 0")
+		}
+	})
 }

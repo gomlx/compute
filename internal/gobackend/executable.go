@@ -1407,7 +1407,10 @@ func (fe *FunctionExecutable) executeNode(backend *Backend, node *Node, execBuf 
 	}
 	if backend.ConstantArenaGCThresholdBytes > 0 && backend.constantArena != nil &&
 		backend.constantArena.releasedDonatedBytes.Load() >= backend.ConstantArenaGCThresholdBytes {
-		backend.constantArena.reclaimReleasedDonatedBytes(backend.ConstantArenaGCThresholdBytes)
+		backend.constantArena.reclaimReleasedDonatedBytes(
+			backend.ConstantArenaGCThresholdBytes,
+			backend.NumLiveExecutions.Load(),
+		)
 	}
 	if isOpProfileEnabled {
 		fe.recordOpProfileNode(node, execBuf.opsExecutionType, profTimer)

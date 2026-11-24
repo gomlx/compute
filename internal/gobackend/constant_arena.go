@@ -61,6 +61,28 @@ type constantArena struct {
 	// and resets the counter so Go returns freed heap pages to the OS while transferring weights.
 	releasedDonatedBytes atomic.Int64
 	gcMu                 sync.Mutex
+
+	// pendingPostConcurrentReclaim and pendingConcurrentExits handle a subtle concurrent cold-start
+	// race in reclamation effectiveness (not safety):
+	//
+	// Suppose Call 1 (on the same or another Executable sharing the same donated ConstantData)
+	// finishes pre-packing the last large weight (e.g., a 768 MiB lm_head), atomically swaps
+	// rawBuffer to nil, resets releasedDonatedBytes to 0, and runs debug.FreeOSMemory(). If
+	// concurrent Call 2 had already executed OpTypeConstant just before the swap, Call 2 still
+	// holds a live pointer to that old rawBuffer inside its own execBuf.results until Call 2
+	// finishes its node. Go's tracing GC safely keeps oldBuf alive during Call 1's sweep, so
+	// oldBuf is not reclaimed until Call 2 finishes — at which point releasedDonatedBytes is
+	// already 0 and no further constants will be transformed.
+	//
+	// To ensure such straggling donated buffers are still promptly returned to the OS without
+	// waiting for an organic GC cycle, whenever reclaimReleasedDonatedBytes runs with more than
+	// one live execution (liveExecutions > 1), it sets pendingPostConcurrentReclaim = true and
+	// seeds pendingConcurrentExits = liveExecutions. Once either all live executions drain
+	// (remainingLive == 0) or that many executions complete (covering continuously busy servers),
+	// onExecutionFinished triggers one trailing debug.FreeOSMemory() and clears the flag.
+	// Steady-state warm runs only perform a single false atomic load on pendingPostConcurrentReclaim.
+	pendingPostConcurrentReclaim atomic.Bool
+	pendingConcurrentExits       atomic.Int32
 }
 
 func newConstantArena() *constantArena {
@@ -78,7 +100,10 @@ func (a *constantArena) recordReleasedDonatedBytes(n int64) {
 
 // reclaimReleasedDonatedBytes runs GC + synchronous OS page scavenging (debug.FreeOSMemory) when
 // at least threshold bytes of donated raw constant buffers have been released, then resets the counter.
-func (a *constantArena) reclaimReleasedDonatedBytes(threshold int64) {
+// If liveExecutions > 1, it also arms a single trailing reclaim via onExecutionFinished so any
+// donated raw buffers still pinned in concurrent executions' execBuf.results during this sweep
+// are reclaimed once those concurrent executions finish.
+func (a *constantArena) reclaimReleasedDonatedBytes(threshold int64, liveExecutions int32) {
 	if a == nil || threshold <= 0 || a.releasedDonatedBytes.Load() < threshold {
 		return
 	}
@@ -87,6 +112,31 @@ func (a *constantArena) reclaimReleasedDonatedBytes(threshold int64) {
 	if a.releasedDonatedBytes.Load() < threshold {
 		return
 	}
+	a.releasedDonatedBytes.Store(0)
+	if liveExecutions > 1 {
+		a.pendingConcurrentExits.Store(liveExecutions)
+		a.pendingPostConcurrentReclaim.Store(true)
+	}
+	debug.FreeOSMemory()
+}
+
+// onExecutionFinished is called after a top-level Executable.Execute() call has cleared its
+// execution buffers and decremented NumLiveExecutions to remainingLive. If a donated-buffer
+// reclaim previously ran while multiple executions were concurrently active, this triggers one
+// trailing debug.FreeOSMemory() once the concurrent batch has drained (or remainingLive == 0).
+func (a *constantArena) onExecutionFinished(remainingLive int32) {
+	if a == nil || !a.pendingPostConcurrentReclaim.Load() {
+		return
+	}
+	if remainingLive > 0 && a.pendingConcurrentExits.Add(-1) > 0 {
+		return
+	}
+	a.gcMu.Lock()
+	defer a.gcMu.Unlock()
+	if !a.pendingPostConcurrentReclaim.Swap(false) {
+		return
+	}
+	a.pendingConcurrentExits.Store(0)
 	a.releasedDonatedBytes.Store(0)
 	debug.FreeOSMemory()
 }
