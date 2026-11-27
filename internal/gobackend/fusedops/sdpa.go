@@ -933,7 +933,10 @@ func runSDPATasks[W any](
 	}
 	for batchIdx := range info.batchSize {
 		for kvHeadIdx := range info.numKVHeads {
-			runTask(w, batchIdx, kvHeadIdx, 0, info.seqLen)
+			for qStart := 0; qStart < info.seqLen; qStart += info.qBlockSize {
+				qEnd := min(qStart+info.qBlockSize, info.seqLen)
+				runTask(w, batchIdx, kvHeadIdx, qStart, qEnd)
+			}
 		}
 	}
 }
@@ -1365,17 +1368,17 @@ func sdpaMultiHeadHalf[T any](
 				flat = make([]float32, workerTotalElems)
 			}
 			off := 0
-			scores := flat[off : off+info.scratchSize]
+			scores := flat[off : off+info.scratchSize : off+info.scratchSize]
 			off += info.scratchSize
-			qWork := flat[off : off+qBlockMaxElems]
+			qWork := flat[off : off+qBlockMaxElems : off+qBlockMaxElems]
 			off += qBlockMaxElems
-			outW := flat[off : off+qBlockMaxElems]
+			outW := flat[off : off+qBlockMaxElems : off+qBlockMaxElems]
 			off += qBlockMaxElems
 			var kWork, vWork []float32
 			if localKV {
-				kWork = flat[off : off+kvBlockElems]
+				kWork = flat[off : off+kvBlockElems : off+kvBlockElems]
 				off += kvBlockElems
-				vWork = flat[off : off+kvBlockElems]
+				vWork = flat[off : off+kvBlockElems : off+kvBlockElems]
 			}
 			return halfWorker{
 				buf:         buf,

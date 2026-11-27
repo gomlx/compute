@@ -460,3 +460,147 @@ func TestSDPAHalfSliceConverters(t *testing.T) {
 		}
 	}
 }
+
+// TestSDPADirect_HalfSequentialQBlockChunking is a regression test for runSDPATasks's sequential
+// fallback when computeSDPALayout chooses qBlockSize < seqLen (e.g., 512K <= totalMACs < 1M MACs
+// with 12 heads, headDim=32, seqLen in [27..36]). Previously, the sequential fallback passed
+// qEnd=seqLen > qBlockSize into sdpaMultiHeadHalf, overflowing w.qWork/w.outW into w.kWork/w.vWork.
+func TestSDPADirect_HalfSequentialQBlockChunking(t *testing.T) {
+	b := newGoBackend(t)
+	defer b.Finalize()
+
+	const (
+		batch    = 1
+		numHeads = 12
+		headDim  = 32
+	)
+	scale := 1.0 / math.Sqrt(float64(headDim))
+
+	for _, seqLen := range []int{26, 27, 32, 36, 37} {
+		n := batch * numHeads * seqLen * headDim
+		qF32 := make([]float32, n)
+		kF32 := make([]float32, n)
+		vF32 := make([]float32, n)
+		for i := range n {
+			qF32[i] = float32(((i*31 + 7) % 23) - 11) * 0.05
+			kF32[i] = float32(((i*17 + 3) % 19) - 9) * 0.05
+			vF32[i] = float32(((i*13 + 5) % 17) - 8) * 0.05
+		}
+
+		// Compute Float32 reference.
+		f32Shape := shapes.Make(dtypes.Float32, batch, numHeads, seqLen, headDim)
+		refOut := execSDPAFlat[float32](t, b, f32Shape, qF32, kF32, vF32, compute.AttentionAxesLayoutBHSD, scale)
+
+		t.Run(shapes.Make(dtypes.Float16, batch, numHeads, seqLen, headDim).String(), func(t *testing.T) {
+			qF16 := make([]float16.Float16, n)
+			kF16 := make([]float16.Float16, n)
+			vF16 := make([]float16.Float16, n)
+			for i := range n {
+				qF16[i] = float16.FromFloat32(qF32[i])
+				kF16[i] = float16.FromFloat32(kF32[i])
+				vF16[i] = float16.FromFloat32(vF32[i])
+			}
+			f16Shape := shapes.Make(dtypes.Float16, batch, numHeads, seqLen, headDim)
+			gotF16 := execSDPAFlat[float16.Float16](t, b, f16Shape, qF16, kF16, vF16, compute.AttentionAxesLayoutBHSD, scale)
+			var maxDiff float64
+			for i := range n {
+				if d := math.Abs(float64(gotF16[i].Float32()) - float64(refOut[i])); d > maxDiff {
+					maxDiff = d
+				}
+			}
+			if maxDiff > 5e-3 {
+				t.Errorf("Float16 seqLen=%d max abs diff vs Float32 = %.6g (want <= 5e-3)", seqLen, maxDiff)
+			}
+		})
+
+		t.Run(shapes.Make(dtypes.BFloat16, batch, numHeads, seqLen, headDim).String(), func(t *testing.T) {
+			qBF16 := make([]bfloat16.BFloat16, n)
+			kBF16 := make([]bfloat16.BFloat16, n)
+			vBF16 := make([]bfloat16.BFloat16, n)
+			for i := range n {
+				qBF16[i] = bfloat16.FromFloat32(qF32[i])
+				kBF16[i] = bfloat16.FromFloat32(kF32[i])
+				vBF16[i] = bfloat16.FromFloat32(vF32[i])
+			}
+			bf16Shape := shapes.Make(dtypes.BFloat16, batch, numHeads, seqLen, headDim)
+			gotBF16 := execSDPAFlat[bfloat16.BFloat16](t, b, bf16Shape, qBF16, kBF16, vBF16, compute.AttentionAxesLayoutBHSD, scale)
+			var maxDiff float64
+			for i := range n {
+				if d := math.Abs(float64(gotBF16[i].Float32()) - float64(refOut[i])); d > maxDiff {
+					maxDiff = d
+				}
+			}
+			if maxDiff > 2e-2 {
+				t.Errorf("BFloat16 seqLen=%d max abs diff vs Float32 = %.6g (want <= 2e-2)", seqLen, maxDiff)
+			}
+		})
+	}
+}
+
+func execSDPAFlat[T any](
+	t *testing.T,
+	b compute.Backend,
+	shape shapes.Shape,
+	q, k, v []T,
+	layout compute.AttentionAxesLayout,
+	scale float64,
+) []T {
+	t.Helper()
+	builder := b.Builder("sdpa_half_chunk")
+	fn := builder.Main()
+	pQ, err := fn.Parameter("q", shape, nil)
+	if err != nil {
+		t.Fatalf("Parameter q: %+v", err)
+	}
+	pK, err := fn.Parameter("k", shape, nil)
+	if err != nil {
+		t.Fatalf("Parameter k: %+v", err)
+	}
+	pV, err := fn.Parameter("v", shape, nil)
+	if err != nil {
+		t.Fatalf("Parameter v: %+v", err)
+	}
+	out, _, err := fn.FusedScaledDotProductAttention(pQ, pK, pV, layout, &compute.ScaledDotProductAttentionConfig{
+		Scale:  scale,
+		Causal: false,
+	})
+	if err != nil {
+		t.Fatalf("FusedScaledDotProductAttention: %+v", err)
+	}
+	if err := fn.Return([]compute.Value{out}, nil); err != nil {
+		t.Fatalf("Return: %+v", err)
+	}
+	exec, err := builder.Compile()
+	if err != nil {
+		t.Fatalf("Compile: %+v", err)
+	}
+	defer exec.Finalize()
+
+	bQ, err := b.BufferFromFlatData(0, q, shape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData q: %+v", err)
+	}
+	defer func() { _ = bQ.Finalize() }()
+	bK, err := b.BufferFromFlatData(0, k, shape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData k: %+v", err)
+	}
+	defer func() { _ = bK.Finalize() }()
+	bV, err := b.BufferFromFlatData(0, v, shape)
+	if err != nil {
+		t.Fatalf("BufferFromFlatData v: %+v", err)
+	}
+	defer func() { _ = bV.Finalize() }()
+
+	outs, err := exec.Execute([]compute.Buffer{bQ, bK, bV}, nil, 0)
+	if err != nil {
+		t.Fatalf("Execute: %+v", err)
+	}
+	defer func() { _ = outs[0].Finalize() }()
+
+	got := make([]T, shape.Size())
+	if err := outs[0].ToFlatData(got); err != nil {
+		t.Fatalf("ToFlatData: %+v", err)
+	}
+	return got
+}
